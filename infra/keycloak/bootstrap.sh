@@ -130,10 +130,13 @@ else
     -s 'redirectUris=["'"$BACKEND_BASE_URL"'/api/v1/auth/callback"]'
 fi
 
+# Пароль и requiredActions у уже существующего bootstrap-пользователя не меняем — иначе каждый деплой
+# сбрасывал бы пароль (из .env) и вешал UPDATE_PASSWORD. Пароль задаём только при первом создании записи.
 if [ -n "$BOOTSTRAP_PASSWORD" ]; then
   USER_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "users?username=$BOOTSTRAP_USERNAME&exact=true" -r "$APP_REALM")
   USER_UUID=$(printf '%s' "$USER_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
 
+  BOOTSTRAP_USER_CREATED=false
   if [ -z "$USER_UUID" ]; then
     /opt/keycloak/bin/kcadm.sh create users -r "$APP_REALM" \
       -s "username=$BOOTSTRAP_USERNAME" \
@@ -144,9 +147,10 @@ if [ -n "$BOOTSTRAP_PASSWORD" ]; then
       -s "lastName=$BOOTSTRAP_LAST_NAME"
     USER_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "users?username=$BOOTSTRAP_USERNAME&exact=true" -r "$APP_REALM")
     USER_UUID=$(printf '%s' "$USER_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    BOOTSTRAP_USER_CREATED=true
   fi
 
-  if [ -n "$USER_UUID" ]; then
+  if [ -n "$USER_UUID" ] && [ "$BOOTSTRAP_USER_CREATED" = "true" ]; then
     USER_UPDATE_FILE="$(mktemp)"
     cat >"$USER_UPDATE_FILE" <<EOF
 {
@@ -155,14 +159,13 @@ if [ -n "$BOOTSTRAP_PASSWORD" ]; then
   "email": "$BOOTSTRAP_EMAIL",
   "firstName": "$BOOTSTRAP_FIRST_NAME",
   "lastName": "$BOOTSTRAP_LAST_NAME",
-  "requiredActions": ["UPDATE_PASSWORD"]
+  "requiredActions": []
 }
 EOF
     /opt/keycloak/bin/kcadm.sh update "users/$USER_UUID" -r "$APP_REALM" -f "$USER_UPDATE_FILE"
     rm -f "$USER_UPDATE_FILE"
     /opt/keycloak/bin/kcadm.sh set-password -r "$APP_REALM" \
       --userid "$USER_UUID" \
-      --new-password "$BOOTSTRAP_PASSWORD" \
-      --temporary
+      --new-password "$BOOTSTRAP_PASSWORD"
   fi
 fi

@@ -46,7 +46,9 @@ jobs:
             cd /opt/acome-offer-desk
             git fetch upstream
             git checkout test
-            git pull upstream test
+            # Совпадать с удалённой веткой целиком: иначе git pull падает, если на сервере
+            # остались локальные правки отслеживаемых файлов (например ручной scp поверх checkout).
+            git reset --hard upstream/test
 
             ORDER_DB_DIR=/opt/order_database
             APP_ENV_FILE=/opt/acome-offer-desk/backend/.env

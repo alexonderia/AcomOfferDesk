@@ -5,7 +5,6 @@ import type { Location } from 'react-router-dom';
 import { AppLayout } from '@app/layouts/AppLayout';
 import { ProtectedRoute } from '@app/routes/ProtectedRoute';
 import { RoleRoute } from '@app/routes/RoleRoute';
-import { ROLE } from '@shared/constants/roles';
 
 const AuthPage = lazy(async () => ({ default: (await import('@pages/auth/AuthPage')).AuthPage }));
 const AuthCallbackPage = lazy(async () => ({ default: (await import('@pages/auth/AuthCallbackPage')).AuthCallbackPage }));
@@ -74,15 +73,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/admin"
                 element={
-                  <RoleRoute
-                    allowedRoles={[
-                      ROLE.SUPERADMIN,
-                      ROLE.ADMIN,
-                      ROLE.LEAD_ECONOMIST,
-                      ROLE.PROJECT_MANAGER,
-                      ROLE.ECONOMIST,
-                    ]}
-                  >
+                  <RoleRoute allowedPermissions={['users.read']}>
                     <AdminPage />
                   </RoleRoute>
                 }
@@ -90,7 +81,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/feedback"
                 element={
-                  <RoleRoute allowedRoles={[ROLE.SUPERADMIN]}>
+                  <RoleRoute allowedPermissions={['feedback.read']}>
                     <FeedbackPage />
                   </RoleRoute>
                 }
@@ -98,7 +89,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/pm-dashboard"
                 element={
-                  <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST]}>
+                  <RoleRoute allowedPermissions={['dashboard.process.read']}>
                     <ProjectManagerDashboardPage />
                   </RoleRoute>
                 }
@@ -106,7 +97,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/pm-dashboard/savings"
                 element={
-                  <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST]}>
+                  <RoleRoute allowedPermissions={['dashboard.savings.read']}>
                     <ProjectManagerSavingsPage />
                   </RoleRoute>
                 }
@@ -114,7 +105,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/pm-dashboard/plan"
                 element={
-                  <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST]}>
+                  <RoleRoute allowedPermissions={['dashboard.plans.read']}>
                     <ProjectManagerPlanPage />
                   </RoleRoute>
                 }

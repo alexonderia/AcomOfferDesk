@@ -9,14 +9,22 @@ class PermissionCodes:
     USERS_READ = "users.read"
     USERS_CREATE = "users.create"
     USERS_STATUS_UPDATE = "users.status.update"
-    USERS_ROLE_UPDATE = "users.role.update"
+    USERS_ROLE_UPDATE_ANY = "users.role.update_any"
+    USERS_ROLE_UPDATE_ECONOMY = "users.role.update_economy"
+    USERS_LOGIN_UPDATE = "users.login.update"
+    USERS_PASSWORD_UPDATE = "users.password.update"
     USERS_MANAGER_UPDATE = "users.manager.update"
     PROFILE_MANAGE_OWN = "profile.manage_own"
+    PROFILE_MANAGE_ANY = "profile.manage_any"
     COMPANY_CONTACTS_MANAGE_OWN = "company_contacts.manage_own"
+    COMPANY_CONTACTS_MANAGE_ANY = "company_contacts.manage_any"
     REQUESTS_READ = "requests.read"
     REQUESTS_AMOUNTS_READ = "requests.amounts.read"
     REQUESTS_CREATE = "requests.create"
     REQUESTS_UPDATE = "requests.update"
+    REQUESTS_PRICING_UPDATE = "requests.pricing.update"
+    REQUESTS_DEADLINE_UPDATE = "requests.deadline.update"
+    REQUESTS_STATUS_UPDATE = "requests.status.update"
     REQUESTS_OWNER_CHANGE = "requests.owner.change"
     REQUESTS_FILES_UPLOAD = "requests.files.upload"
     REQUESTS_FILES_DELETE = "requests.files.delete"
@@ -29,6 +37,8 @@ class PermissionCodes:
     OFFERS_MANUAL_CREATE = "offers.manual.create"
     OFFERS_WORKSPACE_READ = "offers.workspace.read"
     OFFERS_UPDATE = "offers.update"
+    OFFERS_AMOUNT_UPDATE = "offers.amount.update"
+    OFFERS_DETAILS_UPDATE = "offers.details.update"
     OFFERS_STATUS_UPDATE = "offers.status.update"
     OFFERS_FILES_UPLOAD = "offers.files.upload"
     OFFERS_FILES_DELETE = "offers.files.delete"
@@ -40,11 +50,17 @@ class PermissionCodes:
     CHAT_RECEIPTS_MARK_READ = "chat.receipts.mark_read"
     FEEDBACK_READ = "feedback.read"
     FEEDBACK_CREATE = "feedback.create"
-    DASHBOARD_RESPONSIBILITY_READ = "dashboard.responsibility.read"
+    DASHBOARD_PROCESS_READ = "dashboard.process.read"
+    DASHBOARD_SAVINGS_READ = "dashboard.savings.read"
+    DASHBOARD_PLANS_READ = "dashboard.plans.read"
+    NORMATIVE_FILES_READ = "normative_files.read"
+    NORMATIVE_FILES_CREATE = "normative_files.create"
     NORMATIVE_FILES_MANAGE = "normative_files.manage"
     FILES_DOWNLOAD = "files.download"
+    UNAVAILABILITY_MANAGE_ALL = "unavailability.manage_all"
     UNAVAILABILITY_MANAGE_OWN = "unavailability.manage_own"
     UNAVAILABILITY_MANAGE_SUBORDINATE = "unavailability.manage_subordinate"
+    CONTRACTORS_MANUAL_CREATE = "contractors.manual.create"
     CONTRACTORS_MANUAL_MANAGE = "contractors.manual.manage"
 
 
@@ -66,12 +82,17 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
     internal_request_manage_permissions = {
         PermissionCodes.REQUESTS_CREATE,
         PermissionCodes.REQUESTS_UPDATE,
+        PermissionCodes.REQUESTS_PRICING_UPDATE,
+        PermissionCodes.REQUESTS_DEADLINE_UPDATE,
+        PermissionCodes.REQUESTS_STATUS_UPDATE,
         PermissionCodes.REQUESTS_AMOUNTS_READ,
         PermissionCodes.REQUESTS_FILES_UPLOAD,
         PermissionCodes.REQUESTS_FILES_DELETE,
         PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
         PermissionCodes.REQUESTS_DELETED_ALERTS_MARK_VIEWED,
         PermissionCodes.OFFERS_UPDATE,
+        PermissionCodes.OFFERS_AMOUNT_UPDATE,
+        PermissionCodes.OFFERS_DETAILS_UPDATE,
         PermissionCodes.OFFERS_STATUS_UPDATE,
         PermissionCodes.CHAT_MESSAGE_SEND,
         PermissionCodes.CHAT_MESSAGE_ATTACH,
@@ -82,9 +103,13 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
         PermissionCodes.USERS_READ,
         PermissionCodes.USERS_CREATE,
         PermissionCodes.USERS_STATUS_UPDATE,
+        PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
         PermissionCodes.USERS_MANAGER_UPDATE,
         PermissionCodes.REQUESTS_OWNER_CHANGE,
-        PermissionCodes.DASHBOARD_RESPONSIBILITY_READ,
+        PermissionCodes.NORMATIVE_FILES_READ,
+        PermissionCodes.DASHBOARD_PROCESS_READ,
+        PermissionCodes.DASHBOARD_SAVINGS_READ,
+        PermissionCodes.DASHBOARD_PLANS_READ,
         PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
     }
     contractor_permissions = {
@@ -96,6 +121,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
         PermissionCodes.OFFERS_CREATE,
         PermissionCodes.OFFERS_WORKSPACE_READ,
         PermissionCodes.OFFERS_UPDATE,
+        PermissionCodes.OFFERS_AMOUNT_UPDATE,
+        PermissionCodes.OFFERS_DETAILS_UPDATE,
         PermissionCodes.OFFERS_STATUS_UPDATE,
         PermissionCodes.OFFERS_FILES_UPLOAD,
         PermissionCodes.OFFERS_FILES_DELETE,
@@ -120,7 +147,12 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_READ,
                 PermissionCodes.USERS_CREATE,
                 PermissionCodes.USERS_STATUS_UPDATE,
-                PermissionCodes.USERS_ROLE_UPDATE,
+                PermissionCodes.USERS_ROLE_UPDATE_ANY,
+                PermissionCodes.USERS_LOGIN_UPDATE,
+                PermissionCodes.USERS_PASSWORD_UPDATE,
+                PermissionCodes.PROFILE_MANAGE_ANY,
+                PermissionCodes.COMPANY_CONTACTS_MANAGE_ANY,
+                PermissionCodes.CONTRACTORS_MANUAL_CREATE,
                 PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
             }
         ),
@@ -131,10 +163,16 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | {
                 PermissionCodes.USERS_READ,
                 PermissionCodes.USERS_STATUS_UPDATE,
+                PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
                 PermissionCodes.USERS_MANAGER_UPDATE,
                 PermissionCodes.REQUESTS_OWNER_CHANGE,
                 PermissionCodes.REQUESTS_AMOUNTS_READ,
-                PermissionCodes.DASHBOARD_RESPONSIBILITY_READ,
+                PermissionCodes.NORMATIVE_FILES_READ,
+                PermissionCodes.DASHBOARD_PROCESS_READ,
+                PermissionCodes.DASHBOARD_SAVINGS_READ,
+                PermissionCodes.DASHBOARD_PLANS_READ,
+                PermissionCodes.CONTRACTORS_MANUAL_CREATE,
+                PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
             }
             | {PermissionCodes.UNAVAILABILITY_MANAGE_OWN}
@@ -146,8 +184,15 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | management_permissions
             | {
                 PermissionCodes.NORMATIVE_FILES_MANAGE,
+                PermissionCodes.NORMATIVE_FILES_CREATE,
+                PermissionCodes.NORMATIVE_FILES_READ,
+                PermissionCodes.PROFILE_MANAGE_ANY,
+                PermissionCodes.COMPANY_CONTACTS_MANAGE_ANY,
+                PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
                 PermissionCodes.OFFERS_MANUAL_CREATE,
+                PermissionCodes.CONTRACTORS_MANUAL_CREATE,
+                PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
             }
         ),
         settings.economist_role_id: frozenset(
@@ -158,9 +203,12 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_READ,
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_MANAGER_UPDATE,
+                PermissionCodes.NORMATIVE_FILES_READ,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
                 PermissionCodes.OFFERS_MANUAL_CREATE,
+                PermissionCodes.CONTRACTORS_MANUAL_CREATE,
+                PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
             }
         ),
         settings.operator_role_id: frozenset(
@@ -170,7 +218,11 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.REQUESTS_READ,
                 PermissionCodes.REQUESTS_CREATE,
                 PermissionCodes.REQUESTS_UPDATE,
+                PermissionCodes.REQUESTS_PRICING_UPDATE,
+                PermissionCodes.REQUESTS_DEADLINE_UPDATE,
+                PermissionCodes.REQUESTS_STATUS_UPDATE,
                 PermissionCodes.REQUESTS_AMOUNTS_READ,
+                PermissionCodes.NORMATIVE_FILES_READ,
             }
         ),
     }

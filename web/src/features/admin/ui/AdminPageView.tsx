@@ -61,10 +61,11 @@ export const AdminPageView = () => {
     usersError,
     canUpdateStatus,
     canUpdateRole,
+    roleUpdateOptions,
     roleOptions,
     userTabs,
     getRoleLabel,
-    canCreateUser,
+    canOpenCreateDialog,
     isContractorRole,
     requiresParent,
     managerOptions,
@@ -127,9 +128,9 @@ export const AdminPageView = () => {
         canViewRoleIds={canViewRoleIds}
         canUpdateStatus={canUpdateStatus}
         canUpdateRole={canUpdateRole}
-        allowedRoleOptions={[ROLE.ADMIN, ROLE.ECONOMIST]}
+        allowedRoleOptions={roleUpdateOptions}
         onStatusUpdated={loadUsers}
-        onAddClick={canCreateUser ? () => setIsDialogOpen(true) : undefined}
+        onAddClick={canOpenCreateDialog ? () => setIsDialogOpen(true) : undefined}
       />
 
       <Dialog

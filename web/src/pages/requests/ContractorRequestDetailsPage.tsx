@@ -6,10 +6,12 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '@app/providers/AuthProvider';
 import { getContractorRequestView } from '@shared/api/requests/getContractorRequestView';
 import type { ContractorRequestView } from '@shared/api/requests/getContractorRequestView';
 import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest';
+import { hasPermission } from '@shared/auth/permissions';
 import { downloadFile } from '@shared/api/fileDownload';
 import { RequestDetailsMainCard } from '@features/request-details/ui/RequestDetailsMainCard';
 import type { RequestStatus } from '@features/request-details/model/requestDetailsUtils';
@@ -39,6 +41,7 @@ const parseAmountInput = (value: string) => {
 };
 
 export const ContractorRequestDetailsPage = () => {
+  const { session } = useAuth();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const requestId = Number(id ?? 0);
@@ -95,6 +98,10 @@ export const ContractorRequestDetailsPage = () => {
     [request?.actions.create_offer]
   );
   const requestStatus = toRequestStatus(request?.status);
+
+  if (!hasPermission(session, 'requests.contractor_view.read')) {
+    return <Navigate to="/requests" replace />;
+  }
 
   const handleRespond = async () => {
     if (!request) {

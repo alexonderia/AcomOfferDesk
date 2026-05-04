@@ -4,8 +4,8 @@ import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useRef, useState } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
 import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
+import { hasPermission } from '@shared/auth/permissions';
 import { ActionButton } from '@shared/components/ActionButton';
-import { ROLE } from '@shared/constants/roles';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 
 const dialogPaperSx = (theme: Theme) => ({
@@ -43,7 +43,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (session?.roleId !== ROLE.LEAD_ECONOMIST) {
+  if (!hasPermission(session, 'normative_files.create')) {
     return null;
   }
 

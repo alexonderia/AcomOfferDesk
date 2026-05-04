@@ -28,6 +28,7 @@ import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
+import { ROLE } from '@shared/constants/roles';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { StatusPill as BaseStatusPill } from '@shared/ui/StatusPill';
 import {
@@ -63,6 +64,12 @@ const subordinateUnavailabilitySchema = z
   });
 
 type SubordinateUnavailabilityFormValues = z.infer<typeof subordinateUnavailabilitySchema>;
+
+const subordinateProfileRoleIds = new Set<number>([
+  ROLE.LEAD_ECONOMIST,
+  ROLE.ECONOMIST,
+  ROLE.OPERATOR
+]);
 
 type UsersTableProps = {
   users: UserListItem[];
@@ -1052,6 +1059,26 @@ export const UsersTable = ({
     }
   };
 
+  const openUserDetails = (clickedUser: UserListItem) => {
+    setSelectedUser(clickedUser);
+    setSubordinateProfile(null);
+    setSubordinateError(null);
+    setManagerOptions([]);
+    setManagerError(null);
+    setManagerUserId(clickedUser.id_parent ?? '');
+    setOpenSubordinateUnavailability(false);
+
+    if (!clickedUser.actions.view_profile || !subordinateProfileRoleIds.has(clickedUser.role_id)) {
+      return;
+    }
+
+    void getSubordinateProfile(clickedUser.user_id)
+      .then((profile) => setSubordinateProfile(profile))
+      .catch((error) => {
+        setSubordinateError(error instanceof Error ? error.message : 'Не удалось загрузить нерабочие статусы');
+      });
+  };
+
   const manualContractorFieldErrors = manualContractorValidation.fieldErrors;
   const usersRoleFilterOptions = useMemo(
     () => Array.from(new Set(rows.map((row) => row.role))).map((role) => ({ label: role, value: role })),
@@ -1098,7 +1125,7 @@ export const UsersTable = ({
           const canEditRoleForRow = Boolean(
             canUpdateRole
             && users.find((item) => item.user_id === row.id)?.actions.update_role
-            && allowedRoleOptions.includes(row.id_role)
+            && allowedRoleOptions.length > 0
           );
 
           if (!canEditRoleForRow) {
@@ -1237,18 +1264,7 @@ export const UsersTable = ({
                 onOpenDetails={(clickedRow) => {
                   const clickedUser = users.find((item) => item.user_id === clickedRow.id);
                   if (clickedUser) {
-                    setSelectedUser(clickedUser);
-                    setSubordinateProfile(null);
-                    setSubordinateError(null);
-                    setManagerOptions([]);
-                    setManagerError(null);
-                    setManagerUserId(clickedUser.id_parent ?? '');
-                    setOpenSubordinateUnavailability(false);
-                    void getSubordinateProfile(clickedUser.user_id)
-                      .then((profile) => setSubordinateProfile(profile))
-                      .catch((error) => {
-                        setSubordinateError(error instanceof Error ? error.message : 'Не удалось загрузить нерабочие статусы');
-                      });
+                    openUserDetails(clickedUser);
                   }
                 }}
               />
@@ -1256,18 +1272,7 @@ export const UsersTable = ({
             onRowClick={(row) => {
               const clickedUser = users.find((item) => item.user_id === row.id);
               if (clickedUser) {
-                setSelectedUser(clickedUser);
-                setSubordinateProfile(null);
-                setSubordinateError(null);
-                setManagerOptions([]);
-                setManagerError(null);
-                setManagerUserId(clickedUser.id_parent ?? '');
-                setOpenSubordinateUnavailability(false);
-                void getSubordinateProfile(clickedUser.user_id)
-                  .then((profile) => setSubordinateProfile(profile))
-                  .catch((error) => {
-                    setSubordinateError(error instanceof Error ? error.message : 'Не удалось загрузить нерабочие статусы');
-                  });
+                openUserDetails(clickedUser);
               }
             }}
           />
@@ -1776,7 +1781,7 @@ export const UsersTable = ({
                 </Stack>
               ) : null}
 
-              {canUpdateStatus ? (
+              {selectedUser.actions.update_status ? (
                 <Stack
                   spacing={1.2}
                   sx={{

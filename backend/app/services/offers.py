@@ -865,7 +865,7 @@ class OfferService:
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
         require_permission(
             current_user,
-            PermissionCodes.OFFERS_UPDATE,
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
             message="Insufficient permissions to update offer",
         )
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)

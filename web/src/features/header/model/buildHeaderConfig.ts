@@ -9,6 +9,10 @@ type BuildHeaderConfigArgs = {
   canLoadOpenRequests: boolean;
   canLoadOfferedRequests: boolean;
   canOpenUsersPage: boolean;
+  canCreateNormativeFile: boolean;
+  canViewDashboardProcess: boolean;
+  canViewDashboardSavings: boolean;
+  canViewDashboardPlans: boolean;
   breadcrumbs?: { key: string; label: string; to?: string }[];
   contractorTab: 'my' | 'open';
   adminUsersTab: 'contractors' | 'economists' | 'admins';
@@ -73,29 +77,42 @@ const buildMoreNavItem = ({
   };
 };
 
-const buildSuperadminMobileNavItems = (): HeaderMobileNavItem[] => [
+const buildSuperadminMobileNavItems = (showNormative: boolean): HeaderMobileNavItem[] => [
   { key: 'users', label: 'Пользователи', to: '/admin' },
   { key: 'requests', label: 'Заявки', to: '/requests' },
   buildMoreNavItem({
     showProfile: false,
-    showNormative: false,
+    showNormative,
     showRoleGuide: true,
     showFeedback: true,
     showLogout: true,
   }),
 ];
 
-const buildProjectManagerMobileNavItems = (showNormative: boolean, canOpenUsersPage: boolean): HeaderMobileNavItem[] => {
+const buildProjectManagerMobileNavItems = (
+  showNormative: boolean,
+  canOpenUsersPage: boolean,
+  canViewDashboardProcess: boolean,
+  canViewDashboardSavings: boolean,
+  canViewDashboardPlans: boolean
+): HeaderMobileNavItem[] => {
+  const dashboardChildren: HeaderMobileNavItem[] = [];
+  if (canViewDashboardProcess) {
+    dashboardChildren.push({ key: 'dashboard-process', label: 'Процесс работы', to: '/pm-dashboard' });
+  }
+  if (canViewDashboardSavings) {
+    dashboardChildren.push({ key: 'dashboard-savings', label: 'Экономия', to: '/pm-dashboard/savings' });
+  }
+  if (canViewDashboardPlans) {
+    dashboardChildren.push({ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' });
+  }
+  const dashboardTarget = dashboardChildren[0]?.to ?? '/requests';
   const items: HeaderMobileNavItem[] = [
     {
       key: 'dashboard',
       label: 'Дашборд',
-      to: '/pm-dashboard',
-      children: [
-        { key: 'dashboard-process', label: 'Процесс работы', to: '/pm-dashboard' },
-        { key: 'dashboard-savings', label: 'Экономия', to: '/pm-dashboard/savings' },
-        { key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' },
-      ],
+      to: dashboardTarget,
+      children: dashboardChildren,
     },
     { key: 'requests', label: 'Заявки', to: '/requests' }
   ];
@@ -135,14 +152,12 @@ const buildContractorMobileNavItems = (): HeaderMobileNavItem[] => [
   }),
 ];
 
-const buildLeadMobileNavItems = (): HeaderMobileNavItem[] => [
+const buildLeadMobileNavItems = (canViewDashboardPlans: boolean): HeaderMobileNavItem[] => [
   {
     key: 'dashboard',
     label: 'Дашборд',
-    to: '/pm-dashboard/plan',
-    children: [
-      { key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' },
-    ],
+    to: canViewDashboardPlans ? '/pm-dashboard/plan' : '/requests',
+    children: canViewDashboardPlans ? [{ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' }] : [],
   },
   { key: 'requests', label: 'Заявки', to: '/requests' },
   { key: 'economists', label: 'Экономисты', to: '/admin' },
@@ -203,6 +218,10 @@ const resolveDefaultMobileNavItems = ({
   isLeadLike,
   isAdmin,
   canOpenUsersPage,
+  canCreateNormativeFile,
+  canViewDashboardProcess,
+  canViewDashboardSavings,
+  canViewDashboardPlans,
 }: {
   isSuperadmin: boolean;
   isProjectManager: boolean;
@@ -211,13 +230,23 @@ const resolveDefaultMobileNavItems = ({
   isLeadLike: boolean;
   isAdmin: boolean;
   canOpenUsersPage: boolean;
+  canCreateNormativeFile: boolean;
+  canViewDashboardProcess: boolean;
+  canViewDashboardSavings: boolean;
+  canViewDashboardPlans: boolean;
 }): HeaderMobileNavItem[] => {
   if (isSuperadmin) {
-    return buildSuperadminMobileNavItems();
+    return buildSuperadminMobileNavItems(canCreateNormativeFile);
   }
 
   if (isProjectManager || isLeadEconomist) {
-    return buildProjectManagerMobileNavItems(isLeadEconomist, canOpenUsersPage);
+    return buildProjectManagerMobileNavItems(
+      canCreateNormativeFile,
+      canOpenUsersPage,
+      canViewDashboardProcess,
+      canViewDashboardSavings,
+      canViewDashboardPlans
+    );
   }
 
   if (isContractor) {
@@ -225,7 +254,7 @@ const resolveDefaultMobileNavItems = ({
   }
 
   if (isLeadLike && !isProjectManager && !isLeadEconomist) {
-    return buildLeadMobileNavItems();
+    return buildLeadMobileNavItems(canViewDashboardPlans);
   }
 
   return buildAdminMobileNavItems(isAdmin && canOpenUsersPage);
@@ -239,6 +268,10 @@ export const buildHeaderConfig = ({
   canLoadOpenRequests,
   canLoadOfferedRequests,
   canOpenUsersPage,
+  canCreateNormativeFile,
+  canViewDashboardProcess,
+  canViewDashboardSavings,
+  canViewDashboardPlans,
   breadcrumbs = [],
   contractorTab,
   adminUsersTab,
@@ -265,9 +298,9 @@ export const buildHeaderConfig = ({
   const isRequestDetailsPage = /^\/requests\/\d+$/.test(pathname);
   const isContractorRequestDetailsPage = /^\/requests\/\d+\/contractor$/.test(pathname);
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(pathname);
-  const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard';
-  const isResponsibilitySavings = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard/savings';
-  const isResponsibilityPlan = (isProjectManager || isLeadEconomist || isEconomist) && pathname === '/pm-dashboard/plan';
+  const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && canViewDashboardProcess && pathname === '/pm-dashboard';
+  const isResponsibilitySavings = (isProjectManager || isLeadEconomist) && canViewDashboardSavings && pathname === '/pm-dashboard/savings';
+  const isResponsibilityPlan = isLeadLike && canViewDashboardPlans && pathname === '/pm-dashboard/plan';
   const isResponsibilityRequestsPage =
     (isProjectManager || isLeadEconomist) && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/admin');
@@ -281,8 +314,10 @@ export const buildHeaderConfig = ({
   const isLeadPlanTab = isLeadLike && pathname === '/pm-dashboard/plan';
   const canUseLeadTabs = isLeadLike && !isProjectManager && !isLeadEconomist
     && (isLeadRequestsTab || isLeadEconomistsTab || isLeadPlanTab)
+    && canViewDashboardPlans
     && (canOpenUsersPage || isEconomist);
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
+    && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans)
     && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityPlan || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
     && canOpenUsersPage;
 
@@ -294,6 +329,10 @@ export const buildHeaderConfig = ({
     isLeadLike,
     isAdmin,
     canOpenUsersPage,
+    canCreateNormativeFile,
+    canViewDashboardProcess,
+    canViewDashboardSavings,
+    canViewDashboardPlans,
   });
 
   if (isSuperadmin) {
@@ -303,7 +342,7 @@ export const buildHeaderConfig = ({
       actions: [],
       breadcrumbs,
       sidebarItems: superadminItems,
-      mobileNavItems: buildSuperadminMobileNavItems(),
+      mobileNavItems: buildSuperadminMobileNavItems(canCreateNormativeFile),
       showFeedback: true,
       showRoleGuide: true,
       showProfile: false,
@@ -315,11 +354,17 @@ export const buildHeaderConfig = ({
     return {
       mode: 'sidebar',
       breadcrumbs,
-      mobileNavItems: buildProjectManagerMobileNavItems(isLeadEconomist, canOpenUsersPage),
+      mobileNavItems: buildProjectManagerMobileNavItems(
+        canCreateNormativeFile,
+        canOpenUsersPage,
+        canViewDashboardProcess,
+        canViewDashboardSavings,
+        canViewDashboardPlans
+      ),
       tabs: [
-        { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
-        { key: 'savings', value: 'savings', label: 'Экономия' },
-        { key: 'plan', value: 'plan', label: 'План' },
+        ...(canViewDashboardProcess ? [{ key: 'dashboard', value: 'dashboard', label: 'Дашборд' as const }] : []),
+        ...(canViewDashboardSavings ? [{ key: 'savings', value: 'savings', label: 'Экономия' as const }] : []),
+        ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: 'План' as const }] : []),
         { key: 'requests', value: 'requests', label: 'Заявки' },
         { key: 'employees', value: 'employees', label: 'Сотрудники' }
       ],
@@ -333,15 +378,15 @@ export const buildHeaderConfig = ({
             ? 'employees'
             : 'requests',
       onTabChange: (value) => {
-        if (value === 'dashboard') {
+        if (value === 'dashboard' && canViewDashboardProcess) {
           onNavigateToDashboard();
           return;
         }
-        if (value === 'savings') {
+        if (value === 'savings' && canViewDashboardSavings) {
           onNavigateToSavings();
           return;
         }
-        if (value === 'plan') {
+        if (value === 'plan' && canViewDashboardPlans) {
           onNavigateToPlan();
           return;
         }
@@ -400,7 +445,7 @@ export const buildHeaderConfig = ({
     return {
       mode: 'sidebar',
       breadcrumbs,
-      mobileNavItems: buildLeadMobileNavItems(),
+      mobileNavItems: buildLeadMobileNavItems(canViewDashboardPlans),
       tabs: [
         { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
         { key: 'plan', value: 'plan', label: 'План' },
@@ -409,7 +454,7 @@ export const buildHeaderConfig = ({
       ],
       activeTab: pathname === '/pm-dashboard/plan' ? 'plan' : pathname === '/admin' ? 'economists' : 'requests',
       onTabChange: (value) => {
-        if (value === 'dashboard' || value === 'plan') {
+        if ((value === 'dashboard' || value === 'plan') && canViewDashboardPlans) {
           onNavigateToPlan();
           return;
         }

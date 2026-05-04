@@ -8,12 +8,10 @@ import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { ActionButton } from '@shared/components/ActionButton';
-import { useAuth } from '@app/providers/AuthProvider';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
 import { NormativeFileButton } from '@shared/components/NormativeFileButton';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
-import { ROLE } from '@shared/constants/roles';
 import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
 import type { HeaderConfig } from '../model/types';
 import { getHeaderNavigationIcon } from './navigationIcons';
@@ -34,7 +32,6 @@ export const SuperadminSidebarHeader = ({
   onToggleCollapse,
 }: SuperadminSidebarHeaderProps) => {
   const theme = useTheme();
-  const { session } = useAuth();
   const [isCompactHeight, setIsCompactHeight] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerHeight <= 760 : false
   );
@@ -67,7 +64,6 @@ export const SuperadminSidebarHeader = ({
   }, [isEdgeHovered, isToggleHovered, onToggleCollapse]);
 
   const topItems = (config.sidebarItems ?? []).filter((item) => !item.isBottomItem && item.key !== 'logout');
-  const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
   const hasSavingsTab = config.tabs.some((tabItem) => tabItem.key === 'savings');
   const hasPlanTab = config.tabs.some((tabItem) => tabItem.key === 'plan');
   const hasDashboardProcessTab = hasSavingsTab;
@@ -249,7 +245,7 @@ export const SuperadminSidebarHeader = ({
             />
           ))}
 
-          {isSuperadmin ? null : <NormativeFileButton iconOnly={collapsed} sidebar />}
+          <NormativeFileButton iconOnly={collapsed} sidebar />
         </Stack>
 
         <Menu

@@ -1,7 +1,10 @@
+# authtoken берётся из env: NGROK_AUTHTOKEN (добавить в backend/.env)
+# pooling_enabled: при ERR_NGROK_334 — позволяет работать двум туннелям на одном URL
 version: "2"
-authtoken: 39QK6nr0P1gxBPYv0giYoHkTmek_7ztz2bfDtDcE9VkEjj2gz
 
 tunnels:
-  public:
+  web:
     proto: http
     addr: gateway:80
+    # Разрешает объединение с другим туннелем на том же URL (load balance)
+    pooling_enabled: true

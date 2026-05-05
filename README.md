@@ -1,162 +1,57 @@
-# AcomOfferDesk — развёртывание через Docker Compose
+﻿# AcomOfferDesk
 
-Этот репозиторий можно поднять одной командой через корневой `docker-compose.yml`.
+AcomOfferDesk — внутренняя платформа для работы с заявками и офферами между сотрудниками и контрагентами.
 
-## Сводка для пользователя: как обрабатываются действия
+## Коротко о проекте
 
-### Если пользователь работает через веб (`http://localhost:8080`)
-1. Пользователь открывает сайт.
-2. `gateway` принимает запрос и отправляет его в `web` (SPA).
-3. Когда пользователь нажимает кнопки/отправляет формы (вход, создание заявок, загрузка файлов), фронтенд вызывает `/api/...`.
-4. `gateway` маршрутизирует эти API-запросы в `backend`.
-5. `backend` выполняет бизнес-логику, работает с БД, сохраняет загруженные файлы в `backend/uploads` и возвращает результат.
-6. Пользователь сразу видит обновлённый статус/данные в интерфейсе.
+- frontend: React SPA (`web`)
+- backend: FastAPI (`backend`)
+- auth: Keycloak OIDC
+- infra runtime: Docker Compose (`gateway`, `rabbitmq`, `minio`, `notifications_worker`)
+- внешняя БД: `order_database` (отдельный репозиторий)
 
-### Если пользователь работает через Telegram-бота
-1. Пользователь отправляет команду боту (`/start`, `/info`).
-2. `tg_bot` обрабатывает команду и запрашивает данные у `backend` через внутренний адрес `http://gateway`.
-3. `backend` возвращает действие/данные (например, регистрацию, статус модерации, список заявок, ссылки).
-4. Бот отправляет пользователю итоговое сообщение и кнопки.
+## Карта документации
 
+### Впервые открыть проект
 
-## Что поднимается
+- [Обзор продукта и бизнес-сценариев](docs/project-overview.md)
+- [Runtime-архитектура и потоки данных](docs/runtime-architecture.md)
+- [Навигация по кодовой базе](docs/developer-guide.md)
 
-- `backend` — FastAPI (`backend`)
-- `web` — frontend SPA (`web`)
-- `gateway` — Nginx reverse proxy (входная точка)
-- `tg_bot` — Telegram bot (`tg_bot`)
-- `ngrok` — опционально, через профиль `ngrok`
+### Запустить окружение
 
-Все контейнеры работают в одной сети `project_net`.
+- [Окружения, compose, perimeter и admin-only доступ](docs/environments.md)
 
----
+### Готовить test/prod релиз
 
-## Предварительные требования
+- [Контракт production-переменных и секретов](docs/production-env.md)
+- [Практический release checklist](docs/release-checklist.md)
+- [Roadmap/ТЗ production-readiness](docs/release-preparation-tz.md)
 
-- Docker Engine
-- Docker Compose plugin (`docker compose`)
+### Менять вход/регистрацию/Keycloak
 
-Проверьте:
+- [Аутентификация и онбординг (актуальная модель)](docs/auth-and-onboarding.md)
 
-```bash
-docker --version
-docker compose version
-```
+### Решать проблемы на VPS
 
----
+- [order_database/Flyway/VPS runbook](docs/order-database-vps.md)
+- [Краткий VPS troubleshooting](docs/vps-troubleshooting.md)
 
-## Подготовка `.env`
+## Быстрый старт (dev)
 
-### 1) Backend
-
-Создайте файл `backend/.env` (минимум):
-
-```env
-DATABASE_URL=sqlite+aiosqlite:///./app.db
-JWT_SECRET=change_me
-BOT_TOKEN=123456:ABCDEF...
-PUBLIC_BACKEND_BASE_URL=http://localhost:8080
-WEB_BASE_URL=http://localhost:8080
-```
-
-> Для PostgreSQL укажите ваш `DATABASE_URL`, например:  
-> `postgresql+asyncpg://user:password@host:5432/dbname`
-
-### 2) Telegram bot
-
-Создайте файл `tg_bot/.env`:
-
-```env
-BOT_TOKEN=123456:ABCDEF...
-BACKEND_BASE_URL=http://gateway
-PUBLIC_BACKEND_BASE_URL=http://localhost:8080
-REQUEST_TIMEOUT_SECONDS=5
-```
-
-### 3) Ngrok (если нужен)
-
-Проверьте `backend/ngrok.yml`: должен быть корректный `authtoken` и туннель `public` на `gateway:80`.
-
----
-
-## Запуск
-
-### Базовый запуск (без ngrok)
+1. Подготовить `.env.dev` из `.env.dev.example`.
+2. Поднять стек:
 
 ```bash
-docker compose up -d --build
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-После запуска:
-
-- Приложение: `http://localhost:8080`
-- API: `http://localhost:8080/api/v1/...`
-
-### Запуск с ngrok
+3. Для init Keycloak:
 
 ```bash
-docker compose --profile ngrok up -d --build
+docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_db_prepare
+docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootstrap
 ```
 
-- Локальный UI ngrok: `http://localhost:4040`
+Полные сценарии `dev/prod-like/test/prod`, tunnel-профили, perimeter и проверки — в [docs/environments.md](docs/environments.md).
 
----
-
-## Полезные команды
-
-Логи всех сервисов:
-
-```bash
-docker compose logs -f
-```
-
-Логи конкретного сервиса:
-
-```bash
-docker compose logs -f backend
-docker compose logs -f web
-docker compose logs -f gateway
-docker compose logs -f tg_bot
-docker compose logs -f ngrok
-```
-
-Остановить и удалить контейнеры:
-
-```bash
-docker compose down
-```
-
-Остановить с удалением томов:
-
-```bash
-docker compose down -v
-```
-
----
-
-## Запуск только части сервисов
-
-Например, только backend + gateway + web:
-
-```bash
-docker compose up -d --build backend gateway web
-```
-
-Только backend + gateway:
-
-```bash
-docker compose up -d --build backend gateway
-```
-
----
-
-## Отдельные compose-файлы модулей
-
-При необходимости можно запускать модульные compose-файлы:
-
-- `backend/docker-compose.yml`
-- `backend/docker-compose.ngrok.yml`
-- `web/docker-compose.yml`
-- `tg_bot/docker-compose.yml`
-
-Они используют ту же сеть `project_net`, поэтому сервисы видят друг друга по именам контейнеров/сервисов.

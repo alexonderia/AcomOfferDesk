@@ -1,0 +1,16 @@
+services:
+  keycloak:
+    command:
+      - |
+        sh /opt/keycloak/bootstrap/prepare-theme.sh
+        exec /opt/keycloak/bin/kc.sh start --import-realm
+
+  # Production/test perimeter:
+  # keep gateway internal by default, terminate TLS on external reverse proxy.
+  gateway:
+    ports: []
+
+networks:
+  project_net:
+    name: project_net
+    external: true

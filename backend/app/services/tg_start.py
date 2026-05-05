@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.domain.exceptions import Conflict
-from app.core.tg_shortcodes import TgShortcodeCodec
 from app.models.orm_models import TgUser
 from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
-
-REGISTER_TTL_SECONDS = int(timedelta(hours=24).total_seconds())
-AUTH_LINK_TTL_SECONDS = int(timedelta(days=7).total_seconds())
+from app.services.tg_registration_links import build_keycloak_registration_link, create_tg_registration_token
 
 
 @dataclass(frozen=True)
@@ -44,20 +42,17 @@ class TgStartService:
         self._requests = requests
 
     async def handle_start(self, tg_id: int) -> TgStartResult:
-        tg_user = await self._tg_users.get_by_id(tg_id)
-        if tg_user is None:
-            tg_user = TgUser(id=tg_id, status="review")
-            await self._tg_users.add(tg_user)
+        tg_user = await self._tg_users.get_or_create(tg_id)
 
         linked_user = await self._users.get_by_tg_user_id(tg_id)
         if linked_user and linked_user.id_role == settings.contractor_role_id and linked_user.status == "active" and tg_user.status == "approved":
-            open_requests = await self._requests.list_open()
+            open_requests = await self._requests.list_open_for_contractor(contractor_user_id=linked_user.id)
             request_items = [
                 TgOpenRequestItem(
                     request_id=request.id,
                     description=request.description,
                     deadline_at=request.deadline_at,
-                    link=self._build_authorization_link(tg_id=tg_id),
+                    link=self._build_authorization_link(request_id=request.id),
                 )
                 for request in open_requests
             ]
@@ -95,23 +90,13 @@ class TgStartService:
         )
 
     def _build_registration_link(self, *, tg_id: int) -> str:
-        if not settings.tg_link_secret or not settings.public_backend_base_url:
+        if not settings.tg_link_secret or not (settings.web_base_url or settings.public_backend_base_url):
             raise Conflict("TG links are not configured")
-        payload = TgShortcodeCodec.build(
-            tg_id=tg_id,
-            purpose="tg_register",
-            ttl_seconds=REGISTER_TTL_SECONDS,
-        )
-        code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
-        return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/register?token={code}"
+        code = create_tg_registration_token(tg_id=tg_id)
+        return build_keycloak_registration_link(token=code)
 
-    def _build_authorization_link(self, *, tg_id: int) -> str:
-        if not settings.tg_link_secret or not settings.public_backend_base_url:
+    def _build_authorization_link(self, *, request_id: int) -> str:
+        if not settings.public_backend_base_url:
             raise Conflict("TG links are not configured")
-        payload = TgShortcodeCodec.build(
-            tg_id=tg_id,
-            purpose="tg_auth",
-            ttl_seconds=AUTH_LINK_TTL_SECONDS,
-        )
-        code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
-        return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/auth?token={code}"
+        next_path = quote(f"/requests/{request_id}/contractor", safe="/")
+        return f"{settings.public_backend_base_url.rstrip('/')}/login?next={next_path}"

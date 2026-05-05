@@ -1,0 +1,111 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - test
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          command_timeout: 20m
+          script: |
+            set -e
+
+            fail_order_db_prerequisite() {
+              echo "ORDER_DB_PREREQUISITE: $1" >&2
+              echo "See docs/order-database-vps.md (also: empty flyway/sql on VPS — sync flyway/sql from order_database main, then flyway migrate)." >&2
+              echo "Full reinstall (new volume): run install-order-database-vps.sh until INSTALL_SUCCESS." >&2
+              exit 1
+            }
+
+            require_order_db_sql() {
+              local sql="$1"
+              local expected="$2"
+              local actual
+              actual="$(cd "$ORDER_DB_DIR" && docker compose exec -T postgres psql -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -tAc "$sql" | tr -d '[:space:]')"
+              if [ "$actual" != "$expected" ]; then
+                fail_order_db_prerequisite "Unexpected SQL check result. Expected '$expected', got '${actual:-<empty>}' for: $sql"
+              fi
+            }
+
+            cd /opt/acome-offer-desk
+            git fetch upstream
+            git checkout test
+            git pull upstream test
+
+            ORDER_DB_DIR=/opt/order_database
+            APP_ENV_FILE=/opt/acome-offer-desk/backend/.env
+
+            if [ ! -f "$ORDER_DB_DIR/docker-compose.yml" ] || [ ! -f "$ORDER_DB_DIR/.env" ]; then
+              fail_order_db_prerequisite "order_database is not installed on VPS as documented."
+            fi
+
+            if ! docker network inspect project_net >/dev/null 2>&1; then
+              fail_order_db_prerequisite "Docker network project_net is missing."
+            fi
+
+            if [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' order-database-postgres 2>/dev/null || true)" != "healthy" ]; then
+              echo "=== order_database compose ps ==="
+              (cd "$ORDER_DB_DIR" && docker compose ps) || true
+              echo "=== order_database postgres logs (tail) ==="
+              (cd "$ORDER_DB_DIR" && docker compose logs --tail=120 postgres) || true
+              fail_order_db_prerequisite "order-database-postgres is not healthy."
+            fi
+
+            ORDER_DB_USER="$(sed -n 's/^POSTGRES_USER=//p' "$ORDER_DB_DIR/.env" | head -n 1)"
+            ORDER_DB_NAME="$(sed -n 's/^POSTGRES_DB=//p' "$ORDER_DB_DIR/.env" | head -n 1)"
+
+            if [ -z "$ORDER_DB_USER" ] || [ -z "$ORDER_DB_NAME" ]; then
+              fail_order_db_prerequisite "POSTGRES_USER or POSTGRES_DB is missing in $ORDER_DB_DIR/.env."
+            fi
+
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'flyway_schema_history';" "1"
+
+            # Пустой flyway/sql на диске давал только baseline без версионных миграций → нет user_auth_accounts и 500 на OAuth callback (см. docs/order-database-vps.md).
+            if [ ! -d "$ORDER_DB_DIR/flyway/sql" ]; then
+              fail_order_db_prerequisite "Missing directory $ORDER_DB_DIR/flyway/sql."
+            fi
+            migration_files="$(find "$ORDER_DB_DIR/flyway/sql" -maxdepth 1 -name 'V*.sql' 2>/dev/null | wc -l | tr -d '[:space:]')"
+            if [ "${migration_files:-0}" -eq 0 ]; then
+              fail_order_db_prerequisite "No V*.sql files under $ORDER_DB_DIR/flyway/sql — sync flyway/sql from order_database main, then flyway migrate."
+            fi
+
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_auth_accounts';" "1"
+
+            if [ ! -f "$APP_ENV_FILE" ] || ! grep -q '^DATABASE_URL=.*@order-database-postgres:5432/' "$APP_ENV_FILE"; then
+              fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
+            fi
+
+            docker compose down --remove-orphans || true
+            docker compose -f docker-compose.init.yml up keycloak_db_prepare
+            if ! docker compose up -d --build; then
+              echo "=== docker compose ps -a ==="
+              docker compose ps -a || true
+              echo "=== keycloak logs (tail) ==="
+              docker compose logs --tail=160 keycloak || true
+              echo "=== backend logs (tail) ==="
+              docker compose logs --tail=160 backend || true
+              exit 1
+            fi
+            if ! docker compose -f docker-compose.init.yml up keycloak_bootstrap; then
+              echo "=== keycloak bootstrap logs (tail) ==="
+              docker compose -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
+              echo "=== keycloak logs (tail) ==="
+              docker compose logs --tail=160 keycloak || true
+              exit 1
+            fi

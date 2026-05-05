@@ -2,7 +2,7 @@ services:
   ngrok:
     image: ngrok/ngrok:latest
     container_name: ngrok
-    command: ["start", "--config", "/etc/ngrok.yml", "public"]
+    command: ["start", "--config", "/etc/ngrok.yml", "--all"]
     env_file:
       - .env
     volumes:
@@ -14,4 +14,5 @@ services:
 
 networks:
   project_net:
+    external: true
     name: project_net

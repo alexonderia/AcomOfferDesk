@@ -9,9 +9,5 @@ class TgUserRegistrationService:
         self._tg_users = tg_users
 
     async def register(self, tg_id: int) -> TgUser:
-        existing = await self._tg_users.get_by_id(tg_id)
-        if existing:
-            return existing
-        tg_user = TgUser(id=tg_id, status="review")
-        await self._tg_users.add(tg_user)
-        return tg_user
+        # Current DB schema does not persist standalone tg_users rows.
+        return await self._tg_users.get_or_create(tg_id)

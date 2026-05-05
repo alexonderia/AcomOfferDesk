@@ -14,8 +14,11 @@ class AuthService:
         user = await self._users.get_by_id(login)
         if not user:
             raise NotFound("User not found")
-        if not await verify_password(password, user.password_hash):
+        password_hash = getattr(user, "password_hash", None)
+        if not password_hash:
+            raise Forbidden("Password is managed by the identity provider")
+        if not await verify_password(password, password_hash):
             raise Forbidden("Invalid credentials")
-        UserPolicy.can_login(user.status)
+        UserPolicy.ensure_can_login(user.status)
         token = await create_access_token(subject=user.id, role_id=user.id_role)
         return token, user.id_role

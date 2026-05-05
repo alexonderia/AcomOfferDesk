@@ -1,5 +1,15 @@
 # Telegram Bot (`/tg_bot`)
 
+## Граница ответственности документа
+
+Этот README описывает legacy Telegram-модуль.
+Единый источник правды по основным окружениям и запуску проекта:
+- `docs/environments.md`
+
+Статус модуля:
+- `tg_bot` — legacy и в основном root compose выключен по умолчанию.
+- `tg_bot/docker-compose.yml` — standalone-сценарий для отдельных задач/rollback, не основной путь запуска продукта.
+
 ## Назначение
 
 Бот на `aiogram` обрабатывает команды `/start` и `/info`, обращается в backend API и:
@@ -62,7 +72,7 @@ REQUEST_TIMEOUT_SECONDS=5
 docker network create project_net
 ```
 
-2. Поднять backend + gateway (в соседнем `/backend`).
+2. Поднять основной root-стек проекта (или минимум gateway+backend в совместимой сети).
 
 3. Поднять бота:
 
@@ -94,3 +104,9 @@ docker compose -f tg_bot/docker-compose.yml logs -f tg_bot
 - «Сервис временно недоступен. Попробуйте позже.»
 
 Это защищает UX от падений при временных проблемах backend.
+
+## Связанные документы
+
+- `docs/runtime-architecture.md`
+- `docs/auth-and-onboarding.md`
+- `docs/environments.md`

@@ -1,0 +1,11 @@
+services:
+  # Test perimeter helper:
+  # publish gateway only on loopback for edge nginx on the same VPS.
+  gateway:
+    ports:
+      - "127.0.0.1:8080:80"
+
+networks:
+  project_net:
+    name: project_net
+    external: true

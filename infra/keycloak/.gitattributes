@@ -1,0 +1,2 @@
+# POSIX sh: CRLF ломает разбор строки с set -e / set -u (симптом: set: - / invalid option)
+*.sh text eol=lf

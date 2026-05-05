@@ -11,6 +11,13 @@ from app.services.backend_client import BackendClientError, get_backend_client
 router = Router()
 
 
+def _is_access_blocked(*, tg_status: str | None, user_status: str | None) -> bool:
+    if tg_status == "disapproved":
+        return True
+    if user_status in {"inactive", "blacklist"}:
+        return True
+    return False
+
 def _format_deadline(deadline_at: str) -> str:
     normalized = deadline_at.replace("Z", "+00:00")
     try:
@@ -32,14 +39,32 @@ def _quick_actions_keyboard() -> ReplyKeyboardMarkup:
 
 @router.message(Command("info"))
 async def handle_info(message: Message) -> None:
+    if not message.from_user:
+        return
+
+    try:
+        client = get_backend_client()
+        result = await client.start(message.from_user.id)
+    except BackendClientError:
+        await message.answer("Сервис временно недоступен. Попробуйте позже.", protect_content=True)
+        return
+
+    if _is_access_blocked(tg_status=result.tg_status, user_status=result.user_status):
+        await message.answer(
+            "⛔ Доступ к Telegram-боту ограничен. Обратитесь к администратору.",
+            protect_content=True,
+        )
+        return
+
+
     await message.answer(
         "ℹ️ О сервисе\n"
         "Этот бот помогает контрагентам быстро перейти к регистрации и авторизации в веб-сервисе.\n\n"
         "Как это работает:\n"
-        "1. Нажмите /start — бот проверит ваш статус через backend.\n"
+        "1. Нажмите /start.\n"
         "2. Если вы новый пользователь, получите кнопку регистрации.\n"
         "3. После регистрации ваши данные переходят на проверку.\n"
-        "4. После активации бот покажет открытые заявки и ссылки для входа.",
+        "4. После активации доступа бот покажет открытые заявки и ссылки для входа.",
         reply_markup=_quick_actions_keyboard(),
         protect_content=True,
     )
@@ -55,6 +80,13 @@ async def handle_start(message: Message) -> None:
         result = await client.start(message.from_user.id)
     except BackendClientError:
         await message.answer("Сервис временно недоступен. Попробуйте позже.", protect_content=True)
+        return
+    
+    if _is_access_blocked(tg_status=result.tg_status, user_status=result.user_status):
+        await message.answer(
+            "⛔ Доступ к Telegram-боту ограничен. Обратитесь к администратору.",
+            protect_content=True,
+        )
         return
 
     if result.action == "open_requests":

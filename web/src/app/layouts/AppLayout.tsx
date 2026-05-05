@@ -1,219 +1,137 @@
-import { Box, Button, Stack, Tab, Tabs } from '@mui/material';
-import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Box, Stack, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { useMemo, useState } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
-import { hasAvailableAction } from '@shared/auth/availableActions';
-import { ProfileButton } from '@shared/components/ProfileButton';
-
-const navLinkStyles = {
-  textDecoration: 'none'
-};
-
-type NavItem = {
-  label: string;
-  to?: string;
-  disabled?: boolean;
-};
-
-const superadminItems: NavItem[] = [
-  { label: 'Пользователи', to: '/admin' },
-  { label: 'Заявки', to: '/requests' },
-  { label: 'Офферы', disabled: true },
-  { label: 'Роли', disabled: true }
-];
-
+import { AppHeader, MobileBottomNavigation, useHeaderConfig } from '@features/header';
+import { AppFooter } from '@shared/components/AppFooter';
+import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
+import { MOBILE_BOTTOM_NAV_CONTENT_PADDING, useIsMobileViewport } from '@shared/lib/responsive';
 
 export const AppLayout = () => {
-  const { session, logout } = useAuth();
-  const location = useLocation();
+  const theme = useTheme();
+  const isCompactViewport = useMediaQuery(theme.breakpoints.down('lg'));
+  const isMobileViewport = useIsMobileViewport();
   const navigate = useNavigate();
-
-  const [searchParams, setSearchParams] = useSearchParams();
-  const contractorTabParam = searchParams.get('tab');
-  const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
-  const roleId = session?.roleId ?? null;
-  const isSuperadmin = roleId === 1;
-  const isRequestsListPage = location.pathname === '/requests';
-  const isRequestDetailsPage = /^\/requests\/\d+$/.test(location.pathname);
-  const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(location.pathname);
-  const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
-  const isContractor = roleId === 5;
-  const isLeadEconomist = roleId === 3;
-  const canLoadOpenRequests = hasAvailableAction(session, '/api/v1/requests/open', 'GET');
-  const canLoadOfferedRequests = hasAvailableAction(session, '/api/v1/requests/offered', 'GET');
-  const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
-  const canOpenUsersPage = hasAvailableAction(session, '/api/v1/users', 'GET');
-  const canRegisterUser = hasAvailableAction(session, '/api/v1/users/register', 'POST');
-  const isLeadRequestsTab = isLeadEconomist && location.pathname.startsWith('/requests');
-  const isLeadEconomistsTab = isLeadEconomist && location.pathname.startsWith('/admin');
-  const canUseLeadTabs = isLeadEconomist && canOpenUsersPage && (isLeadRequestsTab || isLeadEconomistsTab);
-
-  const sidebarButtons = (
-    <Stack spacing={1.8}>
-      {superadminItems.map((item) => {
-        if (!item.to) {
-          return (
-            <Button key={item.label} variant="outlined" disabled={item.disabled} sx={{ height: 44 }}>
-              {item.label}
-            </Button>
-          );
-        }
-        return (
-          <NavLink key={item.to} to={item.to} style={navLinkStyles}>
-            {({ isActive }) => (
-              <Button
-                variant="outlined"
-                sx={(theme) => ({
-                  height: 44,
-                  width: '100%',
-                  backgroundColor: isActive ? theme.palette.primary.light : theme.palette.background.paper
-                })}
-              >
-                {item.label}
-              </Button>
-            )}
-          </NavLink>
-        );
-      })}
-    </Stack>
+  const { logout } = useAuth();
+  const headerConfig = useHeaderConfig();
+  const isSidebarLayout = headerConfig.mode !== 'hidden';
+  const isHiddenHeader = headerConfig.mode === 'hidden';
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const isSidebarInIconMode = !isMobileViewport && (isCompactViewport || isSidebarCollapsed);
+  const breadcrumbItems = useMemo(
+    () =>
+      (headerConfig.breadcrumbs ?? []).map((item) => ({
+        key: item.key,
+        label: item.label,
+        onClick: item.to ? () => navigate(item.to!) : undefined,
+      })),
+    [headerConfig.breadcrumbs, navigate]
   );
 
-  if (isSuperadmin) {
+  if (isSidebarLayout) {
+    if (isMobileViewport) {
+      return (
+        <Stack sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
+          <Stack
+            component="section"
+            spacing={1.25}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              backgroundColor: 'background.default',
+              px: 1,
+              pt: 1.25,
+              pb: MOBILE_BOTTOM_NAV_CONTENT_PADDING,
+              overflowX: 'hidden',
+            }}
+          >
+            {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
+            <Box component="main" sx={{ minWidth: 0, pb: 0.5, flex: 1 }}>
+              <Outlet />
+            </Box>
+
+            <AppFooter compact />
+          </Stack>
+
+          <MobileBottomNavigation config={headerConfig} onLogout={logout} />
+        </Stack>
+      );
+    }
+
     return (
-      <Box
+      <Stack
         sx={{
-          minHeight: { xs: 420, lg: '100%' },
-          height: { lg: '100%' },
+          minHeight: '100vh',
+          height: '100vh',
           backgroundColor: 'background.default',
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', lg: '280px minmax(0, 1fr)' },
-          gap: { xs: 2, lg: 2.5 },
-          p: { xs: 1.5, md: 2 }
+          overflow: 'hidden'
         }}
       >
-        <Stack
-          component="aside"
-          justifyContent="space-between"
-          sx={(theme) => ({
-            borderRadius: 3,
-            backgroundColor: theme.palette.background.paper,
-            p: 2,
-            minHeight: { xs: 'auto', lg: 'calc(100vh - 32px)' }
-          })}
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: '100vh',
+            display: 'grid',
+            gridTemplateColumns: isSidebarInIconMode ? '88px minmax(0, 1fr)' : '248px minmax(0, 1fr)',
+            gridTemplateRows: '1fr',
+            alignItems: 'stretch',
+            gap: 0,
+            p: 0,
+            transition: 'grid-template-columns 0.24s ease',
+          }}
         >
-          {sidebarButtons}
+          <AppHeader
+            config={headerConfig}
+            onLogout={logout}
+            sidebarCollapsed={isSidebarInIconMode}
+            onToggleSidebarCollapse={
+              isCompactViewport ? undefined : () => setIsSidebarCollapsed((currentState) => !currentState)
+            }
+          />
+          <Stack
+            component="section"
+            spacing={2}
+            sx={{
+              minWidth: 0,
+              minHeight: '100vh',
+              backgroundColor: 'background.default',
+              px: { xs: 1.5, md: 2 },
+              py: { xs: 1.5, md: 2 },
+              overflowY: 'auto',
+              position: 'relative',
+              isolation: ' isolate',
+            }}
+          >
+            {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
+            <Box component="main" sx={{ minWidth: 0, pb: 0.5, flex: 1, position: 'relative', zIndex: 1 }}>
+              <Outlet />
+            </Box>
 
-          <Stack spacing={1.2}>
-            <Button variant="outlined" onClick={logout} sx={{ height: 44 }}>
-              Выйти
-            </Button>
+            <AppFooter />
           </Stack>
-        </Stack>
-        <Stack component="section" spacing={2} sx={{ minWidth: 0 }}>
-          {isRequestsListPage && canCreateRequest ? (
-            <Stack direction="row" justifyContent="flex-end">
-              <Button
-                variant="contained"
-                sx={{ px: 3, boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
-                onClick={() => navigate('/requests/create', { state: { backgroundLocation: location } })}
-              >
-                Создать заявку
-              </Button>
-            </Stack>
-          ) : null}
-
-          <Box component="main">
-            <Outlet />
-          </Box>
-        </Stack>
-      </Box>
+        </Box>
+      </Stack>
     );
   }
 
-
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        backgroundColor: 'background.default',
-        p: isOfferWorkspacePage ? 0 : { xs: 1.5, md: 2.5 }
-      }}
-    >
-      {isOfferWorkspacePage ? null : (
-        <Stack component="header" direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-          {isRequestDetailsPage ? (
-            <Button
-              variant="outlined"
-              sx={{ px: 4, borderColor: 'primary.main', color: 'primary.main', whiteSpace: 'nowrap' }}
-              onClick={() => navigate('/requests')}
-            >
-              К списку заявок
-            </Button>
-          ) : canUseContractorTabs ? (
-            <Tabs
-              value={contractorTab}
-              onChange={(_, value: 'my' | 'open') => {
-                setSearchParams((prev) => {
-                  const next = new URLSearchParams(prev);
-                  next.set('tab', value);
-                  return next;
-                }, { replace: true });
-              }}
-            >
-              <Tab value="my" label="Мои заявки" />
-              <Tab value="open" label="Актуальные заявки" />
-            </Tabs>
-          ) : canUseLeadTabs ? (
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Tabs
-                value={location.pathname === '/admin' ? 'economists' : 'requests'}
-                onChange={(_, value: 'economists' | 'requests') => {
-                  navigate(value === 'economists' ? '/admin' : '/requests');
-                }}
-              >
-                <Tab value="requests" label="Заявки" />
-                <Tab value="economists" label="Экономисты" />
-              </Tabs>
-              {(isLeadRequestsTab ? canCreateRequest : canRegisterUser) ? (
-                <Button
-                  variant="outlined"
-                  sx={{ px: 3, borderRadius: 999, textTransform: 'none', whiteSpace: 'nowrap' }}
-                  onClick={() => {
-                    if (isLeadRequestsTab) {
-                      navigate('/requests/create', { state: { backgroundLocation: location } });
-                      return;
-                    }
-                    navigate('/admin?create=1');
-                  }}
-                >
-                  {isLeadRequestsTab ? 'Создать заявку' : 'Добавить экономиста'}
-                </Button>
-              ) : null}
-            </Stack>
-          ) : isRequestsListPage && canCreateRequest ? (
-            <Button
-              variant="contained"
-              sx={{ px: 3, boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
-              onClick={() => {
-                navigate('/requests/create', { state: { backgroundLocation: location } });
-              }}
-            >
-              {isLeadEconomist ? 'Добавить пользователя' : 'Создать заявку'}
-            </Button>
-          ) : (
-            <Box />
-          )}
-          <Stack direction="row" spacing={3} alignItems="center">
-            <ProfileButton />
-            <Button variant="outlined" onClick={logout}>
-              Выйти
-            </Button>
-          </Stack>
-        </Stack>
-      )}
+    <Stack sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
+      <Box
+        sx={{
+          flex: 1,
+          p: isHiddenHeader ? 0 : { xs: 1.5, md: 2.5 }
+        }}
+      >
+        {isHiddenHeader ? null : <AppHeader config={headerConfig} onLogout={logout} />}
+        {!isHiddenHeader && breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
 
-      <Box component="main">
-        <Outlet />
+        <Box component="main">
+          <Outlet />
+        </Box>
       </Box>
-    </Box>
+
+      <AppFooter />
+    </Stack>
   );
 };

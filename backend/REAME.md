@@ -1,130 +1,350 @@
 # Backend (`/backend`)
 
-## Что поднимается
+## Граница ответственности документа
 
-В backend-части есть два compose-файла:
+Этот README описывает устройство backend-модуля.
+Единый источник правды по запуску окружений и compose-слоям:
+- `docs/environments.md`
 
-- `docker-compose.yml` — поднимает:
-  - `backend` (FastAPI приложение),
-  - `gateway` (Nginx reverse-proxy).
-- `docker-compose.ngrok.yml` — поднимает отдельный контейнер `ngrok`, который публикует наружу `gateway:80`.
+Статус локальных compose-файлов в `/backend`:
+- `backend/docker-compose.yml` и `backend/docker-compose.ngrok.yml` — legacy standalone-сценарии, не основной путь запуска проекта.
 
-Оба compose используют внешнюю docker-сеть `project_net`.
+`backend` - основной API и бизнес-слой AcomOfferDesk. Именно здесь сосредоточены HTTP endpoints, правила доступа, orchestration бизнес-сценариев, работа с файлами, интеграция с Keycloak, отправка событий и realtime-логика чата.
 
----
+## Роль модуля в системе
 
-## Маршрутизация запросов
+Backend отвечает за:
 
-### 1) Входной слой: Nginx (`gateway`)
+- аутентификацию и синхронизацию identity;
+- управление пользователями, заявками и офферами;
+- вычисление разрешенных действий для UI;
+- работу с файлами и хранилищем;
+- генерацию ссылок login/registration flow;
+- публикацию уведомлений;
+- realtime-чат в offer workspace;
+- ряд фоновых внутренних задач runtime.
 
-`gateway` слушает `80` внутри контейнера и пробрасывается локально как `8080:80`.
+## Что важно знать в первую очередь
 
-Правила из `nginx.conf`:
+- frontend не должен сам решать, какие действия доступны пользователю; backend возвращает `actions` и `permissions`;
+- вход в web-интерфейс построен через Keycloak OIDC flow;
+- локальная рабочая БД находится в отдельном репозитории `order_database`;
+- файловые объекты живут в `MinIO`, но доступ к ним контролирует backend;
+- логика доступа строится на сочетании ролей, статусов, ownership и permission codes.
 
-- `location /api/` → проксируется в `http://backend:8000/api/`.
-  - Это весь backend API (`/api/v1/...`).
-- `location /` → проксируется в `http://web:80/`.
-  - Это фронтенд (SPA), если в сети `project_net` есть контейнер `web`.
+## Стек
 
-Итого:
-- API идёт через Nginx на backend;
-- всё остальное (корень `/`, статика/роуты фронта) идёт на web.
+- FastAPI
+- SQLAlchemy 2
+- Pydantic / pydantic-settings
+- aio-pika
+- MinIO SDK
+- Keycloak OIDC + Admin API integration
 
-### 2) Внутренний слой: FastAPI (`backend`)
+## Архитектурная схема backend
 
-В приложении API подключен с префиксом `/api/v1`.
+Основной поток внутри модуля:
 
-Примеры конечных URL через gateway:
-- `http://localhost:8080/api/v1/auth/login`
-- `http://localhost:8080/api/v1/users`
+`API -> Service -> Repository -> DB / Infrastructure`
 
----
+Дополнительно участвуют:
 
-## Для чего нужен ngrok
+- `domain` для правил доступа и исключений;
+- `core` для конфигурации, токенов и unit of work;
+- `realtime` для websocket/chat runtime.
 
-`ngrok` нужен, чтобы дать **публичный URL** во внешний интернет для локального docker-стека.
-
-В текущей конфигурации:
-- `ngrok` поднимает туннель `public`;
-- туннель направлен на `gateway:80`;
-- значит снаружи доступны и фронт, и API через один публичный домен ngrok (точно так же, как локально через gateway).
-
-Это удобно для:
-- Telegram-бота и внешних клиентов,
-- демонстраций,
-- тестов, где нужен публичный доступ к локальному окружению.
-
----
-
-## Как это работает вместе (схема)
+## Структура `app/`
 
 ```text
-Интернет / браузер / tg_bot
-          |
-          v
-   ngrok public URL  (опционально)
-          |
-          v
-      gateway:80 (nginx)
-       |                 \
-       | /api/*           \ /
-       v                   v
- backend:8000           web:80
- (FastAPI)             (frontend)
+app/
+  api/v1/            REST и WS endpoints
+  services/          бизнес-слой
+  repositories/      доступ к БД
+  domain/            policies, permissions, exceptions, auth context
+  schemas/           pydantic-контракты API
+  infrastructure/    DB, email, S3, publisher
+  realtime/          runtime WebSocket-чата
+  core/              конфиг, токены, cookies, UoW, security
 ```
 
-Если ngrok не запущен, тот же маршрут работает локально:
+## Как ориентироваться по коду
 
-`клиент -> localhost:8080 -> gateway -> backend/web`
+### `api/v1/`
 
----
+Входная точка HTTP API.
 
-## Файлы и их роль
+Что здесь искать:
 
-- `docker-compose.yml`
-  - backend + gateway, локальная точка входа `localhost:8080`.
-- `docker-compose.ngrok.yml`
-  - отдельный сервис ngrok, который публикует gateway наружу.
-- `nginx.conf`
-  - правила reverse proxy между `/api/` и фронтом.
-- `ngrok.yml`
-  - описание туннеля `public` на `gateway:80`.
+- endpoint;
+- request/response wiring;
+- auth dependencies;
+- вызов нужного сервиса;
+- сборку response со `links`, `permissions` и `actions`.
 
----
+Ключевые зоны:
+
+- `api/v1/auth.py`
+- `api/v1/users.py`
+- `api/v1/requests.py`
+- `api/v1/offers.py`
+- `api/v1/dashboard.py`
+- `api/v1/ws.py`
+
+### `services/`
+
+Главный слой бизнес-логики.
+
+Ищите здесь:
+
+- правила создания и изменения сущностей;
+- orchestration между repository и внешними сервисами;
+- auth/session flows;
+- file handling;
+- email notifications;
+- identity sync;
+- чат и связанные сценарии.
+
+Особенно важные файлы:
+
+- `services/identity_sync.py`
+- `services/keycloak_oidc.py`
+- `services/users.py`
+- `services/requests.py`
+- `services/offers.py`
+- `services/files.py`
+- `services/chat_realtime.py`
+
+### `repositories/`
+
+Слой чтения и записи в БД.
+
+Ищите здесь:
+
+- ORM-запросы;
+- выборки для UI;
+- связи между пользователями, заявками, офферами, сообщениями и файлами.
+
+### `domain/`
+
+Один из самых важных слоев проекта.
+
+Содержит:
+
+- `policies.py`
+- `permissions.py`
+- `authorization.py`
+- `exceptions.py`
+- `auth_context.py`
+
+Если меняется доступ, права, видимость данных или условия выполнения действий, почти всегда нужно менять именно этот слой и связанный с ним `api/action_flags.py`.
+
+### `api/action_flags.py`
+
+Отдельная важная зона backend.
+
+Здесь вычисляются разрешенные действия для:
+
+- заявок;
+- офферов;
+- чата;
+- пользователей.
+
+Это backend-driven контракт для UI, который сильно влияет на то, какие кнопки и действия frontend показывает пользователю.
+
+### `core/`
+
+Базовые runtime-механизмы:
+
+- конфиг;
+- session tokens;
+- auth cookies;
+- OIDC state tokens;
+- invite tokens;
+- unit of work;
+- security helpers.
+
+### `realtime/`
+
+Зона websocket/chat runtime.
+
+Здесь реализованы:
+
+- контракты событий;
+- manager подключений;
+- runtime публикации;
+- координация realtime-потока.
+
+## Внешние зависимости
+
+- PostgreSQL из репозитория `order_database`
+- RabbitMQ
+- MinIO
+- Keycloak
+
+Все они подключаются в корневом `docker-compose.yml`.
+
+## Как backend встроен в runtime
+
+Через `gateway` backend доступен по пути:
+
+- `/api/*` -> `backend:8000`
+
+А сам `gateway` также проксирует:
+
+- `/` -> `web`
+- `/iam/*` -> `keycloak`
+
+Практически это означает, что frontend работает через единый host и единый внешний вход.
+
+## Ключевые потоки внутри backend
+
+### Auth flow
+
+Основные точки:
+
+- `/api/v1/auth/oidc/login`
+- `/api/v1/auth/oidc/register`
+- `/api/v1/auth/callback`
+- `/api/v1/auth/refresh`
+- `/api/v1/auth/logout`
+
+Что происходит:
+
+1. Backend инициирует OIDC flow.
+2. Обрабатывает callback.
+3. Обменивает `code` на токены.
+4. Синхронизирует локального пользователя через `IdentitySyncService`.
+5. Отдает session context для SPA.
+
+### Поток заявок
+
+Ключевая зона:
+
+- `api/v1/requests.py`
+- `services/requests.py`
+- `repositories/requests.py`
+
+Сюда входят:
+
+- создание заявки;
+- изменение заявки;
+- вложения;
+- contractor/open/offered представления;
+- email notifications;
+- deleted alerts.
+
+### Поток офферов и чата
+
+Ключевая зона:
+
+- `api/v1/offers.py`
+- `services/offers.py`
+- `services/chat_realtime.py`
+- `realtime/*`
+
+Сюда входят:
+
+- создание оффера;
+- manual offer flow;
+- workspace оффера;
+- файлы оффера;
+- сообщения;
+- read/received статусы;
+- realtime-публикация событий.
+
+### Поток пользователей
+
+Ключевая зона:
+
+- `api/v1/users.py`
+- `services/users.py`
+- `repositories/users.py`
+
+Сюда входят:
+
+- список пользователей;
+- профиль текущего пользователя;
+- subordinate profile;
+- manual contractor flow;
+- смена статуса;
+- смена роли;
+- смена менеджера;
+- unavailability periods.
 
 ## Запуск
 
-### 1) Подготовить внешнюю сеть (один раз)
+Рекомендуемый путь — запуск в составе корневого стека.
+
+Dev:
 
 ```bash
-docker network create project_net
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-### 2) Поднять backend + gateway
+Production-like локально:
 
 ```bash
-docker compose -f backend/docker-compose.yml up -d --build
+docker compose --env-file .env.prod-like.local -f docker-compose.yml -f docker-compose.prod-like.yml up -d --build
 ```
 
-После запуска:
-- локальный вход: `http://localhost:8080`
-- API: `http://localhost:8080/api/v1/...`
+API будет доступен через:
 
-### 3) Поднять ngrok (если нужен публичный доступ)
+- `http://localhost:8080/api/v1/...`
 
-```bash
-docker compose -f backend/docker-compose.ngrok.yml up -d
-```
+## Конфигурация
 
-Проверить туннель можно:
-- в логах контейнера `ngrok`,
-- через UI ngrok: `http://localhost:4040`.
+Основной runtime/env-contract задается корневыми env-файлами (`.env.dev`, `.env.prod-like.local`, `.env.test`, `.env.prod`) и передается в сервисы через root compose.
 
----
+`backend/.env` — legacy-артефакт и не является источником правды для основного сценария запуска.
 
-## Замечания по окружению
+Ключевая точка входа в коде:
 
-- `backend` читает переменные из `backend/.env`.
-- `ngrok` также читает `.env`, а конфиг туннеля берёт из `backend/ngrok.yml`.
-- В `ngrok.yml` должен быть корректный `authtoken`.
-- В `docker-compose.yml` gateway ожидает наличие сервиса `web` в сети `project_net`; если фронтенд не запущен, роуты не из `/api/` будут недоступны.
+- `app/core/config.py`
+
+## На что смотреть при изменениях
+
+### Если меняется auth
+
+Смотрите:
+
+- `api/v1/auth.py`
+- `api/dependencies.py`
+- `services/keycloak_oidc.py`
+- `services/identity_sync.py`
+- `core/auth_cookies.py`
+- `core/oidc_state_tokens.py`
+
+### Если меняются права доступа
+
+Смотрите:
+
+- `domain/policies.py`
+- `domain/permissions.py`
+- `domain/authorization.py`
+- `api/action_flags.py`
+
+### Если меняются файлы
+
+Смотрите:
+
+- `services/files.py`
+- `infrastructure/minio_client.py`
+- `repositories/files.py`
+- соответствующие endpoints в `requests.py` и `offers.py`
+
+### Если меняются уведомления
+
+Смотрите:
+
+- `services/email_notifications.py`
+- `services/contractor_email_notifications.py`
+- `infrastructure/notification_publisher.py`
+- `notifications_worker/`
+
+## Связанные документы
+
+- корневой обзор: `README.md`
+- общая архитектура: `docs/runtime-architecture.md`
+- навигация по проекту: `docs/developer-guide.md`
+- аутентификация и онбординг: `docs/auth-and-onboarding.md`
+- окружения и perimeter: `docs/environments.md`

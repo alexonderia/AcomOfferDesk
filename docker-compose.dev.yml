@@ -1,0 +1,65 @@
+services:
+  keycloak:
+    command:
+      - |
+        sh /opt/keycloak/bootstrap/prepare-theme.sh
+        exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start-dev}" --import-realm
+
+  gateway:
+    ports:
+      - "8080:80"
+
+  rabbitmq:
+    ports:
+      - "15672:15672"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    command: ["start", "--config", "/etc/ngrok.yml", "--all"]
+    env_file:
+      - ${APP_RUNTIME_ENV_FILE:-./.env}
+    volumes:
+      - ./backend/ngrok.yml:/etc/ngrok.yml:ro
+    ports:
+      - "4040:4040"
+    profiles:
+      - ngrok
+    depends_on:
+      - gateway
+      - backend
+      - minio
+    networks:
+      - project_net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://gateway:80"]
+    profiles:
+      - tunnel
+    depends_on:
+      - gateway
+    networks:
+      - project_net
+
+  localtunnel:
+    image: node:20-alpine
+    container_name: localtunnel
+    command: ["sh", "-c", "npx -y localtunnel --port 80 --local-host gateway 2>&1 | tee /dev/stderr"]
+    profiles:
+      - tunnel
+    depends_on:
+      - gateway
+    networks:
+      - project_net
+
+networks:
+  project_net:
+    name: project_net
+    external: true

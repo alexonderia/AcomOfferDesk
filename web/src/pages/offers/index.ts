@@ -1,0 +1,1 @@
+export { OfferWorkspacePage } from './OfferWorkspacePage';

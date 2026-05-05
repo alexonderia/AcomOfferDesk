@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 import anyio
-from jose import jwt
 from passlib.context import CryptContext
 
-from app.core.config import settings
+from app.core.session_tokens import create_access_token as create_session_access_token
+from app.core.session_tokens import decode_access_token as decode_session_access_token
 
 _password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -20,14 +18,17 @@ async def verify_password(password: str, password_hash: str) -> bool:
 
 
 async def create_access_token(subject: str, role_id: int) -> str:
-    expire_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_exp_minutes)
-    payload = {
-        "sub": subject,
-        "role_id": role_id,
-        "exp": expire_at,
-    }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    _ = role_id
+    token, _ = await create_session_access_token(user_id=subject)
+    return token
 
 
 async def decode_access_token(token: str) -> dict[str, str | int]:
-    return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    claims = await decode_session_access_token(token)
+    return {
+        "sub": claims.subject,
+        "type": "access",
+        "scope": "session_access",
+        "iat": claims.issued_at,
+        "exp": claims.expires_at,
+    }

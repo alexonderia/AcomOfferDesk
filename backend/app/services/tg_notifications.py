@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-import urllib.parse
-import urllib.request
 from collections.abc import Iterable
 from datetime import datetime
+from urllib.parse import quote, urlparse
 
 from app.core.config import settings
-from app.core.tg_shortcodes import TgShortcodeCodec
+from app.infrastructure.notification_publisher import publish_notification
+from shared.broker import RK_TG
+
+_INVALID_TELEGRAM_BUTTON_HOSTS = {
+    "",
+    "0.0.0.0",
+    "127.0.0.1",
+    "::1",
+    "localhost",
+    "backend",
+    "gateway",
+    "keycloak",
+    "minio",
+    "rabbitmq",
+    "web",
+}
 
 async def notify_expired_link(tg_id: int) -> None:
     await _notify(
@@ -31,8 +43,14 @@ async def notify_access_opened(tg_id: int) -> None:
         text="Доступ открыт. Теперь вы можете войти в веб-приложение.",
     )
 
+async def notify_access_closed(tg_id: int) -> None:
+    await _notify(
+        tg_id=tg_id,
+        text="⛔ Доступ к Telegram-боту закрыт.",
+    )
+
 async def notify_new_message(*, tg_id: int, request_id: int) -> None:
-    link =  _build_web_service_link(tg_id=tg_id)
+    link = _build_web_service_link(tg_id=tg_id)
     await _notify(
         tg_id=tg_id,
         text=f"💬 Новое сообщение по заявке №{request_id}",
@@ -51,7 +69,7 @@ async def notify_new_request(
     deadline_text = deadline_at.strftime("%d.%m.%Y, %H:%M")
     tasks = []
     for tg_id in tg_ids:
-        link =  _build_web_service_link(tg_id=tg_id)
+        link = _build_web_service_link(tg_id=tg_id)
         text = (
             f"📄 Новая заявка №{request_id}\n\n"
             f"📝 Описание: {description_text}\n"
@@ -87,32 +105,44 @@ async def notify_offer_status_finalized(*, tg_id: int) -> None:
     )
 
 def _build_authorization_link(*, tg_id: int) -> str:
-    if not settings.tg_link_secret or not settings.public_backend_base_url:
-        return "Ссылка временно недоступна"
-    payload = TgShortcodeCodec.build(
-        tg_id=tg_id,
-        purpose="tg_auth",
-        ttl_seconds=settings.tg_request_ttl_seconds,
-    )
-    code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
-    return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/auth?token={code}"
+    _ = tg_id
+    public_base_url = _resolve_telegram_public_base_url()
+    if public_base_url is None:
+        return ""
+    next_path = quote("/", safe="/")
+    return f"{public_base_url}/login?next={next_path}"
 
 
 def _build_web_service_link(*, tg_id: int) -> str:
-    auth_link = _build_authorization_link(tg_id=tg_id)
-    if not settings.web_base_url:
-        return auth_link
+    return _build_authorization_link(tg_id=tg_id)
 
-    if not settings.tg_link_secret:
-        return auth_link
 
-    payload = TgShortcodeCodec.build(
-        tg_id=tg_id,
-        purpose="tg_auth",
-        ttl_seconds=settings.tg_request_ttl_seconds,
-    )
-    code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
-    return f"{settings.web_base_url.rstrip('/')}/auth/login?token={code}"
+def _resolve_telegram_public_base_url() -> str | None:
+    for candidate in (settings.public_backend_base_url, settings.web_base_url):
+        normalized = _normalize_telegram_button_base_url(candidate)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _normalize_telegram_button_base_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    candidate = value.strip().rstrip("/")
+    if not candidate:
+        return None
+
+    parsed = urlparse(candidate)
+    hostname = (parsed.hostname or "").strip().lower()
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    if hostname in _INVALID_TELEGRAM_BUTTON_HOSTS:
+        return None
+    if hostname.endswith(".local"):
+        return None
+
+    return candidate
 
 async def _notify(
     *,
@@ -121,30 +151,17 @@ async def _notify(
     button_text: str | None = None,
     button_url: str | None = None,
 ) -> None:
-    token = os.getenv("BOT_TOKEN")
-    if not token:
+    # LEGACY: Telegram transport is disabled in production by default.
+    # Keep the publisher intact so the flow can be restored via LEGACY_TELEGRAM_ENABLED=true.
+    if not settings.telegram_legacy_enabled:
         return
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload_data: dict[str, str | int] = {"chat_id": tg_id, "text": text}
-    if button_text and button_url:
-        payload_data["reply_markup"] = json.dumps(
-            {"inline_keyboard": [[{"text": button_text, "url": button_url}]]},
-            ensure_ascii=False,
-        )
-
-    payload = urllib.parse.urlencode(payload_data)
-    request = urllib.request.Request(
-        url=url,
-        data=payload.encode("utf-8"),
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
+    await publish_notification(
+        RK_TG,
+        {
+            "chat_id": tg_id,
+            "text": text,
+            "button_text": button_text,
+            "button_url": button_url,
+        },
     )
-    try:
-        await asyncio.to_thread(_send_request, request)
-    except Exception:
-        return
-
-def _send_request(request: urllib.request.Request) -> None:
-    with urllib.request.urlopen(request, timeout=5):
-        return None

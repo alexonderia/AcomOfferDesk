@@ -1,0 +1,15 @@
+services:
+  keycloak:
+    command:
+      - |
+        sh /opt/keycloak/bootstrap/prepare-theme.sh
+        exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start}" --import-realm
+
+  gateway:
+    ports:
+      - "8080:80"
+
+networks:
+  project_net:
+    name: project_net
+    external: true

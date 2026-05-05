@@ -21,9 +21,5 @@ export const getDefaultPathByRole = (roleId: number, permissions: string[] = [])
     return '/pm-dashboard';
   }
 
-  if (roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN) {
-    return '/admin';
-  }
-
   return '/requests';
 };

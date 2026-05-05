@@ -1,4 +1,4 @@
-﻿import type { HeaderConfig, HeaderMobileNavItem, HeaderSidebarItem } from './types';
+import type { HeaderConfig, HeaderMobileNavItem } from './types';
 import { ROLE } from '@shared/constants/roles';
 
 type BuildHeaderConfigArgs = {
@@ -10,6 +10,7 @@ type BuildHeaderConfigArgs = {
   canLoadOfferedRequests: boolean;
   canOpenUsersPage: boolean;
   canCreateNormativeFile: boolean;
+  canViewFeedback: boolean;
   canViewDashboardProcess: boolean;
   canViewDashboardSavings: boolean;
   canViewDashboardPlans: boolean;
@@ -27,15 +28,6 @@ type BuildHeaderConfigArgs = {
   onSetContractorTab: (value: 'my' | 'open') => void;
   onSetAdminUsersTab: (value: 'contractors' | 'economists' | 'admins') => void;
 };
-
-const superadminItems: HeaderSidebarItem[] = [
-  { key: 'users', label: 'Пользователи', to: '/admin' },
-  { key: 'requests', label: 'Заявки', to: '/requests' },
-  { key: 'offers', label: 'КП', disabled: true },
-  { key: 'roles', label: 'Роли', disabled: true },
-  { key: 'contact', label: 'Обратная связь', to: '/feedback', isBottomItem: true },
-  { key: 'logout', label: 'Выйти', isBottomItem: true },
-];
 
 type MoreMenuOptions = {
   showProfile?: boolean;
@@ -77,17 +69,48 @@ const buildMoreNavItem = ({
   };
 };
 
-const buildSuperadminMobileNavItems = (showNormative: boolean): HeaderMobileNavItem[] => [
-  { key: 'users', label: 'Пользователи', to: '/admin' },
-  { key: 'requests', label: 'Заявки', to: '/requests' },
-  buildMoreNavItem({
-    showProfile: false,
-    showNormative,
-    showRoleGuide: true,
-    showFeedback: true,
-    showLogout: true,
-  }),
-];
+const buildSuperadminMobileNavItems = (
+  showNormative: boolean,
+  canOpenUsersPage: boolean,
+  canViewFeedback: boolean,
+  canViewDashboardProcess: boolean,
+  canViewDashboardSavings: boolean,
+  canViewDashboardPlans: boolean
+): HeaderMobileNavItem[] => {
+  const items: HeaderMobileNavItem[] = [];
+  const dashboardChildren: HeaderMobileNavItem[] = [];
+  if (canViewDashboardProcess) {
+    dashboardChildren.push({ key: 'dashboard-process', label: 'Процесс работы', to: '/pm-dashboard' });
+  }
+  if (canViewDashboardSavings) {
+    dashboardChildren.push({ key: 'dashboard-savings', label: 'Экономия', to: '/pm-dashboard/savings' });
+  }
+  if (canViewDashboardPlans) {
+    dashboardChildren.push({ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' });
+  }
+  if (dashboardChildren.length > 0) {
+    items.push({
+      key: 'dashboard',
+      label: 'Дашборд',
+      to: dashboardChildren[0].to,
+      children: dashboardChildren,
+    });
+  }
+  if (canOpenUsersPage) {
+    items.push({ key: 'users', label: 'Пользователи', to: '/admin' });
+  }
+  items.push({ key: 'requests', label: 'Заявки', to: '/requests' });
+  items.push(
+    buildMoreNavItem({
+      showProfile: false,
+      showNormative,
+      showRoleGuide: true,
+      showFeedback: canViewFeedback,
+      showLogout: true,
+    })
+  );
+  return items;
+};
 
 const buildProjectManagerMobileNavItems = (
   showNormative: boolean,
@@ -219,6 +242,7 @@ const resolveDefaultMobileNavItems = ({
   isAdmin,
   canOpenUsersPage,
   canCreateNormativeFile,
+  canViewFeedback,
   canViewDashboardProcess,
   canViewDashboardSavings,
   canViewDashboardPlans,
@@ -231,12 +255,20 @@ const resolveDefaultMobileNavItems = ({
   isAdmin: boolean;
   canOpenUsersPage: boolean;
   canCreateNormativeFile: boolean;
+  canViewFeedback: boolean;
   canViewDashboardProcess: boolean;
   canViewDashboardSavings: boolean;
   canViewDashboardPlans: boolean;
 }): HeaderMobileNavItem[] => {
   if (isSuperadmin) {
-    return buildSuperadminMobileNavItems(canCreateNormativeFile);
+    return buildSuperadminMobileNavItems(
+      canCreateNormativeFile,
+      canOpenUsersPage,
+      canViewFeedback,
+      canViewDashboardProcess,
+      canViewDashboardSavings,
+      canViewDashboardPlans
+    );
   }
 
   if (isProjectManager || isLeadEconomist) {
@@ -269,6 +301,7 @@ export const buildHeaderConfig = ({
   canLoadOfferedRequests,
   canOpenUsersPage,
   canCreateNormativeFile,
+  canViewFeedback,
   canViewDashboardProcess,
   canViewDashboardSavings,
   canViewDashboardPlans,
@@ -304,6 +337,11 @@ export const buildHeaderConfig = ({
   const isResponsibilityRequestsPage =
     (isProjectManager || isLeadEconomist) && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/admin');
+  const isSuperadminDashboard = isSuperadmin && canViewDashboardProcess && pathname === '/pm-dashboard';
+  const isSuperadminSavings = isSuperadmin && canViewDashboardSavings && pathname === '/pm-dashboard/savings';
+  const isSuperadminPlan = isSuperadmin && canViewDashboardPlans && pathname === '/pm-dashboard/plan';
+  const isSuperadminRequestsPage = isSuperadmin && (pathname.startsWith('/requests') || isOfferWorkspacePage);
+  const isSuperadminUsersPage = isSuperadmin && pathname.startsWith('/admin');
   const isAdminUsersPage = isAdmin && pathname.startsWith('/admin');
 
   const isContractorRequestsArea = isContractor
@@ -320,6 +358,9 @@ export const buildHeaderConfig = ({
     && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans)
     && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityPlan || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
     && canOpenUsersPage;
+  const canUseSuperadminTabs = isSuperadmin
+    && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans || canOpenUsersPage)
+    && (isSuperadminDashboard || isSuperadminSavings || isSuperadminPlan || isSuperadminRequestsPage || isSuperadminUsersPage);
 
   const defaultMobileNavItems = resolveDefaultMobileNavItems({
     isSuperadmin,
@@ -330,19 +371,65 @@ export const buildHeaderConfig = ({
     isAdmin,
     canOpenUsersPage,
     canCreateNormativeFile,
+    canViewFeedback,
     canViewDashboardProcess,
     canViewDashboardSavings,
     canViewDashboardPlans,
   });
 
   if (isSuperadmin) {
+    const tabs = canUseSuperadminTabs
+      ? [
+        ...(canViewDashboardProcess ? [{ key: 'dashboard', value: 'dashboard', label: '\u0414\u0430\u0448\u0431\u043e\u0440\u0434' as const }] : []),
+        ...(canViewDashboardSavings ? [{ key: 'savings', value: 'savings', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u044f' as const }] : []),
+        ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: '\u041f\u043b\u0430\u043d' as const }] : []),
+        { key: 'requests', value: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438' as const },
+        ...(canOpenUsersPage ? [{ key: 'users', value: 'users', label: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438' as const }] : []),
+      ]
+      : [];
     return {
       mode: 'sidebar',
-      tabs: [],
+      tabs,
+      activeTab: isSuperadminDashboard
+        ? 'dashboard'
+        : isSuperadminSavings
+          ? 'savings'
+          : isSuperadminPlan
+            ? 'plan'
+            : isSuperadminUsersPage
+              ? 'users'
+              : 'requests',
+      onTabChange: canUseSuperadminTabs
+        ? (value) => {
+          if (value === 'dashboard' && canViewDashboardProcess) {
+            onNavigateToDashboard();
+            return;
+          }
+          if (value === 'savings' && canViewDashboardSavings) {
+            onNavigateToSavings();
+            return;
+          }
+          if (value === 'plan' && canViewDashboardPlans) {
+            onNavigateToPlan();
+            return;
+          }
+          if (value === 'users' && canOpenUsersPage) {
+            onNavigateToAdmin();
+            return;
+          }
+          onNavigateToRequests();
+        }
+        : undefined,
       actions: [],
       breadcrumbs,
-      sidebarItems: superadminItems,
-      mobileNavItems: buildSuperadminMobileNavItems(canCreateNormativeFile),
+      mobileNavItems: buildSuperadminMobileNavItems(
+        canCreateNormativeFile,
+        canOpenUsersPage,
+        canViewFeedback,
+        canViewDashboardProcess,
+        canViewDashboardSavings,
+        canViewDashboardPlans
+      ),
       showFeedback: true,
       showRoleGuide: true,
       showProfile: false,

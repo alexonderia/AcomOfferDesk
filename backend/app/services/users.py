@@ -1139,9 +1139,7 @@ class ManualContractorService:
         current_user: CurrentUser,
         data: ManualContractorCreateInput,
     ) -> str:
-        UserPolicy.ensure_can_register_user(current_user)
-        if current_user.role_id != settings.superadmin_role_id:
-            raise Forbidden("Только суперадминистратор может создавать ручных контрагентов")
+        UserPolicy.ensure_can_create_manual_contractors(current_user)
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
         return await self._create_manual_contractor(data=normalized_data)

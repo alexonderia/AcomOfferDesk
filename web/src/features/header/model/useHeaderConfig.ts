@@ -24,6 +24,7 @@ export const useHeaderConfig = () => {
   const canOpenUsersPage = hasPermission(session, 'users.read');
   const canRegisterUser = hasPermission(session, 'users.create');
   const canCreateNormativeFile = hasPermission(session, 'normative_files.create');
+  const canViewFeedback = hasPermission(session, 'feedback.read');
   const canViewDashboardProcess = hasPermission(session, 'dashboard.process.read');
   const canViewDashboardSavings = hasPermission(session, 'dashboard.savings.read');
   const canViewDashboardPlans = hasPermission(session, 'dashboard.plans.read');
@@ -116,6 +117,7 @@ export const useHeaderConfig = () => {
         canLoadOfferedRequests,
         canOpenUsersPage,
         canCreateNormativeFile,
+        canViewFeedback,
         canViewDashboardProcess,
         canViewDashboardSavings,
         canViewDashboardPlans,
@@ -163,6 +165,7 @@ export const useHeaderConfig = () => {
       canLoadOpenRequests,
       canOpenUsersPage,
       canCreateNormativeFile,
+      canViewFeedback,
       canViewDashboardProcess,
       canViewDashboardSavings,
       canViewDashboardPlans,

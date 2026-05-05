@@ -1,8 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.schemas.links import LinkSet
+from pydantic import BaseModel, Field
 
 
 class TgUserStartRequest(BaseModel):
@@ -15,10 +13,7 @@ class TgUserStartData(BaseModel):
 
 
 class TgUserStartResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: TgUserStartData
-    links: LinkSet = Field(alias="_links")
 
 class TgStartRequest(BaseModel):
     tg_id: int
@@ -41,7 +36,4 @@ class TgStartData(BaseModel):
 
 
 class TgStartResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: TgStartData
-    links: LinkSet = Field(alias="_links")

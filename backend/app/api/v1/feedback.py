@@ -6,7 +6,6 @@ from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
 from app.schemas.feedback import FeedBackCreateRequest, FeedBackCreateResponse, FeedBackListResponse
-from app.schemas.links import Link, LinkSet
 from app.services.feedback import FeedBackService
 
 router = APIRouter()
@@ -25,9 +24,6 @@ async def create_feedback(
 
     return FeedBackCreateResponse(
         data={"feedback_id": result.feedback_id},
-        _links=LinkSet(
-            self=Link(href="/api/v1/feedback", method="POST"),
-        ),
     )
 
 @router.get("/feedback", response_model=FeedBackListResponse)
@@ -43,7 +39,4 @@ async def list_feedback(
 
     return FeedBackListResponse(
         data={"items": serialized_items},
-        _links=LinkSet(
-            self=Link(href="/api/v1/feedback", method="GET"),
-        ),
     )

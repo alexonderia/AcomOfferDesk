@@ -20,10 +20,12 @@ export const RoleRoute = ({ allowedRoles = [], allowedPermissions = [], children
     return <Navigate to="/account" replace />;
   }
 
-  const isRoleAllowed = allowedRoles.length > 0 && allowedRoles.includes(session.roleId);
-  const isPermissionAllowed = allowedPermissions.length > 0 && hasAnyPermission(session, allowedPermissions);
+  const requiresPermission = allowedPermissions.length > 0;
+  const isPermissionAllowed = !requiresPermission || hasAnyPermission(session, allowedPermissions);
+  // Roles are UX-only fallback; protected access should be permission-based.
+  const isRoleAllowed = allowedRoles.length === 0 || allowedRoles.includes(session.roleId);
 
-  if (!isRoleAllowed && !isPermissionAllowed) {
+  if (!isPermissionAllowed || (!requiresPermission && !isRoleAllowed)) {
     return <Navigate to={getDefaultPathByRole(session.roleId, session.permissions)} replace />;
   }
 

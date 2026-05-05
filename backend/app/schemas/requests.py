@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from app.schemas.actions import OfferActionsSchema, RequestActionsSchema
-from app.schemas.links import LinkSet
 
 
 class RequestFileSchema(BaseModel):
@@ -112,24 +111,15 @@ class RequestDetailsResponseData(BaseModel):
 
 
 class RequestListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestListData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestDetailsResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestDetailsResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OpenRequestListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OpenRequestListData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestCreateResponseData(BaseModel):
@@ -138,10 +128,7 @@ class RequestCreateResponseData(BaseModel):
 
 
 class RequestCreateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestCreateResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class DeletedAlertViewed(BaseModel):
@@ -160,10 +147,7 @@ class DeletedAlertViewedResponseData(BaseModel):
 
 
 class DeletedAlertViewedResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: DeletedAlertViewedResponseData
-    links: LinkSet = Field(alias="_links")
     
 
 class RequestEditPayload(BaseModel):
@@ -194,21 +178,12 @@ class RequestEmailNotificationResponseData(BaseModel):
 
 
 class RequestMutationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestMutationResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestEmailNotificationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestEmailNotificationResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestFileMutationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestFileMutationResponseData
-    links: LinkSet = Field(alias="_links")

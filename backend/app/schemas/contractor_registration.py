@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.contractor_validation import (
     NOT_SPECIFIED_TEXT,
@@ -7,7 +7,6 @@ from app.domain.contractor_validation import (
     validate_password_bcrypt_bytes,
     validate_ru_phone,
 )
-from app.schemas.links import LinkSet
 
 class ContractorEmailVerificationRequest(BaseModel):
     token: str = Field(..., min_length=1, description="Signed Telegram token for contractor registration")
@@ -74,7 +73,4 @@ class ContractorRegistrationData(BaseModel):
 
 
 class ContractorRegistrationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ContractorRegistrationData
-    links: LinkSet = Field(alias="_links")

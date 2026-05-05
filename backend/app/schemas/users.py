@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.contractor_validation import (
     validate_inn,
@@ -9,7 +9,6 @@ from app.domain.contractor_validation import (
     validate_ru_phone,
 )
 from app.schemas.actions import UserActionsSchema
-from app.schemas.links import LinkSet
 
 
 class UserListItemSchema(BaseModel):
@@ -35,10 +34,7 @@ class UserListData(BaseModel):
 
 
 class UserListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserListData
-    links: LinkSet = Field(alias="_links")
 
 
 class EconomistListItemSchema(BaseModel):
@@ -56,10 +52,7 @@ class EconomistListData(BaseModel):
 
 
 class EconomistListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: EconomistListData
-    links: LinkSet = Field(alias="_links")
 
     
 class UserRoleUpdateRequest(BaseModel):
@@ -72,10 +65,7 @@ class UserRoleUpdateData(BaseModel):
 
 
 class UserRoleUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserRoleUpdateData
-    links: LinkSet = Field(alias="_links")
 
 
 class UserManagerUpdateRequest(BaseModel):
@@ -88,10 +78,7 @@ class UserManagerUpdateData(BaseModel):
 
 
 class UserManagerUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserManagerUpdateData
-    links: LinkSet = Field(alias="_links")
 
 
 class UserStatusUpdateRequest(BaseModel):
@@ -106,10 +93,7 @@ class UserStatusUpdateData(BaseModel):
 
 
 class UserStatusUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserStatusUpdateData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestEconomistItemSchema(BaseModel):
@@ -125,10 +109,7 @@ class RequestEconomistListData(BaseModel):
 
 
 class RequestEconomistListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestEconomistListData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestContractorItemSchema(BaseModel):
@@ -145,10 +126,7 @@ class RequestContractorListData(BaseModel):
 
 
 class RequestContractorListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestContractorListData
-    links: LinkSet = Field(alias="_links")
 
 
 class UserUnavailabilityPeriodSchema(BaseModel):
@@ -178,10 +156,7 @@ class MeData(BaseModel):
 
 
 class MeResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: MeData
-    links: LinkSet = Field(alias="_links")
 
 
 class SubordinateProfileData(BaseModel):
@@ -198,10 +173,7 @@ class SubordinateProfileData(BaseModel):
 
 
 class SubordinateProfileResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: SubordinateProfileData
-    links: LinkSet = Field(alias="_links")
 
 
 class SetSubordinateUnavailabilityPeriodRequest(BaseModel):
@@ -211,10 +183,7 @@ class SetSubordinateUnavailabilityPeriodRequest(BaseModel):
 
 
 class SetSubordinateUnavailabilityPeriodResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: SubordinateProfileData
-    links: LinkSet = Field(alias="_links")
 
 
 class UpdateMyCredentialsRequest(BaseModel):
@@ -244,10 +213,7 @@ class SetMyUnavailabilityPeriodRequest(BaseModel):
 
 
 class SetMyUnavailabilityPeriodResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: MeData
-    links: LinkSet = Field(alias="_links")
 
 
 class ManualContractorCreateRequest(BaseModel):
@@ -297,10 +263,7 @@ class ManualContractorCreateData(BaseModel):
 
 
 class ManualContractorCreateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ManualContractorCreateData
-    links: LinkSet = Field(alias="_links")
 
 
 class ManualContractorUpdateRequest(BaseModel):
@@ -375,7 +338,4 @@ class ManualContractorUpdateData(BaseModel):
 
 
 class ManualContractorUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ManualContractorUpdateData
-    links: LinkSet = Field(alias="_links")

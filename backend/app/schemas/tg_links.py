@@ -1,6 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.schemas.links import LinkSet
+from pydantic import BaseModel, Field
 
 
 class TgLinkRequest(BaseModel):
@@ -12,8 +10,5 @@ class TgLinkData(BaseModel):
 
 
 class TgLinkResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: TgLinkData
-    links: LinkSet = Field(alias="_links")
 

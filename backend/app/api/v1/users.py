@@ -9,7 +9,6 @@ from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
-from app.schemas.links import Link, LinkSet
 from app.schemas.users import (
     EconomistListData,
     EconomistListItemSchema,
@@ -133,9 +132,6 @@ async def list_users(
             items=[_user_list_schema(current_user, item) for item in users],
             permissions=serialize_permissions(current_user),
         ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users", method="GET"),
-        ),
     )
 
 
@@ -155,9 +151,6 @@ async def list_manager_candidates(
             items=[_user_list_schema(current_user, item) for item in users],
             permissions=serialize_permissions(current_user),
         ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/manager-candidates", method="GET"),
-        ),
     )
 
 
@@ -175,9 +168,6 @@ async def list_economists(
         data=EconomistListData(
             items=[_economist_list_schema(current_user, item) for item in economists],
             permissions=serialize_permissions(current_user),
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/economists", method="GET"),
         ),
     )
 
@@ -207,9 +197,6 @@ async def get_me(
 
     return MeResponse(
         data=_me_data(current_user, me),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/me", method="GET"),
-        ),
     )
 
 
@@ -245,9 +232,6 @@ async def update_my_credentials(
 
     return MeResponse(
         data=_me_data(current_user, me),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/me/credentials", method="PATCH"),
-        ),
     )
 
 
@@ -284,9 +268,6 @@ async def update_my_profile(
 
     return MeResponse(
         data=_me_data(current_user, me),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/me/profile", method="PATCH"),
-        ),
     )
 
 
@@ -313,9 +294,6 @@ async def update_my_company_contacts(
 
     return MeResponse(
         data=_me_data(current_user, me),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/me/company-contacts", method="PATCH"),
-        ),
     )
 
 
@@ -352,9 +330,6 @@ async def set_my_unavailability_period(
 
     return SetMyUnavailabilityPeriodResponse(
         data=_me_data(current_user, me),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/me/unavailability-period", method="POST"),
-        ),
     )
 
 
@@ -373,9 +348,6 @@ async def get_subordinate_profile(
 
     return SubordinateProfileResponse(
         data=_subordinate_profile_data(current_user, profile),
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{user_id}/profile", method="GET"),
-        ),
     )
 
 
@@ -404,9 +376,6 @@ async def set_subordinate_unavailability_period(
 
     return SetSubordinateUnavailabilityPeriodResponse(
         data=_subordinate_profile_data(current_user, profile),
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{user_id}/unavailability-period", method="POST"),
-        ),
     )
 
 
@@ -424,9 +393,6 @@ async def list_request_economists(
         data=RequestEconomistListData(
             items=[RequestEconomistItemSchema(**asdict(item)) for item in users],
             permissions=serialize_permissions(current_user),
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/request-economists", method="GET"),
         ),
     )
 
@@ -455,9 +421,6 @@ async def list_request_contractors(
             ],
             permissions=serialize_permissions(current_user),
         ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/request-contractors", method="GET"),
-        ),
     )
 
 
@@ -483,9 +446,6 @@ async def create_manual_contractor(
 
     return ManualContractorCreateResponse(
         data={"user_id": created_user_id},
-        _links=LinkSet(
-            self=Link(href="/api/v1/users/manual-contractor", method="POST"),
-        ),
     )
 
 
@@ -518,9 +478,6 @@ async def update_manual_contractor(
 
     return ManualContractorUpdateResponse(
         data={"user_id": updated_user_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{updated_user_id}/manual-contractor", method="PATCH"),
-        ),
     )
 
 
@@ -547,9 +504,6 @@ async def update_user_status(
             tg_user_id=result.tg_user_id,
             tg_status=result.tg_status,
         ),
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{result.user_id}/status", method="PATCH"),
-        ),
     )
 
 
@@ -570,9 +524,6 @@ async def update_user_role(
 
     return UserRoleUpdateResponse(
         data=UserRoleUpdateData(user_id=result.user_id, role_id=result.role_id),
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{result.user_id}/role", method="PATCH"),
-        ),
     )
 
 
@@ -593,8 +544,5 @@ async def update_user_manager(
 
     return UserManagerUpdateResponse(
         data=UserManagerUpdateData(user_id=result.user_id, manager_user_id=result.manager_user_id),
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{result.user_id}/manager", method="PATCH"),
-        ),
     )
 

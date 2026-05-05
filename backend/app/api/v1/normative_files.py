@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, File, Path as PathParam, UploadFile
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
-from app.schemas.links import Link, LinkSet
 from app.schemas.normative_files import NormativeFileMutationResponse
 from app.services.files import FileService
 from app.services.normative_files import NormativeFileService
@@ -39,7 +38,4 @@ async def upload_normative_file(
 
     return NormativeFileMutationResponse(
         data={"normative_id": result.normative_id, "file_id": result.file_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/normative-files/{normative_id}", method="POST"),
-        ),
     )

@@ -38,7 +38,6 @@ from app.schemas.auth import (
     RegisterUserRequest,
     RegisterUserResponse,
 )
-from app.schemas.links import Link, LinkSet
 from app.services.email_verification import EmailVerificationService
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import (
@@ -65,12 +64,6 @@ class RequestEmailVerificationRequest(BaseModel):
 
 class EmailVerificationActionResponse(BaseModel):
     detail: str
-
-
-def _build_auth_links(*, self_href: str) -> LinkSet:
-    return LinkSet(
-        self=Link(href=self_href, method="POST"),
-    )
 
 
 def _normalize_host_with_port(*, host_value: str, fallback_host: str, forwarded_port: str) -> str:
@@ -202,7 +195,6 @@ def _build_auth_response(
     role_id: int,
     status_value: str,
     auth_provider: str,
-    self_href: str,
 ) -> LoginResponse:
     current_user = build_current_user(
         user_id=user_id,
@@ -223,14 +215,12 @@ def _build_auth_response(
             "onboarding_state": _onboarding_state(status_value),
             "permissions": serialize_permissions(current_user),
         },
-        _links=_build_auth_links(self_href=self_href),
     )
 
 
 async def _build_keycloak_auth_response(
     *,
     access_token: str,
-    self_href: str,
     uow: UnitOfWork,
 ) -> LoginResponse:
     claims = await decode_keycloak_access_token(access_token)
@@ -248,7 +238,6 @@ async def _build_keycloak_auth_response(
         role_id=synced.user.id_role,
         status_value=synced.user.status,
         auth_provider="keycloak",
-        self_href=self_href,
     )
 
 
@@ -530,7 +519,6 @@ async def refresh_session(
     async with uow:
         return await _build_keycloak_auth_response(
             access_token=bundle.access_token,
-            self_href="/api/v1/auth/refresh",
             uow=uow,
         )
 
@@ -600,9 +588,6 @@ async def register_user(
             "role_id": user.id_role,
             "status": user.status,
         },
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{user.id}", method="GET"),
-        ),
     )
 
 

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.schemas.links import LinkSet
+from pydantic import BaseModel, Field
 
 
 class DashboardStatusCounterSchema(BaseModel):
@@ -90,7 +88,4 @@ class ResponsibilityDashboardData(BaseModel):
 
 
 class ResponsibilityDashboardResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ResponsibilityDashboardData
-    links: LinkSet = Field(alias="_links")

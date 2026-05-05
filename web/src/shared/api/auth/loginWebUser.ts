@@ -1,10 +1,5 @@
 import { fetchEmpty, fetchJson } from '../client';
 
-export type AuthLink = {
-  href: string;
-  method: string;
-};
-
 export type AuthSessionResponse = {
   data: {
     access_token: string;
@@ -18,9 +13,6 @@ export type AuthSessionResponse = {
     business_access?: boolean;
     onboarding_state?: string | null;
     permissions?: string[];
-  };
-  _links?: {
-    self: AuthLink;
   };
 };
 

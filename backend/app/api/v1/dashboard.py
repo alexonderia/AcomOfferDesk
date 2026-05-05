@@ -16,7 +16,6 @@ from app.schemas.dashboard import (
     ResponsibilityDashboardData,
     ResponsibilityDashboardResponse,
 )
-from app.schemas.links import Link, LinkSet
 from app.services.dashboard import DashboardEconomistNode, DashboardService
 
 router = APIRouter()
@@ -128,8 +127,5 @@ async def get_responsibility_dashboard(
                     for item in dashboard.savings.items
                 ],
             ),
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/dashboard/responsibility", method="GET"),
         ),
     )

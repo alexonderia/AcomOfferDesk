@@ -123,7 +123,6 @@ export const ContractorRequestDetailsPage = () => {
     try {
       const createdOffer = await createOfferForRequest(
         request.id,
-        undefined,
         parsedOfferAmount === null ? undefined : { offer_amount: parsedOfferAmount }
       );
       navigate(createdOffer.workspacePath);

@@ -102,6 +102,9 @@ def _me_data(current_user: CurrentUser, item) -> MeData:
     data["status"] = _ru_user_status(data["status"])
     data.pop("tg_user_id", None)
     data["permissions"] = serialize_permissions(current_user)
+    data["keycloak_roles"] = sorted(current_user.keycloak_roles)
+    data["app_roles"] = sorted(current_user.app_roles)
+    data["delegation_roles"] = sorted(current_user.delegation_roles)
     data["actions"] = UserActionBuilder.build_me(current_user)
     return MeData(**data)
 

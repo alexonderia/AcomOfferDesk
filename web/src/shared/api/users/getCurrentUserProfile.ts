@@ -19,6 +19,9 @@ type ProfilePayload = {
   address?: string | null;
   note?: string | null;
   permissions?: string[];
+  keycloak_roles?: string[];
+  app_roles?: string[];
+  delegation_roles?: string[];
   actions?: {
     can_manage_own_profile?: boolean;
     can_manage_credentials?: boolean;
@@ -91,6 +94,9 @@ export type CurrentUserProfile = {
     endedAt: string;
   }>;
   permissions: string[];
+  keycloakRoles: string[];
+  appRoles: string[];
+  delegationRoles: string[];
   actions: UserActions;
 };
 
@@ -156,6 +162,9 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
       endedAt: period.ended_at
     })),
     permissions: data.permissions ?? [],
+    keycloakRoles: data.keycloak_roles ?? [],
+    appRoles: data.app_roles ?? [],
+    delegationRoles: data.delegation_roles ?? [],
     actions: normalizeUserActions(data.actions)
   };
 };

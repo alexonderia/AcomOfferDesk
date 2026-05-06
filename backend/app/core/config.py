@@ -43,7 +43,11 @@ class Settings(BaseSettings):
 
     keycloak_enabled: bool = Field(default=False, validation_alias="KEYCLOAK_ENABLED")
     keycloak_realm: str = Field(default="acom-offerdesk", validation_alias="KEYCLOAK_REALM")
-    keycloak_client_id: str = Field(default="acom-offerdesk-web", validation_alias="KEYCLOAK_CLIENT_ID")
+    keycloak_client_id: str = Field(
+        default="acom-web",
+        validation_alias=AliasChoices("KEYCLOAK_WEB_CLIENT_ID", "KEYCLOAK_CLIENT_ID"),
+    )
+    keycloak_api_client_id: str = Field(default="acom-api", validation_alias="KEYCLOAK_API_CLIENT_ID")
     keycloak_internal_base_url: str = Field(
         default="http://keycloak:8080/iam",
         validation_alias="KEYCLOAK_INTERNAL_BASE_URL",
@@ -81,6 +85,10 @@ class Settings(BaseSettings):
     keycloak_admin_client_id: str = Field(
         default="admin-cli",
         validation_alias="KEYCLOAK_ADMIN_CLIENT_ID",
+    )
+    keycloak_admin_client_secret: str | None = Field(
+        default=None,
+        validation_alias="KEYCLOAK_ADMIN_CLIENT_SECRET",
     )
     keycloak_admin_username: str | None = Field(
         default=None,
@@ -215,12 +223,16 @@ class Settings(BaseSettings):
             self.max_upload_size_bytes = 10 * 1024 * 1024
 
         self.keycloak_internal_base_url = self.keycloak_internal_base_url.rstrip("/")
+        self.keycloak_client_id = self.keycloak_client_id.strip() or "acom-web"
+        self.keycloak_api_client_id = self.keycloak_api_client_id.strip() or "acom-api"
         if self.keycloak_public_base_url is not None:
             self.keycloak_public_base_url = self.keycloak_public_base_url.rstrip("/") or None
         if self.keycloak_issuer_url is not None:
             self.keycloak_issuer_url = self.keycloak_issuer_url.rstrip("/") or None
         self.keycloak_admin_realm = self.keycloak_admin_realm.strip() or "master"
         self.keycloak_admin_client_id = self.keycloak_admin_client_id.strip() or "admin-cli"
+        if self.keycloak_admin_client_secret is not None:
+            self.keycloak_admin_client_secret = self.keycloak_admin_client_secret.strip() or None
         if self.keycloak_admin_username is not None:
             self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
         if self.keycloak_admin_password is not None:

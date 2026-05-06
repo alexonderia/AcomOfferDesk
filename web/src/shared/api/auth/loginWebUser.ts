@@ -13,6 +13,8 @@ export type AuthSessionResponse = {
     business_access?: boolean;
     onboarding_state?: string | null;
     permissions?: string[];
+    app_roles?: string[];
+    delegation_roles?: string[];
   };
 };
 

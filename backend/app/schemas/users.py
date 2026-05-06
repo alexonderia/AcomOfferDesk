@@ -152,6 +152,9 @@ class MeData(BaseModel):
     address: str | None = None
     note: str | None = None
     permissions: list[str] = Field(default_factory=list)
+    keycloak_roles: list[str] = Field(default_factory=list)
+    app_roles: list[str] = Field(default_factory=list)
+    delegation_roles: list[str] = Field(default_factory=list)
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 

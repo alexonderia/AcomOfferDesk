@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from app.api.action_flags import serialize_permissions
-from app.api.dependencies import get_current_user, get_uow
+from app.api.dependencies import build_current_user_from_keycloak_claims, get_current_user, get_uow
 from app.core.auth_cookies import (
     clear_keycloak_refresh_cookie,
     clear_keycloak_state_cookie,
@@ -28,7 +28,7 @@ from app.core.registration_invite_tokens import (
     RegistrationInviteTokenInvalidError,
 )
 from app.core.uow import UnitOfWork
-from app.domain.auth_context import CurrentUser, build_current_user
+from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Conflict, Forbidden, Unauthorized
 from app.domain.policies import UserPolicy
 from app.models.auth_models import UserAuthAccount
@@ -195,11 +195,13 @@ def _build_auth_response(
     role_id: int,
     status_value: str,
     auth_provider: str,
+    keycloak_api_roles: frozenset[str] = frozenset(),
 ) -> LoginResponse:
-    current_user = build_current_user(
+    current_user = build_current_user_from_keycloak_claims(
         user_id=user_id,
         role_id=role_id,
         status=status_value,
+        keycloak_api_roles=keycloak_api_roles,
     )
     return LoginResponse(
         data={
@@ -214,6 +216,8 @@ def _build_auth_response(
             "business_access": status_value == "active",
             "onboarding_state": _onboarding_state(status_value),
             "permissions": serialize_permissions(current_user),
+            "app_roles": sorted(current_user.app_roles),
+            "delegation_roles": sorted(current_user.delegation_roles),
         },
     )
 
@@ -238,6 +242,7 @@ async def _build_keycloak_auth_response(
         role_id=synced.user.id_role,
         status_value=synced.user.status,
         auth_provider="keycloak",
+        keycloak_api_roles=claims.api_roles,
     )
 
 

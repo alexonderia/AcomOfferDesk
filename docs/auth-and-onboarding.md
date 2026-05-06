@@ -1,34 +1,171 @@
-﻿# Аутентификация и онбординг
+# Аутентификация, Регистрация И Keycloak
 
 ## Граница ответственности документа
 
-Этот документ — единый источник по текущей модели входа, регистрации, привязки пользователей и Keycloak-интеграции.
+Этот документ описывает:
+- текущую рабочую модель авторизации и регистрации;
+- разделение ответственности между Keycloak, backend и frontend;
+- структуру Keycloak для проекта;
+- актуальный режим permissions;
+- операционные шаги проверки и диагностики.
 
 Смежные документы:
 - [Окружения и периметр](./environments.md)
 - [Runtime-архитектура](./runtime-architecture.md)
 - [Production: переменные окружения и секреты](./production-env.md)
 
-## Актуальная модель входа
+## Краткая архитектура
 
-- Web-вход: Keycloak OIDC (Authorization Code flow).
-- Backend обрабатывает callback, синхронизирует identity и связывает локального пользователя с Keycloak subject.
-- Бизнес-роли и статусы остаются в локальной БД.
-- Внешние email-ссылки не создают сессию напрямую: пользователь проходит обычный login flow через Keycloak.
+- `frontend` (React SPA) выполняет login/logout и отображение UX.
+- `backend` (FastAPI) является финальным enforcement-слоем бизнес-правил.
+- `keycloak` является IdP/OIDC-провайдером и источником назначенных access-ролей.
 
-## Первый вход и auto-link
+Ключевой принцип:
+- Keycloak отвечает на вопрос «что назначено пользователю в IAM».
+- Backend отвечает на вопрос «что разрешено делать в бизнес-контексте здесь и сейчас».
 
-1. Пользователь логинится в Keycloak.
-2. Backend читает claims.
-3. Если связка уже есть (`user_auth_accounts`) — используется она.
-4. Если нет — применяется правило auto-link текущего окружения.
-5. Если связь создать нельзя — callback завершается ошибкой (`not_linked`/аналог).
+## Источник истины по данным
 
-### Правило для development
+- Источник permissions: Keycloak access token (`resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`).
+- Источник локального бизнес-контекста: БД backend (`users`, `profiles`, `user_auth_accounts`, связи и статусы).
+- `users.id_role`:
+  - остается бизнесовой ролью/типом пользователя;
+  - не считается источником IAM permissions в `keycloak` режиме.
+- `users.status` (`review`, `active`, `inactive`, `blacklist`) всегда проверяется backend.
 
-- Обычно разрешён auto-link по username.
-- Типичный контракт:
+## Структура Keycloak (текущая)
 
+### Realm
+
+- Realm: `acom-offerdesk` (настраивается через `KEYCLOAK_REALM`).
+
+### Clients
+
+1. `acom-web`
+- Назначение: public SPA client для login/logout.
+- Flow: Authorization Code + PKCE.
+- Использование:
+  - только браузерный OIDC поток;
+  - без client secret во frontend.
+
+2. `acom-api`
+- Назначение: namespace для application roles (permissions + `app.*`).
+- Использование:
+  - роли попадают в `resource_access.acom-api.roles`;
+  - backend извлекает и фильтрует роли.
+
+3. `acom-admin-service`
+- Назначение: backend-only client для Keycloak Admin API.
+- Тип: confidential + service account.
+- Использование:
+  - server-to-server вызовы из backend (`ensure_user`, logout sessions и т.д.);
+  - frontend не получает admin-токены.
+
+### Роли в `acom-api`
+
+1. Atomic permissions
+- Роли с кодами из `backend/app/domain/permissions.py`:
+  - `users.read`, `requests.update`, `offers.create`, и т.д.
+- Эти коды считаются известными permissions в backend.
+
+2. Composite `app.*` (текущая модель)
+- `app.superadmin`
+- `app.admin`
+- `app.project_manager`
+- `app.lead_economist`
+- `app.economist`
+- `app.operator`
+- `app.contractor`
+
+3. `delegation.*` (опционально, не используется в текущем bootstrap)
+- Backend поддерживает парсинг ролей с префиксом `delegation.` и отдаёт их в `delegation_roles`.
+- В текущем проектном bootstrap по умолчанию `delegation.*` не создаются и не назначаются.
+- Если понадобится, их можно добавить вручную/скриптом как расширение.
+
+## Регистрация и онбординг: текущие потоки
+
+## 1) Login (обычный web-поток)
+
+1. Пользователь открывает `/auth/oidc/login`.
+2. Backend генерирует state + PKCE и редиректит в Keycloak.
+3. Keycloak аутентифицирует пользователя.
+4. Callback приходит в backend (`/api/v1/auth/callback`).
+5. Backend:
+  - валидирует state;
+  - обменивает code на token;
+  - декодирует/валидирует access token (issuer/signature/audience/azp);
+  - запускает `IdentitySyncService`.
+6. Backend ставит refresh cookie и возвращает пользователя в SPA.
+7. SPA поднимает сессию через `/api/v1/auth/refresh`.
+
+## 2) Первый вход и linking
+
+`IdentitySyncService`:
+- сначала ищет link в `user_auth_accounts` по `(provider=keycloak, sub)`;
+- если link отсутствует:
+  - пытается auto-link согласно env policy;
+  - при registration flow может создать локального пользователя;
+  - иначе возвращает отказ (`Local application account is not linked`).
+
+Главный идентификатор после linking:
+- Keycloak `sub` (не email, не username).
+
+## 3) Registration flows
+
+- Invite/email и Telegram-legacy потоки продолжают идти через callback backend.
+- Внешняя ссылка не создает полноценную сессию напрямую без OIDC flow.
+- Для новых contractor backend может создавать локальный аккаунт со `status=review`.
+
+## 4) Refresh/logout
+
+- Refresh: `/api/v1/auth/refresh` через refresh cookie.
+- Logout:
+  - локальная очистка cookies;
+  - provider logout refresh token;
+  - попытка завершить Keycloak-сессии через Admin API.
+
+## Контракт backend -> frontend
+
+Frontend получает авторизационные данные только от backend:
+- `permissions` (отфильтрованные известные коды);
+- `app_roles`;
+- `delegation_roles`;
+- `status`;
+- `role_id` (бизнесовая локальная роль);
+- resource-level `actions` на сущностях.
+
+Frontend не принимает security-решения по raw JWT claims.
+
+## Извлечение и фильтрация ролей в backend
+
+- Источник: `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`.
+- Нормализация:
+  - пустые/невалидные строки игнорируются;
+  - неизвестные роли не становятся permissions.
+- Разделение:
+  - `permissions` = пересечение с `PermissionCodes`;
+  - `app_roles` = роли с префиксом `app.`;
+  - `delegation_roles` = роли с префиксом `delegation.`.
+
+Даже при наличии role в токене доступ по endpoint проверяется backend-политиками и бизнес-правилами.
+
+## Режим permissions
+
+- Legacy/local режим выбора источника permissions удален.
+- Backend всегда использует роли из `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`.
+- `users.id_role` остается бизнес-ролью и не используется как IAM-источник прав.
+
+## Проверки статуса пользователя
+
+Backend не пропускает критические действия только на основании role:
+- `status=active` обязателен для защищённых действий;
+- `review/inactive/blacklist` ограничиваются policy-слоем.
+
+## Auto-link policy по окружениям
+
+### Development
+
+Типично:
 ```env
 APP_ENV=development
 KEYCLOAK_VERIFY_EMAIL=false
@@ -36,11 +173,9 @@ KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED=true
 KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED=false
 ```
 
-### Правило для production
+### Production
 
-- Auto-link только по подтверждённому email (`email_verified=true`) и однозначному матчингу.
-- Типичный контракт:
-
+Типично:
 ```env
 APP_ENV=production
 KEYCLOAK_VERIFY_EMAIL=true
@@ -48,66 +183,76 @@ KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED=false
 KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED=true
 ```
 
-## Bootstrap superadmin
+## Bootstrap и инициализация Keycloak
 
-- Локальный `superadmin` подготавливается заранее.
-- При первом входе пользователя `KEYCLOAK_BOOTSTRAP_APP_USERNAME` backend выполняет bootstrap-привязку.
-- После этого superadmin входит по обычному OIDC-flow.
+One-shot init:
+- `docker-compose.init.yml` поднимает:
+  - `keycloak_db_prepare`;
+  - `keycloak_bootstrap`;
+  - `keycloak_user_role_sync` (актуализирует `app.*` роли для уже связанных пользователей по `users.id_role`).
 
-## Сотрудники
+`infra/keycloak/bootstrap.sh` в текущей конфигурации:
+- создает/обновляет `acom-web`, `acom-api`, `acom-admin-service`;
+- создает atomic permissions и `app.*` роли;
+- синхронизирует composites `app.*`;
+- назначает `app.superadmin` bootstrap-пользователю;
+- обеспечивает `realm-management` роли для service-account `acom-admin-service`;
+- удаляет legacy `delegation.*` роли, если они остались от старых прогонов.
+- при `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true` выполняет дополнение/выравнивание `app.*` ролей у существующих linked users.
 
-### Сотрудник создан администратором
+## Optional delegation roles: как добавлять при необходимости
 
-- Создание через UI/API формирует локального пользователя и аккаунт в Keycloak.
-- Первый вход идёт через `/login` и стандартный OIDC-flow.
-- Далее backend завершает привязку identity.
+Если потребуется `delegation.*`:
+1. Добавить client roles в `acom-api` (например, `delegation.user-manager`).
+2. Назначить роли нужным пользователям или включить в нужные composites.
+3. Убедиться, что токен содержит эти роли в `resource_access.<client>.roles`.
+4. Backend автоматически отдаст их в `delegation_roles`.
+5. Бизнес-ограничения по endpoint все равно должны оставаться в backend policy/service слое.
 
-## Контрагенты
+## Диагностика и проверки
 
-### Контрагент создан вручную
+### 0) Актуализация текущей test-ветки
 
-- Создаётся локальный пользователь (роль contractor) и аккаунт в Keycloak.
-- Пароль задаётся через `Forgot password` на стороне Keycloak.
-- После входа backend выполняет обычную sync/link логику.
+Для веток, где уже есть локальные пользователи и keycloak-linking:
+- в рабочем env обязательно включить `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true`;
+- затем запустить one-shot init (`docker-compose.init.yml`), чтобы сервис `keycloak_user_role_sync` выровнял `app.*` роли в Keycloak по `users.id_role`.
 
-### Контрагент по invite-ссылке
+### 1) Проверка bootstrap модели Keycloak
 
-- Ссылка ведёт в registration/login flow через backend + Keycloak.
-- После callback backend может создать локального contractor (`review`) и связать identity.
-- Дальнейший допуск определяется локальным статусом и политиками.
+PowerShell:
+```powershell
+$env:ENV_FILE=".env.prod-like"
+powershell -ExecutionPolicy Bypass -File .\scripts\check-keycloak-bootstrap.ps1
+```
 
-## Email invite links и `next`
+Bash:
+```bash
+ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
+```
 
-- Email-ссылки используют модель `login -> callback -> return`.
-- Параметр `next` определяет целевую страницу после успешной аутентификации.
-- Verify-email endpoint подтверждает email, но не создаёт web-сессию напрямую.
+### 2) Частая причина «пустые app_roles»
 
-## Verify email и влияние переменных
+Проверьте:
+- токен действительно содержит `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`;
+- `KEYCLOAK_API_CLIENT_ID` совпадает в env backend и в token payload.
 
-- `APP_ENV` влияет на режим поведения окружения.
-- `KEYCLOAK_VERIFY_EMAIL` влияет на требования верификации в Keycloak bootstrap/realm-конфигурации.
-- Для production-потока ключевое требование — подтверждённый email для production auto-link.
+### 3) Проверка link между локальным пользователем и Keycloak
 
-## Legacy Telegram
+Проверить таблицу `user_auth_accounts` по `provider='keycloak'` и `external_subject_id`.
 
-- Telegram-интеграция сохранена как legacy.
-- По умолчанию отключена.
-- Включается через `LEGACY_TELEGRAM_ENABLED=true` при осознанном сценарии.
+## Ограничения текущей реализации
 
-## Частые ошибки
-
-- `APP_ENV` не выставлен как production на сервере.
-- Для production оставлен `start-dev` или включён dev auto-link.
-- Неверный public URL/issuer (`KEYCLOAK_PUBLIC_BASE_URL`, `KEYCLOAK_ISSUER_URL`, `KC_HOSTNAME`).
-- Неподтверждённый email при production auto-link.
-- Неоднозначный матч одного email на несколько локальных пользователей.
-- Внешние ссылки пытаются обходить обычный login flow.
+- `delegation.*` не участвуют в bootstrap по умолчанию.
+- Frontend не должен получать admin secret/token.
+- `_links` не считаются primary контрактом authorization; основа — `permissions + actions`.
 
 ## Куда смотреть в коде
 
 - `backend/app/api/v1/auth.py`
+- `backend/app/api/dependencies.py`
+- `backend/app/domain/auth_context.py`
+- `backend/app/domain/permissions.py`
 - `backend/app/services/keycloak_oidc.py`
 - `backend/app/services/identity_sync.py`
-- `backend/app/api/dependencies.py`
+- `backend/app/services/keycloak_admin.py`
 - `web/src/app/providers/AuthProvider.tsx`
-- `web/src/pages/auth/*`

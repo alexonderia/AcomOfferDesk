@@ -21,6 +21,27 @@
 
 Ключевое правило: `ngrok` и другие tunnel-решения используются только в `dev`.
 
+## Auth/Permissions env contract
+
+Для всех окружений используйте разделение Keycloak clients:
+
+- `KEYCLOAK_WEB_CLIENT_ID=acom-web` (public SPA login client).
+- `KEYCLOAK_API_CLIENT_ID=acom-api` (источник application permissions в access token).
+- `KEYCLOAK_ADMIN_CLIENT_ID=acom-admin-service` + `KEYCLOAK_ADMIN_CLIENT_SECRET` (backend-only admin API access).
+
+Источник permissions:
+
+- backend читает permissions из `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`.
+- legacy/local режим выбора источника permissions удален.
+
+Важно:
+- frontend не хранит client secret;
+- frontend получает permissions/action metadata только из backend response;
+- `users.id_role` остается бизнес-ролью, а не источником security permissions.
+- `delegation.*` роли в текущем bootstrap не создаются (optional extension).
+- `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true` включает init-синхронизацию `app.*` ролей для уже связанных пользователей.
+- Для актуализации текущей test-ветки оставляйте `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true`.
+
 ## Compose-файлы и назначение
 
 | Файл | Назначение |
@@ -30,7 +51,7 @@
 | `docker-compose.prod-like.yml` | Локальная production-like проверка |
 | `docker-compose.prod.yml` | Override для production-периметра в `test/prod` |
 | `docker-compose.test.yml` | Test helper: loopback-публикация `gateway` на том же VPS |
-| `docker-compose.init.yml` | One-shot init: `keycloak_db_prepare`, `keycloak_bootstrap` |
+| `docker-compose.init.yml` | One-shot init: `keycloak_db_prepare`, `keycloak_bootstrap`, `keycloak_user_role_sync` |
 
 Внешний reverse proxy пример: `infra/reverse-proxy/nginx.prod.example.conf`.
 
@@ -167,4 +188,19 @@ PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\check-prod-perimeter.ps1
+```
+
+Keycloak bootstrap validation:
+
+Linux/macOS:
+
+```bash
+ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
+```
+
+PowerShell:
+
+```powershell
+$env:ENV_FILE=".env.prod-like"
+powershell -ExecutionPolicy Bypass -File .\scripts\check-keycloak-bootstrap.ps1
 ```

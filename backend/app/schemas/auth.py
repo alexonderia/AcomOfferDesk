@@ -27,6 +27,8 @@ class AuthSessionData(BaseModel):
     business_access: bool = False
     onboarding_state: str | None = None
     permissions: list[str] = Field(default_factory=list)
+    app_roles: list[str] = Field(default_factory=list)
+    delegation_roles: list[str] = Field(default_factory=list)
 
 
 class AuthSessionResponse(BaseModel):

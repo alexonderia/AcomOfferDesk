@@ -27,6 +27,7 @@ class KeycloakAdminService:
         self._realm = settings.keycloak_realm
         self._admin_realm = settings.keycloak_admin_realm
         self._admin_client_id = settings.keycloak_admin_client_id
+        self._admin_client_secret = settings.keycloak_admin_client_secret
         self._admin_username = settings.keycloak_admin_username
         self._admin_password = settings.keycloak_admin_password
         self._timeout = settings.keycloak_http_timeout_seconds
@@ -108,20 +109,31 @@ class KeycloakAdminService:
             raise Conflict("Unable to terminate Keycloak user sessions")
 
     def _ensure_configured(self) -> None:
-        if not self._admin_username or not self._admin_password:
+        has_service_account_credentials = bool(self._admin_client_id and self._admin_client_secret)
+        has_password_grant_credentials = bool(self._admin_username and self._admin_password)
+        if not has_service_account_credentials and not has_password_grant_credentials:
             raise Forbidden("Keycloak admin integration is not configured")
 
     async def _get_admin_token(self) -> str:
         token_endpoint = f"{self._base_url}/realms/{self._admin_realm}/protocol/openid-connect/token"
+        if self._admin_client_secret:
+            form_data = {
+                "grant_type": "client_credentials",
+                "client_id": self._admin_client_id,
+                "client_secret": self._admin_client_secret,
+            }
+        else:
+            form_data = {
+                "grant_type": "password",
+                "client_id": self._admin_client_id,
+                "username": self._admin_username or "",
+                "password": self._admin_password or "",
+            }
+
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
                 token_endpoint,
-                data={
-                    "grant_type": "password",
-                    "client_id": self._admin_client_id,
-                    "username": self._admin_username or "",
-                    "password": self._admin_password or "",
-                },
+                data=form_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
         if response.status_code >= 400:

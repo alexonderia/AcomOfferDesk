@@ -65,12 +65,17 @@ class PermissionCodes:
 
 
 @lru_cache(maxsize=1)
-def get_role_permissions_map() -> dict[int, frozenset[str]]:
-    all_permissions = frozenset(
+def get_known_permissions() -> frozenset[str]:
+    return frozenset(
         value
         for name, value in vars(PermissionCodes).items()
         if name.isupper() and isinstance(value, str)
     )
+
+
+@lru_cache(maxsize=1)
+def get_role_permissions_map() -> dict[int, frozenset[str]]:
+    all_permissions = get_known_permissions()
 
     internal_request_read_permissions = {
         PermissionCodes.REQUESTS_READ,

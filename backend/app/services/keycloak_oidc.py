@@ -33,6 +33,7 @@ class KeycloakAccessTokenClaims:
     email: str | None
     email_verified: bool
     realm_roles: frozenset[str]
+    api_roles: frozenset[str]
 
 
 _jwks_cache: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
@@ -183,7 +184,13 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
 
     realm_access = payload.get("realm_access") or {}
     realm_roles_raw = realm_access.get("roles") if isinstance(realm_access, dict) else []
-    realm_roles = frozenset(str(item) for item in realm_roles_raw if isinstance(item, str) and item.strip())
+    realm_roles = frozenset(item.strip() for item in realm_roles_raw if isinstance(item, str) and item.strip())
+
+    resource_access = payload.get("resource_access") or {}
+    api_client_access = resource_access.get(settings.keycloak_api_client_id) if isinstance(resource_access, dict) else {}
+    api_roles_raw = api_client_access.get("roles") if isinstance(api_client_access, dict) else []
+    api_roles = frozenset(item.strip() for item in api_roles_raw if isinstance(item, str) and item.strip())
+
     return KeycloakAccessTokenClaims(
         subject=subject,
         issuer=issuer,
@@ -196,4 +203,5 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
         email=str(payload.get("email") or "").strip() or None,
         email_verified=bool(payload.get("email_verified")),
         realm_roles=realm_roles,
+        api_roles=api_roles,
     )

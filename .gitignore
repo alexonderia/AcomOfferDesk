@@ -25,4 +25,5 @@ build/
 .agents/
 .trellis/
 artifacts/
+.tmp/
 AGENTS.md

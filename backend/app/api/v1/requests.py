@@ -8,7 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.api.action_flags import OfferActionBuilder, RequestActionBuilder, serialize_permissions
+from app.api.action_flags import OfferActionBuilder, RequestActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
@@ -150,7 +150,6 @@ async def list_requests(
     return RequestListResponse(
         data=RequestListData(
             items=[_request_item_schema(current_user, item) for item in items],
-            permissions=serialize_permissions(current_user),
         ),
     )
 
@@ -171,7 +170,6 @@ async def list_open_requests(
     return OpenRequestListResponse(
         data=OpenRequestListData(
             items=[_open_request_item_schema(current_user, item) for item in items],
-            permissions=serialize_permissions(current_user),
         ),
     )
 
@@ -189,7 +187,6 @@ async def list_offered_requests(
     return OpenRequestListResponse(
         data=OpenRequestListData(
             items=[_open_request_item_schema(current_user, item) for item in items],
-            permissions=serialize_permissions(current_user),
         ),
     )
 
@@ -273,7 +270,6 @@ async def get_request_details(
                     for offer in item.offers
                 ],
             ),
-            permissions=serialize_permissions(current_user),
         ),
     )
 

@@ -260,3 +260,51 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 - `backend/app/services/keycloak_admin.py`
 - `web/src/app/providers/AuthProvider.tsx`
 
+## Контракт авторизации: session vs entity
+
+Актуальный контракт для authorization-данных между frontend и backend:
+
+- Session endpoint (`POST /api/v1/auth/refresh`) — основной источник глобального пользовательского контекста:
+  - `permissions`
+  - `app_roles`
+  - `delegation_roles`
+  - `status`, `role_id`, `business_access`, `onboarding_state`
+- Entity list/detail endpoint'ы возвращают данные сущностей и вычисленные backend-ом `actions`.
+- Entity list/detail endpoint'ы не должны дублировать глобальные `permissions` рядом с `items`/`item`.
+
+Примеры:
+
+```json
+{
+  "data": {
+    "permissions": ["requests.read", "offers.create"],
+    "app_roles": ["app.contractor"],
+    "delegation_roles": []
+  }
+}
+```
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "request_id": 9,
+        "actions": {
+          "can_open_contractor_view": true,
+          "can_create_offer": true
+        }
+      }
+    ]
+  }
+}
+```
+
+Правило использования на frontend:
+- использовать `AuthProvider.session.permissions` для видимости разделов/страниц/меню;
+- использовать `item.actions` / `entity.actions` для конкретных действий на строке/карточке/объекте.
+
+Правило безопасности:
+- видимость на frontend — только UX;
+- backend остается enforcement-слоем для всех защищенных endpoint'ов.
+

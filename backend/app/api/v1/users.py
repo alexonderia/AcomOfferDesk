@@ -133,7 +133,6 @@ async def list_users(
     return UserListResponse(
         data=UserListData(
             items=[_user_list_schema(current_user, item) for item in users],
-            permissions=serialize_permissions(current_user),
         ),
     )
 
@@ -152,7 +151,6 @@ async def list_manager_candidates(
     return UserListResponse(
         data=UserListData(
             items=[_user_list_schema(current_user, item) for item in users],
-            permissions=serialize_permissions(current_user),
         ),
     )
 
@@ -170,7 +168,6 @@ async def list_economists(
     return EconomistListResponse(
         data=EconomistListData(
             items=[_economist_list_schema(current_user, item) for item in economists],
-            permissions=serialize_permissions(current_user),
         ),
     )
 
@@ -395,7 +392,6 @@ async def list_request_economists(
     return RequestEconomistListResponse(
         data=RequestEconomistListData(
             items=[RequestEconomistItemSchema(**asdict(item)) for item in users],
-            permissions=serialize_permissions(current_user),
         ),
     )
 
@@ -422,7 +418,6 @@ async def list_request_contractors(
                 )
                 for item in users
             ],
-            permissions=serialize_permissions(current_user),
         ),
     )
 

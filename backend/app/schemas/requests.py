@@ -97,17 +97,14 @@ class OpenRequestItemSchema(BaseModel):
 
 class OpenRequestListData(BaseModel):
     items: list[OpenRequestItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestListData(BaseModel):
     items: list[RequestItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestDetailsResponseData(BaseModel):
     item: RequestDetailsSchema
-    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestListResponse(BaseModel):

@@ -30,7 +30,6 @@ class UserListItemSchema(BaseModel):
 
 class UserListData(BaseModel):
     items: list[UserListItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class UserListResponse(BaseModel):
@@ -48,7 +47,6 @@ class EconomistListItemSchema(BaseModel):
 
 class EconomistListData(BaseModel):
     items: list[EconomistListItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class EconomistListResponse(BaseModel):
@@ -105,7 +103,6 @@ class RequestEconomistItemSchema(BaseModel):
 
 class RequestEconomistListData(BaseModel):
     items: list[RequestEconomistItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestEconomistListResponse(BaseModel):
@@ -122,7 +119,6 @@ class RequestContractorItemSchema(BaseModel):
 
 class RequestContractorListData(BaseModel):
     items: list[RequestContractorItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestContractorListResponse(BaseModel):

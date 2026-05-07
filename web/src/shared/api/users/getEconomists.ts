@@ -18,13 +18,11 @@ type EconomistRow = {
 type EconomistListResponse = {
   data: {
     items: EconomistRow[];
-    permissions?: string[];
   };
 };
 
 export type GetEconomistsResult = {
   items: UserListItem[];
-  permissions: string[];
 };
 
 export const getEconomists = async (): Promise<GetEconomistsResult> => {
@@ -50,7 +48,6 @@ export const getEconomists = async (): Promise<GetEconomistsResult> => {
       address: null,
       note: null,
       actions: normalizeUserActions(item.actions)
-    })),
-    permissions: response.data.permissions ?? []
+    }))
   };
 };

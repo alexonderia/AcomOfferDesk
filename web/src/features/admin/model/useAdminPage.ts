@@ -184,6 +184,8 @@ export const useAdminPage = () => {
   const canCreateManualContractor = hasPermission(session, 'contractors.manual.create');
   const canUpdateRoleAny = hasPermission(session, 'users.role.update_any');
   const canUpdateRoleEconomy = hasPermission(session, 'users.role.update_economy');
+  const canUpdateStatus = hasPermission(session, 'users.status.update');
+  const canUpdateRole = canUpdateRoleAny || canUpdateRoleEconomy;
   const canOpenCreateDialog = hasPermission(session, 'users.create') || canCreateManualContractor;
   const canViewRoleIds = hasAnyPermission(session, ['users.role.update_any', 'users.role.update_economy']);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -195,8 +197,6 @@ export const useAdminPage = () => {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
-  const [canUpdateStatus, setCanUpdateStatus] = useState(false);
-  const [canUpdateRole, setCanUpdateRole] = useState(false);
   const [economistAndLeadManagers, setEconomistAndLeadManagers] = useState<UserListItem[]>([]);
   const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
 
@@ -351,15 +351,8 @@ export const useAdminPage = () => {
     try {
       const response = await getUsers(roleByTab[activeTab]);
       setUsers(response.items);
-      setCanUpdateStatus(response.permissions.includes('users.status.update'));
-      setCanUpdateRole(
-        response.permissions.includes('users.role.update_any')
-        || response.permissions.includes('users.role.update_economy')
-      );
     } catch (error) {
       setUsersError(error instanceof Error ? error.message : 'Не удалось загрузить список пользователей');
-      setCanUpdateStatus(false);
-      setCanUpdateRole(false);
     } finally {
       setIsLoadingUsers(false);
     }

@@ -1,5 +1,6 @@
-﻿import asyncio
+import asyncio
 
+import app.api.dependencies as api_dependencies
 from app.api.dependencies import build_current_user_from_keycloak_claims, require_permission
 from app.core.config import settings
 from app.domain.auth_context import build_current_user_from_keycloak
@@ -84,6 +85,39 @@ def test_decode_keycloak_access_token_handles_missing_resource_access(monkeypatc
     assert claims.api_roles == frozenset()
 
 
+def test_decode_keycloak_access_token_returns_empty_roles_when_api_client_mismatch(monkeypatch):
+    monkeypatch.setattr(settings, "keycloak_api_client_id", "acom-api")
+    issuer = settings.resolved_keycloak_issuer_url
+
+    monkeypatch.setattr(keycloak_oidc.jwt, "get_unverified_header", lambda _: {"kid": "kid-1", "alg": "RS256"})
+    monkeypatch.setattr(keycloak_oidc.jwt, "get_unverified_claims", lambda _: {"iss": issuer})
+
+    async def fake_get_jwks():
+        return {"keys": [{"kid": "kid-1"}]}
+
+    monkeypatch.setattr(keycloak_oidc, "_get_jwks", fake_get_jwks)
+    monkeypatch.setattr(
+        keycloak_oidc.jwt,
+        "decode",
+        lambda *_args, **_kwargs: {
+            "iss": issuer,
+            "sub": "user-1",
+            "iat": 100,
+            "exp": 200,
+            "aud": [settings.keycloak_client_id],
+            "resource_access": {
+                "another-api-client": {
+                    "roles": [PermissionCodes.USERS_READ],
+                }
+            },
+        },
+    )
+
+    claims = _run(keycloak_oidc.decode_keycloak_access_token("token"))
+
+    assert claims.api_roles == frozenset()
+
+
 def test_build_current_user_from_keycloak_filters_known_permissions():
     current_user = build_current_user_from_keycloak(
         user_id="user-1",
@@ -102,7 +136,7 @@ def test_build_current_user_from_keycloak_filters_known_permissions():
     assert current_user.permissions == frozenset({PermissionCodes.USERS_READ})
 
 
-def test_build_current_user_from_keycloak_splits_app_roles_and_ignores_delegation_roles():
+def test_build_current_user_from_keycloak_splits_app_and_delegation_roles():
     current_user = build_current_user_from_keycloak(
         user_id="user-1",
         role_id=2,
@@ -154,6 +188,29 @@ def test_require_permission_denies_non_active_statuses():
         except Forbidden:
             continue
         raise AssertionError(f"Expected Forbidden for status={status}")
+
+
+def test_require_permission_dependency_uses_domain_authorization(monkeypatch):
+    dependency = require_permission(PermissionCodes.USERS_READ)
+    current_user = build_current_user_from_keycloak(
+        user_id="user-1",
+        role_id=settings.admin_role_id,
+        status="active",
+        api_roles=frozenset({PermissionCodes.USERS_READ}),
+    )
+
+    captured: dict[str, str] = {}
+
+    def fake_enforce_permission(user, permission_code):
+        captured["user_id"] = user.user_id
+        captured["permission_code"] = permission_code
+
+    monkeypatch.setattr(api_dependencies, "enforce_permission", fake_enforce_permission)
+
+    resolved = _run(dependency(current_user=current_user))
+
+    assert resolved is current_user
+    assert captured == {"user_id": "user-1", "permission_code": PermissionCodes.USERS_READ}
 
 
 def test_build_current_user_from_keycloak_claims_takes_permissions_from_token_claims():

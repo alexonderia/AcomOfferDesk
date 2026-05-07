@@ -38,7 +38,8 @@
 - frontend не хранит client secret;
 - frontend получает permissions/action metadata только из backend response;
 - `users.id_role` остается бизнес-ролью, а не источником security permissions.
-- `delegation.*` роли в текущем bootstrap не создаются (optional extension).
+- `delegation.*` роли в текущем bootstrap не создаются и не удаляются автоматически (optional extension).
+- `delegation.*` сами по себе не являются atomic permissions; чтобы они давали действия, их нужно делать composite и включать коды из `PermissionCodes`.
 - `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true` включает init-синхронизацию `app.*` ролей для уже связанных пользователей.
 - Для актуализации текущей test-ветки оставляйте `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true`.
 

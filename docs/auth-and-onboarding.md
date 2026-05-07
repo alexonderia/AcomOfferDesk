@@ -81,6 +81,7 @@
 - Backend поддерживает парсинг ролей с префиксом `delegation.` и отдаёт их в `delegation_roles`.
 - В текущем проектном bootstrap по умолчанию `delegation.*` не создаются и не назначаются.
 - Если понадобится, их можно добавить вручную/скриптом как расширение.
+- Роли `delegation.*` сами по себе не считаются atomic permissions: чтобы давать действия, их нужно делать composite и включать в них permission-коды из `PermissionCodes`.
 
 ## Регистрация и онбординг: текущие потоки
 
@@ -197,17 +198,19 @@ One-shot init:
 - синхронизирует composites `app.*`;
 - назначает `app.superadmin` bootstrap-пользователю;
 - обеспечивает `realm-management` роли для service-account `acom-admin-service`;
-- удаляет legacy `delegation.*` роли, если они остались от старых прогонов.
+- не создает `delegation.*` роли по умолчанию и не удаляет вручную созданные `delegation.*` роли.
 - при `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true` выполняет дополнение/выравнивание `app.*` ролей у существующих linked users.
+- `keycloak_user_role_sync` изменяет только взаимоисключающие `app.*` роли по `users.id_role` и не удаляет `delegation.*` или вручную назначенные atomic permissions.
 
 ## Optional delegation roles: как добавлять при необходимости
 
 Если потребуется `delegation.*`:
 1. Добавить client roles в `acom-api` (например, `delegation.user-manager`).
-2. Назначить роли нужным пользователям или включить в нужные composites.
-3. Убедиться, что токен содержит эти роли в `resource_access.<client>.roles`.
-4. Backend автоматически отдаст их в `delegation_roles`.
-5. Бизнес-ограничения по endpoint все равно должны оставаться в backend policy/service слое.
+2. Сделать эти роли composite и добавить в них нужные atomic permission-коды из `PermissionCodes`.
+3. Назначить роли нужным пользователям или включить в нужные composites.
+4. Убедиться, что токен содержит эти роли в `resource_access.<client>.roles`.
+5. Backend автоматически отдаст их в `delegation_roles`.
+6. Бизнес-ограничения по endpoint все равно должны оставаться в backend policy/service слое.
 
 ## Диагностика и проверки
 
@@ -256,3 +259,4 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 - `backend/app/services/identity_sync.py`
 - `backend/app/services/keycloak_admin.py`
 - `web/src/app/providers/AuthProvider.tsx`
+

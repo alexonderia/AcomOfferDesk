@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from app.domain.permissions import get_known_permissions, get_permissions_for_role
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +48,14 @@ def build_current_user_from_keycloak(
     permissions = frozenset(role for role in normalized_roles if role in known_permissions)
     app_roles = frozenset(role for role in normalized_roles if role.startswith("app."))
     delegation_roles = frozenset(role for role in normalized_roles if role.startswith("delegation."))
+    if (app_roles or delegation_roles) and not permissions:
+        logger.warning(
+            "keycloak_user_without_atomic_permissions user_id=%s app_roles=%s delegation_roles=%s keycloak_roles_count=%s",
+            user_id,
+            sorted(app_roles),
+            sorted(delegation_roles),
+            len(normalized_roles),
+        )
     return CurrentUser(
         user_id=user_id,
         role_id=role_id,

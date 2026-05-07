@@ -486,10 +486,6 @@ ensure_api_roles_model() {
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
 
-  # Current project state does not use delegation roles.
-  for legacy_role in delegation.user-manager delegation.request-deleter; do
-    /opt/keycloak/bin/kcadm.sh delete "clients/$api_client_uuid/roles/$legacy_role" -r "$APP_REALM" >/dev/null 2>&1 || true
-  done
 }
 
 ensure_admin_service_role_bindings() {

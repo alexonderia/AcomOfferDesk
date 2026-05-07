@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import Depends, Header
 
+from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser, build_current_user_from_keycloak
-from app.domain.exceptions import Forbidden, Unauthorized
+from app.domain.authorization import require_permission as enforce_permission
+from app.domain.exceptions import Unauthorized
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import decode_keycloak_access_token
+
+logger = logging.getLogger(__name__)
 
 
 def build_current_user_from_keycloak_claims(
@@ -37,12 +43,28 @@ async def _get_current_user_from_keycloak_token(token: str, *, uow: UnitOfWork) 
         profiles=uow.profiles,
     )
     synced = await sync_service.sync_keycloak_identity(claims, allow_user_creation=False)
-    return build_current_user_from_keycloak_claims(
+    current_user = build_current_user_from_keycloak_claims(
         user_id=synced.user.id,
         role_id=synced.user.id_role,
         status=synced.user.status,
         keycloak_api_roles=claims.api_roles,
     )
+    if not claims.api_roles:
+        logger.warning(
+            "keycloak_api_roles_empty user_id=%s keycloak_subject=%s keycloak_api_client_id=%s",
+            synced.user.id,
+            claims.subject,
+            settings.keycloak_api_client_id,
+        )
+    logger.debug(
+        "current_user_from_keycloak user_id=%s keycloak_subject=%s keycloak_api_roles_count=%s app_roles=%s delegation_roles=%s",
+        current_user.user_id,
+        claims.subject,
+        len(claims.api_roles),
+        sorted(current_user.app_roles),
+        sorted(current_user.delegation_roles),
+    )
+    return current_user
 
 
 async def get_current_user(
@@ -62,10 +84,7 @@ async def get_current_user(
 
 def require_permission(permission: str):
     async def _dependency(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if current_user.status != "active":
-            raise Forbidden("User is not active")
-        if not current_user.has_permission(permission):
-            raise Forbidden("Insufficient permissions")
+        enforce_permission(current_user, permission)
         return current_user
 
     return _dependency

@@ -17,6 +17,8 @@ $RootDir = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 
 $env:PYTHONPATH = "$RootDir/backend"
+$VenvPython = Join-Path $RootDir ".venv\Scripts\python.exe"
+$PythonCmd = if (Test-Path $VenvPython) { $VenvPython } else { "python" }
 
 $argsList = @("-m", "app.scripts.smoke_services", "--env-file", $EnvFile)
 if ($BaseUrl) {
@@ -32,4 +34,5 @@ if ($RabbitmqUrl) {
   $argsList += @("--rabbitmq-url", $RabbitmqUrl)
 }
 
-python @argsList
+& $PythonCmd @argsList
+exit $LASTEXITCODE

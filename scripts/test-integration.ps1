@@ -4,5 +4,8 @@ $RootDir = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 
 $env:PYTHONPATH = "$RootDir/backend"
+$VenvPython = Join-Path $RootDir ".venv\Scripts\python.exe"
+$PythonCmd = if (Test-Path $VenvPython) { $VenvPython } else { "python" }
 
-python -m pytest backend/tests/integration -q
+& $PythonCmd -m pytest backend/tests/integration -q
+exit $LASTEXITCODE

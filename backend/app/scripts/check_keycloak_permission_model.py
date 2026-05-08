@@ -91,6 +91,10 @@ class SimpleHttp:
         _, payload = self.request(method="GET", url=url, headers=headers, params=params)
         return json.loads(payload.decode("utf-8"))
 
+    def post_form_json(self, *, url: str, form_data: dict[str, str], headers: dict[str, str] | None = None) -> Any:
+        _, payload = self.request(method="POST", url=url, headers=headers, form_data=form_data)
+        return json.loads(payload.decode("utf-8"))
+
 
 def _load_known_permissions_from_source() -> set[str]:
     source_path = Path(__file__).resolve().parents[1] / "domain" / "permissions.py"
@@ -113,10 +117,6 @@ def _load_known_permissions_from_source() -> set[str]:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
                 permissions.add(value.value)
     return permissions
-
-    def post_form_json(self, *, url: str, form_data: dict[str, str], headers: dict[str, str] | None = None) -> Any:
-        _, payload = self.request(method="POST", url=url, headers=headers, form_data=form_data)
-        return json.loads(payload.decode("utf-8"))
 
 
 def _load_env_file(path: str) -> dict[str, str]:
@@ -458,6 +458,18 @@ def _check_admin_service_client(
             report.fail(f"{client_id}: service account token request failed: {exc}")
 
     service_account_user_id = str(client.get("serviceAccountUserId") or "").strip()
+    if not service_account_user_id:
+        client_uuid = str(client.get("id") or "").strip()
+        if client_uuid:
+            try:
+                service_account_user = admin_api.get(
+                    f"/admin/realms/{realm}/clients/{client_uuid}/service-account-user"
+                )
+                if isinstance(service_account_user, dict):
+                    service_account_user_id = str(service_account_user.get("id") or "").strip()
+            except Exception:  # noqa: BLE001
+                service_account_user_id = ""
+
     if not service_account_user_id:
         report.fail(f"{client_id}: missing serviceAccountUserId")
         return

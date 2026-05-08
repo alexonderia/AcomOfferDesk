@@ -34,9 +34,15 @@ APP_REALM="${KEYCLOAK_REALM:-acom-offerdesk}"
 WEB_CLIENT_ID="${KEYCLOAK_WEB_CLIENT_ID:-${KEYCLOAK_CLIENT_ID:-acom-web}}"
 API_CLIENT_ID="${KEYCLOAK_API_CLIENT_ID:-acom-api}"
 ADMIN_SERVICE_CLIENT_ID="${KEYCLOAK_ADMIN_CLIENT_ID:-acom-admin-service}"
+ADMIN_SERVICE_CLIENT_SECRET="${KEYCLOAK_ADMIN_CLIENT_SECRET:-}"
 BOOTSTRAP_USERNAME="${KEYCLOAK_BOOTSTRAP_APP_USERNAME:-superadmin}"
 KC_ADMIN_USERNAME="${KC_BOOTSTRAP_ADMIN_USERNAME:-${KEYCLOAK_ADMIN_USERNAME:-}}"
 KC_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-${KEYCLOAK_ADMIN_PASSWORD:-}}"
+APP_ENV_NORMALIZED="$(printf '%s' "${APP_ENV:-development}" | tr '[:upper:]' '[:lower:]')"
+KEYCLOAK_PUBLIC_BASE_URL="${KEYCLOAK_PUBLIC_BASE_URL:-}"
+KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL:-}"
+KC_HOSTNAME="${KC_HOSTNAME:-}"
+KEYCLOAK_VERIFY_EMAIL="${KEYCLOAK_VERIFY_EMAIL:-}"
 
 if [[ -z "$KC_ADMIN_USERNAME" || -z "$KC_ADMIN_PASSWORD" ]]; then
   echo "FAIL: missing admin credentials in env ($ENV_FILE). Expected KC_BOOTSTRAP_ADMIN_USERNAME/KC_BOOTSTRAP_ADMIN_PASSWORD or KEYCLOAK_ADMIN_USERNAME/KEYCLOAK_ADMIN_PASSWORD."
@@ -112,6 +118,40 @@ EOF
 
 fail=0
 
+is_weak_secret() {
+  local normalized
+  normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  [[ -z "$normalized" ]] && return 0
+  case "$normalized" in
+    change-me|changeme|change_me|top-secret|top_secret|secret|password|admin|test|example)
+      return 0
+      ;;
+    change_me*|change-me*|*example)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+if is_weak_secret "$ADMIN_SERVICE_CLIENT_SECRET"; then
+  echo "FAIL: KEYCLOAK_ADMIN_CLIENT_SECRET is missing or looks like a placeholder"
+  fail=1
+fi
+
+if [[ "$APP_ENV_NORMALIZED" == "production" ]]; then
+  for required_https_value in "$KEYCLOAK_PUBLIC_BASE_URL" "$KEYCLOAK_ISSUER_URL" "$KC_HOSTNAME"; do
+    if [[ -z "$required_https_value" || "$required_https_value" != https://* ]]; then
+      echo "FAIL: production requires https values for KEYCLOAK_PUBLIC_BASE_URL, KEYCLOAK_ISSUER_URL and KC_HOSTNAME"
+      fail=1
+      break
+    fi
+  done
+  if [[ "$KEYCLOAK_VERIFY_EMAIL" != "true" ]]; then
+    echo "FAIL: production requires KEYCLOAK_VERIFY_EMAIL=true"
+    fail=1
+  fi
+fi
+
 docker_exec() {
   docker exec "$KEYCLOAK_CONTAINER" "$@"
 }
@@ -139,6 +179,29 @@ get_client_uuid() {
   local client_id="$1"
   docker_exec /opt/keycloak/bin/kcadm.sh get "clients?clientId=$client_id" -r "$APP_REALM" | extract_first_json_id
 }
+
+echo "Checking realm security settings..."
+realm_payload="$(docker_exec /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM")"
+if ! printf '%s' "$realm_payload" | rg -q '"sslRequired"[[:space:]]*:[[:space:]]*"external"'; then
+  echo "FAIL: realm sslRequired must be 'external'"
+  fail=1
+else
+  echo "OK: realm sslRequired is external"
+fi
+if ! printf '%s' "$realm_payload" | rg -q '"bruteForceProtected"[[:space:]]*:[[:space:]]*true'; then
+  echo "FAIL: realm bruteForceProtected must be true"
+  fail=1
+else
+  echo "OK: realm bruteForceProtected is true"
+fi
+if [[ "$APP_ENV_NORMALIZED" == "production" ]]; then
+  if ! printf '%s' "$realm_payload" | rg -q '"verifyEmail"[[:space:]]*:[[:space:]]*true'; then
+    echo "FAIL: production realm verifyEmail must be true"
+    fail=1
+  else
+    echo "OK: production realm verifyEmail is true"
+  fi
+fi
 
 echo "Checking required clients..."
 WEB_CLIENT_UUID="$(get_client_uuid "$WEB_CLIENT_ID")"

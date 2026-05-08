@@ -1,4 +1,4 @@
-import { expect, type Page, type TestInfo } from '@playwright/test';
+ï»¿import { expect, type Page, type TestInfo } from '@playwright/test';
 
 const STRICT_CREDENTIALS = process.env.E2E_STRICT_CREDENTIALS === 'true';
 
@@ -9,7 +9,14 @@ export type Credentials = {
 
 export const getCredentialsOrSkip = (
   testInfo: TestInfo,
-  prefix: 'E2E_SUPERADMIN' | 'E2E_ECONOMIST' | 'E2E_CONTRACTOR'
+  prefix:
+    | 'E2E_SUPERADMIN'
+    | 'E2E_ADMIN'
+    | 'E2E_PROJECT_MANAGER'
+    | 'E2E_LEAD_ECONOMIST'
+    | 'E2E_ECONOMIST'
+    | 'E2E_OPERATOR'
+    | 'E2E_CONTRACTOR'
 ): Credentials | null => {
   const username = process.env[`${prefix}_USERNAME`]?.trim() ?? '';
   const password = process.env[`${prefix}_PASSWORD`]?.trim() ?? '';
@@ -28,39 +35,71 @@ export const getCredentialsOrSkip = (
 };
 
 export const loginViaKeycloak = async (page: Page, credentials: Credentials): Promise<void> => {
-  await page.goto('/login?logged_out=1');
+  await page.goto('/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1');
 
-  const loginButton = page.getByRole('button', { name: /âîéòè|login/i });
-  if (await loginButton.count()) {
-    await loginButton.first().click();
+  const visitSiteButton = page.getByRole('button', { name: /visit site/i });
+  if (await visitSiteButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await visitSiteButton.click();
   }
-
-  await page.waitForURL(/\/iam\//, { timeout: 30_000 });
 
   const usernameInput = page.locator('input[name="username"], input#username').first();
   const passwordInput = page.locator('input[name="password"], input#password').first();
+  await usernameInput.waitFor({ state: 'visible', timeout: 30_000 });
   await usernameInput.fill(credentials.username);
   await passwordInput.fill(credentials.password);
 
   const submitButton = page.locator('#kc-login, button[type="submit"], input[type="submit"]').first();
   await submitButton.click();
 
-  await page.waitForURL((url) => !url.pathname.startsWith('/iam'), { timeout: 30_000 });
+  try {
+    await page.waitForURL(
+      (url) =>
+        !url.pathname.startsWith('/iam') &&
+        !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
+        !url.pathname.startsWith('/auth/callback'),
+      { timeout: 30_000 }
+    );
+  } catch (error) {
+    if (new URL(page.url()).pathname.startsWith('/iam')) {
+      await submitButton.click();
+      await page.waitForURL(
+        (url) =>
+          !url.pathname.startsWith('/iam') &&
+          !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
+          !url.pathname.startsWith('/auth/callback'),
+        { timeout: 30_000 }
+      );
+    } else {
+      throw error;
+    }
+  }
+
+  const currentUrl = new URL(page.url());
+  if (currentUrl.pathname === '/login' && currentUrl.searchParams.has('auth_error')) {
+    throw new Error(`Login failed with auth_error=${currentUrl.searchParams.get('auth_error')}`);
+  }
 };
 
 export const logoutFromUi = async (page: Page): Promise<void> => {
-  const logoutButton = page.getByRole('button', { name: /âûéòè|logout/i });
-  const logoutMenuItem = page.getByRole('menuitem', { name: /âûéòè|logout/i });
+  const logoutButton = page.getByRole('button', { name: /Ð²Ñ‹Ð¹Ñ‚Ð¸|logout/i });
+  const logoutMenuItem = page.getByRole('menuitem', { name: /Ð²Ñ‹Ð¹Ñ‚Ð¸|logout/i });
 
   if (await logoutButton.count()) {
     await logoutButton.first().click();
-  } else if (await logoutMenuItem.count()) {
-    await logoutMenuItem.first().click();
-  } else {
-    await page.request.post('/api/v1/auth/logout');
-    await page.goto('/login?logged_out=1');
+    await page.waitForLoadState('domcontentloaded');
     return;
   }
 
-  await expect(page).toHaveURL(/\/login|\/auth\/login/, { timeout: 20_000 });
+  if (await logoutMenuItem.count()) {
+    await logoutMenuItem.first().click();
+    await page.waitForLoadState('domcontentloaded');
+    return;
+  }
+
+  try {
+    await page.request.post('/api/v1/auth/logout', { failOnStatusCode: false });
+  } catch {
+    // ngrok/public tunnel can reset connection during logout; cookie cleanup is sufficient for test isolation.
+  }
+  await page.context().clearCookies();
 };

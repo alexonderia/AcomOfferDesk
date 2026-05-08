@@ -4,6 +4,20 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_WEAK_SECRET_MARKERS = {
+    "change-me",
+    "changeme",
+    "change_me",
+    "top-secret",
+    "top_secret",
+    "secret",
+    "password",
+    "admin",
+    "test",
+    "example",
+}
+
+
 def _parse_int_list(value: str | list[int] | None) -> list[int]:
     if value is None:
         return []
@@ -22,6 +36,19 @@ def _parse_str_list(value: str | list[str] | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _is_weak_secret(secret: str | None) -> bool:
+    normalized = (secret or "").strip().lower()
+    if not normalized:
+        return True
+    if normalized in _WEAK_SECRET_MARKERS:
+        return True
+    if normalized.startswith("change_me") or normalized.startswith("change-me"):
+        return True
+    if normalized.endswith("example"):
+        return True
+    return False
 
 
 class Settings(BaseSettings):
@@ -249,6 +276,21 @@ class Settings(BaseSettings):
             )
         if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
             raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
+
+        if self.keycloak_enabled and self.app_env == "production":
+            if not self.keycloak_public_base_url:
+                raise ValueError("KEYCLOAK_PUBLIC_BASE_URL is required when KEYCLOAK_ENABLED=true in production")
+            if not self.keycloak_issuer_url:
+                raise ValueError("KEYCLOAK_ISSUER_URL is required when KEYCLOAK_ENABLED=true in production")
+            if not self.keycloak_public_base_url.startswith("https://"):
+                raise ValueError("KEYCLOAK_PUBLIC_BASE_URL must use https:// in production")
+            if not self.keycloak_issuer_url.startswith("https://"):
+                raise ValueError("KEYCLOAK_ISSUER_URL must use https:// in production")
+            if _is_weak_secret(self.keycloak_admin_client_secret):
+                raise ValueError(
+                    "KEYCLOAK_ADMIN_CLIENT_SECRET must be configured with a strong secret in production"
+                )
+
         return self
 
     @property

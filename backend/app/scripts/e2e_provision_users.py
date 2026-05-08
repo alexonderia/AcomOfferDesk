@@ -105,39 +105,44 @@ async def _request_token(
     return token or None
 
 
-async def _get_admin_token_for_provisioning() -> str:
+async def _get_admin_token_for_provisioning() -> tuple[str, str]:
     from app.core.config import settings
 
-    internal_base = settings.keycloak_internal_base_url.rstrip("/")
     timeout = settings.keycloak_http_timeout_seconds
+    candidate_bases: list[str] = []
+    for base in (settings.keycloak_internal_base_url, settings.resolved_keycloak_public_base_url):
+        normalized = (base or "").rstrip("/")
+        if normalized and normalized not in candidate_bases:
+            candidate_bases.append(normalized)
 
-    if settings.keycloak_admin_username and settings.keycloak_admin_password:
-        token = await _request_token(
-            token_endpoint=f"{internal_base}/realms/{settings.keycloak_admin_realm}/protocol/openid-connect/token",
-            form_data={
-                "grant_type": "password",
-                "client_id": "admin-cli",
-                "username": settings.keycloak_admin_username,
-                "password": settings.keycloak_admin_password,
-            },
-            timeout=timeout,
-        )
-        if token:
-            return token
-
-    if settings.keycloak_admin_client_id and settings.keycloak_admin_client_secret:
-        for realm in (settings.keycloak_realm, settings.keycloak_admin_realm):
+    for internal_base in candidate_bases:
+        if settings.keycloak_admin_username and settings.keycloak_admin_password:
             token = await _request_token(
-                token_endpoint=f"{internal_base}/realms/{realm}/protocol/openid-connect/token",
+                token_endpoint=f"{internal_base}/realms/{settings.keycloak_admin_realm}/protocol/openid-connect/token",
                 form_data={
-                    "grant_type": "client_credentials",
-                    "client_id": settings.keycloak_admin_client_id,
-                    "client_secret": settings.keycloak_admin_client_secret,
+                    "grant_type": "password",
+                    "client_id": "admin-cli",
+                    "username": settings.keycloak_admin_username,
+                    "password": settings.keycloak_admin_password,
                 },
                 timeout=timeout,
             )
             if token:
-                return token
+                return token, internal_base
+
+        if settings.keycloak_admin_client_id and settings.keycloak_admin_client_secret:
+            for realm in (settings.keycloak_realm, settings.keycloak_admin_realm):
+                token = await _request_token(
+                    token_endpoint=f"{internal_base}/realms/{realm}/protocol/openid-connect/token",
+                    form_data={
+                        "grant_type": "client_credentials",
+                        "client_id": settings.keycloak_admin_client_id,
+                        "client_secret": settings.keycloak_admin_client_secret,
+                    },
+                    timeout=timeout,
+                )
+                if token:
+                    return token, internal_base
 
     raise RuntimeError("Unable to authenticate in Keycloak admin API")
 
@@ -160,6 +165,8 @@ async def _create_keycloak_user(
     *,
     username: str,
     email: str,
+    first_name: str,
+    last_name: str,
     password: str,
     app_role: str,
     admin_token: str,
@@ -201,6 +208,8 @@ async def _create_keycloak_user(
             json={
                 "username": username,
                 "email": email,
+                "firstName": first_name,
+                "lastName": last_name,
                 "enabled": True,
                 "emailVerified": True,
             },
@@ -333,6 +342,7 @@ async def provision(*, env_file: str, state_dir: str) -> int:
 
     from app.core.config import settings
     from app.infrastructure.db import engine
+    from app.services.keycloak_admin import KeycloakAdminService
 
     if not settings.keycloak_enabled:
         raise RuntimeError("KEYCLOAK_ENABLED must be true for E2E provisioning")
@@ -340,12 +350,17 @@ async def provision(*, env_file: str, state_dir: str) -> int:
     run_id = secrets.token_hex(4)
     role_specs = [
         ("E2E_SUPERADMIN", "superadmin", settings.superadmin_role_id, "app.superadmin"),
+        ("E2E_ADMIN", "admin", settings.admin_role_id, "app.admin"),
+        ("E2E_PROJECT_MANAGER", "project_manager", settings.project_manager_role_id, "app.project_manager"),
+        ("E2E_LEAD_ECONOMIST", "lead_economist", settings.lead_economist_role_id, "app.lead_economist"),
         ("E2E_ECONOMIST", "economist", settings.economist_role_id, "app.economist"),
+        ("E2E_OPERATOR", "operator", settings.operator_role_id, "app.operator"),
         ("E2E_CONTRACTOR", "contractor", settings.contractor_role_id, "app.contractor"),
     ]
 
+    admin_token, admin_base_url = await _get_admin_token_for_provisioning()
+    settings.keycloak_internal_base_url = admin_base_url
     service = KeycloakAdminService()
-    admin_token = await _get_admin_token_for_provisioning()
     api_client_uuid = await service.get_client_uuid_by_client_id(
         client_id=settings.keycloak_api_client_id,
         admin_token=admin_token,
@@ -361,6 +376,8 @@ async def provision(*, env_file: str, state_dir: str) -> int:
             keycloak_user_id = await _create_keycloak_user(
                 username=username,
                 email=email,
+                first_name="E2E",
+                last_name=role_slug,
                 password=password,
                 app_role=app_role,
                 admin_token=admin_token,
@@ -407,9 +424,11 @@ async def provision(*, env_file: str, state_dir: str) -> int:
 async def cleanup_state(*, state: ProvisionState, env_file: str) -> int:
     _apply_env_file(env_file)
 
+    from app.core.config import settings
     from app.infrastructure.db import engine
 
-    admin_token = await _get_admin_token_for_provisioning()
+    admin_token, admin_base_url = await _get_admin_token_for_provisioning()
+    settings.keycloak_internal_base_url = admin_base_url
 
     failures = 0
     for user in reversed(state.users):

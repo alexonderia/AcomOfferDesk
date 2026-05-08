@@ -130,10 +130,14 @@ npm --prefix web exec -- playwright install
 
 Как запускать:
 - PowerShell: `./scripts/check-keycloak.ps1 -EnvFile .env.dev`
+- PowerShell для `prod-like` стенда через публичный gateway/ngrok:
+  `$env:KEYCLOAK_INTERNAL_BASE_URL='https://unflossy-noninheritable-aarav.ngrok-free.dev/iam'; ./scripts/check-keycloak.ps1 -EnvFile .env.prod-like; Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL`
 - Bash: `./scripts/check-keycloak.sh .env.dev`
 
 Строгий режим для неизвестных атомарных ролей:
 - PowerShell: `./scripts/check-keycloak.ps1 -EnvFile .env.dev -StrictUnknownAtomic`
+- PowerShell для `prod-like` стенда:
+  `$env:KEYCLOAK_INTERNAL_BASE_URL='https://unflossy-noninheritable-aarav.ngrok-free.dev/iam'; ./scripts/check-keycloak.ps1 -EnvFile .env.prod-like -StrictUnknownAtomic; Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL`
 - Bash: `STRICT_UNKNOWN_ATOMIC=true ./scripts/check-keycloak.sh .env.dev`
 
 Важно:
@@ -145,9 +149,9 @@ npm --prefix web exec -- playwright install
 
 Проверяет основные пользовательские потоки через Playwright:
 - вход через Keycloak;
-- открытие страницы заявок внутренним пользователем;
-- базовый сценарий подрядчика по заявкам;
-- загрузку admin-страницы superadmin;
+- базовые сценарии заявок (`economist`, `contractor`, `superadmin`);
+- ролевой доступ для всех ролей системы (`superadmin`, `admin`, `project_manager`, `lead_economist`, `economist`, `operator`, `contractor`);
+- корректные редиректы при попытке открыть недоступные разделы (`/admin`, `/pm-dashboard`, `/feedback`);
 - отсутствие явных ошибок в консоли во время smoke-сценариев.
 
 Как запускать:
@@ -160,8 +164,16 @@ npm --prefix web exec -- playwright install
 Переменные окружения для учетных данных:
 - `E2E_SUPERADMIN_USERNAME`
 - `E2E_SUPERADMIN_PASSWORD`
+- `E2E_ADMIN_USERNAME`
+- `E2E_ADMIN_PASSWORD`
+- `E2E_PROJECT_MANAGER_USERNAME`
+- `E2E_PROJECT_MANAGER_PASSWORD`
+- `E2E_LEAD_ECONOMIST_USERNAME`
+- `E2E_LEAD_ECONOMIST_PASSWORD`
 - `E2E_ECONOMIST_USERNAME`
 - `E2E_ECONOMIST_PASSWORD`
+- `E2E_OPERATOR_USERNAME`
+- `E2E_OPERATOR_PASSWORD`
 - `E2E_CONTRACTOR_USERNAME`
 - `E2E_CONTRACTOR_PASSWORD`
 
@@ -174,6 +186,9 @@ npm --prefix web exec -- playwright install
 - e2e запускаются отдельно и не входят в unit или integration;
 - эти сценарии должны оставаться легкими: цель - проверить ключевые потоки, а не каждую кнопку интерфейса;
 - `-ProvisionUsers`/`PROVISION_USERS=true` создают временных пользователей `e2e_*` в Keycloak и локальной БД, назначают им роли `app.*`, запускают тесты и затем удаляют этих пользователей;
+- в режиме `-ProvisionUsers` автоматически создаются пользователи всех 7 ролей `app.*`;
+- если `-BaseUrl` не передан, `e2e-smoke` берет базовый URL из `WEB_BASE_URL` (или `PUBLIC_BACKEND_BASE_URL`) в выбранном env-файле;
+- в режиме `-ProvisionUsers` скрипт пытается использовать локальный `KEYCLOAK_INTERNAL_BASE_URL=http://127.0.0.1:8080/iam` (если доступен), иначе использует публичный URL из env;
 - режим подготовки временных пользователей изменяет стенд и поэтому включается только явно;
 - временный state-файл с учетными данными создается в `.tmp/e2e` и удаляется при очистке; каталог `.tmp/` игнорируется Git.
 

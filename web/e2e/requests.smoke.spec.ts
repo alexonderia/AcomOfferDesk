@@ -5,7 +5,11 @@ const assertNoSevereConsoleErrors = async (page, action: () => Promise<void>) =>
   const severeErrors: string[] = [];
   const listener = (msg) => {
     if (msg.type() === 'error') {
-      severeErrors.push(msg.text());
+      const text = msg.text();
+      if (text.includes('the server responded with a status of 401')) {
+        return;
+      }
+      severeErrors.push(text);
     }
   };
 

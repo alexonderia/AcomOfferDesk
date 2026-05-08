@@ -76,6 +76,16 @@ function Assert-RoleInMappings {
   return $false
 }
 
+function Test-WeakSecret {
+  param([string]$Value)
+  $resolved = if ($null -eq $Value) { "" } else { $Value }
+  $normalized = (($resolved).Trim().ToLowerInvariant() -replace "\s", "")
+  if (-not $normalized) { return $true }
+  if ($normalized -in @("change-me", "changeme", "change_me", "top-secret", "top_secret", "secret", "password", "admin", "test", "example")) { return $true }
+  if ($normalized.StartsWith("change_me") -or $normalized.StartsWith("change-me") -or $normalized.EndsWith("example")) { return $true }
+  return $false
+}
+
 $EnvFile = if ($env:ENV_FILE) { $env:ENV_FILE } else { ".env.prod-like" }
 $script:KeycloakContainer = if ($env:KEYCLOAK_CONTAINER) { $env:KEYCLOAK_CONTAINER } else { "keycloak" }
 $InternalServerUrl = if ($env:KEYCLOAK_INTERNAL_SERVER_URL) { $env:KEYCLOAK_INTERNAL_SERVER_URL } else { "http://localhost:8080/iam" }
@@ -91,9 +101,15 @@ $script:AppRealm = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_REALM") -Defa
 $WebClientId = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_WEB_CLIENT_ID", "KEYCLOAK_CLIENT_ID") -Default "acom-web"
 $ApiClientId = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_API_CLIENT_ID") -Default "acom-api"
 $AdminServiceClientId = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_ADMIN_CLIENT_ID") -Default "acom-admin-service"
+$AdminServiceClientSecret = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_ADMIN_CLIENT_SECRET")
 $BootstrapUsername = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_BOOTSTRAP_APP_USERNAME") -Default "superadmin"
 $AdminUsername = Resolve-EnvValue -Map $envMap -Keys @("KC_BOOTSTRAP_ADMIN_USERNAME", "KEYCLOAK_ADMIN_USERNAME")
 $AdminPassword = Resolve-EnvValue -Map $envMap -Keys @("KC_BOOTSTRAP_ADMIN_PASSWORD", "KEYCLOAK_ADMIN_PASSWORD")
+$AppEnv = (Resolve-EnvValue -Map $envMap -Keys @("APP_ENV", "ENVIRONMENT") -Default "development").Trim().ToLowerInvariant()
+$KeycloakPublicBaseUrl = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_PUBLIC_BASE_URL")
+$KeycloakIssuerUrl = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_ISSUER_URL")
+$KcHostname = Resolve-EnvValue -Map $envMap -Keys @("KC_HOSTNAME")
+$KeycloakVerifyEmail = Resolve-EnvValue -Map $envMap -Keys @("KEYCLOAK_VERIFY_EMAIL")
 
 if (-not $AdminUsername -or -not $AdminPassword) {
   throw "Missing admin credentials in $EnvFile (need KC_BOOTSTRAP_ADMIN_USERNAME/KC_BOOTSTRAP_ADMIN_PASSWORD or KEYCLOAK_ADMIN_USERNAME/KEYCLOAK_ADMIN_PASSWORD)"
@@ -114,8 +130,51 @@ $RoleNames = @(
 
 $fail = $false
 
+if (Test-WeakSecret -Value $AdminServiceClientSecret) {
+  Write-Host "FAIL: KEYCLOAK_ADMIN_CLIENT_SECRET is missing or looks like a placeholder"
+  $fail = $true
+}
+
+if ($AppEnv -eq "production") {
+  foreach ($requiredHttps in @($KeycloakPublicBaseUrl, $KeycloakIssuerUrl, $KcHostname)) {
+    if (-not $requiredHttps -or -not $requiredHttps.StartsWith("https://")) {
+      Write-Host "FAIL: production requires https values for KEYCLOAK_PUBLIC_BASE_URL, KEYCLOAK_ISSUER_URL and KC_HOSTNAME"
+      $fail = $true
+      break
+    }
+  }
+  if ($KeycloakVerifyEmail -ne "true") {
+    Write-Host "FAIL: production requires KEYCLOAK_VERIFY_EMAIL=true"
+    $fail = $true
+  }
+}
+
 Write-Host "Authenticating kcadm..."
 Invoke-Kcadm -KcadmArgs @("config", "credentials", "--server", $InternalServerUrl, "--realm", $MasterRealm, "--user", $AdminUsername, "--password", $AdminPassword) | Out-Null
+
+Write-Host "Checking realm security settings..."
+$realmJson = Invoke-Kcadm -KcadmArgs @("get", "realms/$script:AppRealm")
+$realm = $realmJson | ConvertFrom-Json
+if ($realm.sslRequired -ne "external") {
+  Write-Host "FAIL: realm sslRequired must be 'external'"
+  $fail = $true
+} else {
+  Write-Host "OK: realm sslRequired is external"
+}
+if (-not $realm.bruteForceProtected) {
+  Write-Host "FAIL: realm bruteForceProtected must be true"
+  $fail = $true
+} else {
+  Write-Host "OK: realm bruteForceProtected is true"
+}
+if ($AppEnv -eq "production") {
+  if (-not $realm.verifyEmail) {
+    Write-Host "FAIL: production realm verifyEmail must be true"
+    $fail = $true
+  } else {
+    Write-Host "OK: production realm verifyEmail is true"
+  }
+}
 
 Write-Host "Checking clients..."
 $webClientUuid = Get-ClientUuid -ClientId $WebClientId

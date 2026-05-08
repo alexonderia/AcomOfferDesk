@@ -10,6 +10,7 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
+    userAgent: 'AcomOfferDeskE2E/1.0',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure'

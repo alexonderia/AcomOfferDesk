@@ -13,6 +13,8 @@ from app.domain.exceptions import Forbidden, Unauthorized
 
 logger = logging.getLogger(__name__)
 
+_ALLOWED_KEYCLOAK_SIGNING_ALGORITHMS = {"RS256"}
+
 
 @dataclass(frozen=True, slots=True)
 class KeycloakTokenBundle:
@@ -162,11 +164,15 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
     if key is None:
         raise Unauthorized("Unknown token key")
 
+    token_algorithm = str(header.get("alg") or "").strip()
+    if token_algorithm not in _ALLOWED_KEYCLOAK_SIGNING_ALGORITHMS:
+        raise Unauthorized("Invalid token algorithm")
+
     try:
         payload = jwt.decode(
             token,
             key,
-            algorithms=[str(header.get("alg") or "RS256")],
+            algorithms=sorted(_ALLOWED_KEYCLOAK_SIGNING_ALGORITHMS),
             issuer=settings.resolved_keycloak_issuer_url,
             options={"verify_aud": False},
         )

@@ -6,4 +6,9 @@ cd "$ROOT_DIR"
 
 export PYTHONPATH="$ROOT_DIR/backend"
 
-python -m pytest backend/tests/unit -q
+PYTHON_CMD="python"
+if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON_CMD="$ROOT_DIR/.venv/bin/python"
+fi
+
+"$PYTHON_CMD" -m pytest backend/tests/unit -q

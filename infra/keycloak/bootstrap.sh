@@ -8,7 +8,7 @@ APP_REALM="${KEYCLOAK_REALM:-acom-offerdesk}"
 WEB_CLIENT_ID="${KEYCLOAK_WEB_CLIENT_ID:-${KEYCLOAK_CLIENT_ID:-acom-web}}"
 API_CLIENT_ID="${KEYCLOAK_API_CLIENT_ID:-acom-api}"
 ADMIN_SERVICE_CLIENT_ID="${KEYCLOAK_ADMIN_CLIENT_ID:-acom-admin-service}"
-ADMIN_SERVICE_CLIENT_SECRET="${KEYCLOAK_ADMIN_CLIENT_SECRET:-change-me}"
+ADMIN_SERVICE_CLIENT_SECRET="${KEYCLOAK_ADMIN_CLIENT_SECRET:-}"
 BACKEND_BASE_URL="${PUBLIC_BACKEND_BASE_URL:-http://localhost:8080}"
 WEB_BASE_URL="${WEB_BASE_URL:-http://localhost:8080}"
 BOOTSTRAP_USERNAME="${KEYCLOAK_BOOTSTRAP_APP_USERNAME:-superadmin}"
@@ -23,6 +23,7 @@ SMTP_PASSWORD="${KEYCLOAK_SMTP_PASSWORD:-${EMAIL_APP_PASSWORD:-}}"
 SMTP_FROM="${KEYCLOAK_SMTP_FROM:-${EMAIL_ADDRESS:-}}"
 SMTP_REPLY_TO="${KEYCLOAK_SMTP_REPLY_TO:-${EMAIL_ADDRESS:-}}"
 SMTP_FROM_DISPLAY_NAME="${KEYCLOAK_SMTP_FROM_DISPLAY_NAME:-${EMAIL_FROM_NAME:-AcomOfferDesk}}"
+SMTP_AUTH="${KEYCLOAK_SMTP_AUTH:-true}"
 SMTP_SSL="${KEYCLOAK_SMTP_SSL:-}"
 SMTP_STARTTLS="${KEYCLOAK_SMTP_STARTTLS:-}"
 KEYCLOAK_VERIFY_EMAIL="${KEYCLOAK_VERIFY_EMAIL:-}"
@@ -35,6 +36,44 @@ KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS="${KEYCLOAK_ACTION_TOKEN_USER_LIFESP
 
 BACKEND_BASE_URL="${BACKEND_BASE_URL%/}"
 WEB_BASE_URL="${WEB_BASE_URL%/}"
+
+APP_ENV_NORMALIZED="$(printf '%s' "${APP_ENV:-development}" | tr '[:upper:]' '[:lower:]')"
+
+is_true() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_weak_secret() {
+  normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  [ -z "$normalized" ] && return 0
+  case "$normalized" in
+    change-me|changeme|change_me|top-secret|top_secret|secret|password|admin|test|example)
+      return 0
+      ;;
+    change_me*|change-me*|*example)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+if [ -z "$ADMIN_SERVICE_CLIENT_SECRET" ] || is_weak_secret "$ADMIN_SERVICE_CLIENT_SECRET"; then
+  if [ "$APP_ENV_NORMALIZED" = "production" ]; then
+    echo "KEYCLOAK_ADMIN_CLIENT_SECRET must be set to a strong non-placeholder value"
+    exit 1
+  fi
+  echo "WARN: KEYCLOAK_ADMIN_CLIENT_SECRET uses a weak placeholder outside production"
+fi
+
+if [ "$APP_ENV_NORMALIZED" = "production" ]; then
+  if [ "${BACKEND_BASE_URL#https://}" = "$BACKEND_BASE_URL" ] || [ "${WEB_BASE_URL#https://}" = "$WEB_BASE_URL" ]; then
+    echo "PUBLIC_BACKEND_BASE_URL and WEB_BASE_URL must use https in production"
+    exit 1
+  fi
+fi
 
 PERMISSION_ROLE_NAMES=$(cat <<'EOF'
 users.read
@@ -284,10 +323,22 @@ normative_files.read
 EOF
 )
 if [ -z "$KEYCLOAK_VERIFY_EMAIL" ]; then
-  if [ "${APP_ENV:-development}" = "production" ]; then
+  if [ "$APP_ENV_NORMALIZED" = "production" ]; then
     KEYCLOAK_VERIFY_EMAIL="true"
   else
     KEYCLOAK_VERIFY_EMAIL="false"
+  fi
+fi
+
+if [ "$APP_ENV_NORMALIZED" = "production" ] && ! is_true "$KEYCLOAK_VERIFY_EMAIL"; then
+  echo "KEYCLOAK_VERIFY_EMAIL must be true in production"
+  exit 1
+fi
+
+if [ "$APP_ENV_NORMALIZED" = "production" ]; then
+  if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_PORT" ] || [ -z "$SMTP_USERNAME" ] || [ -z "$SMTP_PASSWORD" ] || [ -z "$SMTP_FROM" ]; then
+    echo "SMTP config is required in production when Keycloak email flows are enabled"
+    exit 1
   fi
 fi
 
@@ -576,7 +627,7 @@ if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n
   "defaultLocale": "ru",
   "supportedLocales": ["ru"],
   "smtpServer": {
-    "auth": "true",
+    "auth": "$SMTP_AUTH",
     "host": "$SMTP_HOST",
     "port": "$SMTP_PORT",
     "user": "$SMTP_USERNAME",

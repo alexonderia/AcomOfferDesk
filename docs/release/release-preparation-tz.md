@@ -1,14 +1,14 @@
-﻿# Техническое задание: подготовка AcomOfferDesk к production-релизу
+# Техническое задание: подготовка AcomOfferDesk к production-релизу
 
 ## Граница ответственности документа
 
 Этот документ — roadmap/ТЗ готовности к production: приоритеты, этапы и критерии завершения.
 
 Смежные документы:
-- [Окружения](./environments.md)
+- [Окружения](../operations/environments.md)
 - [Чек-лист релиза](./release-checklist.md)
 - [Production переменные/секреты](./production-env.md)
-- [Аутентификация и онбординг](./auth-and-onboarding.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)
 
 ## 1. Назначение
 
@@ -73,7 +73,7 @@
 - `docker-compose.prod.yml` для production override;
 - `docker-compose.dev-prodlike.yml` или documented compose profile для локальной проверки production-подобного режима через `ngrok`;
 - `backend/nginx.prod.conf` или отдельный внешний reverse proxy config;
-- `docs/release-checklist.md`;
+- `docs/release/release-checklist.md`;
 - `.github/workflows/ci.yml`;
 - `.dockerignore` для build context;
 - release smoke-test script в `scripts/`.
@@ -93,8 +93,8 @@
 
 | Этап | Статус | Что уже есть | Что ещё нужно для завершения |
 |---|---|---|---|
-| Этап 1. Окружения и branch flow | `[~] В работе` | Есть `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.prod-like.yml`, `docker-compose.init.yml`, `.env.dev.example`, `.env.prod-like.example`, документы `docs/environments.md` и `docs/runtime-architecture.md`, а также `deploy.yml` для ветки `test`. | Добавить `docs/release-checklist.md`, зафиксировать финальный `dev -> test -> prod` gate через отдельный CI и подтвердить, что production-процедура не использует dev/tunnel profiles. |
-| Этап 2. Production-периметр | `[~] В работе` | Добавлены `docker-compose.prod.yml`, `docker-compose.test.yml`, `infra/reverse-proxy/nginx.prod.example.conf`, `docs/production-env.md`, `docs/release-checklist.md`, `scripts/check-prod-perimeter.sh`; обновлены документы по окружениям и периметру. | Подтвердить итоговые настройки на реальном test VPS/домене: TLS, firewall, smoke-проверку issuer/URI редиректа и недоступность служебных UI из публичного интернета. |
+| Этап 1. Окружения и branch flow | `[~] В работе` | Есть `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.prod-like.yml`, `docker-compose.init.yml`, `.env.dev.example`, `.env.prod-like.example`, документы `docs/operations/environments.md` и `docs/product/runtime-architecture.md`, а также `deploy.yml` для ветки `test`. | Добавить `docs/release/release-checklist.md`, зафиксировать финальный `dev -> test -> prod` gate через отдельный CI и подтвердить, что production-процедура не использует dev/tunnel profiles. |
+| Этап 2. Production-периметр | `[~] В работе` | Добавлены `docker-compose.prod.yml`, `docker-compose.test.yml`, `infra/reverse-proxy/nginx.prod.example.conf`, `docs/release/production-env.md`, `docs/release/release-checklist.md`, `scripts/check-prod-perimeter.sh`; обновлены документы по окружениям и периметру. | Подтвердить итоговые настройки на реальном test VPS/домене: TLS, firewall, smoke-проверку issuer/URI редиректа и недоступность служебных UI из публичного интернета. |
 | Этап 3. Аутентификация, health и runtime-hardening | `[ ] Не начат` | Цели и требования сформулированы в этом ТЗ. | Внедрить ticket/cookie auth для WebSocket, `/health/live`, `/health/ready`, отключение публичных docs и readiness checks зависимостей. |
 | Этап 4. CI и качество | `[ ] Не начат` | Есть только `deploy.yml`; отдельного обязательного CI-gate пока нет. | Добавить `.github/workflows/ci.yml`, рабочий ESLint, backend tests, smoke coverage, `.dockerignore` и `npm ci` в Docker build. |
 | Этап 5. Observability и recovery | `[ ] Не начат` | Требования описаны на уровне плана и DoD. | Добавить structured logging, request id, error tracking, alerts, backup/rollback runbooks. |
@@ -114,7 +114,7 @@
 | `5.1` HTTPS и заголовки безопасности | `[~] В работе` | Добавлен пример внешнего reverse proxy с редиректом `80 -> 443`, `X-Forwarded-*`, заголовками безопасности, WebSocket upgrade и лимитом загрузки. | Проверить на реальном домене/сертификате в test и зафиксировать итоговый edge-конфиг в инфраструктуре VPS. |
 | `5.2` Keycloak production mode | `[~] В работе` | Для `prod`-override зафиксирован запуск Keycloak через `kc.sh start`; env-contract для `KC_HOSTNAME`/proxy/issuer документирован. | Подтвердить в test runtime, что все test/prod env-файлы используют `KEYCLOAK_START_COMMAND=start` и issuer полностью совпадает. |
 | `5.3` Закрытие служебных портов | `[~] В работе` | В `docker-compose.prod.yml` служебные порты не публикуются; для test добавлена loopback-публикация только `gateway` (`127.0.0.1:8080`). | Валидировать firewall/NAT на VPS и проверить извне, что `8000/8080(keycloak direct)/5432/5672/15672/9000/9001/5050` недоступны публично. |
-| `5.4` Секреты и credentials | `[~] В работе` | Добавлен `docs/production-env.md` с перечнем обязательных секретов, минимальными требованиями и ротацией; `.env.prod-like.example` уже без `guest/guest` и `minioadmin/minioadmin`. | Добавить runtime fail-fast в следующих этапах и подтвердить назначение владельцев секретов в операционном контуре. |
+| `5.4` Секреты и credentials | `[~] В работе` | Добавлен `docs/release/production-env.md` с перечнем обязательных секретов, минимальными требованиями и ротацией; `.env.prod-like.example` уже без `guest/guest` и `minioadmin/minioadmin`. | Добавить runtime fail-fast в следующих этапах и подтвердить назначение владельцев секретов в операционном контуре. |
 | `5.5` WebSocket auth hardening | `[ ] Не начат` | В ТЗ прямо отмечен текущий риск с access token в query string. | Убрать token из URL, внедрить ticket/cookie-based auth и добавить проверки на invalid/expired/reused сценарии. |
 | `5.6` Health, readiness и API docs | `[ ] Не начат` | В ТЗ прямо отмечен текущий риск: healthcheck завязан на `/docs`. | Внедрить `/health/live`, `/health/ready`, readiness зависимостей и закрыть публичный Swagger/OpenAPI в production. |
 
@@ -276,7 +276,7 @@
 
 Что внедрить:
 
-- `docs/production-env.md` или раздел в release checklist;
+- `docs/release/production-env.md` или раздел в release checklist;
 - секреты для MinIO, RabbitMQ, JWT, refresh tokens, email verification, reply tokens, Keycloak admin;
 - процедуру ротации секретов.
 
@@ -571,7 +571,7 @@ Frontend smoke:
 
 ### 9.1. Чек-лист релиза
 
-Создать `docs/release-checklist.md`.
+Создать `docs/release/release-checklist.md`.
 
 Документ должен включать:
 

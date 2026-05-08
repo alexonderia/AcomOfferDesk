@@ -1,14 +1,14 @@
-﻿# Окружения
+# Окружения
 
 ## Граница ответственности документа
 
 Этот документ — единый источник по режимам `dev/test/prod`, compose-слоям, сетевому периметру и admin-only доступу.
 
 Смежные документы:
-- [Runtime-архитектура](./runtime-architecture.md)
-- [Production переменные/секреты](./production-env.md)
-- [Чек-лист релиза](./release-checklist.md)
-- [Аутентификация и онбординг](./auth-and-onboarding.md)
+- [Runtime-архитектура](../product/runtime-architecture.md)
+- [Production переменные/секреты](../release/production-env.md)
+- [Чек-лист релиза](../release/release-checklist.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)
 
 ## Модель окружений
 

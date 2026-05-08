@@ -10,9 +10,9 @@
 - операционные шаги проверки и диагностики.
 
 Смежные документы:
-- [Окружения и периметр](./environments.md)
-- [Runtime-архитектура](./runtime-architecture.md)
-- [Production: переменные окружения и секреты](./production-env.md)
+- [Окружения и периметр](../operations/environments.md)
+- [Runtime-архитектура](../product/runtime-architecture.md)
+- [Production: переменные окружения и секреты](../release/production-env.md)
 
 ## Краткая архитектура
 

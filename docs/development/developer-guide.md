@@ -5,10 +5,10 @@
 Этот документ — навигация по кодовой базе и слоям приложения.
 
 Смежные документы:
-- [Обзор продукта](./project-overview.md)
-- [Runtime-архитектура](./runtime-architecture.md)
-- [Аутентификация и онбординг](./auth-and-onboarding.md)
-- [Окружения](./environments.md)
+- [Обзор продукта](../product/project-overview.md)
+- [Runtime-архитектура](../product/runtime-architecture.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)
+- [Окружения](../operations/environments.md)
 
 ## Зачем нужен этот документ
 
@@ -412,7 +412,7 @@ Frontend организован по feature-oriented структуре. Иск
 При изменениях в auth, login-links, регистрации или роли/статусах нужно синхронизировать:
 
 - `README.md`
-- `docs/auth-and-onboarding.md`
+- `docs/security/auth-and-onboarding.md`
 
 ### 4. БД не в этом репозитории
 
@@ -421,21 +421,21 @@ Frontend организован по feature-oriented структуре. Иск
 ## Рекомендуемая последовательность чтения для нового разработчика
 
 1. `README.md`
-2. `docs/project-overview.md`
-3. `docs/runtime-architecture.md`
+2. `docs/product/project-overview.md`
+3. `docs/product/runtime-architecture.md`
 4. `backend/REAME.md`
 5. `web/README.md`
 6. конкретные `api`, `services`, `features` по вашему сценарию
 
 ## Связанные документы
 
-- [Обзор проекта](project-overview.md)
-- [Архитектура и потоки данных](runtime-architecture.md)
-- [Аутентификация и онбординг](auth-and-onboarding.md)
+- [Обзор проекта](../product/project-overview.md)
+- [Архитектура и потоки данных](../product/runtime-architecture.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)
 <!-- run-scenarios-source-of-truth-2026-04-29 -->
 ## Единый источник по окружениям
 
 Единые команды запуска для `dev`, `test`, `prod`, `prod-like`, а также проверки `docker compose ... config` и init-сценарии описаны в:
-- [environments.md](./environments.md)
+- [environments.md](../operations/environments.md)
 
 Если меняется compose/env-контракт, сначала обновляйте `environments.md`, а затем синхронизируйте ссылки на него.

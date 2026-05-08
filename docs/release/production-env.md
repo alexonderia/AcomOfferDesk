@@ -1,13 +1,13 @@
-﻿# Production: переменные окружения и секреты
+# Production: переменные окружения и секреты
 
 ## Граница ответственности документа
 
 Этот документ фиксирует production env/secrets contract, требования к секретам и ротации.
 
 Смежные документы:
-- [Окружения](./environments.md)
+- [Окружения](../operations/environments.md)
 - [Чек-лист релиза](./release-checklist.md)
-- [Аутентификация и онбординг](./auth-and-onboarding.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)
 
 `.env.example` предназначен только для локальных/dev значений.  
 Для production-like, test и prod используйте `.env.prod-like.example` как базовый контракт.

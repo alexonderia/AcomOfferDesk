@@ -1,11 +1,11 @@
-﻿# Чек-лист релиза
+# Чек-лист релиза
 
 ## Граница ответственности документа
 
 Этот документ — практический чек-лист релиза для `test/prod` запуска.
 
 Смежные документы:
-- [Окружения](./environments.md)
+- [Окружения](../operations/environments.md)
 - [Production: переменные окружения и секреты](./production-env.md)
 - [Roadmap production-readiness](./release-preparation-tz.md)
 

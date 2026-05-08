@@ -4,7 +4,7 @@
 
 Этот README описывает устройство backend-модуля.
 Единый источник правды по запуску окружений и compose-слоям:
-- `docs/environments.md`
+- `docs/operations/environments.md`
 
 Статус локальных compose-файлов в `/backend`:
 - `backend/docker-compose.yml` и `backend/docker-compose.ngrok.yml` — legacy standalone-сценарии, не основной путь запуска проекта.
@@ -344,7 +344,7 @@ API будет доступен через:
 ## Связанные документы
 
 - корневой обзор: `README.md`
-- общая архитектура: `docs/runtime-architecture.md`
-- навигация по проекту: `docs/developer-guide.md`
-- аутентификация и онбординг: `docs/auth-and-onboarding.md`
-- окружения и perimeter: `docs/environments.md`
+- общая архитектура: `docs/product/runtime-architecture.md`
+- навигация по проекту: `docs/development/developer-guide.md`
+- аутентификация и онбординг: `docs/security/auth-and-onboarding.md`
+- окружения и perimeter: `docs/operations/environments.md`

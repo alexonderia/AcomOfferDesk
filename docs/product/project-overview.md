@@ -6,8 +6,8 @@
 
 Смежные документы:
 - [Runtime-архитектура](./runtime-architecture.md)
-- [Навигация по коду](./developer-guide.md)
-- [Аутентификация и онбординг](./auth-and-onboarding.md)
+- [Навигация по коду](../development/developer-guide.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)
 
 ## Назначение
 
@@ -213,6 +213,6 @@ Legacy-модуль для Telegram-сценариев. В основном runt
 
 ## Куда идти дальше
 
-- За системной архитектурой и потоками данных: [runtime-architecture.md](runtime-architecture.md)
-- За картой кодовой базы и правилами навигации: [developer-guide.md](developer-guide.md)
-- За auth-деталями: [auth-and-onboarding.md](auth-and-onboarding.md)
+- За системной архитектурой и потоками данных: [runtime-architecture.md](./runtime-architecture.md)
+- За картой кодовой базы и правилами навигации: [developer-guide.md](../development/developer-guide.md)
+- За auth-деталями: [auth-and-onboarding.md](../security/auth-and-onboarding.md)

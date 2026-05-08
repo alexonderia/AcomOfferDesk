@@ -5,9 +5,9 @@
 Этот документ описывает runtime-слой: контейнеры, интеграции, потоки данных и границы между сервисами.
 
 Смежные документы:
-- [Окружения и периметр](./environments.md)
-- [Навигация по коду](./developer-guide.md)
-- [Аутентификация и онбординг](./auth-and-onboarding.md)
+- [Окружения и периметр](../operations/environments.md)
+- [Навигация по коду](../development/developer-guide.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)
 
 ## Общая схема runtime
 
@@ -317,7 +317,7 @@ Frontend организован по feature-oriented схеме.
 - `backend/app/services/keycloak_oidc.py`
 - `backend/app/services/identity_sync.py`
 - `web/src/app/providers/AuthProvider.tsx`
-- `docs/auth-and-onboarding.md`
+- `docs/security/auth-and-onboarding.md`
 
 ### Если меняется заявка
 
@@ -373,6 +373,6 @@ Frontend организован по feature-oriented схеме.
 
 ## Связанные документы
 
-- [Обзор проекта](project-overview.md)
-- [Навигация для разработчика](developer-guide.md)
-- [Аутентификация и онбординг](auth-and-onboarding.md)
+- [Обзор проекта](./project-overview.md)
+- [Навигация для разработчика](../development/developer-guide.md)
+- [Аутентификация и онбординг](../security/auth-and-onboarding.md)

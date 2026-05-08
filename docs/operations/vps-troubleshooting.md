@@ -7,7 +7,7 @@
 Смежные документы:
 - [order_database на VPS](./order-database-vps.md)
 - [Окружения](./environments.md)
-- [Чек-лист релиза](./release-checklist.md)
+- [Чек-лист релиза](../release/release-checklist.md)
 
 Полный журнал с контекстом: **`vvv-web/devops_manual`** — [docs/acom-offer-desk-archive/vps-troubleshooting-2026-03.md](https://github.com/vvv-web/devops_manual/blob/acom-offer-postgres-vps-2026-03-31/docs/acom-offer-desk-archive/vps-troubleshooting-2026-03.md).
 

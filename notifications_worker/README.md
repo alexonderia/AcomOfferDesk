@@ -4,7 +4,7 @@
 
 Этот README описывает код и контракт уведомлений воркера.
 Единый источник правды по окружениям/запуску:
-- `docs/environments.md`
+- `docs/operations/environments.md`
 
 `notifications_worker` - отдельный процесс, который доставляет уведомления, отправляя письма (и опционально legacy Telegram-сообщения) на основе событий из RabbitMQ.
 
@@ -143,8 +143,8 @@ docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.y
 
 ## Связанные документы
 
-- `docs/runtime-architecture.md` (где воркер находится в схеме runtime)
-- `docs/environments.md` (какой compose-слой использовать в dev/test/prod)
+- `docs/product/runtime-architecture.md` (где воркер находится в схеме runtime)
+- `docs/operations/environments.md` (какой compose-слой использовать в dev/test/prod)
 - backend email архитектура:
   - `backend/app/infrastructure/email/smtp_email_service.py`
   - `backend/app/infrastructure/notification_publisher.py`

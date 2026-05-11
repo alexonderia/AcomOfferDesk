@@ -1,66 +1,94 @@
-name: E2E Smoke (Manual)
+name: Release Smoke (Manual)
 
 on:
   workflow_dispatch:
     inputs:
       env_file:
-        description: "Env file path for helper scripts"
+        description: "Env file path used by smoke/keycloak helpers"
         required: false
         default: ".env.dev"
       base_url:
-        description: "Public base URL for the target stand (optional)"
+        description: "Public base URL for target stand (optional)"
         required: false
         default: ""
-      strict_credentials:
-        description: "Fail if E2E credentials are missing"
+      include_e2e:
+        description: "Run optional Playwright smoke scenarios"
         required: false
         type: boolean
         default: false
-      provision_users:
-        description: "Create temporary e2e users before tests and cleanup after run"
+      strict_e2e_credentials:
+        description: "Fail e2e step when credentials are missing"
+        required: false
+        type: boolean
+        default: false
+      provision_e2e_users:
+        description: "Create temporary e2e users before browser smoke and cleanup after run"
         required: false
         type: boolean
         default: true
-      keep_provisioned_users:
-        description: "Keep provisioned temporary users after run (debug only)"
+      keep_provisioned_e2e_users:
+        description: "Keep provisioned temporary e2e users after run (debug only)"
         required: false
         type: boolean
         default: false
 
 jobs:
-  e2e-smoke:
+  release-smoke:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: |
-          npm --prefix web ci
-          npm --prefix web exec -- playwright install --with-deps
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: Run e2e smoke
+      - name: Run infrastructure smoke checks
         env:
-          PYTHONPATH: ${{ github.workspace }}/backend
           ENV_FILE: ${{ inputs.env_file }}
           BASE_URL: ${{ inputs.base_url }}
-          STRICT_CREDENTIALS: ${{ inputs.strict_credentials }}
-          PROVISION_USERS: ${{ inputs.provision_users }}
-          KEEP_PROVISIONED_USERS: ${{ inputs.keep_provisioned_users }}
+        run: |
+          if [ -n "$BASE_URL" ]; then
+            BASE_URL="$BASE_URL" ./scripts/smoke-infra.sh "$ENV_FILE"
+          else
+            ./scripts/smoke-infra.sh "$ENV_FILE"
+          fi
+
+      - name: Run keycloak permission model checks
+        env:
+          ENV_FILE: ${{ inputs.env_file }}
+        run: ./scripts/check-keycloak.sh "$ENV_FILE"
+
+      - name: Setup Node.js for e2e
+        if: ${{ inputs.include_e2e }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install e2e dependencies
+        if: ${{ inputs.include_e2e }}
+        run: |
+          npm --prefix web ci
+          npm --prefix web exec -- playwright install --with-deps
+
+      - name: Run optional e2e smoke
+        if: ${{ inputs.include_e2e }}
+        env:
+          ENV_FILE: ${{ inputs.env_file }}
+          BASE_URL: ${{ inputs.base_url }}
+          STRICT_CREDENTIALS: ${{ inputs.strict_e2e_credentials }}
+          PROVISION_USERS: ${{ inputs.provision_e2e_users }}
+          KEEP_PROVISIONED_USERS: ${{ inputs.keep_provisioned_e2e_users }}
           E2E_SUPERADMIN_USERNAME: ${{ secrets.E2E_SUPERADMIN_USERNAME }}
           E2E_SUPERADMIN_PASSWORD: ${{ secrets.E2E_SUPERADMIN_PASSWORD }}
           E2E_ADMIN_USERNAME: ${{ secrets.E2E_ADMIN_USERNAME }}

@@ -67,11 +67,15 @@ docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootst
 - Backend integration/API contract tests:
   - PowerShell: `./scripts/test-integration.ps1`
   - Bash: `./scripts/test-integration.sh`
+- Frontend lint: `npm --prefix web run lint`
+- Frontend unit/component tests: `npm --prefix web run test:unit`
 - Frontend build: `npm --prefix web run build`
 
 CI workflow: `.github/workflows/ci.yml`
 - triggers on `push/pull_request` for `dev_process`, `dev`, `test`
-- runs backend unit + backend integration + frontend build
+- runs backend unit + backend integration + frontend lint + frontend unit tests + frontend build
 
 Manual e2e smoke workflow: `.github/workflows/e2e-smoke.yml` (`workflow_dispatch`).
+Manual release smoke workflow: `.github/workflows/release-smoke.yml` (`workflow_dispatch`, optional e2e).
+Both manual workflows use temporary provisioned e2e users by default (`PROVISION_USERS=true`).
 

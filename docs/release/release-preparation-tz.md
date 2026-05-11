@@ -13,8 +13,9 @@
 ## Актуализация (2026-05-11)
 
 - Добавлены и расширены backend unit/integration тесты для auth/permissions и OIDC edge-cases.
-- Добавлен CI workflow (`.github/workflows/ci.yml`) с обязательными gate-проверками: backend unit, backend integration, frontend build.
+- Добавлен CI workflow (`.github/workflows/ci.yml`) с обязательными gate-проверками: backend unit, backend integration, frontend lint, frontend unit tests, frontend build.
 - Добавлен отдельный manual workflow для e2e smoke (`.github/workflows/e2e-smoke.yml`).
+- Добавлен отдельный manual workflow для release smoke (`.github/workflows/release-smoke.yml`) с `smoke-infra`, `check-keycloak` и optional e2e.
 - Bash smoke/e2e/keycloak скрипты выровнены с PowerShell по поведению (`.venv` Python, env-резолвинг, e2e host/provision сценарии).
 
 ## 1. Назначение

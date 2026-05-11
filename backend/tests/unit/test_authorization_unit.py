@@ -82,6 +82,17 @@ def test_require_permission_raises_for_blocked_status(make_current_user):
         require_permission(current_user, PermissionCodes.REQUESTS_READ)
 
 
+@pytest.mark.parametrize("status", ["inactive", "blacklist"])
+def test_require_permission_rejects_non_active_statuses(make_current_user, status):
+    current_user = make_current_user(
+        status=status,
+        permissions={PermissionCodes.USERS_READ},
+    )
+
+    with pytest.raises(Forbidden):
+        require_permission(current_user, PermissionCodes.USERS_READ)
+
+
 def test_require_any_permission_respects_status_filters(make_current_user):
     review_contractor = make_current_user(
         role_id=settings.contractor_role_id,
@@ -101,4 +112,18 @@ def test_require_any_permission_respects_status_filters(make_current_user):
         require_any_permission(
             review_contractor,
             (PermissionCodes.REQUESTS_OPEN_READ, PermissionCodes.REQUESTS_OFFERED_READ),
+        )
+
+
+@pytest.mark.parametrize("status", ["inactive", "blacklist"])
+def test_require_any_permission_rejects_non_active_statuses(make_current_user, status):
+    current_user = make_current_user(
+        status=status,
+        permissions={PermissionCodes.USERS_READ, PermissionCodes.REQUESTS_READ},
+    )
+
+    with pytest.raises(Forbidden):
+        require_any_permission(
+            current_user,
+            (PermissionCodes.USERS_READ, PermissionCodes.REQUESTS_READ),
         )

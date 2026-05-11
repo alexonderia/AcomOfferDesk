@@ -199,6 +199,8 @@ npm --prefix web exec -- playwright install
 - в режиме `-ProvisionUsers` скрипт пытается использовать локальный `KEYCLOAK_INTERNAL_BASE_URL=http://127.0.0.1:8080/iam` (если доступен), иначе использует публичный URL из env;
 - режим подготовки временных пользователей изменяет стенд и поэтому включается только явно;
 - временный state-файл с учетными данными создается в `.tmp/e2e` и удаляется при очистке; каталог `.tmp/` игнорируется Git.
+- в manual GitHub workflow `E2E Smoke (Manual)` временные пользователи включены по умолчанию (`provision_users=true`);
+- в manual GitHub workflow `Release Smoke (Manual)` временные пользователи для e2e также включены по умолчанию (`provision_e2e_users=true`).
 
 ## 6. Полная release-проверка
 
@@ -222,6 +224,7 @@ npm --prefix web exec -- playwright install
 
 Важно:
 - e2e не запускаются по умолчанию;
+- при включении e2e в `test-release` временные пользователи включаются по умолчанию (можно выключить только явной настройкой в параметрах запуска/окружении);
 - release-проверка удобна перед финальной валидацией, но отдельные наборы все равно можно запускать независимо.
 
 ## 7. CI-покрытие
@@ -229,25 +232,49 @@ npm --prefix web exec -- playwright install
 Автоматически в GitHub Actions (workflow `.github/workflows/ci.yml`) на `push/pull_request` для веток `dev_process`, `dev`, `test` запускаются:
 - backend unit tests;
 - backend integration/API contract tests;
+- frontend lint (`npm --prefix web run lint`);
+- frontend unit/component tests (`npm --prefix web run test:unit`);
 - frontend build.
 
 E2E smoke запускается отдельно вручную (`workflow_dispatch`) через `.github/workflows/e2e-smoke.yml`.
 
-## 8. Frontend unit/component тесты (статус)
+## 8. Frontend unit/component тесты
 
-Сейчас основная frontend-проверка в CI — `build` и e2e smoke.  
-Минимальный следующий шаг (P1), если хотим локально поймать регрессии раньше e2e:
-- добавить `Vitest + React Testing Library` только для `AuthProvider`, `ProtectedRoute`, `RoleRoute`;
-- покрыть сценарии `anonymous/bootstrapping/authenticated`, `businessAccess=false`, permission-based route access.
+Добавлены `Vitest + React Testing Library + jsdom` для базовой auth/route UX-обвязки:
+- `web/src/app/providers/AuthProvider.test.tsx`;
+- `web/src/app/routes/ProtectedRoute.test.tsx`;
+- `web/src/app/routes/RoleRoute.test.tsx`.
+
+Что покрыто:
+- `AuthProvider` bootstrap в состояния `authenticated` и `anonymous`;
+- сохранение backend-полей `business_access` и `onboarding_state` в frontend session;
+- `ProtectedRoute`: `anonymous -> /login`, `businessAccess=false -> /account`, и happy-path для authenticated;
+- `RoleRoute`: permission-based route access и redirect на default path при отсутствии permission.
+
+Локальный запуск:
+- `npm --prefix web run test:unit` (или `npm --prefix web run test`).
+
+Ограничение:
+- frontend tests проверяют только UX-поведение и не являются security-enforcement;
+- финальное решение по доступу остается на backend.
+
+## 9. Manual release-smoke workflow
+
+Добавлен ручной workflow `.github/workflows/release-smoke.yml` (`workflow_dispatch`):
+- всегда запускает `scripts/smoke-infra.sh` и `scripts/check-keycloak.sh`;
+- опционально запускает `scripts/e2e-smoke.sh`, только если `include_e2e=true`;
+- e2e credentials берутся только из GitHub Secrets;
+- smoke/keycloak шаги рассчитаны на уже поднятый стенд и валидный `env_file`.
 
 ## Когда что запускать
 
 Рекомендуемый рабочий ритм:
 1. Во время активной разработки запускать `test-unit`.
 2. При изменении API backend или контрактов запускать `test-integration`.
-3. На поднятом стенде запускать `smoke-infra` и `check-keycloak`.
-4. Для проверки ключевых пользовательских потоков запускать `e2e-smoke`.
-5. Перед финальной проверкой к релизу запускать `test-release`.
+3. Во frontend-потоках запускать `npm --prefix web run lint` и `npm --prefix web run test:unit`.
+4. На поднятом стенде запускать `smoke-infra` и `check-keycloak`.
+5. Для проверки ключевых пользовательских потоков запускать `e2e-smoke`.
+6. Перед финальной проверкой к релизу запускать `test-release` и/или `release-smoke` workflow.
 
 ## Важные различия
 

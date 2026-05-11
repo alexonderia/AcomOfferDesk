@@ -377,6 +377,13 @@ Frontend организован по feature-oriented структуре. Иск
 7. `backend/tests/unit/test_auth_context_unit.py`
 8. `backend/tests/integration/test_auth_enforcement_contract.py`
 9. `backend/tests/integration/test_auth_oidc_flows.py`
+10. `web/src/app/providers/AuthProvider.test.tsx`
+11. `web/src/app/routes/ProtectedRoute.test.tsx`
+12. `web/src/app/routes/RoleRoute.test.tsx`
+
+Быстрые команды проверки frontend auth UX:
+- `npm --prefix web run lint`
+- `npm --prefix web run test:unit`
 
 ### Нужно изменить создание пользователей или контрагентов
 

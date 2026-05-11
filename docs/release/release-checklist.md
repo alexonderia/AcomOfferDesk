@@ -11,7 +11,7 @@
 
 ## A. Ветки и продвижение
 
-- [ ] Для target commit в `dev_process/dev/test` успешно прошел CI (`backend unit` + `backend integration` + `frontend build`).
+- [ ] Для target commit в `dev_process/dev/test` успешно прошел CI (`backend unit` + `backend integration` + `frontend lint` + `frontend unit` + `frontend build`).
 - [ ] Завершён merge `dev -> test`.
 - [ ] Автодеплой test успешно прошёл на целевом VPS.
 - [ ] Smoke-проверки на test выполнены.
@@ -76,6 +76,7 @@
 - [ ] Работает upload-сценарий (если предусмотрен).
 - [ ] RabbitMQ UI и MinIO Console недоступны из публичного интернета.
 - [ ] E2E smoke выполнен вручную через `scripts/e2e-smoke.*` или workflow `E2E Smoke (Manual)` на поднятом стенде.
+- [ ] Release smoke workflow `Release Smoke (Manual)` выполнен на поднятом стенде (обязательные `smoke-infra` + `check-keycloak`, optional e2e через `include_e2e=true`).
 
 ## H. Откат (плейсхолдер)
 

@@ -90,7 +90,11 @@ if ($IncludeE2E) {
   if ($StrictE2E) {
     $e2eParams.StrictCredentials = $true
   }
-  if ($ProvisionE2EUsers) {
+  $useProvisionE2EUsers = $ProvisionE2EUsers
+  if (-not $PSBoundParameters.ContainsKey("ProvisionE2EUsers")) {
+    $useProvisionE2EUsers = $true
+  }
+  if ($useProvisionE2EUsers) {
     $e2eParams.ProvisionUsers = $true
   }
   if ($KeepProvisionedE2EUsers) {

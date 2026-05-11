@@ -257,11 +257,19 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 - refresh с невалидной cookie;
 - logout должен очищать cookies даже при недоступных Keycloak logout/Admin API.
 
+Фактическое покрытие в текущем репозитории:
+- `backend/tests/integration/test_auth_oidc_flows.py`;
+- `backend/tests/integration/test_auth_session_contract.py`;
+- `backend/tests/integration/test_auth_enforcement_contract.py`;
+- `backend/tests/unit/test_auth_context_unit.py`;
+- `backend/tests/unit/test_authorization_unit.py`.
+
 ## Ограничения текущей реализации
 
 - `delegation.*` не участвуют в bootstrap по умолчанию.
 - Frontend не должен получать admin secret/token.
 - `_links` не считаются primary контрактом authorization; основа — `permissions + actions`.
+- Audit protected endpoints (2026-05-11): для `requests/offers/users/plans/dashboard/feedback/normative-files` доступ проходит через `get_current_user` и backend policy/service checks; frontend route guards остаются UX-слоем и не являются enforcement.
 
 ## Куда смотреть в коде
 

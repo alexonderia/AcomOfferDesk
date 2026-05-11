@@ -11,6 +11,7 @@
 
 ## A. Ветки и продвижение
 
+- [ ] Для target commit в `dev_process/dev/test` успешно прошел CI (`backend unit` + `backend integration` + `frontend build`).
 - [ ] Завершён merge `dev -> test`.
 - [ ] Автодеплой test успешно прошёл на целевом VPS.
 - [ ] Smoke-проверки на test выполнены.
@@ -62,6 +63,7 @@
 
 ## G. Smoke-проверки
 
+- [ ] Выполнены backend unit и integration тесты (локально/в CI артефактах).
 - [ ] Открывается главная страница приложения.
 - [ ] Работает login.
 - [ ] Работает OIDC callback.
@@ -73,6 +75,7 @@
 - [ ] WebSocket работает через HTTPS (без ticket hardening на этом этапе).
 - [ ] Работает upload-сценарий (если предусмотрен).
 - [ ] RabbitMQ UI и MinIO Console недоступны из публичного интернета.
+- [ ] E2E smoke выполнен вручную через `scripts/e2e-smoke.*` или workflow `E2E Smoke (Manual)` на поднятом стенде.
 
 ## H. Откат (плейсхолдер)
 

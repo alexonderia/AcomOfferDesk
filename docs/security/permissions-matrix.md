@@ -82,3 +82,6 @@ Legend: `Y` = granted, `N` = not granted.
 1. `users.role.update_economy` is allowed only for subordinate users and only inside economy contour roles: `project_manager`, `lead_economist`, `economist`, `operator`.
 2. `requests.contractor_view.read` gives access to contractor-specific request representation (`/requests/:id/contractor`) with limited data visibility.
 3. Dashboard permissions are split by intent: `dashboard.process.read`, `dashboard.savings.read`, `dashboard.plans.read`. UI navigation should hide tabs that are not granted.
+4. `app.*` и `delegation.*` роли из Keycloak не считаются atomic permissions сами по себе: доступ дают только известные permission-коды из `PermissionCodes`.
+5. Для `status=review` разрешены только onboarding-safe contractor действия (`profile.manage_own`, `company_contacts.manage_own`); `inactive`/`blacklist` не проходят protected проверки.
+6. Frontend использует permissions/actions только для UX. Финальное enforcement-решение всегда принимает backend endpoint/policy/service слой.

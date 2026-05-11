@@ -5,6 +5,7 @@ from urllib.parse import quote
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -252,6 +253,7 @@ async def request_email_verification(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> EmailVerificationActionResponse:
+    UserPolicy.ensure_can_manage_own_profile(current_user)
     async with uow:
         service = EmailVerificationService(uow.profiles)
         result = await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
@@ -518,7 +520,11 @@ async def refresh_session(
         bundle = await refresh_tokens(refresh_token=keycloak_refresh_token)
     except Unauthorized:
         clear_keycloak_refresh_cookie(response)
-        raise Unauthorized("Missing credentials")
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Missing credentials"},
+            headers=dict(response.headers),
+        )
 
     set_keycloak_refresh_cookie(response, bundle.refresh_token, max_age=max(0, bundle.refresh_expires_in))
     async with uow:

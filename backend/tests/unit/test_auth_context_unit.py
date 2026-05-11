@@ -53,3 +53,30 @@ def test_build_current_user_from_keycloak_empty_api_roles_produces_empty_sets():
     assert current_user.app_roles == frozenset()
     assert current_user.delegation_roles == frozenset()
     assert current_user.keycloak_roles == frozenset()
+
+
+def test_build_current_user_from_keycloak_app_superadmin_without_atomic_permissions_has_no_permissions():
+    current_user = build_current_user_from_keycloak(
+        user_id="u-3",
+        role_id=1,
+        status="active",
+        api_roles=frozenset({"app.superadmin"}),
+    )
+
+    assert current_user.permissions == frozenset()
+    assert current_user.app_roles == frozenset({"app.superadmin"})
+    assert "app.superadmin" not in current_user.permissions
+
+
+def test_build_current_user_from_keycloak_delegation_roles_do_not_become_permissions():
+    current_user = build_current_user_from_keycloak(
+        user_id="u-4",
+        role_id=3,
+        status="active",
+        api_roles=frozenset({"delegation.request-reader", "delegation.offer-reader"}),
+    )
+
+    assert current_user.permissions == frozenset()
+    assert current_user.delegation_roles == frozenset(
+        {"delegation.request-reader", "delegation.offer-reader"}
+    )

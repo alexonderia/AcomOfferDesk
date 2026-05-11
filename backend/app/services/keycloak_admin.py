@@ -100,7 +100,7 @@ class KeycloakAdminService:
             return
 
         admin_token = await self._get_admin_token()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 f"{self._users_endpoint}/{normalized_user_id}/logout",
                 headers=self._headers(admin_token),
@@ -128,7 +128,7 @@ class KeycloakAdminService:
             raise Conflict("Keycloak clientId is required")
 
         token = admin_token or await self.get_admin_token()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.get(
                 f"{self._admin_base_url}/clients",
                 params={"clientId": normalized_client_id},
@@ -167,7 +167,7 @@ class KeycloakAdminService:
             raise Conflict("Keycloak role lookup requires client UUID and role name")
 
         token = admin_token or await self.get_admin_token()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.get(
                 f"{self._admin_base_url}/clients/{normalized_client_uuid}/roles/{normalized_role_name}",
                 headers=self._headers(token),
@@ -198,7 +198,7 @@ class KeycloakAdminService:
             raise Conflict("Keycloak role mappings lookup requires user ID and client UUID")
 
         token = admin_token or await self.get_admin_token()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.get(
                 f"{self._users_endpoint}/{normalized_user_id}/role-mappings/clients/{normalized_client_uuid}",
                 headers=self._headers(token),
@@ -224,7 +224,7 @@ class KeycloakAdminService:
         if not roles:
             return
         token = admin_token or await self.get_admin_token()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 f"{self._users_endpoint}/{keycloak_user_id}/role-mappings/clients/{client_uuid}",
                 json=roles,
@@ -244,7 +244,7 @@ class KeycloakAdminService:
         if not roles:
             return
         token = admin_token or await self.get_admin_token()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.request(
                 "DELETE",
                 f"{self._users_endpoint}/{keycloak_user_id}/role-mappings/clients/{client_uuid}",
@@ -357,7 +357,7 @@ class KeycloakAdminService:
                 "password": self._admin_password or "",
             }
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 token_endpoint,
                 data=form_data,
@@ -390,7 +390,7 @@ class KeycloakAdminService:
         return self._pick_exact_user(payload, email=email)
 
     async def _get_users(self, admin_token: str, *, params: dict[str, str]) -> list[dict[str, Any]]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.get(
                 self._users_endpoint,
                 params=params,
@@ -448,7 +448,7 @@ class KeycloakAdminService:
         if email is not None:
             payload["email"] = email
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 self._users_endpoint,
                 json=payload,
@@ -482,7 +482,7 @@ class KeycloakAdminService:
         if email is not None:
             payload["email"] = email
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.put(
                 f"{self._users_endpoint}/{user_id}",
                 json=payload,
@@ -492,7 +492,7 @@ class KeycloakAdminService:
             raise Conflict("Unable to update Keycloak account")
 
     async def _set_password(self, admin_token: str, *, user_id: str, password: str) -> None:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.put(
                 f"{self._users_endpoint}/{user_id}/reset-password",
                 json={
@@ -518,3 +518,4 @@ class KeycloakAdminService:
     @property
     def _admin_base_url(self) -> str:
         return f"{self._base_url}/admin/realms/{self._realm}"
+

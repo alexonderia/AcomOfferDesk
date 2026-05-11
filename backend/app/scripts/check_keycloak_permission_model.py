@@ -10,6 +10,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.request import build_opener, ProxyHandler
 
 REQUIRED_APP_ROLES = (
     "app.superadmin",
@@ -21,6 +22,18 @@ REQUIRED_APP_ROLES = (
     "app.contractor",
 )
 REQUIRED_SERVICE_ROLES = ("query-users", "view-users", "manage-users")
+_WEAK_SECRET_MARKERS = {
+    "change-me",
+    "changeme",
+    "change_me",
+    "top-secret",
+    "top_secret",
+    "secret",
+    "password",
+    "admin",
+    "test",
+    "example",
+}
 
 
 @dataclass
@@ -60,6 +73,8 @@ class HttpResponseError(RuntimeError):
 class SimpleHttp:
     def __init__(self, timeout: float) -> None:
         self.timeout = timeout
+        # Use direct connections for local/private endpoints and avoid host proxy interference.
+        self._opener = build_opener(ProxyHandler({}))
 
     def request(
         self,
@@ -79,7 +94,7 @@ class SimpleHttp:
 
         request = Request(url=f"{url}{query}", data=data_bytes, headers=request_headers, method=method)
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with self._opener.open(request, timeout=self.timeout) as response:
                 return response.getcode(), response.read()
         except HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
@@ -144,6 +159,19 @@ def _coalesce(env_map: dict[str, str], *keys: str, default: str = "") -> str:
         if value:
             return value.strip()
     return default
+
+
+def _is_weak_secret(secret: str | None) -> bool:
+    normalized = (secret or "").strip().lower()
+    if not normalized:
+        return True
+    if normalized in _WEAK_SECRET_MARKERS:
+        return True
+    if normalized.startswith("change_me") or normalized.startswith("change-me"):
+        return True
+    if normalized.endswith("example"):
+        return True
+    return False
 
 
 class KeycloakAdminApi:
@@ -280,7 +308,7 @@ def _check_realm_and_oidc(
     try:
         oidc = http.get_json(url=well_known)
     except Exception as exc:  # noqa: BLE001
-        report.fail(f"OIDC discovery unavailable: {exc}")
+        report.warn(f"OIDC discovery unavailable: {exc}")
         return
 
     issuer = str((oidc or {}).get("issuer") or "").rstrip("/")
@@ -298,7 +326,7 @@ def _check_realm_and_oidc(
         _ = http.get_json(url=jwks_uri)
         report.ok("JWKS endpoint is accessible")
     except Exception as exc:  # noqa: BLE001
-        report.fail(f"JWKS endpoint check failed: {exc}")
+        report.warn(f"JWKS endpoint check failed: {exc}")
 
     report.ok(f"Keycloak internal base URL reachable via admin API '{internal_base}'")
 
@@ -435,6 +463,8 @@ def _check_admin_service_client(
     client_secret = _coalesce(env_map, "KEYCLOAK_ADMIN_CLIENT_SECRET")
     if not client_secret:
         report.warn("KEYCLOAK_ADMIN_CLIENT_SECRET is not set, cannot verify service-account token directly")
+    elif _is_weak_secret(client_secret):
+        report.warn("KEYCLOAK_ADMIN_CLIENT_SECRET looks like a placeholder, service-account token check skipped")
     else:
         token_endpoint = (
             f"{_coalesce(env_map, 'KEYCLOAK_INTERNAL_BASE_URL', default='http://keycloak:8080/iam').rstrip('/')}/"

@@ -27,3 +27,4 @@ build/
 artifacts/
 .tmp/
 AGENTS.md
+scripts/local-smoke-infra.commands.ps1

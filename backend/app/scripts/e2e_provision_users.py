@@ -90,12 +90,15 @@ async def _request_token(
 ) -> str | None:
     import httpx
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            token_endpoint,
-            data=form_data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+            response = await client.post(
+                token_endpoint,
+                data=form_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+    except Exception:  # noqa: BLE001
+        return None
     if response.status_code >= 400:
         return None
     payload = response.json()
@@ -152,7 +155,7 @@ async def _delete_keycloak_user(*, keycloak_user_id: str, admin_token: str) -> N
 
     from app.core.config import settings
 
-    async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds, trust_env=False) as client:
         response = await client.delete(
             f"{settings.keycloak_internal_base_url}/admin/realms/{settings.keycloak_realm}/users/{keycloak_user_id}",
             headers={"Authorization": f"Bearer {admin_token}"},
@@ -184,7 +187,7 @@ async def _create_keycloak_user(
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds, trust_env=False) as client:
         existing_response = await client.get(
             users_endpoint,
             params={"username": username, "exact": "true", "max": "2"},
@@ -202,7 +205,7 @@ async def _create_keycloak_user(
     if existing:
         raise RuntimeError(f"Refusing to reuse existing Keycloak user '{username}'")
 
-    async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds, trust_env=False) as client:
         create_response = await client.post(
             users_endpoint,
             json={
@@ -239,7 +242,7 @@ async def _create_keycloak_user(
         raise RuntimeError(f"Created Keycloak user '{username}' has empty id")
 
     try:
-        async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds, trust_env=False) as client:
             password_response = await client.put(
                 f"{users_endpoint}/{user_id}/reset-password",
                 json={"type": "password", "temporary": False, "value": password},
@@ -427,10 +430,15 @@ async def cleanup_state(*, state: ProvisionState, env_file: str) -> int:
     from app.core.config import settings
     from app.infrastructure.db import engine
 
-    admin_token, admin_base_url = await _get_admin_token_for_provisioning()
-    settings.keycloak_internal_base_url = admin_base_url
-
     failures = 0
+    admin_token: str | None = None
+    try:
+        admin_token, admin_base_url = await _get_admin_token_for_provisioning()
+        settings.keycloak_internal_base_url = admin_base_url
+    except Exception as exc:  # noqa: BLE001
+        failures += 1
+        _print_status(f"[FAIL] Keycloak cleanup bootstrap failed: {exc}")
+
     for user in reversed(state.users):
         try:
             await _delete_local_user(local_user_id=user.local_user_id)
@@ -439,12 +447,16 @@ async def cleanup_state(*, state: ProvisionState, env_file: str) -> int:
             failures += 1
             _print_status(f"[FAIL] local cleanup for {user.local_user_id}: {exc}")
 
-        try:
-            await _delete_keycloak_user(keycloak_user_id=user.keycloak_user_id, admin_token=admin_token)
-            _print_status(f"[OK] deleted Keycloak user {user.username}")
-        except Exception as exc:  # noqa: BLE001
+        if admin_token is None:
             failures += 1
-            _print_status(f"[FAIL] Keycloak cleanup for {user.username}: {exc}")
+            _print_status(f"[FAIL] Keycloak cleanup for {user.username}: admin token unavailable")
+        else:
+            try:
+                await _delete_keycloak_user(keycloak_user_id=user.keycloak_user_id, admin_token=admin_token)
+                _print_status(f"[OK] deleted Keycloak user {user.username}")
+            except Exception as exc:  # noqa: BLE001
+                failures += 1
+                _print_status(f"[FAIL] Keycloak cleanup for {user.username}: {exc}")
 
     state_path = Path(state.state_file) if state.state_file else None
     if state_path is not None and state_path.exists():

@@ -11,8 +11,12 @@ SMOKE_S3_ENDPOINT="${SMOKE_S3_ENDPOINT:-}"
 SMOKE_RABBITMQ_URL="${SMOKE_RABBITMQ_URL:-}"
 
 export PYTHONPATH="$ROOT_DIR/backend"
+PYTHON_CMD="python"
+if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON_CMD="$ROOT_DIR/.venv/bin/python"
+fi
 
-CMD=(python -m app.scripts.smoke_services --env-file "$ENV_FILE")
+CMD=("$PYTHON_CMD" -m app.scripts.smoke_services --env-file "$ENV_FILE")
 if [[ -n "$BASE_URL" ]]; then
   CMD+=(--base-url "$BASE_URL")
 fi

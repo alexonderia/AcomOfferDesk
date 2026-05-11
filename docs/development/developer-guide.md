@@ -374,6 +374,9 @@ Frontend организован по feature-oriented структуре. Иск
 4. `backend/app/api/dependencies.py`
 5. `web/src/app/providers/AuthProvider.tsx`
 6. `web/src/pages/auth/*`
+7. `backend/tests/unit/test_auth_context_unit.py`
+8. `backend/tests/integration/test_auth_enforcement_contract.py`
+9. `backend/tests/integration/test_auth_oidc_flows.py`
 
 ### Нужно изменить создание пользователей или контрагентов
 

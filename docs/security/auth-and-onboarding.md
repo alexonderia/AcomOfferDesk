@@ -161,6 +161,9 @@ Frontend не принимает security-решения по raw JWT claims.
 Backend не пропускает критические действия только на основании role:
 - `status=active` обязателен для защищённых действий;
 - `review/inactive/blacklist` ограничиваются policy-слоем.
+- endpoint `POST /api/v1/auth/request-email-verification` также проходит через policy-проверку `manage_own_profile`:
+  - `review` допускается только для contractor и только в рамках ограниченных onboarding-safe permissions;
+  - `inactive/blacklist` не проходят.
 
 ## Auto-link policy по окружениям
 
@@ -242,6 +245,17 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 ### 3) Проверка link между локальным пользователем и Keycloak
 
 Проверить таблицу `user_auth_accounts` по `provider='keycloak'` и `external_subject_id`.
+
+### 4) Критичные auth-regression сценарии (должны быть в автотестах)
+
+- callback без `code`/`state`;
+- callback с неправильным `state`;
+- callback без state-cookie и с битой state-cookie;
+- registration callback с `invite email mismatch`;
+- повторная регистрация email, который уже существует локально;
+- refresh без cookie;
+- refresh с невалидной cookie;
+- logout должен очищать cookies даже при недоступных Keycloak logout/Admin API.
 
 ## Ограничения текущей реализации
 

@@ -10,7 +10,8 @@ Focus:
 import pytest
 
 from app.core.config import settings
-from app.domain.authorization import has_permission
+from app.domain.authorization import has_permission, require_any_permission, require_permission
+from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 
 
@@ -60,3 +61,44 @@ def test_has_permission_review_non_contractor_blocked(make_current_user):
     )
 
     assert has_permission(review_user, PermissionCodes.PROFILE_MANAGE_OWN) is False
+
+
+def test_require_permission_active_with_permission_passes(make_current_user):
+    current_user = make_current_user(
+        permissions={PermissionCodes.REQUESTS_READ},
+    )
+
+    require_permission(current_user, PermissionCodes.REQUESTS_READ)
+
+
+def test_require_permission_raises_for_blocked_status(make_current_user):
+    current_user = make_current_user(
+        role_id=settings.contractor_role_id,
+        status="review",
+        permissions={PermissionCodes.REQUESTS_READ},
+    )
+
+    with pytest.raises(Forbidden):
+        require_permission(current_user, PermissionCodes.REQUESTS_READ)
+
+
+def test_require_any_permission_respects_status_filters(make_current_user):
+    review_contractor = make_current_user(
+        role_id=settings.contractor_role_id,
+        status="review",
+        permissions={
+            PermissionCodes.PROFILE_MANAGE_OWN,
+            PermissionCodes.REQUESTS_OPEN_READ,
+        },
+    )
+
+    require_any_permission(
+        review_contractor,
+        (PermissionCodes.PROFILE_MANAGE_OWN, PermissionCodes.REQUESTS_OPEN_READ),
+    )
+
+    with pytest.raises(Forbidden):
+        require_any_permission(
+            review_contractor,
+            (PermissionCodes.REQUESTS_OPEN_READ, PermissionCodes.REQUESTS_OFFERED_READ),
+        )

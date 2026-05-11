@@ -59,3 +59,19 @@ docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootst
 
 Полные сценарии `dev/prod-like/test/prod`, tunnel-профили, perimeter и проверки — в [docs/operations/environments.md](docs/operations/environments.md).
 
+## Testing And CI
+
+- Backend unit tests:
+  - PowerShell: `./scripts/test-unit.ps1`
+  - Bash: `./scripts/test-unit.sh`
+- Backend integration/API contract tests:
+  - PowerShell: `./scripts/test-integration.ps1`
+  - Bash: `./scripts/test-integration.sh`
+- Frontend build: `npm --prefix web run build`
+
+CI workflow: `.github/workflows/ci.yml`
+- triggers on `push/pull_request` for `dev_process`, `dev`, `test`
+- runs backend unit + backend integration + frontend build
+
+Manual e2e smoke workflow: `.github/workflows/e2e-smoke.yml` (`workflow_dispatch`).
+

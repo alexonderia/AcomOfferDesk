@@ -48,7 +48,11 @@ npm --prefix web exec -- playwright install
 
 Проверяют:
 - как `CurrentUser` собирается из ролей Keycloak;
+- фильтрацию неизвестных/пустых ролей Keycloak;
+- что `app.*` и `delegation.*` сами по себе не становятся atomic permissions;
+- что `app.superadmin` без atomic permission-кодов не дает доступ автоматически;
 - как `authorization.has_permission(...)` учитывает права и статус пользователя;
+- как `require_permission(...)` и `require_any_permission(...)` учитывают статусы `active/review/inactive/blacklist`;
 - критичные ветки политик `RequestPolicy`, `OfferPolicy` и `UserPolicy`;
 - сборку доступных действий через `RequestActionBuilder`, `OfferActionBuilder`, `ChatActionBuilder` и `UserActionBuilder`.
 
@@ -64,10 +68,14 @@ npm --prefix web exec -- playwright install
 ## 2. Интеграционные тесты и API-контракты backend
 
 Проверяют:
+- `401` для endpoint без `Authorization` и с невалидным Bearer token;
+- `403` для пользователя без нужного permission;
+- статусные ограничения (`review/inactive/blacklist`) на protected действиях;
+- успешный protected-path для `active` пользователя с нужными permission;
 - контракт сессии авторизации: `permissions`, `app_roles`, `delegation_roles`, `status`, `role_id`, `business_access`, `onboarding_state`;
 - контракты заявок: у элементов есть `actions`, а глобальные `permissions` не дублируются в ответе;
 - контракт рабочего пространства оффера: `request.actions`, `offer.actions`, `chat_actions`, без глобального списка `permissions` в ответе;
-- негативные сценарии авторизации: запрещенные действия возвращают `403`.
+- OIDC/auth edge-cases: callback без `code/state`, callback с неправильным/битым `state`, refresh без cookie, refresh с невалидной cookie, logout при недоступном Keycloak API.
 
 Как запускать:
 - PowerShell: `./scripts/test-integration.ps1`
@@ -215,6 +223,22 @@ npm --prefix web exec -- playwright install
 Важно:
 - e2e не запускаются по умолчанию;
 - release-проверка удобна перед финальной валидацией, но отдельные наборы все равно можно запускать независимо.
+
+## 7. CI-покрытие
+
+Автоматически в GitHub Actions (workflow `.github/workflows/ci.yml`) на `push/pull_request` для веток `dev_process`, `dev`, `test` запускаются:
+- backend unit tests;
+- backend integration/API contract tests;
+- frontend build.
+
+E2E smoke запускается отдельно вручную (`workflow_dispatch`) через `.github/workflows/e2e-smoke.yml`.
+
+## 8. Frontend unit/component тесты (статус)
+
+Сейчас основная frontend-проверка в CI — `build` и e2e smoke.  
+Минимальный следующий шаг (P1), если хотим локально поймать регрессии раньше e2e:
+- добавить `Vitest + React Testing Library` только для `AuthProvider`, `ProtectedRoute`, `RoleRoute`;
+- покрыть сценарии `anonymous/bootstrapping/authenticated`, `businessAccess=false`, permission-based route access.
 
 ## Когда что запускать
 

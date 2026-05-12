@@ -249,7 +249,14 @@ class KeycloakAdminApi:
 
     def get(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
         url = f"{self._internal_base_url}{path}"
-        return self._http.get_json(url=url, headers=self._headers(), params=params)
+        try:
+            return self._http.get_json(url=url, headers=self._headers(), params=params)
+        except HttpResponseError as exc:
+            if exc.status_code != 401:
+                raise
+            self._report.warn("Admin API returned 401, refreshing token and retrying once")
+            self._token = ""
+            return self._http.get_json(url=url, headers=self._headers(), params=params)
 
     def get_client(self, client_id: str) -> dict[str, Any] | None:
         payload = self.get(f"/admin/realms/{self._realm}/clients", params={"clientId": client_id})
@@ -566,6 +573,15 @@ def _check_bootstrap_superadmin(report: Report, admin_api: KeycloakAdminApi, rea
         report.fail(f"Bootstrap user '{bootstrap_username}' is missing app.superadmin")
 
 
+def _run_check(report: Report, title: str, check_fn: Any) -> None:
+    try:
+        check_fn()
+    except HttpResponseError as exc:
+        report.fail(f"{title}: HTTP {exc.status_code}: {exc.body[:300]}")
+    except Exception as exc:  # noqa: BLE001
+        report.fail(f"{title}: {exc}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read-only Keycloak permission model checks")
     parser.add_argument("--env-file", required=True, help="Path to env file")
@@ -607,42 +623,70 @@ def main() -> int:
         report.print()
         return 1
 
-    _check_realm_and_oidc(
+    _run_check(
         report,
-        internal_base=internal_base,
-        public_issuer=issuer,
-        realm=realm,
-        admin_api=admin_api,
-        http=http,
+        "realm and oidc checks",
+        lambda: _check_realm_and_oidc(
+            report,
+            internal_base=internal_base,
+            public_issuer=issuer,
+            realm=realm,
+            admin_api=admin_api,
+            http=http,
+        ),
     )
-    _check_web_client(
+
+    _run_check(
         report,
-        admin_api,
-        web_client_id,
-        backend_base_url,
-        web_base_url,
+        "web client checks",
+        lambda: _check_web_client(
+            report,
+            admin_api,
+            web_client_id,
+            backend_base_url,
+            web_base_url,
+        ),
     )
-    api_client_uuid = _check_api_client_roles(
+
+    api_client_uuid_holder: dict[str, str | None] = {"value": None}
+    _run_check(
         report,
-        admin_api,
-        api_client_id,
-        strict_unknown_atomic=args.strict_unknown_atomic,
+        "api client roles checks",
+        lambda: api_client_uuid_holder.__setitem__(
+            "value",
+            _check_api_client_roles(
+                report,
+                admin_api,
+                api_client_id,
+                strict_unknown_atomic=args.strict_unknown_atomic,
+            ),
+        ),
     )
-    _check_admin_service_client(
+
+    _run_check(
         report,
-        admin_api,
-        admin_service_client_id,
-        realm,
-        env_map,
-        http,
+        "admin service client checks",
+        lambda: _check_admin_service_client(
+            report,
+            admin_api,
+            admin_service_client_id,
+            realm,
+            env_map,
+            http,
+        ),
     )
-    _check_bootstrap_superadmin(
+
+    _run_check(
         report,
-        admin_api,
-        realm,
-        api_client_uuid,
-        api_client_id,
-        env_map,
+        "bootstrap superadmin checks",
+        lambda: _check_bootstrap_superadmin(
+            report,
+            admin_api,
+            realm,
+            api_client_uuid_holder["value"],
+            api_client_id,
+            env_map,
+        ),
     )
 
     report.print()

@@ -241,8 +241,10 @@ class RequestService:
         )
 
         file_ids: list[int] = []
-        partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
-        file_ids.append(partner_card_file_id)
+        # TEMP: partner card is not auto-attached to requests.
+        # All request files must be attached by the user manually.
+        # partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
+        # file_ids.append(partner_card_file_id)
         for file_item in files:
             prepared = await self._file_service.prepare_bytes(
                 original_name=file_item.original_name,

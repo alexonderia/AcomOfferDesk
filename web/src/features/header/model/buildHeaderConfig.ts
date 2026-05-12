@@ -193,6 +193,48 @@ const buildLeadMobileNavItems = (canViewDashboardPlans: boolean): HeaderMobileNa
   }),
 ];
 
+const buildEconomistMobileNavItems = (canViewDashboardPlans: boolean, canOpenUsersPage: boolean): HeaderMobileNavItem[] => {
+  const items: HeaderMobileNavItem[] = [];
+
+  if (canViewDashboardPlans) {
+    items.push({
+      key: 'dashboard',
+      label: '\u0414\u0430\u0448\u0431\u043e\u0440\u0434',
+      to: '/pm-dashboard/plan',
+      children: [{ key: 'dashboard-plan', label: '\u041f\u043b\u0430\u043d', to: '/pm-dashboard/plan' }],
+    });
+  }
+
+  items.push({ key: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438', to: '/requests' });
+
+  if (canOpenUsersPage) {
+    items.push({ key: 'economists', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u0441\u0442\u044b', to: '/admin' });
+  }
+
+  items.push(
+    buildMoreNavItem({
+      showProfile: true,
+      showNormative: false,
+      showRoleGuide: true,
+      showFeedback: true,
+      showLogout: true,
+    })
+  );
+
+  return items;
+};
+
+const buildOperatorMobileNavItems = (): HeaderMobileNavItem[] => [
+  { key: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438', to: '/requests' },
+  buildMoreNavItem({
+    showProfile: true,
+    showNormative: false,
+    showRoleGuide: true,
+    showFeedback: true,
+    showLogout: true,
+  }),
+];
+
 const buildAdminMobileNavItems = (canOpenUsersPage: boolean): HeaderMobileNavItem[] => {
   const items: HeaderMobileNavItem[] = [];
 
@@ -239,6 +281,8 @@ const resolveDefaultMobileNavItems = ({
   isLeadEconomist,
   isContractor,
   isLeadLike,
+  isEconomist,
+  isOperator,
   isAdmin,
   canOpenUsersPage,
   canCreateNormativeFile,
@@ -252,6 +296,8 @@ const resolveDefaultMobileNavItems = ({
   isLeadEconomist: boolean;
   isContractor: boolean;
   isLeadLike: boolean;
+  isEconomist: boolean;
+  isOperator: boolean;
   isAdmin: boolean;
   canOpenUsersPage: boolean;
   canCreateNormativeFile: boolean;
@@ -286,7 +332,14 @@ const resolveDefaultMobileNavItems = ({
   }
 
   if (isLeadLike && !isProjectManager && !isLeadEconomist) {
+    if (isEconomist) {
+      return buildEconomistMobileNavItems(canViewDashboardPlans, canOpenUsersPage);
+    }
     return buildLeadMobileNavItems(canViewDashboardPlans);
+  }
+
+  if (isOperator) {
+    return buildOperatorMobileNavItems();
   }
 
   return buildAdminMobileNavItems(isAdmin && canOpenUsersPage);
@@ -325,6 +378,7 @@ export const buildHeaderConfig = ({
   const isLeadEconomist = roleId === ROLE.LEAD_ECONOMIST;
   const isProjectManager = roleId === ROLE.PROJECT_MANAGER;
   const isEconomist = roleId === ROLE.ECONOMIST;
+  const isOperator = roleId === ROLE.OPERATOR;
   const isLeadLike = isLeadEconomist || isProjectManager || isEconomist;
 
   const isRequestsListPage = pathname === '/requests';
@@ -354,6 +408,10 @@ export const buildHeaderConfig = ({
     && (isLeadRequestsTab || isLeadEconomistsTab || isLeadPlanTab)
     && canViewDashboardPlans
     && (canOpenUsersPage || isEconomist);
+  const canUseEconomistTabs = isEconomist
+    && (pathname.startsWith('/requests') || pathname.startsWith('/admin') || isOfferWorkspacePage)
+    && canOpenUsersPage;
+  const canUseOperatorTabs = isOperator && pathname.startsWith('/requests');
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
     && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans)
     && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityPlan || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
@@ -368,6 +426,8 @@ export const buildHeaderConfig = ({
     isLeadEconomist,
     isContractor,
     isLeadLike,
+    isEconomist,
+    isOperator,
     isAdmin,
     canOpenUsersPage,
     canCreateNormativeFile,
@@ -549,6 +609,49 @@ export const buildHeaderConfig = ({
           onNavigateToAdmin();
           return;
         }
+        onNavigateToRequests();
+      },
+      actions: [],
+      showFeedback: true,
+      showRoleGuide: true,
+      showProfile: true,
+      showLogout: true
+    };
+  }
+
+  if (canUseEconomistTabs) {
+    return {
+      mode: 'sidebar',
+      breadcrumbs,
+      mobileNavItems: buildEconomistMobileNavItems(canViewDashboardPlans, canOpenUsersPage),
+      tabs: [
+        { key: 'requests', value: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438' },
+        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u0441\u0442\u044b' }] : []),
+      ],
+      activeTab: pathname.startsWith('/admin') ? 'economists' : 'requests',
+      onTabChange: (value) => {
+        if (value === 'economists' && canOpenUsersPage) {
+          onNavigateToAdmin();
+          return;
+        }
+        onNavigateToRequests();
+      },
+      actions: [],
+      showFeedback: true,
+      showRoleGuide: true,
+      showProfile: true,
+      showLogout: true
+    };
+  }
+
+  if (canUseOperatorTabs) {
+    return {
+      mode: 'sidebar',
+      breadcrumbs,
+      mobileNavItems: buildOperatorMobileNavItems(),
+      tabs: [{ key: 'requests', value: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438' }],
+      activeTab: 'requests',
+      onTabChange: () => {
         onNavigateToRequests();
       },
       actions: [],

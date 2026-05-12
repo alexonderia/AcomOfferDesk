@@ -103,3 +103,31 @@ export const logoutFromUi = async (page: Page): Promise<void> => {
   }
   await page.context().clearCookies();
 };
+
+export const assertNoSevereConsoleErrors = async (
+  page: Page,
+  action: () => Promise<void>
+): Promise<void> => {
+  const severeErrors: string[] = [];
+  const listener = (msg: { type: () => string; text: () => string }) => {
+    if (msg.type() !== 'error') {
+      return;
+    }
+
+    const text = msg.text();
+    if (text.includes('the server responded with a status of 401')) {
+      return;
+    }
+
+    severeErrors.push(text);
+  };
+
+  page.on('console', listener);
+  try {
+    await action();
+  } finally {
+    page.off('console', listener);
+  }
+
+  expect(severeErrors, `Console errors: ${severeErrors.join('\n')}`).toEqual([]);
+};

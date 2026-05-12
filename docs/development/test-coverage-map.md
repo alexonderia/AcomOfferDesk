@@ -162,3 +162,28 @@ P2 (третья волна):
 1. Extended e2e-сценарии (полный workflow между ролями).
 2. Route/detail UX-regression и resilience checks.
 3. Опциональный scheduled smoke-trend workflow.
+
+## Update 2026-05-12: frontend nav + extended e2e
+
+Added frontend unit/component tests:
+- `web/src/features/header/model/buildHeaderConfig.test.ts`:
+  role-aware menu/tabs visibility for `superadmin`, `economist`, `operator`, `contractor`;
+  dashboard tab visibility depends on `dashboard.*` permissions;
+  admin section visibility depends on `users.read`.
+- `web/src/app/routes/RoleRoute.test.tsx`:
+  explicit negative case for raw claims (`app_roles`/`delegation_roles`) without required permission.
+- `web/src/features/requests/ui/RequestsTable.test.tsx`:
+  `loading` and `empty` states.
+- `web/src/features/requests/ui/RequestsPageView.test.tsx`:
+  `error` state rendering.
+
+Added extended e2e specs:
+- `web/e2e/roles.access.spec.ts` (`@roles`)
+- `web/e2e/registration.extended.spec.ts` (`@registration`)
+- `web/e2e/request-offer.extended.spec.ts` (`@request-offer`)
+- `web/e2e/dashboard.extended.spec.ts` (`@dashboard`)
+- `web/e2e/files-chat.extended.spec.ts` (`@files-chat`)
+
+Smoke policy remains unchanged:
+- `@smoke` only for lightweight browser checks;
+- extended tags are manual and intentionally excluded from default smoke/CI execution.

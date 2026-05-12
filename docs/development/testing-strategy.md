@@ -298,3 +298,23 @@ E2E smoke запускается отдельно вручную (`workflow_disp
 Smoke-рекомендация (P1):
 - если в среде нет `MailHog`/`Mailpit`, не внедрять тяжелую инфраструктуру только ради этого;
 - для dev/test рекомендован легкий mailbox smoke через `MailHog`/`Mailpit`, чтобы проверять фактическое попадание письма в тестовый inbox.
+
+## 11. Frontend navigation/page tests and extended e2e tags
+
+Frontend unit/component coverage now additionally includes:
+- role-aware navigation config checks (`buildHeaderConfig`) for `superadmin`, `economist`, `operator`, `contractor`;
+- dashboard/admin visibility assertions based on backend permissions;
+- explicit guard that `RoleRoute` does not grant access from raw `app_roles`/`delegation_roles` claims without required permissions;
+- requests UX states: `loading`, `empty`, `error`.
+
+New Playwright tags for extended/manual scenarios:
+- `@roles` - role/page access matrix for all 7 roles with allowed/forbidden route checks and console-error guard;
+- `@registration` - invite registration flow (manual/stand-dependent);
+- `@request-offer` - cross-role request -> offer -> workspace -> status transition flow;
+- `@dashboard` - PM/LE dashboard pages, route reachability, filter behavior, NaN/undefined guard, empty-state checks;
+- `@files-chat` - workspace file/chat interactions + forbidden workspace access for non-allowed role.
+
+Execution policy:
+- default smoke remains lightweight and runs only `@smoke`;
+- CI (`.github/workflows/ci.yml`) still runs backend unit/integration + frontend lint/unit/build only;
+- browser smoke and extended e2e are manual (`scripts/e2e-smoke.*`, manual workflows, manual npm `e2e:*` commands).

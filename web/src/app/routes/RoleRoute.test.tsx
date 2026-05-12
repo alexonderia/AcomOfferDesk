@@ -110,4 +110,27 @@ describe("RoleRoute", () => {
 
     expect(screen.getByText("requests-page")).toBeInTheDocument();
   });
+
+  it("does not grant route access from raw app/delegation claims without permission", () => {
+    useAuthMock.mockReturnValue({
+      session: {
+        ...baseSession,
+        roleId: 1,
+        role: "superadmin",
+        permissions: [],
+        appRoles: ["app.superadmin"],
+        delegationRoles: ["delegation.any"],
+      },
+    });
+
+    renderRoleRoute(
+      "/admin",
+      <RoleRoute allowedPermissions={["users.read"]}>
+        <div>admin-page</div>
+      </RoleRoute>
+    );
+
+    expect(screen.queryByText("admin-page")).not.toBeInTheDocument();
+    expect(screen.getByText("requests-page")).toBeInTheDocument();
+  });
 });

@@ -70,10 +70,19 @@ docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootst
 - Frontend lint: `npm --prefix web run lint`
 - Frontend unit/component tests: `npm --prefix web run test:unit`
 - Frontend build: `npm --prefix web run build`
+- Frontend e2e smoke: `npm --prefix web run e2e:smoke`
+- Frontend extended e2e (manual):
+  - `npm --prefix web run e2e:roles`
+  - `npm --prefix web run e2e:registration`
+  - `npm --prefix web run e2e:request-offer`
+  - `npm --prefix web run e2e:dashboard`
+  - `npm --prefix web run e2e:files-chat`
+  - `npm --prefix web run e2e:extended`
 
 CI workflow: `.github/workflows/ci.yml`
 - triggers on `push/pull_request` for `dev_process`, `dev`, `test`
 - runs backend unit + backend integration + frontend lint + frontend unit tests + frontend build
+- does not run extended e2e tags by default
 
 Manual e2e smoke workflow: `.github/workflows/e2e-smoke.yml` (`workflow_dispatch`).
 Manual release smoke workflow: `.github/workflows/release-smoke.yml` (`workflow_dispatch`, optional e2e).

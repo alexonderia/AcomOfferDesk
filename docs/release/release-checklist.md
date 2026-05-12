@@ -76,6 +76,7 @@
 - [ ] Работает upload-сценарий (если предусмотрен).
 - [ ] RabbitMQ UI и MinIO Console недоступны из публичного интернета.
 - [ ] E2E smoke выполнен вручную через `scripts/e2e-smoke.*` или workflow `E2E Smoke (Manual)` на поднятом стенде.
+- [ ] Extended e2e suites (`@roles`, `@registration`, `@request-offer`, `@dashboard`, `@files-chat`) run manually when release scope touches role UX/access, dashboard behavior, request-offer lifecycle, or files/chat.
 - [ ] Release smoke workflow `Release Smoke (Manual)` выполнен на поднятом стенде (обязательные `smoke-infra` + `check-keycloak`, optional e2e через `include_e2e=true`).
 - [ ] Email tests прошли без реальной внешней отправки (`fake transport`/`fake outbox`, без real SMTP creds в CI).
 - [ ] Подтверждено, что CI/workflows не отправляют реальные письма наружу.

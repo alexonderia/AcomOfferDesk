@@ -1,27 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { getCredentialsOrSkip, loginViaKeycloak, logoutFromUi } from './helpers';
-
-const assertNoSevereConsoleErrors = async (page, action: () => Promise<void>) => {
-  const severeErrors: string[] = [];
-  const listener = (msg) => {
-    if (msg.type() === 'error') {
-      const text = msg.text();
-      if (text.includes('the server responded with a status of 401')) {
-        return;
-      }
-      severeErrors.push(text);
-    }
-  };
-
-  page.on('console', listener);
-  try {
-    await action();
-  } finally {
-    page.off('console', listener);
-  }
-
-  expect(severeErrors, `Console errors: ${severeErrors.join('\n')}`).toEqual([]);
-};
+import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaKeycloak, logoutFromUi } from './helpers';
 
 test('economist requests smoke @smoke', async ({ page }, testInfo) => {
   const credentials = getCredentialsOrSkip(testInfo, 'E2E_ECONOMIST');

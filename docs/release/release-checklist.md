@@ -77,6 +77,9 @@
 - [ ] RabbitMQ UI и MinIO Console недоступны из публичного интернета.
 - [ ] E2E smoke выполнен вручную через `scripts/e2e-smoke.*` или workflow `E2E Smoke (Manual)` на поднятом стенде.
 - [ ] Release smoke workflow `Release Smoke (Manual)` выполнен на поднятом стенде (обязательные `smoke-infra` + `check-keycloak`, optional e2e через `include_e2e=true`).
+- [ ] Email tests прошли без реальной внешней отправки (`fake transport`/`fake outbox`, без real SMTP creds в CI).
+- [ ] Подтверждено, что CI/workflows не отправляют реальные письма наружу.
+- [ ] Если в окружении есть MailHog/Mailpit: выполнен mailbox smoke (письмо попало в test inbox).
 
 ## H. Откат (плейсхолдер)
 

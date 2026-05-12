@@ -156,8 +156,8 @@
 | 29 | `test_contractor_can_edit_only_own_offer_amount` | Contractor редактирует только свой offer amount. | Проверяет own offer success и чужой offer denial. |
 | 30 | `test_employee_with_manual_offer_permission_can_create_manual_offer` | Internal employee с `offers.manual.create` создает manual offer. | POST manual offer endpoint с permission. |
 | 31 | `test_accept_offer_requires_status_update_permission` | Accept offer требует `offers.status.update`. | User без permission получает `403`, с permission проходит. |
-| 32 | `test_accepting_offer_changes_only_target_offer_status_in_current_implementation` | Accept меняет только целевой offer в текущей реализации. | Fake offers repo и проверка статусов. |
-| 33 | `test_cannot_accept_offer_for_closed_or_cancelled_request` | Нельзя accept offer для closed/cancelled request. | Параметры request status, ожидается conflict/forbidden. |
+| 32 | `test_accepting_offer_changes_only_target_offer_status_in_current_implementation` | В backend service-level fake меняется только целевой offer; в реальной БД `order_database` есть trigger `offers_accept_reject_others`, который должен auto-reject остальные submitted offers. | Fake offers repo не моделирует DB trigger, поэтому это gap тестового контура, а не доказательство отсутствия правила во всей системе. |
+| 33 | `test_cannot_accept_offer_for_closed_or_cancelled_request` | Желаемое правило "нельзя accept offer для closed/cancelled request" пока не реализовано. | Тест помечен `xfail`: текущий `OfferService.update_status` не проверяет статус заявки перед accept. |
 | 34 | `test_workspace_access_is_restricted_to_allowed_users` | Workspace доступен только разрешенным пользователям. | Проверяет contractor owner/internal allowed и denied user. |
 | 35 | `test_allowed_roles_can_create_request[1]` | Role id 1 может создать заявку. | POST `/api/v1/requests`, fake service вызывает `UserPolicy.ensure_can_create_request`. |
 | 36 | `test_allowed_roles_can_create_request[5]` | Role id 5 может создать заявку. | То же. |
@@ -167,7 +167,7 @@
 | 40 | `test_forbidden_roles_cannot_create_request[4]` | Role id 4 не может создать заявку. | POST ожидает `403`. |
 | 41 | `test_forbidden_roles_cannot_create_request[3]` | Role id 3 не может создать заявку. | POST ожидает `403`. |
 | 42 | `test_contractor_cannot_access_internal_request_representation` | Contractor не видит internal request representation. | GET `/api/v1/requests/{id}` ожидает `403`. |
-| 43 | `test_contractor_can_access_contractor_view_only_when_permission_allows` | Contractor view доступен только с `requests.contractor_view.read`. | Один request без permission дает `403`, второй с permission дает `200` и actions. |
+| 43 | `test_contractor_can_access_contractor_view_only_when_permission_allows` | Тест проверяет ожидаемый прямой guard `requests.contractor_view.read` через fake service, но текущий реальный `OfferService.get_request_view` использует видимость заявки + `offers.create`. | Monkeypatch fake service явно бросает `Forbidden` без `requests.contractor_view.read`; это фиксирует gap между ожидаемым контрактом и текущей реализацией. |
 | 44 | `test_update_request_deadline_requires_deadline_permission` | Deadline update требует `requests.deadline.update`. | PATCH deadline с одним `requests.update` дает `403`. |
 | 45 | `test_update_request_pricing_requires_pricing_and_amounts_permissions` | Pricing update требует pricing permission, не только amounts read. | PATCH `initial_amount` ожидает `403`. |
 | 46 | `test_request_owner_change_requires_requests_owner_change_permission` | Owner change требует `requests.owner.change`. | PATCH `owner_user_id` ожидает `403`. |
@@ -277,4 +277,3 @@
 | `scripts/e2e-smoke.ps1` / `.sh` | Optional E2E user provisioning, Playwright `@smoke`, cleanup. |
 | `scripts/test-release.ps1` / `.sh` | Full release smoke chain: unit, integration, infra smoke, Keycloak model, frontend build, optional e2e. |
 | `scripts/local-smoke-infra.commands.ps1` | Локальные рабочие команды для smoke/release запусков на текущей машине. |
-

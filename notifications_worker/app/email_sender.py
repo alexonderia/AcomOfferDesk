@@ -115,6 +115,14 @@ async def send_email(payload: dict) -> None:
     if not to_email:
         logger.warning("Email payload has no recipient")
         return
+    subject = str(payload.get("subject") or "").strip()
+    if not subject:
+        logger.warning("Email payload has no subject: recipient=%s", to_email)
+        return
+    text_content = str(payload.get("text_content") or "")
+    if not text_content.strip():
+        logger.warning("Email payload has no text content: recipient=%s", to_email)
+        return
 
     normalized_to_email = to_email.lower()
     now_mono = time.monotonic()
@@ -141,12 +149,11 @@ async def send_email(payload: dict) -> None:
     from_name = str(payload.get("from_name") or os.getenv("EMAIL_FROM_NAME", "AcomOfferDesk"))
 
     message = EmailMessage()
-    message["Subject"] = str(payload.get("subject") or "")
+    message["Subject"] = subject
     message["From"] = formataddr((from_name, from_address))
     message["To"] = to_email
     message["Reply-To"] = _build_reply_to_address(from_address, from_name, payload.get("reply_token"))
 
-    text_content = str(payload.get("text_content") or "")
     html_content = payload.get("html_content")
     message.set_content(text_content, subtype="plain", charset="utf-8")
     if html_content:
@@ -157,10 +164,17 @@ async def send_email(payload: dict) -> None:
         content_base64 = item.get("content_base64")
         if not content_base64:
             continue
-        content_bytes = base64.b64decode(content_base64)
+        try:
+            content_bytes = base64.b64decode(content_base64)
+        except (ValueError, TypeError):
+            logger.warning("Skip email attachment with invalid base64 payload: %s", filename)
+            continue
         guessed = mimetypes.guess_type(filename)[0]
         mime_type = guessed or str(item.get("mime_type") or "application/octet-stream")
-        maintype, subtype = mime_type.split("/", 1)
+        if "/" in mime_type:
+            maintype, subtype = mime_type.split("/", 1)
+        else:
+            maintype, subtype = "application", "octet-stream"
         message.add_attachment(content_bytes, maintype=maintype, subtype=subtype, filename=filename)
 
     context = ssl.create_default_context()

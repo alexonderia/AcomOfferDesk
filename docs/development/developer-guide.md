@@ -449,3 +449,24 @@ Frontend организован по feature-oriented структуре. Иск
 - [environments.md](../operations/environments.md)
 
 Если меняется compose/env-контракт, сначала обновляйте `environments.md`, а затем синхронизируйте ссылки на него.
+
+## Email notifications: где искать код и тесты
+
+Основные backend файлы:
+- `backend/app/services/send_request_notification_email.py`
+- `backend/app/infrastructure/email/email_templates/request_notification_email.py`
+- `backend/app/infrastructure/email/smtp_email_service.py`
+- `backend/app/infrastructure/notification_publisher.py`
+- `notifications_worker/app/consumers.py`
+- `notifications_worker/app/email_sender.py`
+
+Основные тесты:
+- `backend/tests/unit/test_email_payload_builders_unit.py`
+- `backend/tests/integration/test_email_notifications_integration.py`
+- `backend/tests/unit/test_notifications_worker_unit.py`
+
+Практика для разработки/CI:
+- не использовать реальные SMTP credentials в тестах;
+- не подключаться к реальному RabbitMQ/SMTP из unit/integration;
+- использовать fake outbox/fake transport/monkeypatch publisher;
+- не отправлять реальные письма из CI.

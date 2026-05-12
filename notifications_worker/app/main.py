@@ -8,7 +8,7 @@ import aio_pika
 from aio_pika.abc import AbstractRobustConnection
 from aiormq.exceptions import AMQPConnectionError
 
-from app.consumers import handle_message
+from .consumers import handle_message
 from shared.broker import EXCHANGE, QUEUE_EMAIL, QUEUE_TG, RK_EMAIL, RK_TG
 
 logger = logging.getLogger(__name__)

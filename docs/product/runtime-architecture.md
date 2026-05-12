@@ -112,6 +112,14 @@ Frontend:
 
 Подробнее о контрактах и ENV: [`notifications_worker/README.md`](../notifications_worker/README.md).
 
+### Email event flow (request/invite notifications)
+
+1. `RequestService`/`SendRequestNotificationEmailUseCase` формирует email payload (subject/text/html, links, optional attachments/reply token).
+2. `SMTPEmailService` backend публикует событие в RabbitMQ exchange `app.events` с routing key `email.send`.
+3. `notifications_worker` читает очередь `notify.email`.
+4. Worker валидирует payload и отправляет письмо через SMTP transport.
+5. В тестах этот поток проверяется без реального SMTP/RabbitMQ через fake outbox/fake transport.
+
 ### `minio`
 
 S3-совместимое хранилище файлов.

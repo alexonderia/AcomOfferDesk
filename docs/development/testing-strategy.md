@@ -282,3 +282,19 @@ E2E smoke запускается отдельно вручную (`workflow_disp
 - Smoke-проверки проверяют доступность и связность сервисов, но не доказывают корректность бизнес-логики.
 - Проверка Keycloak сверяет структуру realm, клиентов и ролей, но ничего не меняет.
 - E2E smoke проверяет только основные пользовательские сценарии и не должен превращаться в тяжелую браузерную тестовую базу.
+
+## 10. Email notifications: test policy
+
+Что покрыто автоматизированно:
+- unit: генерация email payload (`subject`, `text`, `html`, ссылки, fallback, escaping, warning по вложениям, UTF-8/кириллица);
+- integration: постановка email-событий в outbox/fake transport для request/invite сценариев, валидация email и dedup получателей;
+- unit: `notifications_worker` (валидный/невалидный payload, обязательные поля, dedup/cooldown, SMTP error handling).
+
+Правила безопасности:
+- в тестах и CI запрещено использовать реальные SMTP credentials;
+- в тестах использовать только fake/in-memory transport или monkeypatch publisher;
+- тесты не должны подключаться к реальному RabbitMQ/SMTP и не должны отправлять письма наружу.
+
+Smoke-рекомендация (P1):
+- если в среде нет `MailHog`/`Mailpit`, не внедрять тяжелую инфраструктуру только ради этого;
+- для dev/test рекомендован легкий mailbox smoke через `MailHog`/`Mailpit`, чтобы проверять фактическое попадание письма в тестовый inbox.

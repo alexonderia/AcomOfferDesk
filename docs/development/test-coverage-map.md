@@ -46,6 +46,8 @@ _Последнее обновление: 2026-05-12 (ветка `dev_process`).
 | Контракт списка/деталей заявок включает `actions` и скрывает top-level `permissions` | Да | integration | `backend/tests/integration/test_api_contracts.py` | Бизнес-флоу create/update/status transition | P0 | Добавить integration-тесты для `POST /requests` и `PATCH /requests/{id}` (happy/forbidden) |
 | Open requests для contractor | Частично | integration, e2e smoke | `backend/tests/integration/test_api_contracts.py`; `web/e2e/requests.smoke.spec.ts` | Переходы offered/open tabs и ownership-фильтры на уровне API | P1 | Добавить integration-тесты видимости `/requests/open` vs `/requests/offered` для contractor |
 | Deleted alerts viewed / побочные действия на уровне request | Частично | unit | `backend/tests/unit/test_action_builders_unit.py` | Endpoint-поведение `/requests/deleted-alerts/viewed` | P1 | Добавить integration-тест endpoint'а mark viewed |
+| `requests.description` update | Нет | N/A | N/A | В текущем `RequestEditPayload` и `RequestEditInput` нет поля `description`, поэтому API/service-контракт не поддерживает update описания | P2 | Сначала принять product/API-решение: добавлять ли редактирование description; только после этого писать тест |
+| Прямой backend-enforcement `requests.contractor_view.read` для contractor-view | Частично | integration (fake service) | `backend/tests/integration/test_request_lifecycle_integration.py` | Реальный `OfferService.get_request_view` сейчас проверяет видимость заявки + `offers.create`, а не `requests.contractor_view.read` | P0 | Добавить/изменить service-level enforcement на `requests.contractor_view.read`, затем заменить fake-service тест на проверку реального service path |
 
 ## Жизненный цикл офферов
 
@@ -54,12 +56,17 @@ _Последнее обновление: 2026-05-12 (ветка `dev_process`).
 | Контракт workspace оффера (`request.actions`, `offer.actions`, `chat_actions`) | Да | integration | `backend/tests/integration/test_api_contracts.py` | Переходы create/edit/status для офферов по ролям | P0 | Добавить integration-тесты create/edit/status endpoint'ов офферов |
 | Ограничения ownership для доступа contractor к офферу | Да | unit | `backend/tests/unit/test_policies_unit.py` | Endpoint-enforcement для non-owner contractor при мутациях оффера | P0 | Добавить integration forbidden-тесты редактирования чужого оффера contractor'ом |
 | Ветка manual offer | Частично | unit | `backend/tests/unit/test_policies_unit.py` | API-поведение manual offer create/file operations | P1 | Добавить integration-тесты `/requests/{id}/offers/manual` и ограничений на manual files |
+| Accept offer для closed/cancelled request | Нет | xfail integration | `backend/tests/integration/test_offer_lifecycle_integration.py` | Бизнес-правило не реализовано: `OfferService.update_status` не проверяет статус заявки перед accept | P0 | Реализовать guard в `OfferService.update_status` и снять `xfail` с теста |
+| Auto-reject остальных submitted offers при accept одного | Частично | DB trigger, integration фиксирует service-level fake | `order_database/init/02-triggers.sql`; `backend/tests/integration/test_offer_lifecycle_integration.py` | В `order_database` правило реализовано триггером `offers_accept_reject_others`, но текущий backend integration fake не моделирует DB trigger и показывает только service-level update целевого offer | P0 | Добавить DB-backed contract test или обновить fake repository так, чтобы тестовый контур явно моделировал trigger behavior |
 
 ## Email notifications
 
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
-| Permission flags для request email notification | Частично | unit | `backend/tests/unit/test_action_builders_unit.py` | Endpoint-поведение `POST /requests/{id}/email-notifications` (success/failure/permission) | P0 | Добавить integration-тест endpoint'а email notification для request |
+| Payload builders для request/invite/verification/status писем | Да | unit | `backend/tests/unit/test_email_payload_builders_unit.py` | End-to-end rendering в реальном mailbox | P1 | Добавить mailbox smoke на MailHog/Mailpit (если появится в dev/test) |
+| Постановка email-событий для request/invite flow (fake outbox) | Да | integration | `backend/tests/integration/test_email_notifications_integration.py` | Endpoint-level contract `POST /requests/{id}/email-notifications` через API-роут с явным fake outbox assert | P1 | Добавить API integration-тест endpoint'а manual email notification |
+| Dedup дополнительных email и безопасная обработка пустых/hidden получателей | Да | integration | `backend/tests/integration/test_email_notifications_integration.py` | Защитный сценарий при гонках нескольких одновременных отправок | P2 | Добавить concurrency stress-тест dedup |
+| notifications_worker: valid/invalid payload, mandatory fields, SMTP error handling | Да | unit | `backend/tests/unit/test_notifications_worker_unit.py` | Dead-letter queue контракт (в текущей реализации не внедрен) | P2 | Добавить тесты DLQ после внедрения retry/DLQ механизма |
 | Доступ к запросу email verification | Да | integration | `backend/tests/integration/test_auth_enforcement_contract.py` | Жизненный цикл verify-email token (`/auth/verify-email`) | P1 | Добавить integration-тесты success/expired-path для verify-email |
 
 ## Файлы
@@ -140,13 +147,16 @@ P0 (первая волна):
 2. Integration-покрытие мутаций жизненного цикла offers (`create/manual/edit/status`).
 3. Integration-покрытие chat message endpoint'ов.
 4. Backend-enforcement matrix tests для admin/users.
-5. Integration-тесты endpoint'а email notifications.
+6. Устранить gap `requests.contractor_view.read`: текущий реальный contractor-view path завязан на `offers.create`.
+7. Реализовать/зафиксировать продуктово правило accept offer для closed/cancelled request.
 
 P1 (вторая волна):
 1. Backend-контракты dashboard'ов и UI permission-subsets.
 2. Backend-тесты feedback.
 3. Тесты normative files.
 4. Дополнительные auth happy-path/onboarding тесты.
+5. Покрыть auto-reject sibling offers тестом, который учитывает реальный DB trigger `offers_accept_reject_others`.
+6. Добавить dev/test mailbox smoke через MailHog/Mailpit (P1, без обязательного внедрения тяжелой infra).
 
 P2 (третья волна):
 1. Extended e2e-сценарии (полный workflow между ролями).

@@ -70,6 +70,7 @@
 - [ ] Для релизов, затрагивающих dashboard/files/feedback/normative/auth-email contracts, подтвержден проход
   `backend/tests/integration/test_p1_backend_contract_gaps_integration.py`.
 - [ ] CI для target commit зеленый: backend unit, backend integration/API contracts, frontend lint, frontend unit/component tests, frontend build.
+- [ ] Локальный `test-release` (PowerShell или Bash) прогоняет frontend lint + frontend unit/component tests + frontend build (e2e только при явном флаге).
 - [ ] На поднятом стенде выполнены `smoke-infra` и `check-keycloak` через локальные скрипты или workflow `Release Smoke (Manual)`.
 - [ ] Открывается главная страница приложения.
 - [ ] Работает login.

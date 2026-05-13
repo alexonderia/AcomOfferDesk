@@ -70,6 +70,12 @@ docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootst
 - Frontend lint: `npm --prefix web run lint`
 - Frontend unit/component tests: `npm --prefix web run test:unit`
 - Frontend build: `npm --prefix web run build`
+- Release gate (without e2e):
+  - PowerShell: `./scripts/test-release.ps1 -EnvFile .env.dev`
+  - Bash: `ENV_FILE=.env.dev ./scripts/test-release.sh`
+- Release gate (with optional e2e smoke):
+  - PowerShell: `./scripts/test-release.ps1 -EnvFile .env.dev -IncludeE2E -ProvisionE2EUsers`
+  - Bash: `ENV_FILE=.env.dev INCLUDE_E2E=true PROVISION_E2E_USERS=true ./scripts/test-release.sh`
 - Frontend e2e smoke: `npm --prefix web run e2e:smoke`
 - Frontend extended e2e (manual):
   - `npm --prefix web run e2e:roles`

@@ -64,6 +64,9 @@
 ## G. Smoke-проверки
 
 - [ ] Выполнены backend unit и integration тесты (локально/в CI артефактах).
+- [ ] Для релизов, затрагивающих requests/offers/chat/users enforcement, подтвержден проход integration suites:
+  `test_request_lifecycle_integration.py`, `test_offer_lifecycle_integration.py`,
+  `test_chat_endpoints_integration.py`, `test_admin_users_enforcement_integration.py`.
 - [ ] CI для target commit зеленый: backend unit, backend integration/API contracts, frontend lint, frontend unit/component tests, frontend build.
 - [ ] На поднятом стенде выполнены `smoke-infra` и `check-keycloak` через локальные скрипты или workflow `Release Smoke (Manual)`.
 - [ ] Открывается главная страница приложения.

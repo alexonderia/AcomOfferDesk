@@ -85,6 +85,8 @@ Legend: `Y` = granted, `N` = not granted.
 4. `app.*` и `delegation.*` роли из Keycloak не считаются atomic permissions сами по себе: доступ дают только известные permission-коды из `PermissionCodes`.
 5. Для `status=review` разрешены только onboarding-safe contractor действия (`profile.manage_own`, `company_contacts.manage_own`); `inactive`/`blacklist` не проходят protected проверки.
 6. Frontend использует permissions/actions только для UX. Финальное enforcement-решение всегда принимает backend endpoint/policy/service слой.
+7. Backend contractor-view path (`GET /api/v1/requests/{id}/contractor-view`) должен проверять `requests.contractor_view.read` на service-level.
+8. Backend offer lifecycle path (`PATCH /api/v1/offers/{id}/status`) должен отклонять `accepted`, если связанная заявка уже `closed` или `cancelled`.
 
 ## Test Policy
 

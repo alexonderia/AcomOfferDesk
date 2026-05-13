@@ -85,6 +85,18 @@ npm --prefix web exec -- playwright install
 - эти проверки отделены от unit-тестов;
 - они проверяют API backend, но не запускают браузерные сценарии.
 
+Актуальные integration suites по P0 backend coverage:
+- `backend/tests/integration/test_request_lifecycle_integration.py`
+- `backend/tests/integration/test_offer_lifecycle_integration.py`
+- `backend/tests/integration/test_chat_endpoints_integration.py`
+- `backend/tests/integration/test_admin_users_enforcement_integration.py`
+
+Что важно для этих suites:
+- не подключаться к реальному Keycloak;
+- не отправлять реальные email;
+- сохранять backend как final enforcement слой для permissions/actions;
+- DB-trigger-зависимые сценарии (например auto-reject sibling offers) не маскировать ложным green, а фиксировать explicit gap (`xfail`/TODO) до появления DB-backed контура.
+
 ## 3. Безопасная smoke-проверка инфраструктуры
 
 Проверяет поднятый стенд:

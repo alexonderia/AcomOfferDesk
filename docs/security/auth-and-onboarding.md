@@ -334,6 +334,8 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 
 - Frontend permissions/actions используются только для UX: меню, tabs, redirects, видимость кнопок и пустые/ошибочные состояния. Любой защищенный endpoint обязан повторно проверять доступ на backend.
 - Backend enforcement остается финальным для `permissions`, `actions`, `ownership`, `status` и бизнес-контекста сущности.
+- Contractor request-view должен проверяться отдельным permission guard `requests.contractor_view.read` на backend service-path (`OfferService.get_request_view`).
+- При update offer status backend должен блокировать `accepted` для заявок со статусом `closed`/`cancelled`.
 - `review` допускается только для onboarding-safe contractor действий (`profile.manage_own`, `company_contacts.manage_own` и связанные безопасные проверки). `inactive` и `blacklist` не должны проходить protected действия.
 - Role/access matrix покрывается unit/frontend/e2e тестами: `backend/tests/unit/test_role_access_matrix_unit.py`, `web/src/features/header/model/buildHeaderConfig.test.ts`, `web/src/app/routes/RoleRoute.test.tsx`, `web/e2e/roles.access.spec.ts`.
 - `app.*` и `delegation.*` проверяются как claims/roles для отображения и диагностики, но не дают доступ без atomic permissions из `PermissionCodes`.

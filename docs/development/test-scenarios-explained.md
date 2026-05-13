@@ -1,6 +1,6 @@
 # Карта тестовых сценариев
 
-Дата актуализации: 2026-05-12.
+Дата актуализации: 2026-05-13.
 
 Документ объясняет, какие проверки есть в проекте, что именно они проверяют и каким способом. Backend unit/integration сценарии перечислены по фактическому `pytest --collect-only`, поэтому параметризованные проверки развернуты как отдельные сценарии.
 
@@ -121,7 +121,7 @@
 | 98 | `test_inactive_and_blacklist_never_pass_protected_checks[inactive]` | `inactive` не проходит protected checks даже с permissions. | Проверяет `requests.read` и `offers.status.update`. |
 | 99 | `test_inactive_and_blacklist_never_pass_protected_checks[blacklist]` | `blacklist` не проходит protected checks даже с permissions. | Проверяет `requests.read` и `offers.status.update`. |
 
-## Backend integration/API contract: 54 сценария
+## Backend integration/API contract: 79 сценариев
 
 | # | Тест | Что проверяет | Способ проверки |
 |---:|---|---|---|
@@ -156,8 +156,8 @@
 | 29 | `test_contractor_can_edit_only_own_offer_amount` | Contractor редактирует только свой offer amount. | Проверяет own offer success и чужой offer denial. |
 | 30 | `test_employee_with_manual_offer_permission_can_create_manual_offer` | Internal employee с `offers.manual.create` создает manual offer. | POST manual offer endpoint с permission. |
 | 31 | `test_accept_offer_requires_status_update_permission` | Accept offer требует `offers.status.update`. | User без permission получает `403`, с permission проходит. |
-| 32 | `test_accepting_offer_changes_only_target_offer_status_in_current_implementation` | В backend service-level fake меняется только целевой offer; в реальной БД `order_database` есть trigger `offers_accept_reject_others`, который должен auto-reject остальные submitted offers. | Fake offers repo не моделирует DB trigger, поэтому это gap тестового контура, а не доказательство отсутствия правила во всей системе. |
-| 33 | `test_cannot_accept_offer_for_closed_or_cancelled_request` | Желаемое правило "нельзя accept offer для closed/cancelled request" пока не реализовано. | Тест помечен `xfail`: текущий `OfferService.update_status` не проверяет статус заявки перед accept. |
+| 32 | `test_accepting_offer_should_reject_sibling_submitted_offers` | При accept одного submitted offer остальные submitted offers по заявке должны auto-reject, но в integration fake это не воспроизводится. | Тест помечен `xfail`: in-memory/fake contour не моделирует DB trigger `offers_accept_reject_others` из `order_database`. |
+| 33 | `test_cannot_accept_offer_for_closed_or_cancelled_request` | Нельзя accept offer для closed/cancelled request. | PATCH status `accepted` возвращает `409` при статусе заявки `closed`/`cancelled`. |
 | 34 | `test_workspace_access_is_restricted_to_allowed_users` | Workspace доступен только разрешенным пользователям. | Проверяет contractor owner/internal allowed и denied user. |
 | 35 | `test_allowed_roles_can_create_request[1]` | Role id 1 может создать заявку. | POST `/api/v1/requests`, fake service вызывает `UserPolicy.ensure_can_create_request`. |
 | 36 | `test_allowed_roles_can_create_request[5]` | Role id 5 может создать заявку. | То же. |
@@ -167,7 +167,7 @@
 | 40 | `test_forbidden_roles_cannot_create_request[4]` | Role id 4 не может создать заявку. | POST ожидает `403`. |
 | 41 | `test_forbidden_roles_cannot_create_request[3]` | Role id 3 не может создать заявку. | POST ожидает `403`. |
 | 42 | `test_contractor_cannot_access_internal_request_representation` | Contractor не видит internal request representation. | GET `/api/v1/requests/{id}` ожидает `403`. |
-| 43 | `test_contractor_can_access_contractor_view_only_when_permission_allows` | Тест проверяет ожидаемый прямой guard `requests.contractor_view.read` через fake service, но текущий реальный `OfferService.get_request_view` использует видимость заявки + `offers.create`. | Monkeypatch fake service явно бросает `Forbidden` без `requests.contractor_view.read`; это фиксирует gap между ожидаемым контрактом и текущей реализацией. |
+| 43 | `test_contractor_can_access_contractor_view_only_when_permission_allows` | Contractor-view доступен только при `requests.contractor_view.read`. | GET contractor-view для contractor без permission возвращает `403`, с permission — `200`. |
 | 44 | `test_update_request_deadline_requires_deadline_permission` | Deadline update требует `requests.deadline.update`. | PATCH deadline с одним `requests.update` дает `403`. |
 | 45 | `test_update_request_pricing_requires_pricing_and_amounts_permissions` | Pricing update требует pricing permission, не только amounts read. | PATCH `initial_amount` ожидает `403`. |
 | 46 | `test_request_owner_change_requires_requests_owner_change_permission` | Owner change требует `requests.owner.change`. | PATCH `owner_user_id` ожидает `403`. |
@@ -179,6 +179,31 @@
 | 52 | `test_deleted_and_rejected_offers_do_not_break_request_stats_payload` | Deleted/rejected offers не ломают stats/details payload. | Fake details с offers deleted/rejected, проверка JSON stats. |
 | 53 | `test_forbidden_role_gets_403_on_request_update` | Forbidden role получает `403` на request update. | Contractor PATCH request. |
 | 54 | `test_anonymous_gets_401_on_protected_request_endpoint` | Anonymous получает `401` на protected request endpoint. | Override `get_current_user` бросает `Unauthorized`. |
+| 55 | `test_review_contractor_cannot_access_protected_request_actions_even_with_permission` | Review contractor не проходит protected request action даже при наличии permission. | PATCH protected endpoint возвращает `403` для contractor со статусом `review`. |
+| 56 | `test_request_owner_can_be_changed_with_required_permissions` | Owner заявки успешно меняется при наличии нужных permissions. | PATCH `owner_user_id` с `requests.update` + `requests.owner.change` + `requests.read` возвращает `200`. |
+| 57 | `test_request_update_deadline_succeeds_with_required_permissions` | Deadline заявки обновляется при наличии `requests.deadline.update`. | PATCH `deadline` возвращает `200`. |
+| 58 | `test_manual_offer_creation_without_permission_returns_403` | Manual offer creation запрещен без `offers.manual.create`. | POST manual offer endpoint возвращает `403`. |
+| 59 | `test_offer_status_update_for_anonymous_user_returns_401` | Anonymous не может менять статус offer. | PATCH status endpoint возвращает `401` без аутентификации. |
+| 60 | `test_contractor_cannot_edit_finalized_offer_amount` | Contractor не может менять amount finalized offer в запрещенном статусе. | PATCH amount возвращает `409` для finalized статуса. |
+| 61 | `test_allowed_user_can_read_workspace_messages` | Разрешенный пользователь читает сообщения workspace. | GET `/offers/{id}/messages` возвращает `200` и список сообщений. |
+| 62 | `test_allowed_user_can_send_text_message` | Разрешенный пользователь отправляет текстовое сообщение. | POST message endpoint возвращает `201/200` и созданное сообщение. |
+| 63 | `test_allowed_user_can_send_message_with_attachment` | Разрешенный пользователь отправляет сообщение с attachment. | POST message c attachment проходит успешно. |
+| 64 | `test_mark_delivered_and_read_updates_receipts_for_allowed_user` | Mark delivered/read обновляет receipts для разрешенного пользователя. | POST receipts endpoints возвращают успех и обновляют состояние. |
+| 65 | `test_anonymous_user_gets_401_for_chat_endpoint` | Anonymous получает `401` на chat endpoint. | GET/POST chat endpoint без auth возвращает `401`. |
+| 66 | `test_user_without_chat_read_permission_gets_403` | Без `chat.read` нельзя читать сообщения. | GET workspace messages возвращает `403`. |
+| 67 | `test_user_without_chat_send_permission_gets_403` | Без `chat.message.send` нельзя отправлять сообщение. | POST text message возвращает `403`. |
+| 68 | `test_user_without_chat_attach_permission_gets_403` | Без `chat.message.attach` нельзя отправлять attachment. | POST message with attachment возвращает `403`. |
+| 69 | `test_non_participant_contractor_cannot_access_foreign_workspace_chat` | Contractor-неучастник не получает доступ к чужому workspace chat. | GET/POST chat чужого workspace возвращает `403`. |
+| 70 | `test_admin_can_create_user_with_permission` | Admin/superadmin с `users.create` может создать пользователя. | POST `/api/v1/users` возвращает успех и созданную запись. |
+| 71 | `test_user_without_users_create_cannot_register_user` | Без `users.create` создание пользователя запрещено. | POST `/api/v1/users` возвращает `403`. |
+| 72 | `test_lead_economist_can_update_subordinate_status` | Lead economist может менять статус subordinate в допустимом контуре. | PATCH status subordinate возвращает `200`. |
+| 73 | `test_user_without_users_status_update_cannot_change_status` | Без `users.status.update` нельзя менять статус пользователя. | PATCH status endpoint возвращает `403`. |
+| 74 | `test_superadmin_can_update_user_role` | Superadmin может менять роль пользователя. | PATCH role endpoint возвращает `200`. |
+| 75 | `test_user_without_role_update_permission_cannot_change_role` | Без `users.role.update_any`/`users.role.update_economy` смена роли запрещена. | PATCH role endpoint возвращает `403`. |
+| 76 | `test_project_manager_can_update_subordinate_manager` | Project manager может сменить manager в разрешенном контуре. | PATCH manager endpoint возвращает `200`. |
+| 77 | `test_user_without_users_manager_update_cannot_change_manager` | Без `users.manager.update` нельзя менять manager. | PATCH manager endpoint возвращает `403`. |
+| 78 | `test_economist_users_list_is_limited_to_own_contour` | Economist видит `/users` только в своем контуре. | GET `/api/v1/users` возвращает отфильтрованный список. |
+| 79 | `test_anonymous_user_gets_401_for_users_endpoint` | Anonymous получает `401` на `/users`. | GET `/api/v1/users` без auth возвращает `401`. |
 
 ## Frontend unit: 11 сценариев
 
@@ -277,3 +302,4 @@
 | `scripts/e2e-smoke.ps1` / `.sh` | Optional E2E user provisioning, Playwright `@smoke`, cleanup. |
 | `scripts/test-release.ps1` / `.sh` | Full release smoke chain: unit, integration, infra smoke, Keycloak model, frontend build, optional e2e. |
 | `scripts/local-smoke-infra.commands.ps1` | Локальные рабочие команды для smoke/release запусков на текущей машине. |
+

@@ -7,9 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.api.dependencies import get_current_user
 from app.api.v1 import offers as offers_api
 from app.core.config import settings
-from app.domain.exceptions import Forbidden
+from app.domain.exceptions import Forbidden, Unauthorized
 from app.domain.permissions import PermissionCodes
 from app.schemas.actions import ChatActionsSchema, OfferActionsSchema, RequestActionsSchema
 
@@ -268,6 +269,48 @@ def test_employee_with_manual_offer_permission_can_create_manual_offer(
     assert response.json()["data"]["offer_id"] == 301
 
 
+def test_manual_offer_creation_without_permission_returns_403(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    make_current_user,
+):
+    class _FakeOfferService:
+        async def create_manual_offer(
+            self,
+            *,
+            current_user,
+            request_id,
+            contractor_user_id,
+            contractor_data,
+            offer_amount,
+            files,
+        ):
+            _ = (request_id, contractor_user_id, contractor_data, offer_amount, files)
+            if PermissionCodes.OFFERS_MANUAL_CREATE not in current_user.permissions:
+                raise Forbidden("Insufficient permissions to create manual offer")
+            return SimpleNamespace(
+                offer_id=301,
+                request_id=10,
+                contractor_user_id="contractor-1",
+                contractor_created=False,
+            )
+
+    monkeypatch.setattr(offers_api, "build_offer_service", lambda uow, file_service=None: _FakeOfferService())
+    no_access_user = make_current_user(
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.REQUESTS_READ},
+    )
+    set_current_user(no_access_user)
+
+    response = test_client.post(
+        "/api/v1/requests/10/offers/manual",
+        data={"contractor_mode": "existing", "contractor_user_id": "contractor-1"},
+    )
+
+    assert response.status_code == 403
+
+
 def test_accept_offer_requires_status_update_permission(
     test_client,
     set_uow,
@@ -296,7 +339,24 @@ def test_accept_offer_requires_status_update_permission(
     assert response.status_code == 403
 
 
-def test_accepting_offer_changes_only_target_offer_status_in_current_implementation(
+def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app):
+    async def _anonymous():
+        raise Unauthorized("Missing credentials")
+
+    api_app.dependency_overrides[get_current_user] = _anonymous
+
+    response = test_client.patch("/api/v1/offers/210/status", json={"status": "accepted"})
+
+    assert response.status_code == 401
+
+
+@pytest.mark.xfail(
+    reason=(
+        "Auto-reject of sibling submitted offers is implemented by DB trigger in order_database "
+        "and is not modeled by this in-memory integration contour."
+    )
+)
+def test_accepting_offer_should_reject_sibling_submitted_offers(
     test_client,
     set_uow,
     set_current_user,
@@ -333,10 +393,9 @@ def test_accepting_offer_changes_only_target_offer_status_in_current_implementat
 
     assert response.status_code == 200
     assert uow.offers._offers[221].status == "accepted"
-    assert uow.offers._offers[222].status == "submitted"
+    assert uow.offers._offers[222].status == "rejected"
 
 
-@pytest.mark.xfail(reason="Business rule is not implemented yet: closed/cancelled request guard on offer accept")
 def test_cannot_accept_offer_for_closed_or_cancelled_request(
     test_client,
     set_uow,
@@ -376,6 +435,35 @@ def test_cannot_accept_offer_for_closed_or_cancelled_request(
     set_current_user(user)
 
     response = test_client.patch("/api/v1/offers/230/status", json={"status": "accepted"})
+
+    assert response.status_code == 409
+
+
+def test_contractor_cannot_edit_finalized_offer_amount(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = _OfferLifecycleUow()
+    uow.offers._offers[240] = SimpleNamespace(
+        id=240,
+        id_request=10,
+        id_user="contractor-1",
+        status="accepted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    contractor = make_current_user(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.OFFERS_AMOUNT_UPDATE},
+    )
+    set_current_user(contractor)
+
+    response = test_client.patch("/api/v1/offers/240", json={"offer_amount": 88.0})
 
     assert response.status_code == 409
 
@@ -475,4 +563,6 @@ def test_workspace_access_is_restricted_to_allowed_users(
     set_current_user(owner)
     allowed = test_client.get("/api/v1/offers/400/workspace")
     assert allowed.status_code == 200
+    assert "actions" in allowed.json()["data"]["request"]
     assert "actions" in allowed.json()["data"]["offer"]
+    assert "chat_actions" in allowed.json()["data"]

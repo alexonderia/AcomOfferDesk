@@ -8,10 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from app.api.dependencies import get_current_user
-from app.api.v1 import offers as offers_api
 from app.api.v1 import requests as requests_api
 from app.core.config import settings
-from app.domain.exceptions import Forbidden, Unauthorized
+from app.domain.exceptions import Unauthorized
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
 from app.domain.policies import UserPolicy
 from app.services.requests import OfferItem, RequestDetailItem
@@ -89,6 +88,54 @@ class _UserStatusPeriodsRepo:
     async def get_active_for_user(self, *, user_id: str):
         _ = user_id
         return None
+
+
+class _ContractorViewRequestsRepo:
+    def __init__(self, request_row: SimpleNamespace) -> None:
+        self._request_row = request_row
+
+    async def get_visible_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str):
+        _ = contractor_user_id
+        if request_id != self._request_row.id:
+            return None
+        return self._request_row
+
+    async def list_files(self, *, request_id: int):
+        _ = request_id
+        return []
+
+
+class _ContractorViewOffersRepo:
+    async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str):
+        _ = (request_id, contractor_user_id)
+        return None
+
+    async def list_offer_files(self, *, offer_id: int):
+        _ = offer_id
+        return []
+
+
+class _ContractorViewProfilesRepo:
+    async def get_by_id(self, user_id: str):
+        return SimpleNamespace(id=user_id, full_name="Owner")
+
+
+class _ContractorViewUow:
+    def __init__(self, request_row: SimpleNamespace) -> None:
+        self.requests = _ContractorViewRequestsRepo(request_row)
+        self.offers = _ContractorViewOffersRepo()
+        self.profiles = _ContractorViewProfilesRepo()
+        self.chats = object()
+        self.files = object()
+        self.messages = object()
+        self.company_contacts = object()
+        self.users = object()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
 
 
 class _RequestLifecycleUow:
@@ -244,28 +291,18 @@ def test_contractor_cannot_access_internal_request_representation(test_client, s
 
 def test_contractor_can_access_contractor_view_only_when_permission_allows(
     test_client,
-    monkeypatch,
+    set_uow,
     set_current_user,
     make_current_user,
 ):
-    class _FakeOfferService:
-        async def get_request_view(self, *, current_user, request_id):
-            _ = request_id
-            if PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ not in current_user.permissions:
-                raise Forbidden("Insufficient permissions for contractor request view")
-            return SimpleNamespace(
-                request_id=11,
-                description="Visible contractor request",
-                status="open",
-                status_label="open",
-                deadline_at=_future_dt(),
-                owner_user_id="owner-1",
-                owner_full_name="Owner",
-                files=[],
-                existing_offer=None,
-            )
-
-    monkeypatch.setattr(offers_api, "build_offer_service", lambda uow: _FakeOfferService())
+    request_row = SimpleNamespace(
+        id=11,
+        id_user="owner-1",
+        status="open",
+        description="Visible contractor request",
+        deadline_at=_future_dt(),
+    )
+    set_uow(_ContractorViewUow(request_row))
 
     denied_user = make_current_user(
         role_id=settings.contractor_role_id,
@@ -277,13 +314,39 @@ def test_contractor_can_access_contractor_view_only_when_permission_allows(
 
     allowed_user = make_current_user(
         role_id=settings.contractor_role_id,
-        permissions={PermissionCodes.OFFERS_CREATE, PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ},
+        permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ},
     )
     set_current_user(allowed_user)
     allowed = test_client.get("/api/v1/requests/11/contractor-view")
 
     assert allowed.status_code == 200
     assert "actions" in allowed.json()["data"]
+
+
+def test_review_contractor_cannot_access_protected_request_actions_even_with_permission(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=11,
+        id_user="owner-1",
+        status="open",
+        description="Visible contractor request",
+        deadline_at=_future_dt(),
+    )
+    set_uow(_ContractorViewUow(request_row))
+    review_contractor = make_current_user(
+        role_id=settings.contractor_role_id,
+        status="review",
+        permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ},
+    )
+    set_current_user(review_contractor)
+
+    response = test_client.get("/api/v1/requests/11/contractor-view")
+
+    assert response.status_code == 403
 
 
 def test_update_request_deadline_requires_deadline_permission(
@@ -350,6 +413,57 @@ def test_request_owner_change_requires_requests_owner_change_permission(
     )
 
     assert response.status_code == 403
+
+
+def test_request_owner_can_be_changed_with_required_permissions(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open")
+    set_uow(_RequestLifecycleUow(request_row))
+    user = make_current_user(
+        user_id="superadmin-1",
+        role_id=settings.superadmin_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.REQUESTS_OWNER_CHANGE,
+            PermissionCodes.REQUESTS_READ,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"owner_user_id": "owner-2"},
+    )
+
+    assert response.status_code == 200
+    assert request_row.id_user == "owner-2"
+
+
+def test_request_update_deadline_succeeds_with_required_permissions(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open")
+    set_uow(_RequestLifecycleUow(request_row))
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_DEADLINE_UPDATE},
+    )
+    set_current_user(user)
+    new_deadline = _future_dt()
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"deadline_at": new_deadline.isoformat()},
+    )
+
+    assert response.status_code == 200
 
 
 def test_invalid_request_status_transition_returns_409(

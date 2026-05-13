@@ -18,6 +18,14 @@
 - Добавлен отдельный manual workflow для release smoke (`.github/workflows/release-smoke.yml`) с `smoke-infra`, `check-keycloak` и optional e2e.
 - Bash smoke/e2e/keycloak скрипты выровнены с PowerShell по поведению (`.venv` Python, env-резолвинг, e2e host/provision сценарии).
 
+## Актуализация (2026-05-12)
+
+- Расширена документация по тестам: backend unit/integration, frontend unit/component, role/access matrix, dashboard calculations, email/notification tests, e2e smoke и extended e2e tags.
+- Зафиксировано правило релиза: target commit должен иметь зеленый CI, а поднятый стенд должен пройти `smoke-infra` и `check-keycloak` через `Release Smoke (Manual)` или локальные скрипты.
+- Extended e2e (`@roles`, `@registration`, `@request-offer`, `@dashboard`, `@files-chat`) остаются ручными сценариями и запускаются по риску релиза.
+- Email smoke допускается только через fake/MailHog/Mailpit окружение; реальные SMTP credentials и внешняя отправка писем запрещены в тестах и CI.
+- Правила для AI-агентов оставлены вне общей документации репозитория; общие developer/testing/release/security документы содержат только проектные правила для команды.
+
 ## 1. Назначение
 
 Подготовить AcomOfferDesk к безопасному, воспроизводимому и поддерживаемому production-запуску.

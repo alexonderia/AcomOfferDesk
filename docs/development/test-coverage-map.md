@@ -163,27 +163,44 @@ P2 (третья волна):
 2. Route/detail UX-regression и resilience checks.
 3. Опциональный scheduled smoke-trend workflow.
 
-## Update 2026-05-12: frontend nav + extended e2e
+## Обновление 2026-05-12: frontend navigation и extended e2e
 
-Added frontend unit/component tests:
+Добавлены frontend unit/component tests:
 - `web/src/features/header/model/buildHeaderConfig.test.ts`:
-  role-aware menu/tabs visibility for `superadmin`, `economist`, `operator`, `contractor`;
-  dashboard tab visibility depends on `dashboard.*` permissions;
-  admin section visibility depends on `users.read`.
+  проверяет ролевую видимость меню/табов для `superadmin`, `economist`, `operator`, `contractor`;
+  проверяет, что dashboard tabs зависят от `dashboard.*` permissions;
+  проверяет, что admin section зависит от `users.read`.
 - `web/src/app/routes/RoleRoute.test.tsx`:
-  explicit negative case for raw claims (`app_roles`/`delegation_roles`) without required permission.
+  добавлен явный негативный кейс для raw claims (`app_roles`/`delegation_roles`) без нужного permission.
 - `web/src/features/requests/ui/RequestsTable.test.tsx`:
-  `loading` and `empty` states.
+  покрыты состояния `loading` и `empty`.
 - `web/src/features/requests/ui/RequestsPageView.test.tsx`:
-  `error` state rendering.
+  покрыт рендеринг `error` state.
 
-Added extended e2e specs:
+Добавлены backend unit tests:
+- `backend/tests/unit/test_dashboard_calculations_unit.py`:
+  проверяет dashboard calculations, пустые входные данные и защиту от некорректных числовых состояний.
+- `backend/tests/unit/test_role_access_matrix_unit.py`:
+  сверяет role/access matrix и гарантирует, что `app.*`/`delegation.*` не дают доступ без atomic permissions.
+- `backend/tests/unit/test_email_payload_builders_unit.py` и `backend/tests/unit/test_notifications_worker_unit.py`:
+  покрывают email payload, обязательные поля, dedup/cooldown и SMTP error handling без реальной отправки.
+
+Добавлены/актуализированы backend integration tests:
+- `backend/tests/integration/test_email_notifications_integration.py`:
+  проверяет постановку email events в fake outbox/transport для request/invite flow, валидацию email и dedup получателей.
+- `backend/tests/integration/test_auth_oidc_flows.py`:
+  покрывает OIDC callback edge cases, registration invite mismatch и logout при недоступном Keycloak API.
+- `backend/tests/integration/test_auth_enforcement_contract.py`:
+  фиксирует backend enforcement для `401/403`, статусов `review/inactive/blacklist` и защищенных действий.
+
+Добавлены extended e2e specs:
 - `web/e2e/roles.access.spec.ts` (`@roles`)
 - `web/e2e/registration.extended.spec.ts` (`@registration`)
 - `web/e2e/request-offer.extended.spec.ts` (`@request-offer`)
 - `web/e2e/dashboard.extended.spec.ts` (`@dashboard`)
 - `web/e2e/files-chat.extended.spec.ts` (`@files-chat`)
 
-Smoke policy remains unchanged:
-- `@smoke` only for lightweight browser checks;
-- extended tags are manual and intentionally excluded from default smoke/CI execution.
+Политика smoke остается прежней:
+- `@smoke` только для легких browser checks;
+- extended tags запускаются вручную и намеренно исключены из default smoke/CI execution;
+- release-smoke workflow запускает `smoke-infra` и `check-keycloak`, а e2e включает только по `include_e2e=true`.

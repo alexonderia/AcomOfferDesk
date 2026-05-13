@@ -64,6 +64,8 @@
 ## G. Smoke-проверки
 
 - [ ] Выполнены backend unit и integration тесты (локально/в CI артефактах).
+- [ ] CI для target commit зеленый: backend unit, backend integration/API contracts, frontend lint, frontend unit/component tests, frontend build.
+- [ ] На поднятом стенде выполнены `smoke-infra` и `check-keycloak` через локальные скрипты или workflow `Release Smoke (Manual)`.
 - [ ] Открывается главная страница приложения.
 - [ ] Работает login.
 - [ ] Работает OIDC callback.
@@ -76,11 +78,23 @@
 - [ ] Работает upload-сценарий (если предусмотрен).
 - [ ] RabbitMQ UI и MinIO Console недоступны из публичного интернета.
 - [ ] E2E smoke выполнен вручную через `scripts/e2e-smoke.*` или workflow `E2E Smoke (Manual)` на поднятом стенде.
-- [ ] Extended e2e suites (`@roles`, `@registration`, `@request-offer`, `@dashboard`, `@files-chat`) run manually when release scope touches role UX/access, dashboard behavior, request-offer lifecycle, or files/chat.
+- [ ] Extended e2e suites (`@roles`, `@registration`, `@request-offer`, `@dashboard`, `@files-chat`) выполнены вручную, если релиз затрагивает role UX/access, dashboard behavior, request-offer lifecycle или files/chat.
 - [ ] Release smoke workflow `Release Smoke (Manual)` выполнен на поднятом стенде (обязательные `smoke-infra` + `check-keycloak`, optional e2e через `include_e2e=true`).
 - [ ] Email tests прошли без реальной внешней отправки (`fake transport`/`fake outbox`, без real SMTP creds в CI).
 - [ ] Подтверждено, что CI/workflows не отправляют реальные письма наружу.
 - [ ] Если в окружении есть MailHog/Mailpit: выполнен mailbox smoke (письмо попало в test inbox).
+
+PowerShell-команды для ручной проверки:
+- `./scripts/smoke-infra.ps1 -EnvFile .env.dev`
+- `./scripts/check-keycloak.ps1 -EnvFile .env.dev`
+- `./scripts/e2e-smoke.ps1 -EnvFile .env.dev -ProvisionUsers`
+- `./scripts/test-release.ps1 -EnvFile .env.dev -IncludeE2E -ProvisionE2EUsers`
+
+Bash-команды для ручной проверки:
+- `./scripts/smoke-infra.sh .env.dev`
+- `./scripts/check-keycloak.sh .env.dev`
+- `ENV_FILE=.env.dev PROVISION_USERS=true ./scripts/e2e-smoke.sh`
+- `ENV_FILE=.env.dev INCLUDE_E2E=true PROVISION_E2E_USERS=true ./scripts/test-release.sh`
 
 ## H. Откат (плейсхолдер)
 
@@ -88,3 +102,4 @@
 - [ ] Определены места просмотра логов (`docker compose logs`, reverse proxy logs).
 - [ ] Задокументирована команда отката compose/env.
 - [ ] Задокументированы и выполнимы post-rollback smoke-проверки.
+- [ ] Rollback notes включают предыдущий image/ref, env-файл, порядок `docker compose ... down/up`, проверку `smoke-infra`, `check-keycloak` и краткую ручную проверку login/request flow после отката.

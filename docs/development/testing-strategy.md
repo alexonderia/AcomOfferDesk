@@ -283,38 +283,81 @@ E2E smoke запускается отдельно вручную (`workflow_disp
 - Проверка Keycloak сверяет структуру realm, клиентов и ролей, но ничего не меняет.
 - E2E smoke проверяет только основные пользовательские сценарии и не должен превращаться в тяжелую браузерную тестовую базу.
 
-## 10. Email notifications: test policy
+## 10. Email-уведомления: политика тестирования
 
 Что покрыто автоматизированно:
-- unit: генерация email payload (`subject`, `text`, `html`, ссылки, fallback, escaping, warning по вложениям, UTF-8/кириллица);
-- integration: постановка email-событий в outbox/fake transport для request/invite сценариев, валидация email и dedup получателей;
-- unit: `notifications_worker` (валидный/невалидный payload, обязательные поля, dedup/cooldown, SMTP error handling).
+- unit: генерация payload для email (`subject`, `text`, `html`, ссылки, fallback, экранирование, предупреждения по вложениям, UTF-8/кириллица);
+- integration: постановка email-событий в outbox/fake transport для сценариев request/invite, валидация email и дедупликация получателей;
+- unit: `notifications_worker` (валидный/невалидный payload, обязательные поля, дедупликация/cooldown, обработка SMTP-ошибок).
 
 Правила безопасности:
 - в тестах и CI запрещено использовать реальные SMTP credentials;
 - в тестах использовать только fake/in-memory transport или monkeypatch publisher;
 - тесты не должны подключаться к реальному RabbitMQ/SMTP и не должны отправлять письма наружу.
 
-Smoke-рекомендация (P1):
+Рекомендация для smoke-проверки (P1):
 - если в среде нет `MailHog`/`Mailpit`, не внедрять тяжелую инфраструктуру только ради этого;
-- для dev/test рекомендован легкий mailbox smoke через `MailHog`/`Mailpit`, чтобы проверять фактическое попадание письма в тестовый inbox.
+- для dev/test рекомендована легкая mailbox smoke-проверка через `MailHog`/`Mailpit`, чтобы проверять фактическое попадание письма в тестовый inbox.
 
-## 11. Frontend navigation/page tests and extended e2e tags
+## 11. Frontend-тесты навигации/страниц и расширенные e2e-теги
 
-Frontend unit/component coverage now additionally includes:
-- role-aware navigation config checks (`buildHeaderConfig`) for `superadmin`, `economist`, `operator`, `contractor`;
-- dashboard/admin visibility assertions based on backend permissions;
-- explicit guard that `RoleRoute` does not grant access from raw `app_roles`/`delegation_roles` claims without required permissions;
-- requests UX states: `loading`, `empty`, `error`.
+Покрытие frontend unit/component теперь дополнительно включает:
+- проверки ролевой конфигурации навигации (`buildHeaderConfig`) для `superadmin`, `economist`, `operator`, `contractor`;
+- проверки видимости dashboard/admin на основе backend permissions;
+- явную защиту от того, что `RoleRoute` даст доступ по сырым claims `app_roles`/`delegation_roles` без нужных permissions;
+- UX-состояния заявок: `loading`, `empty`, `error`.
 
-New Playwright tags for extended/manual scenarios:
-- `@roles` - role/page access matrix for all 7 roles with allowed/forbidden route checks and console-error guard;
-- `@registration` - invite registration flow (manual/stand-dependent);
-- `@request-offer` - cross-role request -> offer -> workspace -> status transition flow;
-- `@dashboard` - PM/LE dashboard pages, route reachability, filter behavior, NaN/undefined guard, empty-state checks;
-- `@files-chat` - workspace file/chat interactions + forbidden workspace access for non-allowed role.
+Новые Playwright-теги для расширенных/ручных сценариев:
+- `@roles` - матрица доступа ролей к страницам для всех 7 ролей с проверками разрешенных/запрещенных маршрутов и защитой от ошибок в консоли;
+- `@registration` - поток регистрации по приглашению (ручной, зависит от стенда);
+- `@request-offer` - межролевой поток заявка -> оффер -> рабочее пространство -> переход статуса;
+- `@dashboard` - страницы PM/LE dashboard, доступность маршрутов, поведение фильтров, защита от NaN/undefined, проверки пустых состояний;
+- `@files-chat` - взаимодействия с файлами/чатом в рабочем пространстве и запрет доступа к workspace для роли без доступа.
 
-Execution policy:
-- default smoke remains lightweight and runs only `@smoke`;
-- CI (`.github/workflows/ci.yml`) still runs backend unit/integration + frontend lint/unit/build only;
-- browser smoke and extended e2e are manual (`scripts/e2e-smoke.*`, manual workflows, manual npm `e2e:*` commands).
+Политика запуска:
+- smoke по умолчанию остается легким и запускает только `@smoke`;
+- CI (`.github/workflows/ci.yml`) по-прежнему запускает только backend unit/integration и frontend lint/unit/build;
+- браузерный smoke и расширенные e2e запускаются вручную (`scripts/e2e-smoke.*`, ручные workflows, ручные npm-команды `e2e:*`).
+
+## 12. Актуальная карта команд
+
+PowerShell:
+- backend unit: `./scripts/test-unit.ps1`
+- backend integration/API contracts: `./scripts/test-integration.ps1`
+- smoke infra: `./scripts/smoke-infra.ps1 -EnvFile .env.dev`
+- Keycloak model check: `./scripts/check-keycloak.ps1 -EnvFile .env.dev`
+- e2e smoke: `./scripts/e2e-smoke.ps1 -EnvFile .env.dev -ProvisionUsers`
+- release gate без e2e: `./scripts/test-release.ps1 -EnvFile .env.dev`
+- release gate с e2e: `./scripts/test-release.ps1 -EnvFile .env.dev -IncludeE2E -ProvisionE2EUsers`
+
+Bash:
+- backend unit: `./scripts/test-unit.sh`
+- backend integration/API contracts: `./scripts/test-integration.sh`
+- smoke infra: `./scripts/smoke-infra.sh .env.dev`
+- Keycloak model check: `./scripts/check-keycloak.sh .env.dev`
+- e2e smoke: `ENV_FILE=.env.dev PROVISION_USERS=true ./scripts/e2e-smoke.sh`
+- release gate без e2e: `ENV_FILE=.env.dev ./scripts/test-release.sh`
+- release gate с e2e: `ENV_FILE=.env.dev INCLUDE_E2E=true PROVISION_E2E_USERS=true ./scripts/test-release.sh`
+
+Frontend npm:
+- lint: `npm --prefix web run lint`
+- unit/component: `npm --prefix web run test:unit`
+- build: `npm --prefix web run build`
+- e2e smoke: `npm --prefix web run e2e:smoke`
+- extended e2e: `npm --prefix web run e2e:roles`, `npm --prefix web run e2e:registration`, `npm --prefix web run e2e:request-offer`, `npm --prefix web run e2e:dashboard`, `npm --prefix web run e2e:files-chat`, `npm --prefix web run e2e:extended`
+
+## 13. Что запускается автоматически и вручную
+
+CI (`.github/workflows/ci.yml`) на `push/pull_request` в `dev_process`, `dev`, `test`:
+- `python -m pytest backend/tests/unit -q`;
+- `python -m pytest backend/tests/integration -q`;
+- `npm --prefix web run lint`;
+- `npm --prefix web run test:unit`;
+- `npm --prefix web run build`.
+
+Вручную на поднятом стенде:
+- `smoke-infra` проверяет web/gateway, backend health, API proxy, PostgreSQL, Keycloak issuer/JWKS, S3/MinIO и RabbitMQ;
+- `check-keycloak` сверяет realm, clients, service account, atomic permissions, `app.*` и optional `delegation.*`;
+- `e2e-smoke` запускает легкие `@smoke` browser-сценарии;
+- `release-smoke` workflow запускает обязательные `smoke-infra` + `check-keycloak` и optional e2e через `include_e2e=true`;
+- extended e2e теги запускаются отдельно по риску релиза, а не как часть default smoke.

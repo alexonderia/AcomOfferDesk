@@ -85,3 +85,13 @@ Legend: `Y` = granted, `N` = not granted.
 4. `app.*` и `delegation.*` роли из Keycloak не считаются atomic permissions сами по себе: доступ дают только известные permission-коды из `PermissionCodes`.
 5. Для `status=review` разрешены только onboarding-safe contractor действия (`profile.manage_own`, `company_contacts.manage_own`); `inactive`/`blacklist` не проходят protected проверки.
 6. Frontend использует permissions/actions только для UX. Финальное enforcement-решение всегда принимает backend endpoint/policy/service слой.
+
+## Test Policy
+
+- Backend role/access matrix: `backend/tests/unit/test_role_access_matrix_unit.py`.
+- Backend auth context и filtering: `backend/tests/unit/test_auth_context_unit.py`, `backend/tests/unit/test_authorization_unit.py`.
+- Backend enforcement contracts: `backend/tests/integration/test_auth_enforcement_contract.py`.
+- Frontend route/navigation UX: `web/src/app/routes/RoleRoute.test.tsx`, `web/src/features/header/model/buildHeaderConfig.test.ts`.
+- Browser role matrix: `web/e2e/roles.access.spec.ts` (`@roles`, manual extended e2e).
+- Dashboard permission/calculation coverage: `backend/tests/unit/test_dashboard_calculations_unit.py`, `web/e2e/dashboard.extended.spec.ts` (`@dashboard`).
+- При изменении этой матрицы обновлять `backend/app/domain/permissions.py`, Keycloak bootstrap docs/scripts при необходимости, backend/frontend tests и `docs/development/test-coverage-map.md`.

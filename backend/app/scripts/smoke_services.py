@@ -144,24 +144,30 @@ async def _check_http(
     accepted_codes: set[int],
     timeout: float,
     critical: bool,
+    retries: int,
 ) -> None:
-    try:
-        request = Request(url=url, method="GET")
-        with urlopen(request, timeout=timeout) as response:
-            status_code = response.getcode()
-        if status_code in accepted_codes:
-            reporter.ok(name, f"{url} ({status_code})")
-            return
-        message = f"{url} returned status {status_code}"
-    except HTTPError as exc:
-        if exc.code in accepted_codes:
-            reporter.ok(name, f"{url} ({exc.code})")
-            return
-        message = f"{url} returned status {exc.code}"
-    except URLError as exc:
-        message = f"{url} error: {exc}"
-    except Exception as exc:  # noqa: BLE001
-        message = f"{url} error: {exc}"
+    message = ""
+    for attempt in range(max(0, retries) + 1):
+        try:
+            request = Request(url=url, method="GET")
+            with urlopen(request, timeout=timeout) as response:
+                status_code = response.getcode()
+            if status_code in accepted_codes:
+                reporter.ok(name, f"{url} ({status_code})")
+                return
+            message = f"{url} returned status {status_code}"
+        except HTTPError as exc:
+            if exc.code in accepted_codes:
+                reporter.ok(name, f"{url} ({exc.code})")
+                return
+            message = f"{url} returned status {exc.code}"
+        except URLError as exc:
+            message = f"{url} error: {exc}"
+        except Exception as exc:  # noqa: BLE001
+            message = f"{url} error: {exc}"
+
+        if attempt < retries:
+            await asyncio.sleep(0.6 * (attempt + 1))
 
     if critical:
         reporter.fail(name, message)
@@ -264,6 +270,7 @@ async def _check_keycloak(reporter: Reporter, env_map: dict[str, str], timeout: 
         accepted_codes={200},
         timeout=timeout,
         critical=True,
+        retries=int(_coalesce(env_map, "SMOKE_HTTP_RETRIES", default="2") or "2"),
     )
 
 
@@ -360,6 +367,7 @@ async def run_checks(
 
     resolved_base_url = (base_url or _coalesce(env_map, "WEB_BASE_URL", "PUBLIC_BACKEND_BASE_URL", default="http://localhost:8080")).rstrip("/")
     timeout = float(_coalesce(env_map, "SMOKE_HTTP_TIMEOUT_SECONDS", default="10") or "10")
+    retries = int(_coalesce(env_map, "SMOKE_HTTP_RETRIES", default="2") or "2")
 
     await _check_http(
         reporter,
@@ -368,6 +376,7 @@ async def run_checks(
         accepted_codes={200, 301, 302, 307, 308},
         timeout=timeout,
         critical=True,
+        retries=retries,
     )
 
     await _check_http(
@@ -377,6 +386,7 @@ async def run_checks(
         accepted_codes={200},
         timeout=timeout,
         critical=True,
+        retries=retries,
     )
 
     await _check_http(
@@ -386,6 +396,7 @@ async def run_checks(
         accepted_codes={200, 302, 303, 307, 308, 401, 403},
         timeout=timeout,
         critical=True,
+        retries=retries,
     )
 
     realm = _coalesce(env_map, "KEYCLOAK_REALM", default="acom-offerdesk")
@@ -396,6 +407,7 @@ async def run_checks(
         accepted_codes={200, 301, 302, 307, 308},
         timeout=timeout,
         critical=False,
+        retries=retries,
     )
 
     await _check_postgres(reporter, env_map)

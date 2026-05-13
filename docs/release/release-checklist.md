@@ -67,6 +67,8 @@
 - [ ] Для релизов, затрагивающих requests/offers/chat/users enforcement, подтвержден проход integration suites:
   `test_request_lifecycle_integration.py`, `test_offer_lifecycle_integration.py`,
   `test_chat_endpoints_integration.py`, `test_admin_users_enforcement_integration.py`.
+- [ ] Для релизов, затрагивающих dashboard/files/feedback/normative/auth-email contracts, подтвержден проход
+  `backend/tests/integration/test_p1_backend_contract_gaps_integration.py`.
 - [ ] CI для target commit зеленый: backend unit, backend integration/API contracts, frontend lint, frontend unit/component tests, frontend build.
 - [ ] На поднятом стенде выполнены `smoke-infra` и `check-keycloak` через локальные скрипты или workflow `Release Smoke (Manual)`.
 - [ ] Открывается главная страница приложения.
@@ -83,7 +85,7 @@
 - [ ] E2E smoke выполнен вручную через `scripts/e2e-smoke.*` или workflow `E2E Smoke (Manual)` на поднятом стенде.
 - [ ] Extended e2e suites (`@roles`, `@registration`, `@request-offer`, `@dashboard`, `@files-chat`) выполнены вручную, если релиз затрагивает role UX/access, dashboard behavior, request-offer lifecycle или files/chat.
 - [ ] Release smoke workflow `Release Smoke (Manual)` выполнен на поднятом стенде (обязательные `smoke-infra` + `check-keycloak`, optional e2e через `include_e2e=true`).
-- [ ] Email tests прошли без реальной внешней отправки (`fake transport`/`fake outbox`, без real SMTP creds в CI).
+- [ ] Email tests прошли без реальной внешней отправки (`fake transport`/`fake outbox`, без real SMTP creds в CI), включая request-email-verification и `/auth/verify-email` lifecycle в backend integration.
 - [ ] Подтверждено, что CI/workflows не отправляют реальные письма наружу.
 - [ ] Если в окружении есть MailHog/Mailpit: выполнен mailbox smoke (письмо попало в test inbox).
 

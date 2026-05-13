@@ -64,17 +64,18 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
 | Payload builders для request/invite/verification/status писем | Да | unit | `backend/tests/unit/test_email_payload_builders_unit.py` | End-to-end rendering в реальном mailbox | P1 | Добавить mailbox smoke на MailHog/Mailpit (если появится в dev/test) |
-| Постановка email-событий для request/invite flow (fake outbox) | Да | integration | `backend/tests/integration/test_email_notifications_integration.py` | Endpoint-level contract `POST /requests/{id}/email-notifications` через API-роут с явным fake outbox assert | P1 | Добавить API integration-тест endpoint'а manual email notification |
+| Постановка email-событий для request/invite flow (fake outbox) | Да | integration | `backend/tests/integration/test_email_notifications_integration.py`; `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Browser/e2e mailbox delivery outside integration contour | Closed (P1) | Поддерживать regression coverage manual endpoint (`POST /requests/{id}/email-notifications`) с fake outbox/transport и dedup |
 | Dedup дополнительных email и безопасная обработка пустых/hidden получателей | Да | integration | `backend/tests/integration/test_email_notifications_integration.py` | Защитный сценарий при гонках нескольких одновременных отправок | P2 | Добавить concurrency stress-тест dedup |
 | notifications_worker: valid/invalid payload, mandatory fields, SMTP error handling | Да | unit | `backend/tests/unit/test_notifications_worker_unit.py` | Dead-letter queue контракт (в текущей реализации не внедрен) | P2 | Добавить тесты DLQ после внедрения retry/DLQ механизма |
-| Доступ к запросу email verification | Да | integration | `backend/tests/integration/test_auth_enforcement_contract.py` | Жизненный цикл verify-email token (`/auth/verify-email`) | P1 | Добавить integration-тесты success/expired-path для verify-email |
+| Доступ к запросу email verification и жизненный цикл `/auth/verify-email` | Да | integration | `backend/tests/integration/test_auth_enforcement_contract.py` | Browser/e2e onboarding verify-email flow | Closed (P1) | Поддерживать regression coverage для valid/repeat/invalid/expired/wrong-flow/conflict token paths и request-email-verification fake transport |
 
 ## Файлы
 
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
-| Авторизация скачивания файлов (allow/deny) | Да | integration | `backend/tests/integration/test_auth_enforcement_contract.py`; `backend/tests/integration/test_api_contracts.py` | Upload/delete endpoint'ы для requests/offers | P0 | Добавить integration-тесты upload/delete файлов requests/offers с permission matrix |
-| Ограничения видимости связанных файлов для contractor | Частично | integration | `backend/tests/integration/test_auth_enforcement_contract.py` | Позитивный путь contractor access при валидной linkage | P1 | Добавить integration-тест contractor allowed download при связанной сущности |
+| Авторизация скачивания файлов (allow/deny) | Да | integration | `backend/tests/integration/test_auth_enforcement_contract.py`; `backend/tests/integration/test_api_contracts.py`; `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Stress/concurrency для file access matrix | Closed (P1) | Поддерживать regression coverage `401/403/404` и contractor linkage paths |
+| Upload/delete request/offer files permission matrix | Да | integration | `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Дополнительный DB-backed контур не требуется для текущего API enforcement | Closed (P1) | Поддерживать regression coverage owner/non-owner/anonymous/unsupported/empty/oversize/missing-attachment |
+| Ограничения видимости связанных файлов для contractor | Да | integration | `backend/tests/integration/test_auth_enforcement_contract.py`; `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Cross-entity linkage matrix для chat/message attachments в отдельном расширенном наборе | Closed (P1) | При изменении linkage логики обновлять contractor allow/deny integration cases |
 
 ## Chat/workspace
 
@@ -87,8 +88,9 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
-| Frontend route gating для `/pm-dashboard*` | Частично | e2e smoke | `web/e2e/roles.smoke.spec.ts` | Контракт/enforcement backend dashboard endpoint'ов | P1 | Добавить integration-тесты read-permissions для `/dashboard/responsibility` и `/plans*` |
+| Backend enforcement для `/dashboard/responsibility` и `/plans*` | Да | integration | `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Отдельный savings-only endpoint отсутствует в текущем API surface | Closed (P1) | Поддерживать regression coverage по permissions/status/anonymous + period/date/hierarchy filters |
 | Dashboard tabs по split-permissions | Частично | frontend unit (косвенно) | `web/src/app/routes/RoleRoute.test.tsx` | Видимость компонентов и API failure states | P2 | Добавить frontend unit-тесты dashboard widgets для permission subsets |
+| Отдельный dashboard savings endpoint (`/dashboard/savings`) | Нет | N/A | N/A | В текущем backend API нет отдельного savings route: savings входит в `GET /dashboard/responsibility`; отдельный endpoint не добавлялся без бизнес-требования | Gap (documented) | Если продукт потребует отдельный savings endpoint, сначала зафиксировать API/PRD и только затем добавлять тесты |
 
 ## Admin/users
 
@@ -101,13 +103,14 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
-| Доступ к feedback route по ролям | Частично | e2e smoke | `web/e2e/roles.smoke.spec.ts` | Backend-поведение `GET/POST /feedback` и валидация | P1 | Добавить integration-тесты create/read permissions и валидации payload |
+| Доступ к feedback route по ролям и валидация payload | Да | integration | `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Расширенный e2e UX coverage feedback page | Closed (P1) | Поддерживать regression coverage create/list + anonymous/forbidden + empty/too-long payload |
 
 ## Normative files
 
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
-| Permissions для normative files route/API | Нет | N/A | N/A | Нет прямого покрытия флоу `normative_files.read/create/manage` | P1 | Добавить integration-тесты upload/manage для normative files |
+| Upload normative file (`normative_files.create`) | Да | integration | `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Read/manage endpoints отсутствуют в текущем API surface | Частично | Поддерживать regression coverage create/duplicate/forbidden/anonymous paths |
+| Read/manage normative files (`normative_files.read/manage`) | Нет | N/A | N/A | В `backend/app/api/v1/normative_files.py` отсутствуют list/read/update/delete endpoint'ы; покрывать нечего без нового бизнес-требования | Gap (documented) | При появлении endpoint'ов добавить integration coverage для read/create/manage matrix |
 
 ## Frontend route/page access
 
@@ -151,12 +154,13 @@ P0 (первая волна):
 7. Правило accept offer для closed/cancelled request — закрыто (guard реализован, `xfail` снят).
 
 P1 (вторая волна):
-1. Backend-контракты dashboard'ов и UI permission-subsets.
-2. Backend-тесты feedback.
-3. Тесты normative files.
-4. Дополнительные auth happy-path/onboarding тесты.
-5. Покрыть auto-reject sibling offers DB-backed контрактом, который учитывает реальный trigger `offers_accept_reject_others` (в текущем наборе оставлен explicit `xfail`).
-6. Добавить dev/test mailbox smoke через MailHog/Mailpit (P1, без обязательного внедрения тяжелой infra).
+1. Backend dashboard contracts — закрыто для существующих `/dashboard/responsibility` и `/plans*`; отдельный `/dashboard/savings` endpoint остается documented gap (endpoint отсутствует).
+2. Backend feedback contracts — закрыто.
+3. Backend files upload/delete/download contracts — закрыто.
+4. Backend normative files — частично: create/upload закрыто, read/manage остаются documented gap (endpoint'ы отсутствуют).
+5. Дополнительные auth happy-path/onboarding tests (browser/e2e уровень).
+6. Покрыть auto-reject sibling offers DB-backed контрактом, который учитывает реальный trigger `offers_accept_reject_others` (в текущем наборе оставлен explicit `xfail`).
+7. Добавить dev/test mailbox smoke через MailHog/Mailpit (P1, без обязательного внедрения тяжелой infra).
 
 P2 (третья волна):
 1. Extended e2e-сценарии (полный workflow между ролями).
@@ -191,7 +195,8 @@ P2 (третья волна):
 - `backend/tests/integration/test_auth_oidc_flows.py`:
   покрывает OIDC callback edge cases, registration invite mismatch и logout при недоступном Keycloak API.
 - `backend/tests/integration/test_auth_enforcement_contract.py`:
-  фиксирует backend enforcement для `401/403`, статусов `review/inactive/blacklist` и защищенных действий.
+  фиксирует backend enforcement для `401/403`, статусов `review/inactive/blacklist`, защищенных действий,
+  request-email-verification fake transport/dedup и жизненный цикл `/auth/verify-email`.
 
 Добавлены extended e2e specs:
 - `web/e2e/roles.access.spec.ts` (`@roles`)

@@ -72,6 +72,8 @@ npm --prefix web exec -- playwright install
 - `403` для пользователя без нужного permission;
 - статусные ограничения (`review/inactive/blacklist`) на protected действиях;
 - успешный protected-path для `active` пользователя с нужными permission;
+- request-email-verification без реальной отправки email: fake transport, повторный запрос/dedup, duplicate email conflict, review contractor allow и non-contractor/inactive deny;
+- `/auth/verify-email`: valid token, repeated verification, invalid token, expired token, wrong-flow token and email-conflict token;
 - контракт сессии авторизации: `permissions`, `app_roles`, `delegation_roles`, `status`, `role_id`, `business_access`, `onboarding_state`;
 - контракты заявок: у элементов есть `actions`, а глобальные `permissions` не дублируются в ответе;
 - контракт рабочего пространства оффера: `request.actions`, `offer.actions`, `chat_actions`, без глобального списка `permissions` в ответе;
@@ -90,6 +92,12 @@ npm --prefix web exec -- playwright install
 - `backend/tests/integration/test_offer_lifecycle_integration.py`
 - `backend/tests/integration/test_chat_endpoints_integration.py`
 - `backend/tests/integration/test_admin_users_enforcement_integration.py`
+
+Актуальная P1 contract suite (existing API surface):
+- `backend/tests/integration/test_p1_backend_contract_gaps_integration.py`:
+  dashboard (`/dashboard/responsibility`, `/plans*`), request/offer files upload-delete-download matrix,
+  feedback create/list validation, normative files upload paths, manual request email notification endpoint,
+  и verify-email lifecycle без реального SMTP/S3/Keycloak.
 
 Что важно для этих suites:
 - не подключаться к реальному Keycloak;
@@ -150,12 +158,16 @@ npm --prefix web exec -- playwright install
 
 Как запускать:
 - PowerShell: `./scripts/check-keycloak.ps1 -EnvFile .env.dev`
+- PowerShell с хоста (рекомендуется для локального стенда Docker):  
+  `$env:KEYCLOAK_INTERNAL_BASE_URL='http://127.0.0.1:8080/iam'; ./scripts/check-keycloak.ps1 -EnvFile .env.dev; Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL`
 - PowerShell для `prod-like` стенда через публичный gateway/ngrok:
   `$env:KEYCLOAK_INTERNAL_BASE_URL='https://unflossy-noninheritable-aarav.ngrok-free.dev/iam'; ./scripts/check-keycloak.ps1 -EnvFile .env.prod-like; Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL`
 - Bash: `./scripts/check-keycloak.sh .env.dev`
 
 Строгий режим для неизвестных атомарных ролей:
 - PowerShell: `./scripts/check-keycloak.ps1 -EnvFile .env.dev -StrictUnknownAtomic`
+- PowerShell с хоста (локальный стенд Docker):  
+  `$env:KEYCLOAK_INTERNAL_BASE_URL='http://127.0.0.1:8080/iam'; ./scripts/check-keycloak.ps1 -EnvFile .env.dev -StrictUnknownAtomic; Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL`
 - PowerShell для `prod-like` стенда:
   `$env:KEYCLOAK_INTERNAL_BASE_URL='https://unflossy-noninheritable-aarav.ngrok-free.dev/iam'; ./scripts/check-keycloak.ps1 -EnvFile .env.prod-like -StrictUnknownAtomic; Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL`
 - Bash: `STRICT_UNKNOWN_ATOMIC=true ./scripts/check-keycloak.sh .env.dev`
@@ -164,6 +176,7 @@ npm --prefix web exec -- playwright install
 - скрипт ничего не меняет в Keycloak;
 - пользователи и роли не создаются, не обновляются и не удаляются;
 - отсутствующие обязательные роли считаются критичной ошибкой.
+- `KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080/iam` работает только внутри Docker-сети; при запуске скрипта с хоста обычно нужен `http://127.0.0.1:8080/iam` или публичный URL стенда.
 
 ## 5. E2E smoke в браузере
 
@@ -300,6 +313,7 @@ E2E smoke запускается отдельно вручную (`workflow_disp
 Что покрыто автоматизированно:
 - unit: генерация payload для email (`subject`, `text`, `html`, ссылки, fallback, экранирование, предупреждения по вложениям, UTF-8/кириллица);
 - integration: постановка email-событий в outbox/fake transport для сценариев request/invite, валидация email и дедупликация получателей;
+- integration: request-email-verification и `/auth/verify-email` используют fake transport/profile repo, не подключаются к SMTP/RabbitMQ и покрывают token lifecycle;
 - unit: `notifications_worker` (валидный/невалидный payload, обязательные поля, дедупликация/cooldown, обработка SMTP-ошибок).
 
 Правила безопасности:

@@ -22,6 +22,40 @@ $ErrorActionPreference = "Stop"
 $RootDir = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 
+function Get-EnvMap {
+  param([string]$Path)
+
+  if (-not (Test-Path $Path)) {
+    throw "Env file not found: $Path"
+  }
+
+  $map = @{}
+  foreach ($line in Get-Content $Path) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
+    $idx = $trimmed.IndexOf("=")
+    if ($idx -lt 1) { continue }
+    $key = $trimmed.Substring(0, $idx).Trim()
+    $value = $trimmed.Substring($idx + 1).Trim()
+    if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) {
+      $value = $value.Substring(1, $value.Length - 2)
+    }
+    $map[$key] = $value
+  }
+  return $map
+}
+
+function Get-MapValue {
+  param(
+    [hashtable]$Map,
+    [string]$Key
+  )
+  if ($Map.ContainsKey($Key)) {
+    return [string]$Map[$Key]
+  }
+  return ""
+}
+
 function Assert-StepSucceeded {
   param([string]$StepName)
   if ($LASTEXITCODE -ne 0) {
@@ -59,14 +93,42 @@ Assert-StepSucceeded -StepName "infrastructure smoke checks"
 
 Write-Host "== [4/6] keycloak permission model checks =="
 $prevKeycloakInternalBaseUrl = [Environment]::GetEnvironmentVariable("KEYCLOAK_INTERNAL_BASE_URL", "Process")
-if ($KeycloakInternalBaseUrl) {
-  $env:KEYCLOAK_INTERNAL_BASE_URL = $KeycloakInternalBaseUrl
+$effectiveKeycloakInternalBaseUrl = $KeycloakInternalBaseUrl
+if (-not $effectiveKeycloakInternalBaseUrl) {
+  $resolvedEnvFile = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $RootDir $EnvFile }
+  $envMap = Get-EnvMap -Path $resolvedEnvFile
+
+  $internalBase = (Get-MapValue -Map $envMap -Key "KEYCLOAK_INTERNAL_BASE_URL").Trim()
+  $publicBase = (Get-MapValue -Map $envMap -Key "KEYCLOAK_PUBLIC_BASE_URL").Trim()
+  $realm = (Get-MapValue -Map $envMap -Key "KEYCLOAK_REALM").Trim()
+  if (-not $realm) {
+    $realm = "acom-offerdesk"
+  }
+
+  if ($publicBase -and $internalBase -match "://keycloak(:\d+)?/") {
+    $localKeycloakBase = "http://127.0.0.1:8080/iam"
+    $localRealmUrl = "$localKeycloakBase/realms/$realm"
+    try {
+      $localProbe = Invoke-WebRequest -Uri $localRealmUrl -UseBasicParsing -TimeoutSec 5
+      if ($localProbe.StatusCode -ge 200 -and $localProbe.StatusCode -lt 500) {
+        $effectiveKeycloakInternalBaseUrl = $localKeycloakBase
+      } else {
+        $effectiveKeycloakInternalBaseUrl = $publicBase
+      }
+    } catch {
+      $effectiveKeycloakInternalBaseUrl = $publicBase
+    }
+  }
+}
+if ($effectiveKeycloakInternalBaseUrl) {
+  $env:KEYCLOAK_INTERNAL_BASE_URL = $effectiveKeycloakInternalBaseUrl
+  Write-Host "Using KEYCLOAK_INTERNAL_BASE_URL=$effectiveKeycloakInternalBaseUrl for keycloak permission model checks"
 }
 try {
   & "$RootDir/scripts/check-keycloak.ps1" -EnvFile $EnvFile
   Assert-StepSucceeded -StepName "keycloak permission model checks"
 } finally {
-  if ($KeycloakInternalBaseUrl) {
+  if ($effectiveKeycloakInternalBaseUrl) {
     if ($null -eq $prevKeycloakInternalBaseUrl) {
       Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL -ErrorAction SilentlyContinue
     } else {

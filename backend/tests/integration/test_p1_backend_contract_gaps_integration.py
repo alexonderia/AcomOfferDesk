@@ -1,0 +1,1427 @@
+"""P1 backend contract coverage for existing API surface.
+
+These tests keep the integration contour in-memory: no SMTP, S3/MinIO,
+Keycloak, or external database is contacted.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from types import SimpleNamespace
+
+import pytest
+
+from app.api.dependencies import get_current_user
+from app.api.v1 import auth as auth_api
+from app.api.v1 import normative_files as normative_files_api
+from app.api.v1 import offers as offers_api
+from app.api.v1 import plans as plans_api
+from app.api.v1 import requests as requests_api
+from app.core.config import settings
+from app.core.email_token import EmailVerificationTokenCodec
+from app.domain.exceptions import Forbidden
+from app.domain.permissions import PermissionCodes
+from app.domain.policies import UserPolicy
+from app.services import offers as offers_service_module
+from app.services import requests as requests_service_module
+
+
+def _dt() -> datetime:
+    return datetime(2026, 5, 13, 10, 0, tzinfo=timezone.utc)
+
+
+class _DashboardUsersRepo:
+    def __init__(self, *, rows=None, parent_pairs=None) -> None:
+        self._rows = rows or []
+        self._parent_pairs = parent_pairs or []
+
+    async def list_staff_with_profiles_and_roles_for_dashboard(self, *, role_ids):
+        return [row for row in self._rows if row[0].id_role in role_ids]
+
+    async def list_active_user_parent_pairs(self):
+        return self._parent_pairs
+
+
+class _DashboardRequestsRepo:
+    def __init__(self, *, closed_rows=None) -> None:
+        self._closed_rows = closed_rows or []
+
+    async def count_in_progress_requests_by_owner(self, *, owner_ids):
+        _ = owner_ids
+        return []
+
+    async def list_unassigned_requests(self, *, operator_role_id, owner_ids):
+        _ = (operator_role_id, owner_ids)
+        return []
+
+    async def list_in_progress_requests_by_owner_ids(self, *, owner_ids):
+        _ = owner_ids
+        return []
+
+    async def list_closed_requests_with_chosen_offer_by_owner_ids(self, *, owner_ids):
+        return [row for row in self._closed_rows if row[0].id_user in owner_ids]
+
+
+class _DashboardStatusPeriodsRepo:
+    async def list_active_for_users(self, *, user_ids):
+        _ = user_ids
+        return {}
+
+    async def list_next_for_users(self, *, user_ids):
+        _ = user_ids
+        return []
+
+
+class _DashboardPlansRepo:
+    async def list_by_ids(self, *, plan_ids):
+        return [SimpleNamespace(id=plan_id, name=f"Plan {plan_id}") for plan_id in plan_ids]
+
+
+class _DashboardUow:
+    def __init__(self, *, users=None, requests=None) -> None:
+        self.users = users or _DashboardUsersRepo()
+        self.requests = requests or _DashboardRequestsRepo()
+        self.user_status_periods = _DashboardStatusPeriodsRepo()
+        self.economy_plans = _DashboardPlansRepo()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+class _FeedbackRepo:
+    def __init__(self) -> None:
+        self.created: list[str] = []
+        self.items = [SimpleNamespace(id=7, text="existing feedback")]
+
+    async def create(self, *, text: str):
+        self.created.append(text)
+        return SimpleNamespace(id=42, text=text)
+
+    async def list_items(self):
+        return self.items
+
+
+class _FeedbackUow:
+    def __init__(self, repo: _FeedbackRepo | None = None) -> None:
+        self.feedback = repo or _FeedbackRepo()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+class _PreparedFileService:
+    created_request_files: list[dict] = []
+    created_offer_files: list[dict] = []
+    deleted_files: list[int] = []
+
+    def __init__(self, files=None) -> None:
+        self._files = files
+
+    async def prepare_upload(self, upload):
+        return SimpleNamespace(
+            original_name=upload.filename,
+            content_bytes=await upload.read(),
+            mime_type=upload.content_type or "text/plain",
+        )
+
+    async def prepare_bytes(self, *, original_name, content_bytes, mime_type=None):
+        return SimpleNamespace(
+            original_name=original_name,
+            content_bytes=content_bytes,
+            mime_type=mime_type or "text/plain",
+        )
+
+    async def create_request_file(self, *, request_id: int, upload):
+        self.created_request_files.append({"request_id": request_id, "name": upload.original_name})
+        return SimpleNamespace(id=501)
+
+    async def create_offer_file(self, *, offer_id: int, upload):
+        self.created_offer_files.append({"offer_id": offer_id, "name": upload.original_name})
+        return SimpleNamespace(id=601)
+
+    async def create_normative_file(self, *, upload):
+        _ = upload
+        return SimpleNamespace(id=701)
+
+    async def delete_file(self, *, file_id: int) -> None:
+        self.deleted_files.append(file_id)
+
+    async def cleanup_tracked_objects(self) -> None:
+        return None
+
+
+class _RequestFilesRepo:
+    def __init__(self, *, detached: bool = True) -> None:
+        self.attached: list[tuple[int, int]] = []
+        self.detached = detached
+
+    async def get_by_id(self, *, request_id: int):
+        return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
+
+    async def attach_file(self, *, request_id: int, file_id: int) -> None:
+        self.attached.append((request_id, file_id))
+
+    async def detach_file(self, *, request_id: int, file_id: int) -> bool:
+        _ = (request_id, file_id)
+        return self.detached
+
+
+class _RequestFilesUow:
+    def __init__(self, *, requests_repo=None) -> None:
+        self.requests = requests_repo or _RequestFilesRepo()
+        self.files = object()
+        self.users = object()
+        self.offers = object()
+        self.user_status_periods = object()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+class _DownloadFilesRepo:
+    def __init__(self, *, exists: bool = True) -> None:
+        self.exists = exists
+
+    async def get_by_id(self, file_id: int):
+        if not self.exists:
+            return None
+        return SimpleNamespace(
+            id=file_id,
+            id_storage_object=99,
+            original_name="linked.txt",
+            mime_type="text/plain",
+            storage_object=SimpleNamespace(id=99, storage_bucket="bucket", storage_key="key"),
+        )
+
+
+class _DownloadRequestsRepo:
+    def __init__(self, *, linked: bool = False) -> None:
+        self.linked = linked
+
+    async def is_file_linked_to_visible_open_request(self, *, contractor_user_id: str, file_id: int) -> bool:
+        _ = (contractor_user_id, file_id)
+        return self.linked
+
+
+class _DownloadOffersRepo:
+    def __init__(self, *, linked_offer: bool = False, linked_message: bool = False) -> None:
+        self.linked_offer = linked_offer
+        self.linked_message = linked_message
+
+    async def is_file_linked_to_contractor(self, *, contractor_user_id: str, file_id: int) -> bool:
+        _ = (contractor_user_id, file_id)
+        return self.linked_offer
+
+    async def is_message_file_linked_to_contractor(self, *, contractor_user_id: str, file_id: int) -> bool:
+        _ = (contractor_user_id, file_id)
+        return self.linked_message
+
+
+class _DownloadUow:
+    def __init__(
+        self,
+        *,
+        files_repo: _DownloadFilesRepo | None = None,
+        requests_repo: _DownloadRequestsRepo | None = None,
+        offers_repo: _DownloadOffersRepo | None = None,
+    ) -> None:
+        self.files = files_repo or _DownloadFilesRepo()
+        self.requests = requests_repo or _DownloadRequestsRepo()
+        self.offers = offers_repo or _DownloadOffersRepo()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+class _OfferFilesOffersRepo:
+    def __init__(self, *, detached: bool = True) -> None:
+        self.attached: list[tuple[int, int]] = []
+        self.detached = detached
+
+    async def get_by_id(self, *, offer_id: int):
+        return SimpleNamespace(id=offer_id, id_request=10, id_user="contractor-1", status="submitted")
+
+    async def attach_file(self, *, offer_id: int, file_id: int) -> None:
+        self.attached.append((offer_id, file_id))
+
+    async def detach_file(self, *, offer_id: int, file_id: int) -> bool:
+        _ = (offer_id, file_id)
+        return self.detached
+
+
+class _OfferFilesRequestsRepo:
+    async def get_by_id(self, *, request_id: int):
+        return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
+
+    async def is_hidden_for_contractor(self, *, request_id: int, contractor_user_id: str) -> bool:
+        _ = (request_id, contractor_user_id)
+        return False
+
+
+class _OfferFilesUsersRepo:
+    async def get_by_id(self, user_id: str | None = None, **kwargs):
+        resolved_user_id = user_id or kwargs["user_id"]
+        return SimpleNamespace(
+            id=resolved_user_id,
+            id_role=settings.contractor_role_id,
+            tg_user_id=None,
+        )
+
+
+class _OfferFilesUow:
+    def __init__(self, *, offers_repo=None) -> None:
+        self.offers = offers_repo or _OfferFilesOffersRepo()
+        self.requests = _OfferFilesRequestsRepo()
+        self.users = _OfferFilesUsersRepo()
+        self.files = object()
+        self.chats = object()
+        self.messages = object()
+        self.profiles = object()
+        self.company_contacts = object()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+class _NormativeFilesRepo:
+    def __init__(self, *, existing_file_id: int | None = None) -> None:
+        self.existing_file_id = existing_file_id
+        self.upserts: list[tuple[int, int]] = []
+
+    async def get_normative_file_id(self, *, normative_id: int):
+        _ = normative_id
+        return self.existing_file_id
+
+    async def upsert_normative_file(self, *, normative_id: int, file_id: int) -> None:
+        self.upserts.append((normative_id, file_id))
+
+
+class _NormativeUow:
+    def __init__(self, repo: _NormativeFilesRepo | None = None) -> None:
+        self.files = repo or _NormativeFilesRepo()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+class _ManualEmailNotifications:
+    def __init__(self, profiles, requests) -> None:
+        _ = (profiles, requests)
+        self.calls: list[dict] = []
+
+    async def notify_request_to_additional_emails(self, *, request_id: int, additional_emails: list[str]) -> None:
+        self.calls.append({"request_id": request_id, "additional_emails": additional_emails})
+
+
+class _ManualEmailRequestsRepo:
+    async def get_by_id(self, *, request_id: int):
+        return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
+
+
+class _ManualEmailUow:
+    def __init__(self) -> None:
+        self.requests = _ManualEmailRequestsRepo()
+        self.files = object()
+        self.users = object()
+        self.offers = object()
+        self.user_status_periods = object()
+        self.profiles = object()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+class _ProfilesRepo:
+    def __init__(self, *, mail_exists: bool = False, update_result: bool = True) -> None:
+        self.mail_exists = mail_exists
+        self.update_result = update_result
+        self.updated: list[tuple[str, str]] = []
+        self.sent_to: list[str] = []
+
+    async def get_by_id(self, user_id: str):
+        return SimpleNamespace(id=user_id, mail="old@example.com")
+
+    async def exists_by_mail(self, *, email: str, exclude_user_id: str | None = None):
+        _ = (email, exclude_user_id)
+        return self.mail_exists
+
+    async def update_mail_after_verification(self, *, user_id: str, email: str) -> bool:
+        self.updated.append((user_id, email))
+        return self.update_result
+
+
+class _ProfilesUow:
+    def __init__(self, repo: _ProfilesRepo) -> None:
+        self.profiles = repo
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        _ = (exc_type, exc, tb)
+
+
+def _clear_current_user_override(api_app) -> None:
+    api_app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_dashboard_responsibility_allows_empty_data_for_allowed_role(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    user = make_current_user(
+        role_id=settings.project_manager_role_id,
+        permissions={PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ},
+    )
+    set_current_user(user)
+    set_uow(_DashboardUow())
+
+    response = test_client.get("/api/v1/dashboard/responsibility")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["tree"] == []
+    assert data["savings"]["total_closed_requests"] == 0
+    assert data["savings"]["items"] == []
+
+
+@pytest.mark.parametrize("role_id", [settings.project_manager_role_id, settings.lead_economist_role_id, settings.superadmin_role_id])
+def test_dashboard_responsibility_allows_project_manager_lead_economist_and_superadmin(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+    role_id,
+):
+    set_current_user(
+        make_current_user(
+            role_id=role_id,
+            permissions={PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ},
+        )
+    )
+    set_uow(_DashboardUow())
+
+    response = test_client.get("/api/v1/dashboard/responsibility")
+
+    assert response.status_code == 200
+
+
+def test_dashboard_responsibility_serializes_savings_numeric_edges(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    staff_user = SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent=None)
+    staff_profile = SimpleNamespace(full_name="Lead One")
+    staff_role = SimpleNamespace(role="lead_economist")
+    closed_request = SimpleNamespace(
+        id=10,
+        id_user="lead-1",
+        initial_amount=1000,
+        final_amount=800,
+        closed_at=_dt(),
+        id_plan=5,
+    )
+    accepted_offer = SimpleNamespace(offer_amount=800)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ},
+    )
+    set_current_user(user)
+    set_uow(
+        _DashboardUow(
+            users=_DashboardUsersRepo(rows=[(staff_user, staff_profile, staff_role)]),
+            requests=_DashboardRequestsRepo(closed_rows=[(closed_request, accepted_offer, staff_profile)]),
+        )
+    )
+
+    response = test_client.get("/api/v1/dashboard/responsibility")
+
+    assert response.status_code == 200
+    savings = response.json()["data"]["savings"]
+    assert savings["total_closed_requests"] == 1
+    assert savings["total_with_savings"] == 1
+    assert savings["total_savings_amount"] == 200.0
+    assert savings["items"][0]["plan_name"] == "Plan 5"
+
+
+def test_dashboard_responsibility_serializes_negative_and_zero_savings_without_nan_or_infinity(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    staff_user = SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent=None)
+    staff_profile = SimpleNamespace(full_name="Lead One")
+    staff_role = SimpleNamespace(role="lead_economist")
+    closed_rows = [
+        (
+            SimpleNamespace(id=11, id_user="lead-1", initial_amount=1000, final_amount=1200, closed_at=_dt(), id_plan=None),
+            SimpleNamespace(offer_amount=1200),
+            staff_profile,
+        ),
+        (
+            SimpleNamespace(id=12, id_user="lead-1", initial_amount=500, final_amount=500, closed_at=_dt(), id_plan=None),
+            SimpleNamespace(offer_amount=500),
+            staff_profile,
+        ),
+    ]
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ},
+        )
+    )
+    set_uow(
+        _DashboardUow(
+            users=_DashboardUsersRepo(rows=[(staff_user, staff_profile, staff_role)]),
+            requests=_DashboardRequestsRepo(closed_rows=closed_rows),
+        )
+    )
+
+    response = test_client.get("/api/v1/dashboard/responsibility")
+
+    assert response.status_code == 200
+    assert "NaN" not in response.text
+    assert "Infinity" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("role_id", "permissions", "status"),
+    [
+        (settings.economist_role_id, set(), "active"),
+        (settings.project_manager_role_id, {PermissionCodes.DASHBOARD_PROCESS_READ}, "active"),
+        (settings.project_manager_role_id, {PermissionCodes.DASHBOARD_SAVINGS_READ}, "active"),
+        (
+            settings.project_manager_role_id,
+            {PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ},
+            "inactive",
+        ),
+        (
+            settings.project_manager_role_id,
+            {PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ},
+            "blacklist",
+        ),
+    ],
+)
+def test_dashboard_responsibility_denies_forbidden_permissions_and_statuses(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+    role_id,
+    permissions,
+    status,
+):
+    set_current_user(make_current_user(role_id=role_id, status=status, permissions=permissions))
+    set_uow(_DashboardUow())
+
+    response = test_client.get("/api/v1/dashboard/responsibility")
+
+    assert response.status_code == 403
+
+
+def test_dashboard_responsibility_denies_anonymous_user(api_app, test_client, set_uow):
+    _clear_current_user_override(api_app)
+    set_uow(_DashboardUow())
+
+    response = test_client.get("/api/v1/dashboard/responsibility")
+
+    assert response.status_code == 401
+
+
+def _empty_plan_dashboard():
+    return SimpleNamespace(
+        period="2026-05",
+        period_start=date(2026, 5, 1),
+        period_end=date(2026, 5, 31),
+        can_create_root_plan=True,
+        root_plan_exists=False,
+        summary=SimpleNamespace(
+            total_plan_amount=Decimal("0"),
+            total_fact_amount=Decimal("0"),
+            total_period_fact_amount=Decimal("0"),
+            total_remaining_amount=Decimal("0"),
+            total_progress_percent=Decimal("0"),
+            total_period_progress_percent=Decimal("0"),
+        ),
+        request_stats=SimpleNamespace(
+            total_requests=0,
+            distributed_requests=0,
+            unallocated_requests=0,
+            request_fact_amount=Decimal("0"),
+            unallocated_amount=Decimal("0"),
+            completion_percent=Decimal("0"),
+        ),
+        tree=None,
+        trees=[],
+    )
+
+
+def test_plans_dashboard_endpoint_allows_empty_data_for_plans_permission(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    make_current_user,
+):
+    set_current_user(
+        make_current_user(
+            role_id=settings.project_manager_role_id,
+            permissions={PermissionCodes.DASHBOARD_PLANS_READ},
+        )
+    )
+
+    async def _fake_get_dashboard_plan_tab(self, *, period, current_user):
+        _ = (self, period)
+        UserPolicy.ensure_can_view_plan(current_user)
+        return _empty_plan_dashboard()
+
+    monkeypatch.setattr(plans_api.PlanService, "get_dashboard_plan_tab", _fake_get_dashboard_plan_tab)
+
+    response = test_client.get("/api/v1/plans", params={"period": "2026-05"})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["period"] == "2026-05"
+    assert data["root_plan_exists"] is False
+    assert data["summary"]["total_plan_amount"] == 0.0
+
+
+def test_plans_dashboard_endpoint_passes_period_filter_to_service(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    make_current_user,
+):
+    captured = {}
+    set_current_user(make_current_user(role_id=settings.project_manager_role_id, permissions={PermissionCodes.DASHBOARD_PLANS_READ}))
+
+    async def _fake_get_dashboard_plan_tab(self, *, period, current_user):
+        _ = (self, current_user)
+        captured["period"] = period
+        return _empty_plan_dashboard()
+
+    monkeypatch.setattr(plans_api.PlanService, "get_dashboard_plan_tab", _fake_get_dashboard_plan_tab)
+
+    response = test_client.get("/api/v1/plans", params={"period": "2026-05"})
+
+    assert response.status_code == 200
+    assert captured["period"] == "2026-05"
+
+
+def test_plans_dashboard_endpoint_passes_date_range_filter_to_service(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    make_current_user,
+):
+    captured = {}
+    set_current_user(make_current_user(role_id=settings.project_manager_role_id, permissions={PermissionCodes.DASHBOARD_PLANS_READ}))
+
+    async def _fake_get_dashboard_plan_tab_by_range(self, *, date_from, date_to, current_user):
+        _ = (self, current_user)
+        captured["date_from"] = date_from
+        captured["date_to"] = date_to
+        return _empty_plan_dashboard()
+
+    monkeypatch.setattr(plans_api.PlanService, "get_dashboard_plan_tab_by_range", _fake_get_dashboard_plan_tab_by_range)
+
+    response = test_client.get("/api/v1/plans", params={"date_from": "2026-05-01", "date_to": "2026-05-31"})
+
+    assert response.status_code == 200
+    assert str(captured["date_from"]) == "2026-05-01"
+    assert str(captured["date_to"]) == "2026-05-31"
+
+
+def test_plans_dashboard_endpoint_denies_missing_plans_permission(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    make_current_user,
+):
+    set_current_user(make_current_user(role_id=settings.economist_role_id, permissions=set()))
+
+    async def _fake_get_dashboard_plan_tab(self, *, period, current_user):
+        _ = (self, period)
+        UserPolicy.ensure_can_view_plan(current_user)
+        raise Forbidden("should not be reached")
+
+    monkeypatch.setattr(plans_api.PlanService, "get_dashboard_plan_tab", _fake_get_dashboard_plan_tab)
+
+    response = test_client.get("/api/v1/plans", params={"period": "2026-05"})
+
+    assert response.status_code == 403
+
+
+def test_plans_dashboard_denies_anonymous_user(api_app, test_client):
+    _clear_current_user_override(api_app)
+
+    response = test_client.get("/api/v1/plans", params={"period": "2026-05"})
+
+    assert response.status_code == 401
+
+
+def test_plans_tree_forwards_hierarchy_filter_to_service(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    make_current_user,
+):
+    captured = {}
+    set_current_user(make_current_user(role_id=settings.project_manager_role_id, permissions={PermissionCodes.DASHBOARD_PLANS_READ}))
+
+    async def _fake_get_plan_tree(self, *, period, root_user_id, current_user):
+        _ = (self, current_user)
+        captured["period"] = period
+        captured["root_user_id"] = root_user_id
+        return SimpleNamespace(
+            plan_id=1,
+            plan_name="Root",
+            id_parent_plan=None,
+            user_id="pm-1",
+            user_name="PM",
+            user_role="project_manager",
+            parent_user_id_snapshot=None,
+            period_start=date(2026, 5, 1),
+            period_end=date(2026, 5, 31),
+            plan_amount=Decimal("0"),
+            delegated_amount=Decimal("0"),
+            personal_plan_amount=Decimal("0"),
+            unallocated_amount=Decimal("0"),
+            fact_amount_self=Decimal("0"),
+            fact_amount_subtree=Decimal("0"),
+            period_fact_amount=Decimal("0"),
+            period_progress_percent=Decimal("0"),
+            in_progress_requests_count=0,
+            remaining_amount=Decimal("0"),
+            progress_percent=Decimal("0"),
+            available_actions=SimpleNamespace(
+                create_child_plan=False,
+                create_subplan=False,
+                delegate_plan=False,
+                edit_plan=False,
+                delete_child_plan=False,
+                activate_plan=False,
+                close_plan=False,
+                view_plan=True,
+            ),
+            children=[],
+        )
+
+    monkeypatch.setattr(plans_api.PlanService, "get_plan_tree", _fake_get_plan_tree)
+
+    response = test_client.get("/api/v1/plans/tree", params={"period": "2026-05", "root_user_id": "pm-1"})
+
+    assert response.status_code == 200
+    assert captured == {"period": "2026-05", "root_user_id": "pm-1"}
+
+
+def test_feedback_create_accepts_authenticated_payload_and_ignores_unexpected_fields(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    repo = _FeedbackRepo()
+    set_current_user(make_current_user(permissions={PermissionCodes.FEEDBACK_CREATE}))
+    set_uow(_FeedbackUow(repo))
+
+    response = test_client.post(
+        "/api/v1/feedback",
+        json={"text": "  useful signal  ", "unexpected": "ignored"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"data": {"feedback_id": 42}}
+    assert repo.created == ["useful signal"]
+
+
+def test_feedback_create_denies_anonymous_user(api_app, test_client):
+    _clear_current_user_override(api_app)
+
+    response = test_client.post("/api/v1/feedback", json={"text": "anonymous"})
+
+    assert response.status_code == 401
+
+
+def test_feedback_create_validates_payload(test_client, set_current_user, make_current_user):
+    set_current_user(make_current_user(permissions={PermissionCodes.FEEDBACK_CREATE}))
+
+    response = test_client.post("/api/v1/feedback", json={"text": ""})
+
+    assert response.status_code == 422
+
+
+def test_feedback_create_validates_too_long_payload(test_client, set_current_user, make_current_user):
+    set_current_user(make_current_user(permissions={PermissionCodes.FEEDBACK_CREATE}))
+
+    response = test_client.post("/api/v1/feedback", json={"text": "x" * 3001})
+
+    assert response.status_code == 422
+
+
+def test_feedback_list_allows_superadmin_and_denies_non_superadmin(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    set_uow(_FeedbackUow())
+    set_current_user(make_current_user(role_id=settings.superadmin_role_id, permissions={PermissionCodes.FEEDBACK_READ}))
+
+    response = test_client.get("/api/v1/feedback")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["items"] == [{"id": 7, "text": "existing feedback"}]
+
+    set_current_user(make_current_user(role_id=settings.economist_role_id, permissions={PermissionCodes.FEEDBACK_CREATE}))
+    denied_response = test_client.get("/api/v1/feedback")
+
+    assert denied_response.status_code == 403
+
+
+def test_normative_file_upload_allows_create_permission(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    files_repo = _NormativeFilesRepo()
+    set_current_user(
+        make_current_user(
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.NORMATIVE_FILES_CREATE},
+        )
+    )
+    set_uow(_NormativeUow(files_repo))
+
+    response = test_client.post(
+        "/api/v1/normative-files/1",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"data": {"normative_id": 1, "file_id": 701}}
+    assert files_repo.upserts == [(1, 701)]
+
+
+@pytest.mark.parametrize(
+    ("role_id", "permissions", "status"),
+    [
+        (settings.operator_role_id, {PermissionCodes.NORMATIVE_FILES_READ}, "active"),
+        (settings.economist_role_id, {PermissionCodes.NORMATIVE_FILES_READ}, "active"),
+        (settings.admin_role_id, set(), "active"),
+        (settings.lead_economist_role_id, {PermissionCodes.NORMATIVE_FILES_CREATE}, "inactive"),
+        (settings.lead_economist_role_id, {PermissionCodes.NORMATIVE_FILES_CREATE}, "blacklist"),
+    ],
+)
+def test_normative_file_upload_denies_forbidden_roles_and_statuses(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+    role_id,
+    permissions,
+    status,
+):
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    set_current_user(make_current_user(role_id=role_id, status=status, permissions=permissions))
+    set_uow(_NormativeUow())
+
+    response = test_client.post(
+        "/api/v1/normative-files/1",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
+    assert response.status_code == 403
+
+
+def test_normative_file_upload_rejects_duplicate(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    set_current_user(make_current_user(permissions={PermissionCodes.NORMATIVE_FILES_CREATE}))
+    set_uow(_NormativeUow(_NormativeFilesRepo(existing_file_id=100)))
+
+    response = test_client.post(
+        "/api/v1/normative-files/1",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
+    assert response.status_code == 409
+
+
+def test_normative_file_upload_denies_anonymous_user(api_app, test_client, monkeypatch, set_uow):
+    _clear_current_user_override(api_app)
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    set_uow(_NormativeUow())
+
+    response = test_client.post(
+        "/api/v1/normative-files/1",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
+    assert response.status_code == 401
+
+
+def test_request_file_upload_and_delete_contracts(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(requests_api, "FileService", _PreparedFileService)
+    monkeypatch.setattr(requests_service_module, "FileService", _PreparedFileService)
+    request_repo = _RequestFilesRepo()
+    set_uow(_RequestFilesUow(requests_repo=request_repo))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.economist_role_id,
+            permissions={PermissionCodes.REQUESTS_FILES_UPLOAD, PermissionCodes.REQUESTS_FILES_DELETE, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    upload_response = test_client.post(
+        "/api/v1/requests/10/files",
+        files={"file": ("request.txt", b"request file", "text/plain")},
+    )
+    delete_response = test_client.delete("/api/v1/requests/10/files/501")
+
+    assert upload_response.status_code == 200
+    assert upload_response.json() == {"data": {"request_id": 10, "file_id": 501}}
+    assert request_repo.attached == [(10, 501)]
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"data": {"request_id": 10, "file_id": 501}}
+
+
+def test_request_file_upload_denies_forbidden_role(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(requests_api, "FileService", _PreparedFileService)
+    set_uow(_RequestFilesUow())
+    set_current_user(make_current_user(role_id=settings.operator_role_id, permissions={PermissionCodes.REQUESTS_UPDATE}))
+
+    response = test_client.post(
+        "/api/v1/requests/10/files",
+        files={"file": ("request.txt", b"request file", "text/plain")},
+    )
+
+    assert response.status_code == 403
+
+
+def test_request_file_upload_denies_anonymous_user(api_app, test_client, monkeypatch, set_uow):
+    _clear_current_user_override(api_app)
+    monkeypatch.setattr(requests_api, "FileService", _PreparedFileService)
+    set_uow(_RequestFilesUow())
+
+    response = test_client.post(
+        "/api/v1/requests/10/files",
+        files={"file": ("request.txt", b"request file", "text/plain")},
+    )
+
+    assert response.status_code == 401
+
+
+def test_request_file_delete_missing_attachment_returns_404(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(requests_api, "FileService", _PreparedFileService)
+    monkeypatch.setattr(requests_service_module, "FileService", _PreparedFileService)
+    set_uow(_RequestFilesUow(requests_repo=_RequestFilesRepo(detached=False)))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.economist_role_id,
+            permissions={PermissionCodes.REQUESTS_FILES_DELETE, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    response = test_client.delete("/api/v1/requests/10/files/999")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("filename", "payload", "expected_status"),
+    [
+        ("bad.exe", b"not allowed", 409),
+        ("empty.txt", b"", 409),
+    ],
+)
+def test_request_file_upload_rejects_unsupported_and_empty_files(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+    filename,
+    payload,
+    expected_status,
+):
+    set_uow(_RequestFilesUow())
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.economist_role_id,
+            permissions={PermissionCodes.REQUESTS_FILES_UPLOAD, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    response = test_client.post(
+        "/api/v1/requests/10/files",
+        files={"file": (filename, payload, "text/plain")},
+    )
+
+    assert response.status_code == expected_status
+
+
+def test_request_file_upload_rejects_oversized_file(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(settings, "max_upload_size_bytes", 1)
+    set_uow(_RequestFilesUow())
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.economist_role_id,
+            permissions={PermissionCodes.REQUESTS_FILES_UPLOAD, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    response = test_client.post(
+        "/api/v1/requests/10/files",
+        files={"file": ("big.txt", b"ab", "text/plain")},
+    )
+
+    assert response.status_code == 409
+
+
+def test_offer_file_upload_delete_and_missing_attachment_contracts(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(offers_api, "FileService", _PreparedFileService)
+    monkeypatch.setattr(offers_service_module, "FileService", _PreparedFileService)
+    offers_repo = _OfferFilesOffersRepo()
+    set_uow(_OfferFilesUow(offers_repo=offers_repo))
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.OFFERS_FILES_UPLOAD, PermissionCodes.OFFERS_FILES_DELETE},
+        )
+    )
+
+    upload_response = test_client.post(
+        "/api/v1/offers/20/files",
+        files={"file": ("offer.txt", b"offer file", "text/plain")},
+    )
+    delete_response = test_client.delete("/api/v1/offers/20/files/601")
+
+    assert upload_response.status_code == 200
+    assert upload_response.json() == {"data": {"offer_id": 20, "file_id": 601}}
+    assert offers_repo.attached == [(20, 601)]
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"data": {"offer_id": 20, "file_id": 601}}
+
+    set_uow(_OfferFilesUow(offers_repo=_OfferFilesOffersRepo(detached=False)))
+    missing_response = test_client.delete("/api/v1/offers/20/files/999")
+
+    assert missing_response.status_code == 404
+
+
+def test_offer_file_upload_denies_non_owner_contractor(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(offers_api, "FileService", _PreparedFileService)
+    monkeypatch.setattr(offers_service_module, "FileService", _PreparedFileService)
+    set_uow(_OfferFilesUow())
+    set_current_user(
+        make_current_user(
+            user_id="other-contractor",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.OFFERS_FILES_UPLOAD},
+        )
+    )
+
+    response = test_client.post(
+        "/api/v1/offers/20/files",
+        files={"file": ("offer.txt", b"offer file", "text/plain")},
+    )
+
+    assert response.status_code == 403
+
+
+def test_offer_file_delete_denies_non_owner_contractor(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(offers_api, "FileService", _PreparedFileService)
+    monkeypatch.setattr(offers_service_module, "FileService", _PreparedFileService)
+    set_uow(_OfferFilesUow())
+    set_current_user(
+        make_current_user(
+            user_id="other-contractor",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.OFFERS_FILES_DELETE},
+        )
+    )
+
+    response = test_client.delete("/api/v1/offers/20/files/601")
+
+    assert response.status_code == 403
+
+
+def test_offer_file_upload_denies_anonymous_user(api_app, test_client, monkeypatch, set_uow):
+    _clear_current_user_override(api_app)
+    monkeypatch.setattr(offers_api, "FileService", _PreparedFileService)
+    set_uow(_OfferFilesUow())
+
+    response = test_client.post(
+        "/api/v1/offers/20/files",
+        files={"file": ("offer.txt", b"offer file", "text/plain")},
+    )
+
+    assert response.status_code == 401
+
+
+def test_file_download_allows_contractor_for_linked_open_request(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"linked-content"
+
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    set_uow(_DownloadUow(requests_repo=_DownloadRequestsRepo(linked=True)))
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 200
+    assert response.content == b"linked-content"
+
+
+def test_file_download_denies_contractor_for_unlinked_foreign_file(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"must-not-be-used"
+
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    set_uow(_DownloadUow())
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 403
+
+
+def test_file_download_returns_not_found_for_missing_file(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    set_uow(_DownloadUow(files_repo=_DownloadFilesRepo(exists=False)))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.REQUESTS_READ},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/404/download")
+
+    assert response.status_code == 404
+
+
+def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_transport(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    fake_notifications: _ManualEmailNotifications | None = None
+
+    def _factory(profiles, requests):
+        nonlocal fake_notifications
+        fake_notifications = _ManualEmailNotifications(profiles, requests)
+        return fake_notifications
+
+    monkeypatch.setattr(requests_api, "EmailNotificationService", _factory)
+    set_uow(_ManualEmailUow())
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.economist_role_id,
+            permissions={PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    response = test_client.post(
+        "/api/v1/requests/55/email-notifications",
+        json={"additional_emails": ["USER@example.com", "user@example.com", " second@example.com ", ""]},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "data": {
+            "request_id": 55,
+            "sent_to": ["user@example.com", "second@example.com"],
+        }
+    }
+    assert fake_notifications is not None
+    assert fake_notifications.calls == [
+        {"request_id": 55, "additional_emails": ["user@example.com", "second@example.com"]}
+    ]
+
+
+def test_manual_request_email_notification_denies_forbidden_role(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(requests_api, "EmailNotificationService", _ManualEmailNotifications)
+    set_uow(_ManualEmailUow())
+    set_current_user(make_current_user(role_id=settings.operator_role_id, permissions={PermissionCodes.REQUESTS_UPDATE}))
+
+    response = test_client.post(
+        "/api/v1/requests/55/email-notifications",
+        json={"additional_emails": ["user@example.com"]},
+    )
+
+    assert response.status_code == 403
+
+
+def test_manual_request_email_notification_requires_safe_recipient(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(requests_api, "EmailNotificationService", _ManualEmailNotifications)
+    set_uow(_ManualEmailUow())
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.economist_role_id,
+            permissions={PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    response = test_client.post(
+        "/api/v1/requests/55/email-notifications",
+        json={"additional_emails": ["  "]},
+    )
+
+    assert response.status_code == 409
+
+
+def test_request_email_verification_uses_fake_mail_sender(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    sent: list[dict] = []
+
+    async def _fake_send(self, *, email, verification_link, recipient_context):
+        _ = self
+        sent.append(
+            {
+                "email": email,
+                "verification_link": verification_link,
+                "recipient_context": recipient_context,
+            }
+        )
+
+    auth_api.EmailVerificationService._request_locks.clear()
+    monkeypatch.setattr(settings, "web_base_url", "https://web.acom.example")
+    monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
+    monkeypatch.setattr(auth_api.EmailVerificationService, "_send_verification_email", _fake_send)
+    set_current_user(make_current_user(user_id="profile-1", permissions={PermissionCodes.PROFILE_MANAGE_OWN}))
+    set_uow(_ProfilesUow(_ProfilesRepo()))
+
+    response = test_client.post(
+        "/api/v1/auth/request-email-verification",
+        json={"email": "new@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert sent[0]["email"] == "new@example.com"
+    assert sent[0]["verification_link"].startswith("https://web.acom.example/verify-email?token=")
+    assert sent[0]["recipient_context"] == {"user_login": "profile-1", "tg_id": None}
+
+
+@pytest.mark.parametrize("update_result", [True, False])
+def test_verify_email_valid_token_updates_or_reports_repeat(
+    test_client,
+    monkeypatch,
+    set_uow,
+    update_result,
+):
+    monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
+    profiles = _ProfilesRepo(update_result=update_result)
+    set_uow(_ProfilesUow(profiles))
+    token = asyncio.run(
+        EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=3600).create_profile_token(
+            user_id="profile-1",
+            email="verified@example.com",
+        )
+    )
+
+    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+
+    assert response.status_code == 200
+    assert profiles.updated == [("profile-1", "verified@example.com")]
+    if update_result:
+        assert "Email" in response.json()["detail"]
+    else:
+        assert "Email" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "not-a-valid-verification-token.value",
+        asyncio.run(
+            EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=-1).create_profile_token(
+                user_id="profile-1",
+                email="expired@example.com",
+            )
+        ),
+    ],
+)
+def test_verify_email_rejects_invalid_and_expired_tokens(test_client, monkeypatch, set_uow, token):
+    monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
+    set_uow(_ProfilesUow(_ProfilesRepo()))
+
+    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+
+    assert response.status_code == 401
+
+
+def test_verify_email_rejects_token_when_email_belongs_to_another_user(test_client, monkeypatch, set_uow):
+    monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
+    set_uow(_ProfilesUow(_ProfilesRepo(mail_exists=True)))
+    token = asyncio.run(
+        EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=3600).create_profile_token(
+            user_id="profile-1",
+            email="taken@example.com",
+        )
+    )
+
+    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+
+    assert response.status_code == 409
+
+
+@pytest.mark.parametrize("status", ["inactive", "blacklist"])
+def test_request_email_verification_denies_inactive_and_blacklist_users(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+    status,
+):
+    set_current_user(
+        make_current_user(
+            role_id=settings.contractor_role_id,
+            status=status,
+            permissions={PermissionCodes.PROFILE_MANAGE_OWN},
+        )
+    )
+    set_uow(_ProfilesUow(_ProfilesRepo()))
+
+    response = test_client.post(
+        "/api/v1/auth/request-email-verification",
+        json={"email": "blocked@example.com"},
+    )
+
+    assert response.status_code == 403

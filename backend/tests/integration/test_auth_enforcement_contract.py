@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -14,9 +15,11 @@ from app.api.dependencies import get_current_user, get_uow
 from app.api.v1 import auth as auth_api
 from app.api.v1 import requests as requests_api
 from app.core.config import settings
+from app.core.email_token import EmailVerificationTokenCodec
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Unauthorized
 from app.domain.permissions import PermissionCodes
+from app.services import email_verification as email_verification_service
 
 
 class _NoopUow:
@@ -35,8 +38,40 @@ class _FileDownloadUow(_NoopUow):
 
 
 class _EmailVerificationUow(_NoopUow):
-    def __init__(self) -> None:
-        self.profiles = object()
+    def __init__(self, profiles=None) -> None:
+        self.profiles = profiles if profiles is not None else object()
+
+
+class _EmailVerificationProfilesRepo:
+    def __init__(self, profiles: dict[str, str]) -> None:
+        self._profiles = {
+            user_id: SimpleNamespace(id=user_id, mail=email)
+            for user_id, email in profiles.items()
+        }
+
+    async def get_by_id(self, user_id: str):
+        return self._profiles.get(user_id)
+
+    async def exists_by_mail(self, *, email: str, exclude_user_id: str | None = None) -> bool:
+        normalized = email.strip().lower()
+        return any(
+            profile.mail.strip().lower() == normalized and user_id != exclude_user_id
+            for user_id, profile in self._profiles.items()
+        )
+
+    async def update_mail_after_verification(self, *, user_id: str, email: str) -> bool:
+        profile = self._profiles.get(user_id)
+        if profile is None:
+            return False
+        candidate = email.strip()
+        if profile.mail and profile.mail.strip().lower() == candidate.lower():
+            return True
+        profile.mail = candidate
+        return True
+
+    def mail_for(self, user_id: str) -> str | None:
+        profile = self._profiles.get(user_id)
+        return profile.mail if profile is not None else None
 
 
 class _FilesRepo:
@@ -174,7 +209,11 @@ def test_request_email_verification_allows_review_contractor_only_for_limited_ac
         _ = (self, user_id, email)
         return "sent"
 
-    monkeypatch.setattr(auth_api.EmailVerificationService, "request_profile_verification", _fake_request_profile_verification)
+    monkeypatch.setattr(
+        auth_api.EmailVerificationService,
+        "request_profile_verification",
+        _fake_request_profile_verification,
+    )
 
     response = test_client.post(
         "/api/v1/auth/request-email-verification",
@@ -203,7 +242,11 @@ def test_request_email_verification_blocks_inactive_user(
         _ = (self, user_id, email)
         return "sent"
 
-    monkeypatch.setattr(auth_api.EmailVerificationService, "request_profile_verification", _fake_request_profile_verification)
+    monkeypatch.setattr(
+        auth_api.EmailVerificationService,
+        "request_profile_verification",
+        _fake_request_profile_verification,
+    )
 
     response = test_client.post(
         "/api/v1/auth/request-email-verification",
@@ -211,3 +254,224 @@ def test_request_email_verification_blocks_inactive_user(
     )
 
     assert response.status_code == 403
+
+
+def test_request_email_verification_blocks_review_non_contractor_even_with_profile_permission(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    review_economist = make_current_user(
+        role_id=settings.economist_role_id,
+        status="review",
+        permissions={PermissionCodes.PROFILE_MANAGE_OWN},
+    )
+    set_current_user(review_economist)
+    set_uow(_EmailVerificationUow())
+
+    async def _fake_request_profile_verification(self, *, user_id: str, email: str):
+        _ = (self, user_id, email)
+        return "sent"
+
+    monkeypatch.setattr(
+        auth_api.EmailVerificationService,
+        "request_profile_verification",
+        _fake_request_profile_verification,
+    )
+
+    response = test_client.post(
+        "/api/v1/auth/request-email-verification",
+        json={"email": "review-economist@example.com"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_request(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    profiles = _EmailVerificationProfilesRepo({"contractor-1": "old@example.com"})
+    set_uow(_EmailVerificationUow(profiles))
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            status="review",
+            permissions={PermissionCodes.PROFILE_MANAGE_OWN},
+        )
+    )
+    outbox = []
+    auth_api.EmailVerificationService._request_locks.clear()
+    monkeypatch.setattr(settings, "web_base_url", "https://acom.example")
+
+    async def _fake_send_email(
+        self,
+        to_email,
+        subject,
+        text_content,
+        html_content=None,
+        attachments=None,
+        reply_token=None,
+        recipient_context=None,
+    ):
+        _ = (self, html_content, attachments, reply_token)
+        outbox.append(
+            {
+                "to_email": to_email,
+                "subject": subject,
+                "text": text_content,
+                "recipient_context": recipient_context,
+            }
+        )
+
+    monkeypatch.setattr(
+        email_verification_service.SMTPEmailService,
+        "send_email",
+        _fake_send_email,
+    )
+
+    first_response = test_client.post(
+        "/api/v1/auth/request-email-verification",
+        json={"email": "new@example.com"},
+    )
+    second_response = test_client.post(
+        "/api/v1/auth/request-email-verification",
+        json={"email": "new@example.com"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert [item["to_email"] for item in outbox] == ["new@example.com"]
+    assert outbox[0]["recipient_context"] == {"user_login": "contractor-1", "tg_id": None}
+    assert "https://acom.example/verify-email?token=" in outbox[0]["text"]
+
+
+def test_request_email_verification_rejects_email_used_by_another_profile(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    profiles = _EmailVerificationProfilesRepo(
+        {
+            "contractor-1": "old@example.com",
+            "contractor-2": "taken@example.com",
+        }
+    )
+    set_uow(_EmailVerificationUow(profiles))
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            status="review",
+            permissions={PermissionCodes.PROFILE_MANAGE_OWN},
+        )
+    )
+    outbox = []
+    monkeypatch.setattr(settings, "web_base_url", "https://acom.example")
+
+    async def _fake_send_email(self, *args, **kwargs):
+        _ = (self, args, kwargs)
+        outbox.append(args)
+
+    monkeypatch.setattr(
+        email_verification_service.SMTPEmailService,
+        "send_email",
+        _fake_send_email,
+    )
+
+    response = test_client.post(
+        "/api/v1/auth/request-email-verification",
+        json={"email": "taken@example.com"},
+    )
+
+    assert response.status_code == 409
+    assert outbox == []
+
+
+def test_verify_email_accepts_valid_token_and_repeated_verification(
+    test_client,
+    set_uow,
+):
+    profiles = _EmailVerificationProfilesRepo({"contractor-1": "old@example.com"})
+    set_uow(_EmailVerificationUow(profiles))
+    token = asyncio.run(
+        EmailVerificationTokenCodec(
+            secret=settings.email_verification_secret,
+            ttl_seconds=settings.email_verification_ttl_seconds,
+        ).create_profile_token(user_id="contractor-1", email="verified@example.com")
+    )
+
+    first_response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+    second_response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert profiles.mail_for("contractor-1") == "verified@example.com"
+
+
+def test_verify_email_rejects_invalid_token(test_client, set_uow):
+    set_uow(_EmailVerificationUow(_EmailVerificationProfilesRepo({"contractor-1": "old@example.com"})))
+
+    response = test_client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": "broken-token-value-with-enough-length"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_verify_email_rejects_expired_token(test_client, set_uow):
+    set_uow(_EmailVerificationUow(_EmailVerificationProfilesRepo({"contractor-1": "old@example.com"})))
+    token = asyncio.run(
+        EmailVerificationTokenCodec(
+            secret=settings.email_verification_secret,
+            ttl_seconds=-1,
+        ).create_profile_token(user_id="contractor-1", email="verified@example.com")
+    )
+
+    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+
+    assert response.status_code == 401
+
+
+def test_verify_email_rejects_tg_registration_token_for_profile_flow(test_client, set_uow):
+    set_uow(_EmailVerificationUow(_EmailVerificationProfilesRepo({"contractor-1": "old@example.com"})))
+    token = asyncio.run(
+        EmailVerificationTokenCodec(
+            secret=settings.email_verification_secret,
+            ttl_seconds=settings.email_verification_ttl_seconds,
+        ).create_tg_registration_token(tg_id=123, email="tg@example.com")
+    )
+
+    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+
+    assert response.status_code == 403
+
+
+def test_verify_email_rejects_token_email_already_used_by_another_user(test_client, set_uow):
+    profiles = _EmailVerificationProfilesRepo(
+        {
+            "contractor-1": "old@example.com",
+            "contractor-2": "taken@example.com",
+        }
+    )
+    set_uow(_EmailVerificationUow(profiles))
+    token = asyncio.run(
+        EmailVerificationTokenCodec(
+            secret=settings.email_verification_secret,
+            ttl_seconds=settings.email_verification_ttl_seconds,
+        ).create_profile_token(user_id="contractor-1", email="taken@example.com")
+    )
+
+    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+
+    assert response.status_code == 409
+    assert profiles.mail_for("contractor-1") == "old@example.com"

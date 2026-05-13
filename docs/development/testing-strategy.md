@@ -77,7 +77,10 @@ npm --prefix web exec -- playwright install
 - контракт сессии авторизации: `permissions`, `app_roles`, `delegation_roles`, `status`, `role_id`, `business_access`, `onboarding_state`;
 - контракты заявок: у элементов есть `actions`, а глобальные `permissions` не дублируются в ответе;
 - контракт рабочего пространства оффера: `request.actions`, `offer.actions`, `chat_actions`, без глобального списка `permissions` в ответе;
-- OIDC/auth edge-cases: callback без `code/state`, callback с неправильным/битым `state`, refresh без cookie, refresh с невалидной cookie, logout при недоступном Keycloak API.
+- OIDC/auth callback paths: negative (`code/state` missing, wrong/broken `state`, invite mismatch, already-registered invite) и positive callback path (валидный `state`, успешный sync/link, refresh cookie, SPA redirect);
+- invite registration callback success: matching email + `allow_user_creation=true` + contractor `review` onboarding path на service/API уровне через fakes;
+- refresh session contract и token-lifecycle: refresh без cookie, refresh с невалидной/устаревшей cookie (`401` + clear cookie), rotation/repeated refresh consistency;
+- logout behavior: idempotent logout без cookie, повторный logout, битый bearer и очистка local cookies даже при provider/admin API failures.
 
 Как запускать:
 - PowerShell: `./scripts/test-integration.ps1`
@@ -86,6 +89,7 @@ npm --prefix web exec -- playwright install
 Важно:
 - эти проверки отделены от unit-тестов;
 - они проверяют API backend, но не запускают браузерные сценарии.
+- positive/negative auth callback/refresh/logout scenarios в integration используют monkeypatch/fake services/stubs и не подключаются к реальному Keycloak.
 
 Актуальные integration suites по P0 backend coverage:
 - `backend/tests/integration/test_request_lifecycle_integration.py`
@@ -244,8 +248,10 @@ npm --prefix web exec -- playwright install
 2. интеграционные тесты и API-контракты;
 3. smoke-проверка инфраструктуры;
 4. проверка модели Keycloak;
-5. frontend typecheck/build;
-6. e2e smoke, если он явно включен флагом.
+5. frontend lint;
+6. frontend unit/component tests;
+7. frontend typecheck/build;
+8. e2e smoke, если он явно включен флагом.
 
 Важно:
 - e2e не запускаются по умолчанию;

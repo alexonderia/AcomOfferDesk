@@ -25,10 +25,10 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
-| OIDC callback: невалидный `state` / отсутствует `code` / отсутствует cookie | Да | integration | `backend/tests/integration/test_auth_oidc_flows.py` | Позитивный callback-путь с успешным sync/link | P0 | Добавить integration-тест успешного callback с валидным `state` и привязанной учеткой |
-| Контракт refresh возвращает `permissions/app_roles/delegation_roles` | Да | integration, frontend unit | `backend/tests/integration/test_auth_session_contract.py`; `web/src/app/providers/AuthProvider.test.tsx` | Edge-case'ы срока жизни токена и конфликты ротации refresh | P0 | Добавить integration-кейс: ротация refresh token + обработка устаревшей cookie |
-| Logout очищает сессию при сбоях провайдера | Да | integration, e2e smoke | `backend/tests/integration/test_auth_oidc_flows.py`; `web/e2e/auth.smoke.spec.ts` | Явная проверка инвалидирования backend-сессии после повторного logout | P1 | Добавить integration-тест на идемпотентную последовательность logout |
-| Обработка mismatch invite при регистрации / already registered | Да | integration | `backend/tests/integration/test_auth_oidc_flows.py` | Успешный onboarding-путь регистрации (`review` + первый login UX) | P0 | Добавить integration-тест успешного завершения регистрации по invite |
+| OIDC callback: невалидный `state` / отсутствует `code` / отсутствует cookie / positive callback | Да | integration | `backend/tests/integration/test_auth_oidc_flows.py` | Browser-level callback/onboarding UX через реальный Keycloak UI | Closed (P0) | Поддерживать regression coverage для state/code/cookie ошибок и успешного callback (`sync/link`, refresh cookie, redirect) |
+| Контракт refresh возвращает `permissions/app_roles/delegation_roles` и корректно обрабатывает rotation/stale cookie | Да | integration, frontend unit | `backend/tests/integration/test_auth_session_contract.py`; `web/src/app/providers/AuthProvider.test.tsx` | Browser-level retry/backoff и token-expiry UX | Closed (P0) | Поддерживать regression coverage rotation/repeated refresh/stale cookie (`401` + cookie clear) |
+| Logout очищает сессию при сбоях провайдера и остаётся идемпотентным | Да | integration, e2e smoke | `backend/tests/integration/test_auth_oidc_flows.py`; `web/e2e/auth.smoke.spec.ts` | Browser-level post-logout UX/redirect matrix | Closed (P1) | Поддерживать regression coverage: logout без cookie, повторный logout, битый bearer, provider/admin API failures |
+| Обработка invite registration: mismatch / already registered / successful onboarding link | Да | integration | `backend/tests/integration/test_auth_oidc_flows.py` | Полный browser/e2e onboarding путь регистрации по invite через Keycloak UI | Частично (P0) | Сохранить API/service integration coverage; browser-path оставить manual/extended e2e до стабилизации стендового сценария |
 | Гейтинг auth по статусам review/inactive/blacklist | Да | unit, integration | `backend/tests/unit/test_authorization_unit.py`; `backend/tests/integration/test_auth_enforcement_contract.py` | Матрица по всем защищенным endpoint'ам | P0 | Добавить параметризованную integration-матрицу ключевых защищенных endpoint'ов по статусам |
 
 ## Матрица role access
@@ -136,7 +136,7 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 - backend unit
 - backend integration/API contract
 - frontend lint
-- frontend unit
+- frontend unit/component tests
 - frontend build
 
 Ручные gate'ы:
@@ -158,7 +158,7 @@ P1 (вторая волна):
 2. Backend feedback contracts — закрыто.
 3. Backend files upload/delete/download contracts — закрыто.
 4. Backend normative files — частично: create/upload закрыто, read/manage остаются documented gap (endpoint'ы отсутствуют).
-5. Дополнительные auth happy-path/onboarding tests (browser/e2e уровень).
+5. Дополнительные auth happy-path/onboarding tests (browser/e2e уровень) — integration gap закрыт, остаётся manual/extended e2e часть.
 6. Покрыть auto-reject sibling offers DB-backed контрактом, который учитывает реальный trigger `offers_accept_reject_others` (в текущем наборе оставлен explicit `xfail`).
 7. Добавить dev/test mailbox smoke через MailHog/Mailpit (P1, без обязательного внедрения тяжелой infra).
 
@@ -193,7 +193,10 @@ P2 (третья волна):
 - `backend/tests/integration/test_email_notifications_integration.py`:
   проверяет постановку email events в fake outbox/transport для request/invite flow, валидацию email и dedup получателей.
 - `backend/tests/integration/test_auth_oidc_flows.py`:
-  покрывает OIDC callback edge cases, registration invite mismatch и logout при недоступном Keycloak API.
+  покрывает OIDC callback edge/positive cases, registration invite mismatch/already-registered/successful callback path,
+  refresh negative path и idempotent logout при недоступном Keycloak API.
+- `backend/tests/integration/test_auth_session_contract.py`:
+  покрывает refresh session contract, rotation/repeated refresh consistency и stale-cookie cleanup (`401` + clear cookie).
 - `backend/tests/integration/test_auth_enforcement_contract.py`:
   фиксирует backend enforcement для `401/403`, статусов `review/inactive/blacklist`, защищенных действий,
   request-email-verification fake transport/dedup и жизненный цикл `/auth/verify-email`.

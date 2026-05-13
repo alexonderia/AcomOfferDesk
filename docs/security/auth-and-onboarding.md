@@ -251,11 +251,16 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 - callback без `code`/`state`;
 - callback с неправильным `state`;
 - callback без state-cookie и с битой state-cookie;
+- positive callback path с валидным `state`: успешный token exchange/decode, sync/link, refresh cookie set, state cookie clear, SPA redirect;
 - registration callback с `invite email mismatch`;
 - повторная регистрация email, который уже существует локально;
+- успешный registration callback по invite (`matching email`, `allow_user_creation=true`, contractor onboarding `review` path);
 - refresh без cookie;
 - refresh с невалидной cookie;
+- refresh rotation/repeated refresh consistency;
+- stale refresh cookie -> `401` + clear cookie;
 - logout должен очищать cookies даже при недоступных Keycloak logout/Admin API.
+- logout должен быть идемпотентным (без cookie, повторный logout, битый bearer).
 
 Фактическое покрытие в текущем репозитории:
 - `backend/tests/integration/test_auth_oidc_flows.py`;
@@ -263,6 +268,9 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 - `backend/tests/integration/test_auth_enforcement_contract.py`;
 - `backend/tests/unit/test_auth_context_unit.py`;
 - `backend/tests/unit/test_authorization_unit.py`.
+
+Manual/stage-only часть, которая остается вне backend integration:
+- browser/e2e invite onboarding через реальный Keycloak UI (registration page UX + post-callback UI states).
 
 ## Ограничения текущей реализации
 

@@ -15,7 +15,7 @@
 | Infrastructure smoke | Живой gateway, backend health, Keycloak public issuer/JWKS, PostgreSQL, S3/MinIO, RabbitMQ | `./scripts/smoke-infra.ps1 -EnvFile .env.dev` | Нужен поднятый стенд |
 | Keycloak permission smoke | Реальная модель Keycloak clients/roles/composites/admin service | `./scripts/check-keycloak.ps1 -EnvFile .env.dev` | Нужен Keycloak Admin API |
 | E2E smoke | Браузерные сценарии Playwright через реальный web/backend/Keycloak | `./scripts/e2e-smoke.ps1 -EnvFile .env.dev -ProvisionUsers` | Нужен поднятый стенд |
-| Release smoke | Последовательный релизный прогон: unit, integration, infra smoke, Keycloak check, frontend build, optional e2e | `./scripts/test-release.ps1 ...` | Нужен стенд для smoke/e2e |
+| Release smoke | Последовательный релизный прогон: unit, integration, infra smoke, Keycloak check, frontend lint, frontend unit/component tests, frontend build, optional e2e | `./scripts/test-release.ps1 ...` | Нужен стенд для smoke/e2e |
 
 ## Backend unit: 99 сценариев
 
@@ -151,6 +151,27 @@
 | 24 | `test_logout_clears_cookie_even_if_keycloak_services_fail` | Logout очищает cookie даже если Keycloak services падают. | Monkeypatch Keycloak failure. |
 | 25 | `test_refresh_session_contract_contains_permissions_and_roles` | Refresh session payload содержит permissions, app roles, delegation roles. | Fake UoW/session и API response contract. |
 | 26 | `test_refresh_session_permissions_do_not_depend_on_role_id` | Session permissions берутся из Keycloak roles, а не из `role_id`. | Fake token roles против business role id. |
+
+### Auth/onboarding coverage update (2026-05-13)
+
+- Positive callback path добавлен:
+  - `test_callback_with_valid_state_sets_refresh_cookie_and_redirects_to_spa`
+  - проверяет валидный `state`, fake token exchange/decode, sync/link, refresh cookie set, state cookie clear, redirect в SPA callback target.
+- Successful invite registration callback path добавлен:
+  - `test_invite_registration_callback_success_creates_review_identity_and_redirects_to_account`
+  - покрывает begin registration по `invite_token` + callback с matching email и `allow_user_creation=true` (через fake sync service).
+- Refresh rotation/stale cookie покрыты:
+  - `test_refresh_rotation_updates_refresh_cookie_and_repeated_refresh_is_consistent`
+  - `test_refresh_with_stale_cookie_returns_401_and_clears_cookie`
+- Idempotent logout покрыт:
+  - `test_logout_is_idempotent_without_cookie_and_tolerates_broken_bearer`
+  - дополнительно к `test_logout_clears_cookie_even_if_keycloak_services_fail`.
+- Какие fakes/stubs используются:
+  - monkeypatch `exchange_code_for_tokens`, `decode_keycloak_access_token`, `refresh_tokens`, `logout_refresh_token`, `KeycloakAdminService.logout_user_sessions`;
+  - fake `IdentitySyncService` и fake UoW/repository (`list_by_email`) без реального Keycloak/DB network.
+- Что остаётся manual/browser-level:
+  - полный browser e2e invite onboarding (реальный Keycloak UI + callback UX path) остаётся stage/manual или extended e2e задачей.
+
 | 27 | `test_contractor_can_create_offer_for_open_request` | Contractor создает offer для open request. | FastAPI POST с fake UoW/request visibility. |
 | 28 | `test_contractor_cannot_create_offer_when_request_is_not_visible` | Contractor не создает offer, если request недоступна. | Fake service/policy возвращает forbidden. |
 | 29 | `test_contractor_can_edit_only_own_offer_amount` | Contractor редактирует только свой offer amount. | Проверяет own offer success и чужой offer denial. |
@@ -300,6 +321,6 @@
 | `scripts/check-keycloak.ps1` / `.sh` | Python module `app.scripts.check_keycloak_permission_model`. |
 | `scripts/check-keycloak-bootstrap.ps1` / `.sh` | Bootstrap-level Keycloak checks через `kcadm`/admin credentials. |
 | `scripts/e2e-smoke.ps1` / `.sh` | Optional E2E user provisioning, Playwright `@smoke`, cleanup. |
-| `scripts/test-release.ps1` / `.sh` | Full release smoke chain: unit, integration, infra smoke, Keycloak model, frontend build, optional e2e. |
+| `scripts/test-release.ps1` / `.sh` | Full release smoke chain: unit, integration, infra smoke, Keycloak model, frontend lint, frontend unit/component tests, frontend build, optional e2e. |
 | `scripts/local-smoke-infra.commands.ps1` | Локальные рабочие команды для smoke/release запусков на текущей машине. |
 

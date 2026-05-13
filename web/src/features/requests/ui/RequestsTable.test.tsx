@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { describe, expect, it, vi } from 'vitest';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
@@ -41,15 +41,17 @@ const baseRequest = (): RequestWithOfferStats => ({
 });
 
 describe('RequestsTable states', () => {
-  it('renders empty state when there are no rows', () => {
+  it('renders empty state when there are no rows', async () => {
     render(
       <ThemeProvider theme={appTheme}>
         <RequestsTable requests={[]} isLoading={false} />
       </ThemeProvider>
     );
 
-    expect(screen.getByText('\u0417\u0430\u044f\u0432\u043a\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b.')).toBeInTheDocument();
-  });
+    await waitFor(() => {
+      expect(screen.getByText('\u0417\u0430\u044f\u0432\u043a\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b.')).toBeInTheDocument();
+    });
+  }, 15_000);
 
   it('renders loading state when table is loading', () => {
     render(

@@ -89,7 +89,8 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
 | Backend enforcement для `/dashboard/responsibility` и `/plans*` | Да | integration | `backend/tests/integration/test_p1_backend_contract_gaps_integration.py` | Отдельный savings-only endpoint отсутствует в текущем API surface | Closed (P1) | Поддерживать regression coverage по permissions/status/anonymous + period/date/hierarchy filters |
-| Dashboard tabs по split-permissions | Частично | frontend unit (косвенно) | `web/src/app/routes/RoleRoute.test.tsx` | Видимость компонентов и API failure states | P2 | Добавить frontend unit-тесты dashboard widgets для permission subsets |
+| Dashboard tabs по split-permissions | Да | frontend unit | `web/src/features/header/model/buildHeaderConfig.test.ts`; `web/src/app/routes/RoleRoute.test.tsx` | Browser-level cross-page smoke matrix по всем ролям | Closed (P2) | Поддерживать regression coverage для `dashboard.process.read` / `dashboard.savings.read` / `dashboard.plans.read` |
+| Dashboard widgets: loading / empty / error / safe numeric rendering | Да | frontend unit | `web/src/features/dashboard/components/ProjectManagerDashboard.test.tsx`; `web/src/features/dashboard/components/ProjectManagerSavingsDashboard.test.tsx`; `web/src/features/dashboard/components/ProjectManagerPlanDashboard.test.tsx` | Отдельный API-контракт savings endpoint не тестируется, т.к. endpoint отсутствует | Closed (P2) | Поддерживать текущие state-tests без добавления несуществующих API routes |
 | Отдельный dashboard savings endpoint (`/dashboard/savings`) | Нет | N/A | N/A | В текущем backend API нет отдельного savings route: savings входит в `GET /dashboard/responsibility`; отдельный endpoint не добавлялся без бизнес-требования | Gap (documented) | Если продукт потребует отдельный savings endpoint, сначала зафиксировать API/PRD и только затем добавлять тесты |
 
 ## Admin/users
@@ -116,10 +117,10 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 
 | Сценарий | Тест есть сейчас | Уровень | Файл(ы) тестов | Что не покрыто | Приоритет | Рекомендуемый следующий тест |
 |---|---|---|---|---|---|---|
-| Защита anonymous vs authenticated (`ProtectedRoute`) | Да | frontend unit | `web/src/app/routes/ProtectedRoute.test.tsx` | Сохранение deep link при redirect и callback race conditions | P1 | Добавить frontend unit-тест redirect на исходный target после auth bootstrap |
-| Permission-gated pages (`RoleRoute`) | Да | frontend unit | `web/src/app/routes/RoleRoute.test.tsx` | Покрытие специфичных правил `/feedback`, `/pm-dashboard/savings`, `/pm-dashboard/plan` | P1 | Добавить table-driven `RoleRoute` tests для всех guarded paths в `AppRoutes` |
-| Bootstrap сессии и UX flags в Auth provider | Да | frontend unit | `web/src/app/providers/AuthProvider.test.tsx` | Retry/backoff refresh-сессии и token-expired transitions | P1 | Добавить AuthProvider тесты для retry refresh и forced anonymous fallback |
-| Page-level регрессии requests/offers | Частично | e2e smoke | `web/e2e/requests.smoke.spec.ts` | Детальные component assertions для create/edit/detail pages | P2 | Добавить frontend unit или e2e assertions для критичных widgets и CTA visibility |
+| Защита anonymous vs authenticated (`ProtectedRoute`) | Да | frontend unit | `web/src/app/routes/ProtectedRoute.test.tsx` | Deep-link preservation в guard redirect (`/login?next=...`) пока не реализован и остается documented UX gap | Gap (documented) | Когда будет принято продуктовое решение по `next`-redirect, добавить unit + e2e проверку возврата на исходный route |
+| Permission-gated pages (`RoleRoute`) | Да | frontend unit | `web/src/app/routes/RoleRoute.test.tsx`; `web/src/pages/offers/OfferWorkspacePage.test.tsx`; `web/src/pages/requests/ContractorRequestDetailsPage.test.tsx` | Browser-level regression матрица по всем route transitions | Closed (P1) | Поддерживать table-driven coverage для `/admin`, `/feedback`, `/pm-dashboard*`, `/requests`, contractor-view и workspace routes |
+| Bootstrap сессии и UX flags в Auth provider | Да | frontend unit | `web/src/app/providers/AuthProvider.test.tsx` | Retry/backoff по сетевым ошибкам (кроме stale/401) | P1 | Добавить отдельный сценарий client-side backoff/retry при изменении политики refresh |
+| Page-level регрессии requests/offers | Да | frontend unit, e2e smoke | `web/src/features/request-details/ui/RequestDetailsView.test.tsx`; `web/src/features/offer-workspace/ui/OfferWorkspaceView.test.tsx`; `web/src/pages/requests/ContractorRequestDetailsPage.test.tsx`; `web/e2e/requests.smoke.spec.ts` | Полный multi-actor workflow (request -> offer -> chat -> accept/reject) остается extended e2e/manual | P2 | Поддерживать unit coverage action-driven CTA и запускать extended e2e на stage перед релизом |
 
 ## E2E smoke / extended scenarios
 
@@ -166,6 +167,28 @@ P2 (третья волна):
 1. Extended e2e-сценарии (полный workflow между ролями).
 2. Route/detail UX-regression и resilience checks.
 3. Опциональный scheduled smoke-trend workflow.
+
+## Обновление 2026-05-13: закрытие frontend coverage gaps
+
+Добавлены frontend unit/component tests:
+- `web/src/app/providers/AuthProvider.test.tsx`:
+  refresh failure -> anonymous, stale token cleanup, repeated refresh consistency, logout cleanup, explicit deep-link target в `beginLogin`.
+- `web/src/app/routes/ProtectedRoute.test.tsx`:
+  table-driven anonymous/account redirects для `/requests`, `/requests/:id/contractor`, `/offers/:id/workspace`.
+- `web/src/app/routes/RoleRoute.test.tsx`:
+  table-driven guard matrix для `/admin`, `/feedback`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`;
+  negative cases для raw `app_roles`/`delegation_roles` без atomic permissions.
+- `web/src/pages/requests/ContractorRequestDetailsPage.test.tsx` и `web/src/pages/offers/OfferWorkspacePage.test.tsx`:
+  route-level permissions и запрет доступа без нужного backend permission.
+- `web/src/features/request-details/ui/RequestDetailsView.test.tsx` и `web/src/features/offer-workspace/ui/OfferWorkspaceView.test.tsx`:
+  action-driven CTA visibility (`create/edit/change-owner/upload/delete/send-email`, offer edit/accept/reject/chat/file actions).
+- `web/src/features/dashboard/components/ProjectManagerDashboard.test.tsx`;
+  `web/src/features/dashboard/components/ProjectManagerSavingsDashboard.test.tsx`;
+  `web/src/features/dashboard/components/ProjectManagerPlanDashboard.test.tsx`:
+  widget states `loading/empty/error` и safe rendering без `NaN/Infinity/undefined`.
+
+Documented UX gap:
+- deep-link preservation в route guard redirect (`/login?next=...`) пока не реализован в `ProtectedRoute`; текущий coverage фиксирует это как explicit gap без добавления новой frontend business logic.
 
 ## Обновление 2026-05-12: frontend navigation и extended e2e
 

@@ -10,7 +10,7 @@
 |---|---|---|---|
 | Backend unit | Доменные правила, permissions, policies, action builders, расчеты сервисов | `./scripts/test-unit.ps1` или `python -m pytest backend/tests/unit -q` | Не нужны |
 | Backend integration/API contract | FastAPI endpoints, dependency overrides, статусы HTTP, payload contracts | `./scripts/test-integration.ps1` или `python -m pytest backend/tests/integration -q` | Не нужны; Keycloak/БД/сервисы подменяются fake/stub зависимостями |
-| Frontend unit | React route guards и auth provider | `npm --prefix web run test:unit` | Не нужны; API вызовы мокируются |
+| Frontend unit | React route guards, auth provider resilience, page/widget states и action-driven CTA visibility | `npm --prefix web run test:unit` | Не нужны; API вызовы мокируются |
 | Frontend build/lint | TypeScript, Vite build, ESLint | `npm --prefix web run build`, `npm --prefix web run lint` | Не нужны |
 | Infrastructure smoke | Живой gateway, backend health, Keycloak public issuer/JWKS, PostgreSQL, S3/MinIO, RabbitMQ | `./scripts/smoke-infra.ps1 -EnvFile .env.dev` | Нужен поднятый стенд |
 | Keycloak permission smoke | Реальная модель Keycloak clients/roles/composites/admin service | `./scripts/check-keycloak.ps1 -EnvFile .env.dev` | Нужен Keycloak Admin API |
@@ -226,7 +226,7 @@
 | 78 | `test_economist_users_list_is_limited_to_own_contour` | Economist видит `/users` только в своем контуре. | GET `/api/v1/users` возвращает отфильтрованный список. |
 | 79 | `test_anonymous_user_gets_401_for_users_endpoint` | Anonymous получает `401` на `/users`. | GET `/api/v1/users` без auth возвращает `401`. |
 
-## Frontend unit: 11 сценариев
+## Frontend unit: базовый набор + расширения 2026-05-13
 
 | # | Тест | Что проверяет | Способ проверки |
 |---:|---|---|---|
@@ -241,6 +241,37 @@
 | 9 | `AuthProvider bootstraps authenticated session from refresh endpoint` | AuthProvider читает refresh payload, ставит token/runtime и authenticated state. | Mock `refreshWebSession`, `setAuthToken`, `setAuthRuntime`. |
 | 10 | `AuthProvider exposes anonymous state when bootstrap refresh fails` | Ошибка refresh переводит frontend в anonymous state и чистит token. | Mock rejected refresh promise. |
 | 11 | `AuthProvider keeps business access and onboarding state from backend session payload` | Business access/onboarding state сохраняются из backend payload. | Mock session status `review`, `business_access=false`. |
+
+## Frontend unit additions (2026-05-13)
+
+Новые сценарии (UX-level, без переноса security enforcement с backend):
+- Auth resilience:
+  `AuthProvider` проверяет stale/expired refresh fallback в `anonymous`, dedup repeated refresh, logout cleanup (`token/runtime`), explicit `beginLogin(nextPath)` target.
+- Guarded routes (table-driven):
+  `ProtectedRoute` и `RoleRoute` покрывают `/admin`, `/feedback`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/requests/:id/contractor`, `/offers/:id/workspace`.
+- CTA visibility by backend `actions`:
+  `RequestDetailsView`, `ContractorRequestDetailsPage`, `OfferWorkspaceView` проверяют `create_offer`, `edit`, `change_owner`, `upload_file`, `delete_file`, `send_email_notifications`, offer `edit_amount/details`, `accept/reject`, chat send/attach.
+- Dashboard widgets:
+  `ProjectManagerDashboard`, `ProjectManagerSavingsDashboard`, `ProjectManagerPlanDashboard` покрывают `loading`, `empty`, `error`, и отсутствие `NaN/Infinity/undefined` в рендере.
+
+Positive paths:
+- доступ к guarded route при наличии соответствующего atomic permission;
+- CTA видима/доступна при `actions.* = true`;
+- dashboard tabs видимы по `dashboard.process.read`, `dashboard.savings.read`, `dashboard.plans.read`.
+
+Negative paths:
+- `anonymous -> /login`, `businessAccess=false -> /account` для protected/guarded routes;
+- отсутствие permission ведет на default path/без доступа;
+- raw `app_roles`/`delegation_roles` без atomic permissions не дают route access;
+- CTA скрыта/disabled при `actions.* = false`.
+
+Роли и permissions в сценариях:
+- роли: `superadmin`, `project_manager`, `lead_economist`, `contractor` (через mocked backend session payloads);
+- ключевые permissions: `users.read`, `feedback.read`, `dashboard.process.read`, `dashboard.savings.read`, `dashboard.plans.read`, `requests.read`, `requests.contractor_view.read`, `offers.workspace.read`.
+
+Оставшиеся documented/manual gaps:
+- deep-link preservation в `ProtectedRoute` redirect (`/login?next=...`) пока не реализован;
+- multi-actor workflow (`request -> offer -> chat -> status`) остается stage-only/extended e2e.
 
 ## E2E smoke: 11 сценариев
 

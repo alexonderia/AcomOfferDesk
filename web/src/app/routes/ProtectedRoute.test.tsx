@@ -17,6 +17,9 @@ const renderProtectedRoutes = (path: string) =>
         <Route path="/login" element={<div>login-page</div>} />
         <Route element={<ProtectedRoute />}>
           <Route path="/protected" element={<div>protected-page</div>} />
+          <Route path="/requests" element={<div>requests-page</div>} />
+          <Route path="/requests/:id/contractor" element={<div>contractor-request-page</div>} />
+          <Route path="/offers/:id/workspace" element={<div>offer-workspace-page</div>} />
           <Route path="/account" element={<div>account-page</div>} />
         </Route>
       </Routes>
@@ -28,31 +31,37 @@ describe("ProtectedRoute", () => {
     useAuthMock.mockReset();
   });
 
-  it("redirects anonymous users to login", () => {
-    useAuthMock.mockReturnValue({
-      status: "anonymous",
-      isAuthenticated: false,
-      session: null,
-    });
+  it.each(["/protected", "/requests", "/requests/17/contractor", "/offers/11/workspace"])(
+    "redirects anonymous users to login for %s",
+    (path) => {
+      useAuthMock.mockReturnValue({
+        status: "anonymous",
+        isAuthenticated: false,
+        session: null,
+      });
 
-    renderProtectedRoutes("/protected");
+      renderProtectedRoutes(path);
 
-    expect(screen.getByText("login-page")).toBeInTheDocument();
-  });
+      expect(screen.getByText("login-page")).toBeInTheDocument();
+    }
+  );
 
-  it("redirects users without business access to account page", () => {
-    useAuthMock.mockReturnValue({
-      status: "authenticated",
-      isAuthenticated: true,
-      session: {
-        businessAccess: false,
-      },
-    });
+  it.each(["/protected", "/requests", "/requests/17/contractor", "/offers/11/workspace"])(
+    "redirects users without business access to account page for %s",
+    (path) => {
+      useAuthMock.mockReturnValue({
+        status: "authenticated",
+        isAuthenticated: true,
+        session: {
+          businessAccess: false,
+        },
+      });
 
-    renderProtectedRoutes("/protected");
+      renderProtectedRoutes(path);
 
-    expect(screen.getByText("account-page")).toBeInTheDocument();
-  });
+      expect(screen.getByText("account-page")).toBeInTheDocument();
+    }
+  );
 
   it("renders child route for authenticated user with business access", () => {
     useAuthMock.mockReturnValue({

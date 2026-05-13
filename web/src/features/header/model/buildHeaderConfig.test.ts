@@ -49,6 +49,37 @@ describe('buildHeaderConfig role navigation', () => {
     expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'users']);
   });
 
+  it('shows dashboard tabs only for granted split-permissions', () => {
+    const processOnly = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.SUPERADMIN,
+      canOpenUsersPage: true,
+      canViewDashboardProcess: true,
+      canViewDashboardSavings: false,
+      canViewDashboardPlans: false,
+    });
+    const savingsOnly = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.SUPERADMIN,
+      canOpenUsersPage: true,
+      canViewDashboardProcess: false,
+      canViewDashboardSavings: true,
+      canViewDashboardPlans: false,
+    });
+    const planOnly = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.SUPERADMIN,
+      canOpenUsersPage: true,
+      canViewDashboardProcess: false,
+      canViewDashboardSavings: false,
+      canViewDashboardPlans: true,
+    });
+
+    expect(tabKeys(processOnly)).toEqual(['dashboard', 'requests', 'users']);
+    expect(tabKeys(savingsOnly)).toEqual(['savings', 'requests', 'users']);
+    expect(tabKeys(planOnly)).toEqual(['plan', 'requests', 'users']);
+  });
+
   it('hides dashboard tabs for economist without dashboard permissions', () => {
     const config = buildHeaderConfig({
       ...baseArgs(),

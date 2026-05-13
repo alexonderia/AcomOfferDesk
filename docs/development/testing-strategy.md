@@ -271,16 +271,27 @@ E2E smoke запускается отдельно вручную (`workflow_disp
 
 ## 8. Frontend unit/component тесты
 
-Добавлены `Vitest + React Testing Library + jsdom` для базовой auth/route UX-обвязки:
+Добавлены `Vitest + React Testing Library + jsdom` для auth/route/page UX-обвязки:
 - `web/src/app/providers/AuthProvider.test.tsx`;
 - `web/src/app/routes/ProtectedRoute.test.tsx`;
 - `web/src/app/routes/RoleRoute.test.tsx`.
+- `web/src/pages/offers/OfferWorkspacePage.test.tsx`;
+- `web/src/pages/requests/ContractorRequestDetailsPage.test.tsx`;
+- `web/src/features/request-details/ui/RequestDetailsView.test.tsx`;
+- `web/src/features/offer-workspace/ui/OfferWorkspaceView.test.tsx`;
+- `web/src/features/dashboard/components/ProjectManagerDashboard.test.tsx`;
+- `web/src/features/dashboard/components/ProjectManagerSavingsDashboard.test.tsx`;
+- `web/src/features/dashboard/components/ProjectManagerPlanDashboard.test.tsx`.
 
 Что покрыто:
 - `AuthProvider` bootstrap в состояния `authenticated` и `anonymous`;
 - сохранение backend-полей `business_access` и `onboarding_state` в frontend session;
-- `ProtectedRoute`: `anonymous -> /login`, `businessAccess=false -> /account`, и happy-path для authenticated;
-- `RoleRoute`: permission-based route access и redirect на default path при отсутствии permission.
+- refresh failure/stale token fallback в `anonymous`, dedup repeated refresh, logout cleanup, explicit `beginLogin(nextPath)` target;
+- `ProtectedRoute`: table-driven `anonymous -> /login`, `businessAccess=false -> /account`, и happy-path для `/requests`, `/requests/:id/contractor`, `/offers/:id/workspace`;
+- `RoleRoute`: table-driven permission-gated access для `/admin`, `/feedback`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`;
+- page-level guards для contractor-view/workspace routes;
+- action-driven CTA visibility по backend `actions` (requests/offers/chat/files/email controls);
+- dashboard widget states (`loading/empty/error`) и safe render без `NaN/Infinity/undefined`.
 
 Локальный запуск:
 - `npm --prefix web run test:unit` (или `npm --prefix web run test`).
@@ -288,6 +299,7 @@ E2E smoke запускается отдельно вручную (`workflow_disp
 Ограничение:
 - frontend tests проверяют только UX-поведение и не являются security-enforcement;
 - финальное решение по доступу остается на backend.
+- deep-link preservation в guard redirect (`/login?next=...`) пока остается documented/manual gap до отдельного продуктового решения.
 
 ## 9. Manual release-smoke workflow
 
@@ -337,7 +349,10 @@ E2E smoke запускается отдельно вручную (`workflow_disp
 - проверки ролевой конфигурации навигации (`buildHeaderConfig`) для `superadmin`, `economist`, `operator`, `contractor`;
 - проверки видимости dashboard/admin на основе backend permissions;
 - явную защиту от того, что `RoleRoute` даст доступ по сырым claims `app_roles`/`delegation_roles` без нужных permissions;
-- UX-состояния заявок: `loading`, `empty`, `error`.
+- UX-состояния заявок: `loading`, `empty`, `error`;
+- action-driven visibility/disabled-state для критичных CTA в request/offer/workspace;
+- route-level regression tests для contractor-view/workspace paths;
+- dashboard widget states (`loading`, `empty`, `error`) и numeric rendering guards.
 
 Новые Playwright-теги для расширенных/ручных сценариев:
 - `@roles` - матрица доступа ролей к страницам для всех 7 ролей с проверками разрешенных/запрещенных маршрутов и защитой от ошибок в консоли;

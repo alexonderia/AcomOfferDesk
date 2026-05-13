@@ -57,7 +57,7 @@ _Последнее обновление: 2026-05-13 (ветка `dev_process`).
 | Ограничения ownership для доступа contractor к офферу | Да | unit | `backend/tests/unit/test_policies_unit.py` | Endpoint-enforcement для non-owner contractor при мутациях оффера | P0 | Добавить integration forbidden-тесты редактирования чужого оффера contractor'ом |
 | Ветка manual offer | Частично | unit | `backend/tests/unit/test_policies_unit.py` | API-поведение manual offer create/file operations | P1 | Добавить integration-тесты `/requests/{id}/offers/manual` и ограничений на manual files |
 | Accept offer для closed/cancelled request | Да | integration | `backend/tests/integration/test_offer_lifecycle_integration.py` | Проверка закрывает service-level guard; DB-поведение не требуется для этого правила | Closed (P0) | Поддерживать regression coverage при изменении `OfferService.update_status` |
-| Auto-reject остальных submitted offers при accept одного | Частично | integration xfail + DB trigger reference | `order_database/init/02-triggers.sql`; `backend/tests/integration/test_offer_lifecycle_integration.py` | Production-правило реализовано триггером `offers_accept_reject_others` в `order_database`; in-memory integration контур не моделирует trigger и не должен давать ложный green | P1 | Оставить `xfail` как explicit gap; при появлении DB-backed контура добавить contract test |
+| Auto-reject остальных submitted offers при accept одного | Частично | integration strict xfail + DB trigger reference | `order_database/init/02-triggers.sql`; `backend/tests/integration/test_offer_lifecycle_integration.py` | Production-правило реализовано триггером `offers_accept_reject_others` в `order_database`; in-memory integration контур не моделирует trigger и не должен давать ложный green. Service-level allow/deny coverage остается отдельным non-xfail тестом (`test_accept_offer_requires_status_update_permission`). | P1 | Оставить `strict xfail` как explicit gap; при появлении DB-backed контура добавить contract test и вынести его в отдельный marker (`db_contract`) вне обычного CI |
 
 ## Email notifications
 
@@ -160,7 +160,7 @@ P1 (вторая волна):
 3. Backend files upload/delete/download contracts — закрыто.
 4. Backend normative files — частично: create/upload закрыто, read/manage остаются documented gap (endpoint'ы отсутствуют).
 5. Дополнительные auth happy-path/onboarding tests (browser/e2e уровень) — integration gap закрыт, остаётся manual/extended e2e часть.
-6. Покрыть auto-reject sibling offers DB-backed контрактом, который учитывает реальный trigger `offers_accept_reject_others` (в текущем наборе оставлен explicit `xfail`).
+6. Покрыть auto-reject sibling offers DB-backed контрактом, который учитывает реальный trigger `offers_accept_reject_others` (в текущем наборе оставлен explicit `strict xfail`).
 7. Добавить dev/test mailbox smoke через MailHog/Mailpit (P1, без обязательного внедрения тяжелой infra).
 
 P2 (третья волна):

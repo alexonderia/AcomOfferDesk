@@ -337,6 +337,19 @@ def test_accept_offer_requires_status_update_permission(
     response = test_client.patch("/api/v1/offers/210/status", json={"status": "accepted"})
 
     assert response.status_code == 403
+    assert uow.offers._offers[210].status == "submitted"
+
+    allowed_user = make_current_user(
+        user_id="owner-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.OFFERS_STATUS_UPDATE, PermissionCodes.REQUESTS_UPDATE},
+    )
+    set_current_user(allowed_user)
+
+    allowed_response = test_client.patch("/api/v1/offers/210/status", json={"status": "accepted"})
+
+    assert allowed_response.status_code == 200
+    assert uow.offers._offers[210].status == "accepted"
 
 
 def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app):
@@ -351,9 +364,12 @@ def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app
 
 
 @pytest.mark.xfail(
+    strict=True,
     reason=(
-        "Auto-reject of sibling submitted offers is implemented by DB trigger in order_database "
-        "and is not modeled by this in-memory integration contour."
+        "Production auto-reject of sibling submitted offers is implemented by DB trigger "
+        "`offers_accept_reject_others` in order_database. This in-memory integration contour "
+        "uses fake repositories and cannot execute/verify that trigger. Real green requires "
+        "a DB-backed contract test against the external order_database schema."
     )
 )
 def test_accepting_offer_should_reject_sibling_submitted_offers(

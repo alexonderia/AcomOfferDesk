@@ -109,6 +109,18 @@ npm --prefix web exec -- playwright install
 - сохранять backend как final enforcement слой для permissions/actions;
 - DB-trigger-зависимые сценарии (например auto-reject sibling offers) не маскировать ложным green, а фиксировать explicit gap (`xfail`/TODO) до появления DB-backed контура.
 
+### DB-trigger contract gap: auto-reject sibling offers
+
+- Текущее состояние:
+  - `test_accepting_offer_should_reject_sibling_submitted_offers` остается `strict xfail`, потому что production-правило выполняется триггером `offers_accept_reject_others` во внешнем `order_database`.
+- Почему не переводим в green в integration:
+  - текущий `backend/tests/integration` контур использует fake UoW/repositories и не исполняет PostgreSQL trigger'ы.
+- Как получить настоящий green:
+  - запускать отдельный DB-backed contract контур (stage/VPS или выделенная test DB со схемой/trigger'ами из `order_database`);
+  - проверять эффект после `PATCH /api/v1/offers/{id}/status` в `accepted`: sibling submitted offers в БД становятся `rejected`.
+- Почему это не часть обычного CI:
+  - CI этого репозитория не поднимает и не мигрирует внешний `order_database`, поэтому DB-trigger проверка должна жить вне стандартного `backend/tests/integration -q` прогона.
+
 ## 3. Безопасная smoke-проверка инфраструктуры
 
 Проверяет поднятый стенд:

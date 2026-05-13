@@ -176,8 +176,8 @@
 | 28 | `test_contractor_cannot_create_offer_when_request_is_not_visible` | Contractor не создает offer, если request недоступна. | Fake service/policy возвращает forbidden. |
 | 29 | `test_contractor_can_edit_only_own_offer_amount` | Contractor редактирует только свой offer amount. | Проверяет own offer success и чужой offer denial. |
 | 30 | `test_employee_with_manual_offer_permission_can_create_manual_offer` | Internal employee с `offers.manual.create` создает manual offer. | POST manual offer endpoint с permission. |
-| 31 | `test_accept_offer_requires_status_update_permission` | Accept offer требует `offers.status.update`. | User без permission получает `403`, с permission проходит. |
-| 32 | `test_accepting_offer_should_reject_sibling_submitted_offers` | При accept одного submitted offer остальные submitted offers по заявке должны auto-reject, но в integration fake это не воспроизводится. | Тест помечен `xfail`: in-memory/fake contour не моделирует DB trigger `offers_accept_reject_others` из `order_database`. |
+| 31 | `test_accept_offer_requires_status_update_permission` | Accept offer требует `offers.status.update` и `requests.update`; без permission - `403`, с permission — успешный update целевого offer. | В одном сценарии проверяется deny (`403`, статус не меняется) и allow (`200`, целевой offer становится `accepted`) на in-memory contour без DB trigger side effects. |
+| 32 | `test_accepting_offer_should_reject_sibling_submitted_offers` | Production-правило: при accept одного submitted offer все sibling submitted offers этой заявки должны стать `rejected`. | `strict xfail`: in-memory/fake integration не исполняет DB trigger `offers_accept_reject_others` из внешнего `order_database`, поэтому не может доказать auto-reject siblings и не считается green для этого правила. |
 | 33 | `test_cannot_accept_offer_for_closed_or_cancelled_request` | Нельзя accept offer для closed/cancelled request. | PATCH status `accepted` возвращает `409` при статусе заявки `closed`/`cancelled`. |
 | 34 | `test_workspace_access_is_restricted_to_allowed_users` | Workspace доступен только разрешенным пользователям. | Проверяет contractor owner/internal allowed и denied user. |
 | 35 | `test_allowed_roles_can_create_request[1]` | Role id 1 может создать заявку. | POST `/api/v1/requests`, fake service вызывает `UserPolicy.ensure_can_create_request`. |
@@ -225,6 +225,17 @@
 | 77 | `test_user_without_users_manager_update_cannot_change_manager` | Без `users.manager.update` нельзя менять manager. | PATCH manager endpoint возвращает `403`. |
 | 78 | `test_economist_users_list_is_limited_to_own_contour` | Economist видит `/users` только в своем контуре. | GET `/api/v1/users` возвращает отфильтрованный список. |
 | 79 | `test_anonymous_user_gets_401_for_users_endpoint` | Anonymous получает `401` на `/users`. | GET `/api/v1/users` без auth возвращает `401`. |
+
+### Explicit gap: auto-reject sibling offers
+
+- Что происходит в production:
+  - auto-reject sibling submitted offers выполняет DB trigger `offers_accept_reject_others` в репозитории `order_database`.
+- Почему обычный integration этого не покрывает:
+  - `backend/tests/integration/*` используют fake UoW/repositories и не подключаются к реальной PostgreSQL схеме с trigger'ами.
+- Какая проверка нужна для настоящего green:
+  - отдельный DB-backed contract контур (stage/VPS или выделенный test DB с примененными `order_database` migrations/trigger'ами), где после `PATCH /api/v1/offers/{id}/status` в `accepted` проверяется реальное состояние sibling offers в БД.
+- Почему это не backend unit/in-memory green:
+  - unit/in-memory могут подтвердить только service-level guard'ы и update целевого offer; trigger-side effect в siblings там не исполняется.
 
 ## Frontend unit: базовый набор + расширения 2026-05-13
 

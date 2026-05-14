@@ -6,8 +6,8 @@ services:
         exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start-dev}" --import-realm
 
   gateway:
-    ports:
-      - "8080:80"
+    # Keep port publishing in base compose to avoid duplicate 8080 bindings
+    # when multiple override files are combined.
 
   rabbitmq:
     ports:

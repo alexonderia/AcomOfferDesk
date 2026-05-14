@@ -73,6 +73,22 @@ def _collect_set_cookie_headers(response) -> list[str]:
     return [single_header] if single_header else []
 
 
+def _get_with_cookie(test_client, path: str, *, cookie_name: str, cookie_value: str, **kwargs):
+    test_client.cookies.set(cookie_name, cookie_value)
+    try:
+        return test_client.get(path, **kwargs)
+    finally:
+        test_client.cookies.delete(cookie_name)
+
+
+def _post_with_cookie(test_client, path: str, *, cookie_name: str, cookie_value: str, **kwargs):
+    test_client.cookies.set(cookie_name, cookie_value)
+    try:
+        return test_client.post(path, **kwargs)
+    finally:
+        test_client.cookies.delete(cookie_name)
+
+
 def test_callback_without_code_or_state_returns_session_expired_redirect(test_client, monkeypatch):
     monkeypatch.setattr(settings, "keycloak_enabled", True)
 
@@ -86,10 +102,12 @@ def test_callback_with_wrong_state_returns_session_expired_redirect(test_client,
     monkeypatch.setattr(settings, "keycloak_enabled", True)
     start = build_oidc_authorization_start(next_path="/", flow="login", redirect_uri=settings.keycloak_callback_url)
 
-    response = test_client.get(
+    response = _get_with_cookie(
+        test_client,
         "/api/v1/auth/callback",
+        cookie_name=settings.keycloak_state_cookie_name,
+        cookie_value=start.cookie_token,
         params={"code": "code-1", "state": "different-state"},
-        cookies={settings.keycloak_state_cookie_name: start.cookie_token},
         follow_redirects=False,
     )
 
@@ -113,10 +131,12 @@ def test_callback_with_missing_state_cookie_returns_session_expired_redirect(tes
 def test_callback_with_broken_state_cookie_returns_session_expired_redirect(test_client, monkeypatch):
     monkeypatch.setattr(settings, "keycloak_enabled", True)
 
-    response = test_client.get(
+    response = _get_with_cookie(
+        test_client,
         "/api/v1/auth/callback",
+        cookie_name=settings.keycloak_state_cookie_name,
+        cookie_value="broken-cookie-token",
         params={"code": "code-1", "state": "state-1"},
-        cookies={settings.keycloak_state_cookie_name: "broken-cookie-token"},
         follow_redirects=False,
     )
 
@@ -162,10 +182,12 @@ def test_callback_with_valid_state_sets_refresh_cookie_and_redirects_to_spa(test
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)
     monkeypatch.setattr(auth_api, "IdentitySyncService", _FakeIdentitySyncService)
 
-    response = test_client.get(
+    response = _get_with_cookie(
+        test_client,
         "/api/v1/auth/callback",
+        cookie_name=settings.keycloak_state_cookie_name,
+        cookie_value=start.cookie_token,
         params={"code": "code-positive", "state": start.state},
-        cookies={settings.keycloak_state_cookie_name: start.cookie_token},
         follow_redirects=False,
     )
 
@@ -210,10 +232,12 @@ def test_callback_registration_invite_email_mismatch_redirects_invalid(test_clie
     monkeypatch.setattr(auth_api, "exchange_code_for_tokens", _fake_exchange_code_for_tokens)
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)
 
-    response = test_client.get(
+    response = _get_with_cookie(
+        test_client,
         "/api/v1/auth/callback",
+        cookie_name=settings.keycloak_state_cookie_name,
+        cookie_value=start.cookie_token,
         params={"code": "code-1", "state": start.state},
-        cookies={settings.keycloak_state_cookie_name: start.cookie_token},
         follow_redirects=False,
     )
 
@@ -251,10 +275,12 @@ def test_callback_repeated_registration_with_existing_email_redirects_already_re
     monkeypatch.setattr(auth_api, "exchange_code_for_tokens", _fake_exchange_code_for_tokens)
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)
 
-    response = test_client.get(
+    response = _get_with_cookie(
+        test_client,
         "/api/v1/auth/callback",
+        cookie_name=settings.keycloak_state_cookie_name,
+        cookie_value=start.cookie_token,
         params={"code": "code-1", "state": start.state},
-        cookies={settings.keycloak_state_cookie_name: start.cookie_token},
         follow_redirects=False,
     )
 
@@ -322,10 +348,12 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)
     monkeypatch.setattr(auth_api, "IdentitySyncService", _FakeIdentitySyncService)
 
-    callback_response = test_client.get(
+    callback_response = _get_with_cookie(
+        test_client,
         "/api/v1/auth/callback",
+        cookie_name=settings.keycloak_state_cookie_name,
+        cookie_value=state_cookie,
         params={"code": "register-code", "state": callback_state},
-        cookies={settings.keycloak_state_cookie_name: state_cookie},
         follow_redirects=False,
     )
 
@@ -360,9 +388,11 @@ def test_refresh_with_invalid_cookie_returns_401_and_clears_cookie(test_client, 
 
     monkeypatch.setattr(auth_api, "refresh_tokens", _fake_refresh_tokens)
 
-    response = test_client.post(
+    response = _post_with_cookie(
+        test_client,
         "/api/v1/auth/refresh",
-        cookies={settings.keycloak_refresh_cookie_name: "invalid-refresh"},
+        cookie_name=settings.keycloak_refresh_cookie_name,
+        cookie_value="invalid-refresh",
     )
 
     assert response.status_code == 401
@@ -391,10 +421,12 @@ def test_logout_clears_cookie_even_if_keycloak_services_fail(test_client, monkey
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)
     monkeypatch.setattr(auth_api.KeycloakAdminService, "logout_user_sessions", _fake_logout_user_sessions)
 
-    response = test_client.post(
+    response = _post_with_cookie(
+        test_client,
         "/api/v1/auth/logout",
+        cookie_name=settings.keycloak_refresh_cookie_name,
+        cookie_value="refresh-token",
         headers={"Authorization": "Bearer token"},
-        cookies={settings.keycloak_refresh_cookie_name: "refresh-token"},
     )
 
     assert response.status_code == 204

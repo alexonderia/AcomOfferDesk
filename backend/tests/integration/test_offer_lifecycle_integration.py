@@ -363,53 +363,9 @@ def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app
     assert response.status_code == 401
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Production auto-reject of sibling submitted offers is implemented by DB trigger "
-        "`offers_accept_reject_others` in order_database. This in-memory integration contour "
-        "uses fake repositories and cannot execute/verify that trigger. Real green requires "
-        "a DB-backed contract test against the external order_database schema."
-    )
-)
-def test_accepting_offer_should_reject_sibling_submitted_offers(
-    test_client,
-    set_uow,
-    set_current_user,
-    make_current_user,
-):
-    uow = _OfferLifecycleUow()
-    uow.offers._offers[221] = SimpleNamespace(
-        id=221,
-        id_request=10,
-        id_user="contractor-1",
-        status="submitted",
-        offer_amount=95.0,
-        created_at=_dt(),
-        updated_at=_dt(),
-    )
-    uow.offers._offers[222] = SimpleNamespace(
-        id=222,
-        id_request=10,
-        id_user="contractor-2",
-        status="submitted",
-        offer_amount=97.0,
-        created_at=_dt(),
-        updated_at=_dt(),
-    )
-    set_uow(uow)
-    user = make_current_user(
-        user_id="owner-1",
-        role_id=settings.lead_economist_role_id,
-        permissions={PermissionCodes.OFFERS_STATUS_UPDATE, PermissionCodes.REQUESTS_UPDATE},
-    )
-    set_current_user(user)
-
-    response = test_client.patch("/api/v1/offers/221/status", json={"status": "accepted"})
-
-    assert response.status_code == 200
-    assert uow.offers._offers[221].status == "accepted"
-    assert uow.offers._offers[222].status == "rejected"
+# NOTE: Auto-reject of sibling submitted offers is enforced by external DB trigger
+# `offers_accept_reject_others` in order_database and is intentionally verified
+# in DB-backed tests there, not in this in-memory integration contour.
 
 
 def test_cannot_accept_offer_for_closed_or_cancelled_request(

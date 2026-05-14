@@ -22,6 +22,14 @@ class _FakeUow:
         _ = (exc_type, exc, tb)
 
 
+def _post_with_cookie(test_client, path: str, *, cookie_name: str, cookie_value: str):
+    test_client.cookies.set(cookie_name, cookie_value)
+    try:
+        return test_client.post(path)
+    finally:
+        test_client.cookies.delete(cookie_name)
+
+
 def _collect_set_cookie_headers(response) -> list[str]:
     if hasattr(response.headers, "get_list"):
         return response.headers.get_list("set-cookie")
@@ -89,9 +97,11 @@ def test_refresh_session_contract_contains_permissions_and_roles(test_client, mo
     monkeypatch.setattr(auth_api, "refresh_tokens", _fake_refresh_tokens)
     monkeypatch.setattr(auth_api, "_build_keycloak_auth_response", _fake_build_keycloak_auth_response)
 
-    response = test_client.post(
+    response = _post_with_cookie(
+        test_client,
         "/api/v1/auth/refresh",
-        cookies={settings.keycloak_refresh_cookie_name: "refresh-token"},
+        cookie_name=settings.keycloak_refresh_cookie_name,
+        cookie_value="refresh-token",
     )
 
     assert response.status_code == 200
@@ -125,9 +135,11 @@ def test_refresh_session_permissions_do_not_depend_on_role_id(test_client, monke
     monkeypatch.setattr(auth_api, "refresh_tokens", _fake_refresh_tokens)
     monkeypatch.setattr(auth_api, "_build_keycloak_auth_response", _fake_build_keycloak_auth_response)
 
-    response = test_client.post(
+    response = _post_with_cookie(
+        test_client,
         "/api/v1/auth/refresh",
-        cookies={settings.keycloak_refresh_cookie_name: "refresh-token"},
+        cookie_name=settings.keycloak_refresh_cookie_name,
+        cookie_value="refresh-token",
     )
 
     assert response.status_code == 200
@@ -170,9 +182,11 @@ def test_refresh_rotation_updates_refresh_cookie_and_repeated_refresh_is_consist
     monkeypatch.setattr(auth_api, "refresh_tokens", _fake_refresh_tokens)
     monkeypatch.setattr(auth_api, "_build_keycloak_auth_response", _fake_build_keycloak_auth_response)
 
-    first = test_client.post(
+    first = _post_with_cookie(
+        test_client,
         "/api/v1/auth/refresh",
-        cookies={settings.keycloak_refresh_cookie_name: "refresh-token"},
+        cookie_name=settings.keycloak_refresh_cookie_name,
+        cookie_value="refresh-token",
     )
     assert first.status_code == 200
     assert first.json()["data"]["access_token"] == "access-1"
@@ -181,9 +195,11 @@ def test_refresh_rotation_updates_refresh_cookie_and_repeated_refresh_is_consist
     rotated_token = first.cookies.get(settings.keycloak_refresh_cookie_name)
     assert rotated_token == "refresh-token-2"
 
-    second = test_client.post(
+    second = _post_with_cookie(
+        test_client,
         "/api/v1/auth/refresh",
-        cookies={settings.keycloak_refresh_cookie_name: rotated_token},
+        cookie_name=settings.keycloak_refresh_cookie_name,
+        cookie_value=rotated_token,
     )
     assert second.status_code == 200
     assert second.json()["data"]["access_token"] == "access-2"
@@ -203,9 +219,11 @@ def test_refresh_with_stale_cookie_returns_401_and_clears_cookie(test_client, mo
 
     monkeypatch.setattr(auth_api, "refresh_tokens", _fake_refresh_tokens)
 
-    response = test_client.post(
+    response = _post_with_cookie(
+        test_client,
         "/api/v1/auth/refresh",
-        cookies={settings.keycloak_refresh_cookie_name: "stale-refresh-token"},
+        cookie_name=settings.keycloak_refresh_cookie_name,
+        cookie_value="stale-refresh-token",
     )
 
     assert response.status_code == 401

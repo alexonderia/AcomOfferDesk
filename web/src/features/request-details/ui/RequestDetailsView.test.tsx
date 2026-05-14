@@ -1,4 +1,4 @@
-﻿import type { ReactNode } from "react";
+﻿import { forwardRef, type ReactNode } from "react";
 import { ThemeProvider } from "@mui/material/styles";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -78,7 +78,7 @@ vi.mock("@features/request-details/ui/CreateManualOfferDialog", () => ({
 }));
 
 vi.mock("@shared/components/AdditionalEmailsField", () => ({
-  AdditionalEmailsField: () => <div data-testid="additional-emails-field" />,
+  AdditionalEmailsField: forwardRef(() => <div data-testid="additional-emails-field" />),
 }));
 
 vi.mock("@shared/components/ToggleSection", () => ({
@@ -251,3 +251,4 @@ describe("RequestDetailsView action-driven CTAs", () => {
     expect(screen.getByTestId("main-can-enter-edit-mode")).toHaveTextContent("true");
   });
 });
+

@@ -17,7 +17,7 @@ from app.services.requests import OfferItem, RequestDetailItem
 
 
 def _future_dt() -> datetime:
-    return datetime.utcnow().replace(microsecond=0) + timedelta(days=30)
+    return datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=30)
 
 
 def _now() -> datetime:

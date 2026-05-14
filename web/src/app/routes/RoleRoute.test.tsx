@@ -29,7 +29,10 @@ const baseSession = {
 
 const renderRoleRoute = (path: string, element: JSX.Element) =>
   render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter
+      initialEntries={[path]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <Routes>
         <Route path="/login" element={<div>login-page</div>} />
         <Route path="/account" element={<div>account-page</div>} />

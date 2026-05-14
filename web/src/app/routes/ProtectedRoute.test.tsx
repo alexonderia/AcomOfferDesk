@@ -12,7 +12,10 @@ vi.mock("@app/providers/AuthProvider", () => ({
 
 const renderProtectedRoutes = (path: string) =>
   render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter
+      initialEntries={[path]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <Routes>
         <Route path="/login" element={<div>login-page</div>} />
         <Route element={<ProtectedRoute />}>

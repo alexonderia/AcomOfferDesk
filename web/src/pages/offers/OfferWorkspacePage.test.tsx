@@ -33,7 +33,10 @@ const baseSession = {
 
 const renderWorkspacePage = () =>
   render(
-    <MemoryRouter initialEntries={["/offers/11/workspace"]}>
+    <MemoryRouter
+      initialEntries={["/offers/11/workspace"]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <Routes>
         <Route path="/requests" element={<div>requests-page</div>} />
         <Route path="/offers/:id/workspace" element={<OfferWorkspacePage />} />

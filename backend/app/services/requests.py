@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from app.core.config import settings
@@ -37,6 +37,16 @@ OFFER_STATUS_LABELS = {
 }
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _normalize_to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 def format_request_status(status: str | None) -> str:
     if not status:
@@ -221,7 +231,7 @@ class RequestService:
     ) -> tuple[int, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
-        if deadline_at < datetime.utcnow():
+        if _normalize_to_utc(deadline_at) < _utcnow():
             raise Conflict("Deadline cannot be in the past")
         if not files:
             raise Conflict("At least one file is required")
@@ -432,7 +442,7 @@ class RequestService:
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
             if data.status == "closed":
-                closed_at = datetime.utcnow()
+                closed_at = _utcnow()
                 chosen_offer_id = await self._requests.get_latest_accepted_offer_id(request_id=request.id)
                 accepted_offer = await self._offers.get_by_id(offer_id=chosen_offer_id) if chosen_offer_id is not None else None
                 self._validate_closed_request_amounts(
@@ -455,7 +465,7 @@ class RequestService:
                     await notify_request_status_changed(tg_id=tg_id)
 
         if data.deadline_at is not None:
-            if data.deadline_at < datetime.utcnow():
+            if _normalize_to_utc(data.deadline_at) < _utcnow():
                 raise Conflict("Deadline cannot be in the past")
             await self._requests.update_deadline(request=request, deadline_at=data.deadline_at)
 

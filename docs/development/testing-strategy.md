@@ -107,16 +107,17 @@ npm --prefix web exec -- playwright install
 - не подключаться к реальному Keycloak;
 - не отправлять реальные email;
 - сохранять backend как final enforcement слой для permissions/actions;
-- DB-trigger-зависимые сценарии (например auto-reject sibling offers) не маскировать ложным green, а фиксировать explicit gap (`xfail`/TODO) до появления DB-backed контура.
+- DB-trigger-зависимые сценарии (например auto-reject sibling offers) не маскировать ложным green и не эмулировать в fake repositories; фиксировать как external DB contract boundary.
 
-### DB-trigger contract gap: auto-reject sibling offers
+### DB-trigger contract boundary: auto-reject sibling offers
 
 - Текущее состояние:
-  - `test_accepting_offer_should_reject_sibling_submitted_offers` остается `strict xfail`, потому что production-правило выполняется триггером `offers_accept_reject_others` во внешнем `order_database`.
+  - AcomOfferDesk intentionally не содержит in-memory integration теста, который утверждает auto-reject sibling offers.
+  - `backend/tests/integration` покрывает только backend responsibility вокруг accept offer: permissions/forbidden/anonymous, guard по request status и update целевого offer.
 - Почему не переводим в green в integration:
   - текущий `backend/tests/integration` контур использует fake UoW/repositories и не исполняет PostgreSQL trigger'ы.
 - Как получить настоящий green:
-  - запускать отдельный DB-backed contract контур (stage/VPS или выделенная test DB со схемой/trigger'ами из `order_database`);
+  - запускать отдельный DB-backed contract контур в test suite репозитория `order_database` (stage/VPS или выделенная test DB со схемой/trigger'ами из `order_database`);
   - проверять эффект после `PATCH /api/v1/offers/{id}/status` в `accepted`: sibling submitted offers в БД становятся `rejected`.
 - Почему это не часть обычного CI:
   - CI этого репозитория не поднимает и не мигрирует внешний `order_database`, поэтому DB-trigger проверка должна жить вне стандартного `backend/tests/integration -q` прогона.

@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET ?? "http://gateway";
 
 export default defineConfig({
+  logLevel: process.env.VITEST ? "error" : "info",
   plugins: [react()],
   resolve: {
     alias: {
@@ -19,6 +20,7 @@ export default defineConfig({
     },
   },
   build: {
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks(id) {

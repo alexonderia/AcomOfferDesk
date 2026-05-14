@@ -74,7 +74,10 @@ const baseRequestView = {
 const renderPage = () =>
   render(
     <ThemeProvider theme={appTheme}>
-      <MemoryRouter initialEntries={["/requests/17/contractor"]}>
+      <MemoryRouter
+        initialEntries={["/requests/17/contractor"]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Routes>
           <Route path="/requests" element={<div>requests-page</div>} />
           <Route path="/requests/:id/contractor" element={<ContractorRequestDetailsPage />} />

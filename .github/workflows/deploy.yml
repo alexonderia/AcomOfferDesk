@@ -43,16 +43,51 @@ jobs:
               fi
             }
 
+            sync_and_migrate_order_database() {
+              local migrations_src="/opt/acome-offer-desk/deploy/order_database/flyway/sql"
+              local backup_dir="$ORDER_DB_DIR/backups"
+              local backup_path
+              local timestamp
+
+              if [ ! -d "$migrations_src" ]; then
+                fail_order_db_prerequisite "Missing order_database migration snapshot: $migrations_src."
+              fi
+
+              set -- "$migrations_src"/V*.sql
+              if [ ! -e "$1" ]; then
+                fail_order_db_prerequisite "No V*.sql files in order_database migration snapshot: $migrations_src."
+              fi
+
+              mkdir -p "$ORDER_DB_DIR/flyway/sql" "$backup_dir"
+              cp -a "$@" "$ORDER_DB_DIR/flyway/sql/"
+
+              timestamp="$(date -u +'%Y%m%d_%H%M%S')"
+              backup_path="$backup_dir/order_database_${timestamp}.dump"
+              echo "ORDER_DB_BACKUP: creating $backup_path"
+              docker exec order-database-postgres pg_dump -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -F c > "$backup_path"
+              sha256sum "$backup_path" > "$backup_path.sha256"
+
+              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm flyway migrate)
+            }
+
             cd /opt/acome-offer-desk
             git fetch upstream
             git checkout test
-            git pull upstream test
+            # Совпадать с удалённой веткой целиком: иначе git pull падает, если на сервере
+            # остались локальные правки отслеживаемых файлов (например ручной scp поверх checkout).
+            git reset --hard upstream/test
 
             ORDER_DB_DIR=/opt/order_database
             APP_ENV_FILE=/opt/acome-offer-desk/backend/.env
+            COMPOSE_ENV_FILE=backend/.env
+            export APP_RUNTIME_ENV_FILE="./$COMPOSE_ENV_FILE"
 
             if [ ! -f "$ORDER_DB_DIR/docker-compose.yml" ] || [ ! -f "$ORDER_DB_DIR/.env" ]; then
               fail_order_db_prerequisite "order_database is not installed on VPS as documented."
+            fi
+
+            if [ ! -f "$COMPOSE_ENV_FILE" ]; then
+              fail_order_db_prerequisite "$COMPOSE_ENV_FILE is missing; docker compose cannot load runtime env."
             fi
 
             if ! docker network inspect project_net >/dev/null 2>&1; then
@@ -74,6 +109,8 @@ jobs:
               fail_order_db_prerequisite "POSTGRES_USER or POSTGRES_DB is missing in $ORDER_DB_DIR/.env."
             fi
 
+            sync_and_migrate_order_database
+
             require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'flyway_schema_history';" "1"
 
             # Пустой flyway/sql на диске давал только baseline без версионных миграций → нет user_auth_accounts и 500 на OAuth callback (см. docs/order-database-vps.md).
@@ -86,26 +123,28 @@ jobs:
             fi
 
             require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_auth_accounts';" "1"
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'requests' AND column_name = 'id_plan';" "1"
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('economy_plans', 'economy_plan_request_facts');" "2"
 
             if [ ! -f "$APP_ENV_FILE" ] || ! grep -q '^DATABASE_URL=.*@order-database-postgres:5432/' "$APP_ENV_FILE"; then
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
-            docker compose down --remove-orphans || true
-            docker compose -f docker-compose.init.yml up keycloak_db_prepare
-            if ! docker compose up -d --build; then
+            docker compose --env-file "$COMPOSE_ENV_FILE" down --remove-orphans || true
+            docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_db_prepare
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build; then
               echo "=== docker compose ps -a ==="
-              docker compose ps -a || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               echo "=== keycloak logs (tail) ==="
-              docker compose logs --tail=160 keycloak || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
               echo "=== backend logs (tail) ==="
-              docker compose logs --tail=160 backend || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
               exit 1
             fi
-            if ! docker compose -f docker-compose.init.yml up keycloak_bootstrap; then
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_bootstrap; then
               echo "=== keycloak bootstrap logs (tail) ==="
-              docker compose -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
               echo "=== keycloak logs (tail) ==="
-              docker compose logs --tail=160 keycloak || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
               exit 1
             fi

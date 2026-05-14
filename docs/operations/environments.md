@@ -47,7 +47,7 @@
 
 | Файл | Назначение |
 |---|---|
-| `docker-compose.yml` | Базовый internal-first runtime: `expose`, сети, зависимости, healthchecks |
+| `docker-compose.yml` | Базовый runtime: сервисы, сети, healthchecks; **`gateway`** публикует **127.0.0.1:8080→80** для хостового reverse proxy на VPS (`test`/production perimeter) |
 | `docker-compose.dev.yml` | Dev override: localhost ports, dev-профили и `start-dev` для Keycloak |
 | `docker-compose.prod-like.yml` | Локальная production-like проверка |
 | `docker-compose.prod.yml` | Override для production-периметра в `test/prod` |

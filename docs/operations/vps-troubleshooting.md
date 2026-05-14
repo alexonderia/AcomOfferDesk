@@ -17,7 +17,25 @@
 
 **Причина:** схема **`order_database`** на VPS не доведена миграциями Flyway (частый случай — **пустой** каталог **`/opt/order_database/flyway/sql`** при живом Postgres и только **baseline** в **`flyway_schema_history`**).
 
-**Куда смотреть:** пошагово — **[order-database-vps.md](./order-database-vps.md)** (раздел **«Рассинхрон: пустой flyway/sql на VPS»**). Полный пересоздающий том сценарий — только **`scripts/install-order-database-vps.sh`**, если осознанно готовы к новому volume.
+**После включения CI:** при каждом деплое с ветки **`test`** миграции копируются из **`deploy/order_database/flyway/sql`** репозитория приложения; если **`user_auth_accounts`** всё ещё нет — проверьте prerequisite из **[order-database-vps.md](./order-database-vps.md)** и полноту снимка **`V*.sql`** в репозитории.
+
+**Куда смотреть:** пошагово — **[order-database-vps.md](./order-database-vps.md)** (разделы **«Рассинхрон: пустой flyway/sql»** и **«Связь с GitHub Actions deploy»**). Полный пересоздающий том сценарий — только **`scripts/install-order-database-vps.sh`**, если осознанно готовы к новому volume.
+
+---
+
+## UI/API 500: `UndefinedColumnError` (например `requests.id_plan`)
+
+**Причина:** код приложения новее схемы БД — не выкатили соответствующие **`V*.sql`** в **`deploy/order_database/flyway/sql`** или деплой шёл до добавления шага миграции в CI.
+
+**Куда смотреть:** **[order-database-vps.md](./order-database-vps.md)** — раздел **«Рассинхрон: UI / API 500 из-за отсутствующих колонок»**.
+
+---
+
+## 502 Bad Gateway с хостового nginx при живом `/health`
+
+**Причина:** хостовый reverse proxy проксирует на **127.0.0.1:8080**, а контейнер **`gateway`** не слушает на этом порту (например в **`docker-compose.yml`** убран маппинг **`127.0.0.1:8080:80`**).
+
+**Исправление:** в базовом **`docker-compose.yml`** у **`gateway`** должно быть **`ports: - "127.0.0.1:8080:80"`**, затем **`docker compose --env-file backend/.env up -d --force-recreate gateway`** (на VPS путь и env — как в деплое).
 
 ---
 

@@ -27,6 +27,7 @@ web/                   Frontend SPA
 notifications_worker/  Фоновая отправка уведомлений
 tg_bot/                Legacy Telegram-интеграция
 infra/keycloak/        Конфигурация и bootstrap Keycloak
+deploy/order_database/ Снимок Flyway V*.sql для деплоя на VPS (синхронизировать с alexonderia/order_database)
 docs/                  Документация
 scripts/               Вспомогательные скрипты
 shared/                Общие runtime-артефакты

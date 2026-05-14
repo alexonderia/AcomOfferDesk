@@ -48,16 +48,27 @@ ssh root@VPS "export GITHUB_TOKEN='$TOKEN'; bash /root/install-order-database-vp
 
 ## Связь с GitHub Actions deploy
 
-Workflow **`.github/workflows/deploy.yml`** в этом репозитории **не выполняет Flyway migrate автоматически** для `order_database`.
+Workflow **`.github/workflows/deploy.yml`** (триггер: push в ветку **`test`**) **выполняет Flyway migrate** для уже установленного на VPS `order_database`, если выполнены предварительные условия ниже.
 
-Он считает `order_database` отдельным prerequisite на VPS и перед app deploy проверяет:
+### Встроенный снимок миграций в репозитории приложения
 
-- каталог **`/opt/order_database`** и его **`.env`**;
-- healthy-статус контейнера **`order-database-postgres`**;
-- наличие **`flyway_schema_history`**;
-- что корневой **`.env`** уже смотрит на **`order-database-postgres:5432`**.
+В дереве приложения есть каталог **`deploy/order_database/flyway/sql`** с файлами **`V*.sql`**, скопированными из репозитория **[alexonderia/order_database](https://github.com/alexonderia/order_database)**. При каждом деплое скрипт:
 
-Если одна из этих проверок не проходит, workflow падает с меткой **`ORDER_DB_PREREQUISITE`** и просит сначала привести VPS к состоянию из этого документа, обычно через **`scripts/install-order-database-vps.sh`** до **`INSTALL_SUCCESS`**.
+1. Копирует эти файлы в **`/opt/order_database/flyway/sql`** на VPS.
+2. Создаёт бэкап **`pg_dump`** в **`/opt/order_database/backups/`** (формат custom + **`sha256`**).
+3. Запускает **`docker compose --profile tools run --rm flyway migrate`** в **`/opt/order_database`**.
+
+**Обязанность разработчика:** при добавлении новых миграций в **`order_database`** перенести актуальные **`V*.sql`** в **`deploy/order_database/flyway/sql`** этого репозитория и проверить деплой на test — иначе продакшен-схема отстанет от кода приложения.
+
+### Что по-прежнему prerequisite (без этого деплой не пройдёт)
+
+- Установленный **`order_database`** на VPS (каталог **`/opt/order_database`**, **`.env`**, сеть **`project_net`**) — типичный путь первичной установки: **`scripts/install-order-database-vps.sh`** до **`INSTALL_SUCCESS`**.
+- Контейнер **`order-database-postgres`** в состоянии **healthy**.
+- Файл **`backend/.env`** на сервере с **`DATABASE_URL`**, указывающим на **`order-database-postgres:5432`**.
+
+После миграции workflow дополнительно проверяет SQL-инварианты (наличие **`user_auth_accounts`**, колонки **`requests.id_plan`**, таблиц **`economy_plans`** / **`economy_plan_request_facts`** — список может расширяться вместе с приложением).
+
+Если проверка не проходит, в логах деплоя будет **`ORDER_DB_PREREQUISITE`** и ссылка на этот документ.
 
 ## Ожидания по данным (как в задаче)
 
@@ -75,6 +86,16 @@ Workflow **`.github/workflows/deploy.yml`** в этом репозитории *
 ## Ручной путь (без скрипта)
 
 Клонировать или скопировать каталог **`order_database`**, заполнить его **`.env`**, поднять Postgres, затем по **flyway.md** выполнить **`validate`** / **`migrate`** (или **`baseline`**, если так согласовано для пустой истории миграций).
+
+## Рассинхрон: UI / API 500 из-за отсутствующих колонок (например `requests.id_plan`)
+
+**Симптомы:** страницы вроде **`/requests`** дают **Internal Server Error**, в логах **`backend`** — **`UndefinedColumnError`** или аналог для колонок/таблиц, которые добавляет новая миграция.
+
+**Причина:** на VPS применён код приложения, ожидающий новую схему, а **`deploy/order_database/flyway/sql`** в выкатанной ветке не содержит соответствующих **`V*.sql`**, либо миграции не доехали до сервера до исправления пайплайна.
+
+**Исправление:** добавить недостающие файлы миграций в **`deploy/order_database/flyway/sql`**, запушить в **`test`**, дождаться деплоя; при необходимости вручную синхронизировать **`flyway/sql`** и выполнить **`flyway migrate`** по разделу «Ручной путь» ниже.
+
+---
 
 ## Рассинхрон: пустой `flyway/sql` на VPS (апрель 2026)
 

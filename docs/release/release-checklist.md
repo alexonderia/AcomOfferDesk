@@ -13,6 +13,7 @@
 
 - [ ] Для target commit в `dev_process/dev/test` успешно прошел CI (`backend unit` + `backend integration` + `frontend lint` + `frontend unit` + `frontend build`).
 - [ ] Завершён merge `dev -> test`.
+- [ ] Если менялась схема **`order_database`**: в этом репозитории обновлён снимок **`deploy/order_database/flyway/sql`** и он есть в **`dev`** и **`test`**.
 - [ ] Автодеплой test успешно прошёл на целевом VPS.
 - [ ] Smoke-проверки на test выполнены.
 - [ ] `test -> prod` одобрен и выполнен.

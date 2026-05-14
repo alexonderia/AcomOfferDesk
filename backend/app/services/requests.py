@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from app.core.config import settings
-from app.domain.authorization import require_permission
+from app.domain.authorization import require_any_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
@@ -37,6 +37,16 @@ OFFER_STATUS_LABELS = {
 }
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _normalize_to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 def format_request_status(status: str | None) -> str:
     if not status:
@@ -220,7 +230,8 @@ class RequestService:
         hidden_contractor_ids: list[str] | None = None,
     ) -> tuple[int, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
-        if deadline_at < datetime.utcnow():
+        UserPolicy.ensure_can_view_normative_files(current_user)
+        if _normalize_to_utc(deadline_at) < _utcnow():
             raise Conflict("Deadline cannot be in the past")
         if not files:
             raise Conflict("At least one file is required")
@@ -385,12 +396,33 @@ class RequestService:
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
             )
-        has_amount_changes = data.initial_amount is not None or data.final_amount is not None
-        if has_amount_changes:
+
+        has_pricing_changes = data.initial_amount is not None or data.final_amount is not None
+        has_status_change = data.status is not None
+        has_deadline_change = data.deadline_at is not None
+
+        if has_pricing_changes:
+            require_permission(
+                current_user,
+                PermissionCodes.REQUESTS_PRICING_UPDATE,
+                message="Insufficient permissions to update request amounts",
+            )
             require_permission(
                 current_user,
                 PermissionCodes.REQUESTS_AMOUNTS_READ,
                 message="Insufficient permissions to update request amounts",
+            )
+        if has_status_change:
+            require_permission(
+                current_user,
+                PermissionCodes.REQUESTS_STATUS_UPDATE,
+                message="Insufficient permissions to update request status",
+            )
+        if has_deadline_change:
+            require_permission(
+                current_user,
+                PermissionCodes.REQUESTS_DEADLINE_UPDATE,
+                message="Insufficient permissions to update request deadline",
             )
 
         if data.initial_amount is not None:
@@ -410,7 +442,7 @@ class RequestService:
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
             if data.status == "closed":
-                closed_at = datetime.utcnow()
+                closed_at = _utcnow()
                 chosen_offer_id = await self._requests.get_latest_accepted_offer_id(request_id=request.id)
                 accepted_offer = await self._offers.get_by_id(offer_id=chosen_offer_id) if chosen_offer_id is not None else None
                 self._validate_closed_request_amounts(
@@ -433,7 +465,7 @@ class RequestService:
                     await notify_request_status_changed(tg_id=tg_id)
 
         if data.deadline_at is not None:
-            if data.deadline_at < datetime.utcnow():
+            if _normalize_to_utc(data.deadline_at) < _utcnow():
                 raise Conflict("Deadline cannot be in the past")
             await self._requests.update_deadline(request=request, deadline_at=data.deadline_at)
 
@@ -879,9 +911,14 @@ class RequestService:
             RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request_owner_user_id)
             return
 
-        require_permission(
+        require_any_permission(
             current_user,
-            PermissionCodes.REQUESTS_UPDATE,
+            (
+                PermissionCodes.REQUESTS_UPDATE,
+                PermissionCodes.REQUESTS_PRICING_UPDATE,
+                PermissionCodes.REQUESTS_DEADLINE_UPDATE,
+                PermissionCodes.REQUESTS_STATUS_UPDATE,
+            ),
             message="Insufficient permissions to edit request",
         )
         if not await self._is_descendant(
@@ -903,9 +940,14 @@ class RequestService:
             )
             return
 
-        require_permission(
+        require_any_permission(
             current_user,
-            PermissionCodes.REQUESTS_UPDATE,
+            (
+                PermissionCodes.REQUESTS_UPDATE,
+                PermissionCodes.REQUESTS_PRICING_UPDATE,
+                PermissionCodes.REQUESTS_DEADLINE_UPDATE,
+                PermissionCodes.REQUESTS_STATUS_UPDATE,
+            ),
             message="Insufficient permissions to edit request",
         )
         if not await self._is_descendant(

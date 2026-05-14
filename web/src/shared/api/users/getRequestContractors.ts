@@ -11,13 +11,11 @@ export type RequestContractorItem = {
 type RequestContractorListResponse = {
   data: {
     items: RequestContractorItem[];
-    permissions?: string[];
   };
 };
 
 export type GetRequestContractorsResult = {
   items: RequestContractorItem[];
-  permissions: string[];
 };
 
 export const getRequestContractors = async (): Promise<GetRequestContractorsResult> => {
@@ -34,7 +32,6 @@ export const getRequestContractors = async (): Promise<GetRequestContractorsResu
       company_name: item.company_name ?? null,
       mail: item.mail ?? null,
       company_mail: item.company_mail ?? null
-    })),
-    permissions: response.data.permissions ?? []
+    }))
   };
 };

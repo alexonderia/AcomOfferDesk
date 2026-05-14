@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
-from app.schemas.links import Link, LinkSet
 from app.schemas.plans import (
     PlanDashboardDataSchema,
     PlanDashboardResponse,
@@ -196,16 +195,6 @@ async def get_plan_dashboard(
             tree=(_map_tree_node(dashboard.tree) if dashboard.tree else None),
             trees=[_map_tree_node(item) for item in dashboard.trees],
         ),
-        _links=LinkSet(
-            self=Link(
-                href=(
-                    f"/api/v1/plans?date_from={date_from.isoformat()}&date_to={date_to.isoformat()}"
-                    if date_from is not None and date_to is not None
-                    else f"/api/v1/plans?period={period}"
-                ),
-                method="GET",
-            )
-        ),
     )
 
 
@@ -243,22 +232,12 @@ async def get_plan_request_stats(
             current_user=current_user,
         )
 
-    query_parts = [f"date_from={period_start.isoformat()}", f"date_to={period_end.isoformat()}"]
-    if plan_id is not None:
-        query_parts.append(f"plan_id={plan_id}")
-    query = "&".join(query_parts)
     return PlanRequestStatsResponse(
         data=PlanRequestStatsDataSchema(
             period_start=period_start,
             period_end=period_end,
             plan_id=plan_id,
             stats=_map_request_stats(stats),
-        ),
-        _links=LinkSet(
-            self=Link(
-                href=f"/api/v1/plans/request-stats?{query}",
-                method="GET",
-            )
         ),
     )
 
@@ -286,7 +265,6 @@ async def get_plan_tree(
             period_end=period_end,
             tree=_map_tree_node(tree),
         ),
-        _links=LinkSet(self=Link(href=f"/api/v1/plans/tree?period={period}&root_user_id={root_user_id}", method="GET")),
     )
 
 
@@ -308,7 +286,6 @@ async def get_my_plan_summary(
             period_end=period_end,
             summary=_map_summary(summary),
         ),
-        _links=LinkSet(self=Link(href=f"/api/v1/plans/my-summary?period={period}", method="GET")),
     )
 
 
@@ -339,12 +316,6 @@ async def list_delegate_candidates(
                 for item in candidates
             ],
         ),
-        _links=LinkSet(
-            self=Link(
-                href=f"/api/v1/plans/delegate-candidates?parent_plan_id={parent_plan_id}",
-                method="GET",
-            ),
-        ),
     )
 
 
@@ -368,16 +339,6 @@ async def list_plan_options(
             period=period or "",
             items=[_map_option(item) for item in items],
         ),
-        _links=LinkSet(
-            self=Link(
-                href=(
-                    f"/api/v1/plans/options?owner_user_id={owner_user_id}"
-                    if owner_user_id
-                    else (f"/api/v1/plans/options?period={period}" if period else "/api/v1/plans/options")
-                ),
-                method="GET",
-            )
-        ),
     )
 
 
@@ -400,7 +361,6 @@ async def create_root_plan(
 
     return PlanMutationResponse(
         data=_map_mutation(plan),
-        _links=LinkSet(self=Link(href="/api/v1/plans/root", method="POST")),
     )
 
 
@@ -424,7 +384,6 @@ async def create_subplan(
 
     return PlanMutationResponse(
         data=_map_mutation(plan),
-        _links=LinkSet(self=Link(href="/api/v1/plans/subplan", method="POST")),
     )
 
 
@@ -446,7 +405,6 @@ async def delegate_plan(
 
     return PlanMutationResponse(
         data=_map_mutation(plan),
-        _links=LinkSet(self=Link(href="/api/v1/plans/delegate", method="POST")),
     )
 
 
@@ -472,7 +430,6 @@ async def update_plan(
 
     return PlanMutationResponse(
         data=_map_mutation(plan),
-        _links=LinkSet(self=Link(href=f"/api/v1/plans/{plan_id}", method="PATCH")),
     )
 
 
@@ -488,7 +445,6 @@ async def delete_child_plan(
 
     return PlanDeleteResponse(
         data=PlanDeleteDataSchema(deleted_plan_id=plan_id),
-        _links=LinkSet(self=Link(href=f"/api/v1/plans/{plan_id}", method="DELETE")),
     )
 
 
@@ -504,5 +460,4 @@ async def close_plan(
 
     return PlanMutationResponse(
         data=_map_mutation(plan),
-        _links=LinkSet(self=Link(href=f"/api/v1/plans/{plan_id}/close", method="POST")),
     )

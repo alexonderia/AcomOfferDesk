@@ -19,16 +19,40 @@ from app.schemas.actions import (
     UserActionsSchema,
 )
 
+ECONOMY_ROLE_IDS = {
+    settings.project_manager_role_id,
+    settings.lead_economist_role_id,
+    settings.economist_role_id,
+    settings.operator_role_id,
+}
+
+SUBORDINATE_PROFILE_ROLE_IDS = {
+    settings.lead_economist_role_id,
+    settings.economist_role_id,
+    settings.operator_role_id,
+}
+
 
 def serialize_permissions(current_user: CurrentUser) -> list[str]:
     return sorted(current_user.permissions)
 
 
 def _can_manage_subordinate_target(current_user: CurrentUser, *, target_role_id: int) -> bool:
+    if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
+        return target_role_id in SUBORDINATE_PROFILE_ROLE_IDS
+    if current_user.role_id == settings.superadmin_role_id:
+        return target_role_id in SUBORDINATE_PROFILE_ROLE_IDS
     if current_user.role_id == settings.project_manager_role_id:
-        return target_role_id in {settings.lead_economist_role_id, settings.economist_role_id}
+        return target_role_id in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+            settings.operator_role_id,
+        }
     if current_user.role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
-        return target_role_id == settings.economist_role_id
+        return target_role_id in {
+            settings.economist_role_id,
+            settings.operator_role_id,
+        }
     return False
 
 
@@ -123,7 +147,7 @@ class OfferActionBuilder:
                 contractor_user_id=contractor_user_id,
             ),
             can_edit_amount=(
-                has_permission(current_user, PermissionCodes.OFFERS_UPDATE)
+                has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE)
                 and can_manage_offer
                 and (
                     current_user.role_id != settings.contractor_role_id
@@ -201,7 +225,22 @@ class UserActionBuilder:
         can_manage_subordinate_target = _can_manage_subordinate_target(
             current_user,
             target_role_id=target_role_id,
-        )
+        ) and target_user_id != current_user.user_id
+        can_update_manager_target_role = target_role_id in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }
+        has_role_update_any = has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY)
+        has_role_update_economy = has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY)
+        can_update_role = False
+        if has_role_update_any and target_role_id != settings.superadmin_role_id:
+            can_update_role = True
+        elif has_role_update_economy:
+            can_update_role = (
+                current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}
+                and target_role_id in ECONOMY_ROLE_IDS
+                and can_manage_subordinate_target
+            )
         can_update_status = UserPolicy.can_update_user_status(current_user)
         if current_user.role_id in {
             settings.project_manager_role_id,
@@ -212,13 +251,11 @@ class UserActionBuilder:
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
-            can_update_role=(
-                UserPolicy.can_update_user_role(current_user)
-                and target_role_id != settings.superadmin_role_id
-            ),
+            can_update_role=can_update_role,
             can_update_manager=(
                 UserPolicy.can_update_user_manager(current_user)
                 and can_manage_subordinate_target
+                and can_update_manager_target_role
             ),
             can_manage_manual_contractor=(
                 UserPolicy.can_manage_manual_contractors(current_user)
@@ -246,6 +283,10 @@ class UserActionBuilder:
             current_user,
             target_role_id=target_role_id,
         )
+        can_update_manager_target_role = target_role_id in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }
         can_manage_subordinate = (
             UserPolicy.can_manage_subordinate_unavailability(current_user)
             and can_manage_subordinate_target
@@ -260,6 +301,7 @@ class UserActionBuilder:
             can_update_manager=(
                 UserPolicy.can_update_user_manager(current_user)
                 and can_manage_subordinate_target
+                and can_update_manager_target_role
             ),
             can_manage_subordinate_unavailability=can_manage_subordinate,
         )

@@ -81,7 +81,6 @@ type ResponsibilityDashboardResponse = {
     active_unavailability: ResponsibilityUpcomingUnavailability[];
     upcoming_unavailability: ResponsibilityUpcomingUnavailability[];
     savings: ResponsibilitySavingsSummary;
-    permissions?: string[];
   };
 };
 
@@ -93,7 +92,6 @@ export type ResponsibilityDashboardResult = {
   activeUnavailability: ResponsibilityUpcomingUnavailability[];
   upcomingUnavailability: ResponsibilityUpcomingUnavailability[];
   savings: ResponsibilitySavingsSummary;
-  permissions: string[];
 };
 
 export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashboardResult> => {
@@ -113,7 +111,6 @@ export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashbo
     savings: {
       ...response.data.savings,
       closed_items: response.data.savings.closed_items ?? [],
-    },
-    permissions: response.data.permissions ?? []
+    }
   };
 };

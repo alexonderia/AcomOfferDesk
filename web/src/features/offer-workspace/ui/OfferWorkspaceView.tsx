@@ -141,6 +141,7 @@ export const OfferWorkspaceView = () => {
   } = useOfferWorkspace();
 
   const canViewRequestAmounts = Boolean(workspace?.request.actions.view_amounts);
+  const canViewContractorInfo = Boolean(selectedOffer?.actions.view_contractor_info);
 
   const canCreateNewOffer = Boolean(workspace?.request.actions.create_offer);
 
@@ -259,6 +260,7 @@ export const OfferWorkspaceView = () => {
           hideActions
         />
 
+        {canViewContractorInfo ? (
         <Paper
           sx={(themeValue) => ({
             mt: 2.5,
@@ -357,6 +359,7 @@ export const OfferWorkspaceView = () => {
             </Paper>
           </Stack>
         </Paper>
+        ) : null}
 
         {isContractor && canCreateNewOffer ? (
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent={{ xs: 'stretch', sm: 'flex-end' }} sx={{ mt: 2.5 }}>

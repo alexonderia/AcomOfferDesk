@@ -17,13 +17,14 @@ REVIEW_ALLOWED_PERMISSIONS = frozenset(
 
 
 def has_permission(current_user: CurrentUser, permission_code: str) -> bool:
+    if not current_user.has_permission(permission_code):
+        return False
     if current_user.status == "active":
-        return permission_code in current_user.permissions
+        return True
     if current_user.status == "review":
         return (
             current_user.role_id == settings.contractor_role_id
             and permission_code in REVIEW_ALLOWED_PERMISSIONS
-            and permission_code in current_user.permissions
         )
     return False
 

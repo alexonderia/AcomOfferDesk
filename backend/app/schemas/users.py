@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.contractor_validation import (
     validate_inn,
@@ -9,7 +9,6 @@ from app.domain.contractor_validation import (
     validate_ru_phone,
 )
 from app.schemas.actions import UserActionsSchema
-from app.schemas.links import LinkSet
 
 
 class UserListItemSchema(BaseModel):
@@ -31,14 +30,10 @@ class UserListItemSchema(BaseModel):
 
 class UserListData(BaseModel):
     items: list[UserListItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class UserListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserListData
-    links: LinkSet = Field(alias="_links")
 
 
 class EconomistListItemSchema(BaseModel):
@@ -52,14 +47,10 @@ class EconomistListItemSchema(BaseModel):
 
 class EconomistListData(BaseModel):
     items: list[EconomistListItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class EconomistListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: EconomistListData
-    links: LinkSet = Field(alias="_links")
 
     
 class UserRoleUpdateRequest(BaseModel):
@@ -72,10 +63,7 @@ class UserRoleUpdateData(BaseModel):
 
 
 class UserRoleUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserRoleUpdateData
-    links: LinkSet = Field(alias="_links")
 
 
 class UserManagerUpdateRequest(BaseModel):
@@ -88,10 +76,7 @@ class UserManagerUpdateData(BaseModel):
 
 
 class UserManagerUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserManagerUpdateData
-    links: LinkSet = Field(alias="_links")
 
 
 class UserStatusUpdateRequest(BaseModel):
@@ -106,10 +91,7 @@ class UserStatusUpdateData(BaseModel):
 
 
 class UserStatusUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: UserStatusUpdateData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestEconomistItemSchema(BaseModel):
@@ -121,14 +103,10 @@ class RequestEconomistItemSchema(BaseModel):
 
 class RequestEconomistListData(BaseModel):
     items: list[RequestEconomistItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestEconomistListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestEconomistListData
-    links: LinkSet = Field(alias="_links")
 
 
 class RequestContractorItemSchema(BaseModel):
@@ -141,14 +119,10 @@ class RequestContractorItemSchema(BaseModel):
 
 class RequestContractorListData(BaseModel):
     items: list[RequestContractorItemSchema]
-    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestContractorListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RequestContractorListData
-    links: LinkSet = Field(alias="_links")
 
 
 class UserUnavailabilityPeriodSchema(BaseModel):
@@ -174,14 +148,14 @@ class MeData(BaseModel):
     address: str | None = None
     note: str | None = None
     permissions: list[str] = Field(default_factory=list)
+    keycloak_roles: list[str] = Field(default_factory=list)
+    app_roles: list[str] = Field(default_factory=list)
+    delegation_roles: list[str] = Field(default_factory=list)
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class MeResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: MeData
-    links: LinkSet = Field(alias="_links")
 
 
 class SubordinateProfileData(BaseModel):
@@ -198,10 +172,7 @@ class SubordinateProfileData(BaseModel):
 
 
 class SubordinateProfileResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: SubordinateProfileData
-    links: LinkSet = Field(alias="_links")
 
 
 class SetSubordinateUnavailabilityPeriodRequest(BaseModel):
@@ -211,10 +182,7 @@ class SetSubordinateUnavailabilityPeriodRequest(BaseModel):
 
 
 class SetSubordinateUnavailabilityPeriodResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: SubordinateProfileData
-    links: LinkSet = Field(alias="_links")
 
 
 class UpdateMyCredentialsRequest(BaseModel):
@@ -244,10 +212,7 @@ class SetMyUnavailabilityPeriodRequest(BaseModel):
 
 
 class SetMyUnavailabilityPeriodResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: MeData
-    links: LinkSet = Field(alias="_links")
 
 
 class ManualContractorCreateRequest(BaseModel):
@@ -297,10 +262,7 @@ class ManualContractorCreateData(BaseModel):
 
 
 class ManualContractorCreateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ManualContractorCreateData
-    links: LinkSet = Field(alias="_links")
 
 
 class ManualContractorUpdateRequest(BaseModel):
@@ -375,7 +337,4 @@ class ManualContractorUpdateData(BaseModel):
 
 
 class ManualContractorUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ManualContractorUpdateData
-    links: LinkSet = Field(alias="_links")

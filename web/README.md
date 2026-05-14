@@ -4,7 +4,7 @@
 
 Этот README описывает frontend-модуль и навигацию по коду.
 Единый источник правды по запуску окружений и compose-слоям:
-- `docs/environments.md`
+- `docs/operations/environments.md`
 
 Статус локального compose в `/web`:
 - `web/docker-compose.yml` — standalone/локальный вспомогательный сценарий, не основной путь запуска проекта.
@@ -254,8 +254,8 @@ npm run dev
 ## Что читать дальше
 
 - верхний уровень проекта: `README.md`
-- общая архитектура: `docs/runtime-architecture.md`
-- навигация по всей кодовой базе: `docs/developer-guide.md`
-- аутентификация и онбординг: `docs/auth-and-onboarding.md`
-- окружения и perimeter: `docs/environments.md`
+- общая архитектура: `docs/product/runtime-architecture.md`
+- навигация по всей кодовой базе: `docs/development/developer-guide.md`
+- аутентификация и онбординг: `docs/security/auth-and-onboarding.md`
+- окружения и perimeter: `docs/operations/environments.md`
 

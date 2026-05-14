@@ -20,13 +20,11 @@ type UsersRow = {
 type UserListResponse = {
   data: {
     items: UsersRow[];
-    permissions?: string[];
   };
 };
 
 export type GetManagerCandidatesResult = {
   items: UserListItem[];
-  permissions: string[];
 };
 
 const normalizeUserItem = (item: UsersRow): UserListItem => ({
@@ -54,7 +52,6 @@ export const getManagerCandidates = async (targetRoleId: number): Promise<GetMan
   );
 
   return {
-    items: response.data.items.map(normalizeUserItem),
-    permissions: response.data.permissions ?? []
+    items: response.data.items.map(normalizeUserItem)
   };
 };

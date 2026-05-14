@@ -45,6 +45,9 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Selected contractor is hidden for this request': 'Выбранный контрагент скрыт для этой заявки',
   'Only admin and superadmin can manage manually created contractors': 'Только администратор и суперадмин могут редактировать ручных контрагентов',
   'Only manually created contractor can be updated by this endpoint': 'Редактирование доступно только для вручную созданных контрагентов',
+  'Subordinate profile is available only for permitted subordinate roles': 'Профиль подчинённого доступен только для разрешённых ролей подчинённых',
+  'Subordinate data can be managed only for permitted subordinate roles': 'Данные подчинённого можно изменять только для разрешённых ролей подчинённых',
+  'You can manage subordinate data only for your subordinates': 'Вы можете управлять данными только своих подчинённых',
   Forbidden: 'Доступ запрещен'
 };
 

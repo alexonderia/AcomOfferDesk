@@ -533,7 +533,10 @@ class PlanService:
             period_start=month_start,
             period_end=month_end,
         )
-        my_entry_plans = self._find_entry_plans_for_user(period_plans=period_plans, user_id=current_user.user_id)
+        my_entry_plans = await self._resolve_dashboard_entry_plans(
+            period_plans=period_plans,
+            current_user=current_user,
+        )
 
         can_create_root_plan = current_user.role_id in {settings.superadmin_role_id, settings.project_manager_role_id}
         if not my_entry_plans:
@@ -604,9 +607,9 @@ class PlanService:
             period_start=date_from,
             period_end=date_to,
         )
-        my_entry_plans = self._find_entry_plans_for_user(
+        my_entry_plans = await self._resolve_dashboard_entry_plans(
             period_plans=period_plans,
-            user_id=current_user.user_id,
+            current_user=current_user,
         )
         can_create_root_plan = current_user.role_id in {
             settings.superadmin_role_id,
@@ -664,6 +667,36 @@ class PlanService:
             tree=(trees[0] if trees else None),
             trees=trees,
         )
+
+    async def _resolve_dashboard_entry_plans(
+        self,
+        *,
+        period_plans: list[EconomyPlan],
+        current_user: CurrentUser,
+    ) -> list[EconomyPlan]:
+        if current_user.role_id != settings.superadmin_role_id:
+            return self._find_entry_plans_for_user(
+                period_plans=period_plans,
+                user_id=current_user.user_id,
+            )
+
+        pm_rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=[settings.project_manager_role_id],
+        )
+        active_pm_ids = sorted({user.id for user, _profile, _role in pm_rows if user.status == "active"})
+        if not active_pm_ids:
+            return []
+
+        entry_plans_by_id: dict[int, EconomyPlan] = {}
+        for pm_user_id in active_pm_ids:
+            pm_entry_plans = self._find_entry_plans_for_user(
+                period_plans=period_plans,
+                user_id=pm_user_id,
+            )
+            for plan in pm_entry_plans:
+                entry_plans_by_id[plan.id] = plan
+
+        return sorted(entry_plans_by_id.values(), key=lambda item: item.id)
 
     async def _load_relevant_period_plans(
         self,

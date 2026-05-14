@@ -1,24 +1,15 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
-import { ROLE } from '@shared/constants/roles';
+import { hasAnyPermission } from '@shared/auth/permissions';
+import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
 
 type RoleRouteProps = {
-  allowedRoles: number[];
+  allowedRoles?: number[];
+  allowedPermissions?: string[];
   children: JSX.Element;
 };
 
-const getDefaultPath = (roleId?: number | null) => {
-  if (roleId === ROLE.PROJECT_MANAGER || roleId === ROLE.LEAD_ECONOMIST) {
-    return '/pm-dashboard';
-  }
-
-  if (roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN) {
-    return '/admin';
-  }
-  return '/requests';
-};
-
-export const RoleRoute = ({ allowedRoles, children }: RoleRouteProps) => {
+export const RoleRoute = ({ allowedRoles = [], allowedPermissions = [], children }: RoleRouteProps) => {
   const { session } = useAuth();
 
   if (!session) {
@@ -29,8 +20,13 @@ export const RoleRoute = ({ allowedRoles, children }: RoleRouteProps) => {
     return <Navigate to="/account" replace />;
   }
 
-  if (!allowedRoles.includes(session.roleId)) {
-    return <Navigate to={getDefaultPath(session.roleId)} replace />;
+  const requiresPermission = allowedPermissions.length > 0;
+  const isPermissionAllowed = !requiresPermission || hasAnyPermission(session, allowedPermissions);
+  // Roles are UX-only fallback; protected access should be permission-based.
+  const isRoleAllowed = allowedRoles.length === 0 || allowedRoles.includes(session.roleId);
+
+  if (!isPermissionAllowed || (!requiresPermission && !isRoleAllowed)) {
+    return <Navigate to={getDefaultPathByRole(session.roleId, session.permissions)} replace />;
   }
 
   return children;

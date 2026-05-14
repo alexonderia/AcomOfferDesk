@@ -480,7 +480,11 @@ class OfferService:
         return login
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:
-        UserPolicy.ensure_can_create_offer(current_user)
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ,
+            message="Insufficient permissions to view contractor request details",
+        )
 
         request = await self._requests.get_visible_by_id_for_contractor(
             request_id=request_id,
@@ -848,6 +852,8 @@ class OfferService:
 
         if not is_contractor_deleting_own_offer:
             RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
+            if status == "accepted" and request.status in {"closed", "cancelled"}:
+                raise Conflict("Cannot accept offer for closed or cancelled request")
 
         status_changed = offer.status != status
         await self._offers.update_status(offer=offer, status=status)
@@ -865,7 +871,7 @@ class OfferService:
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
         require_permission(
             current_user,
-            PermissionCodes.OFFERS_UPDATE,
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
             message="Insufficient permissions to update offer",
         )
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)

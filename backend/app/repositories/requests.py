@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import Select, bindparam, delete, func, select, text
@@ -662,7 +662,7 @@ class RequestRepository:
 
         if stats.count_deleted_alert > 0:
             stats.count_deleted_alert -= 1
-        stats.updated_at = datetime.utcnow()
+        stats.updated_at = datetime.now(timezone.utc)
         await self._session.flush()
         return stats
 

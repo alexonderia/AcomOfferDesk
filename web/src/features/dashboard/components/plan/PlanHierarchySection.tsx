@@ -39,6 +39,8 @@ import { planSectionCardSx } from "./PlanOverviewSections";
 import type { PlanSideSummaryData } from "./planDashboardUtils";
 import { formatPercent, getInitials } from "./planDashboardUtils";
 
+const normalizePlanColorKey = (value: string) => value.trim().toLowerCase();
+
 export type PlanHierarchyHandlers = {
   onCreateSubplan: (node: PlanTreeNode) => void;
   onDelegate: (node: PlanTreeNode) => void;
@@ -123,6 +125,8 @@ type PlanTreeNodeCardProps = {
   depth: number;
   expandedNodeIds: Record<number, boolean>;
   forceExpanded: boolean;
+  planColorsByName: Record<string, string>;
+  inheritedAccentColor?: string;
   onToggle: (planId: number) => void;
   handlers: PlanHierarchyHandlers;
 };
@@ -132,6 +136,8 @@ export const PlanTreeNodeCard = ({
   depth,
   expandedNodeIds,
   forceExpanded,
+  planColorsByName,
+  inheritedAccentColor,
   onToggle,
   handlers,
 }: PlanTreeNodeCardProps) => {
@@ -145,11 +151,14 @@ export const PlanTreeNodeCard = ({
   const progressValue = Math.max(0, Math.min(100, node.progress_percent));
   const periodProgressValue = Math.max(0, Math.min(100, node.period_progress_percent ?? 0));
   const isRoot = depth === 0;
-  const isSyntheticRoot =
-    isRoot && node.children.some((child) => child.user_id === node.user_id);
+  const isRootNode = isRoot && node.id_parent_plan === null;
   const planTitle = node.plan_name?.trim() || node.user_name;
+  const ownAccentColor = node.plan_name?.trim()
+    ? planColorsByName[normalizePlanColorKey(node.plan_name)]
+    : undefined;
+  const nodeAccentColor = ownAccentColor ?? inheritedAccentColor;
   const showExecutorName =
-    !isSyntheticRoot &&
+    !isRootNode &&
     node.user_name.trim().length > 0 &&
     node.user_name !== planTitle;
 
@@ -292,14 +301,16 @@ export const PlanTreeNodeCard = ({
                   minWidth={0}
                   alignItems="center"
                 >
-                  {isSyntheticRoot ? (
+                  {isRootNode ? (
                     <Box
                         sx={{
                           width: 38,
                           height: 38,
                           borderRadius: `${theme.acomShape.buttonRadius}px`,
-                        bgcolor: alpha(theme.palette.primary.main, 0.12),
-                        color: "primary.main",
+                          bgcolor: nodeAccentColor
+                            ? alpha(nodeAccentColor, 0.16)
+                            : alpha(theme.palette.primary.main, 0.12),
+                          color: nodeAccentColor ?? "primary.main",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -313,14 +324,16 @@ export const PlanTreeNodeCard = ({
                       sx={{
                         width: 38,
                         height: 38,
-                        bgcolor:
-                          depth % 3 === 1
+                        bgcolor: nodeAccentColor
+                          ? alpha(nodeAccentColor, 0.16)
+                          : depth % 3 === 1
                             ? alpha(theme.palette.primary.main, 0.13)
                             : depth % 3 === 2
                               ? alpha(theme.palette.success.main, 0.15)
                               : alpha(theme.palette.warning.main, 0.16),
-                        color:
-                          depth % 3 === 1
+                        color: nodeAccentColor
+                          ? nodeAccentColor
+                          : depth % 3 === 1
                             ? theme.palette.primary.main
                             : depth % 3 === 2
                               ? theme.palette.success.dark
@@ -354,20 +367,20 @@ export const PlanTreeNodeCard = ({
                       <Chip
                         size="small"
                         label={
-                          isSyntheticRoot ? "Корневой узел" : node.user_role
+                          isRootNode ? "Корневой узел" : node.user_role
                         }
                         sx={{
-                          bgcolor: isSyntheticRoot
+                          bgcolor: isRootNode
                             ? alpha(theme.palette.primary.main, 0.1)
                             : alpha(theme.palette.text.secondary, 0.08),
-                          color: isSyntheticRoot
+                          color: isRootNode
                             ? "primary.main"
                             : "text.secondary",
                           height: 17,
                           border: "none",
                           "& .MuiChip-label": {
                             px: 0.65,
-                            fontWeight: isSyntheticRoot ? 700 : 600,
+                            fontWeight: isRootNode ? 700 : 600,
                             fontSize: 10.5,
                           },
                         }}
@@ -527,6 +540,8 @@ export const PlanTreeNodeCard = ({
               depth={depth + 1}
               expandedNodeIds={expandedNodeIds}
               forceExpanded={forceExpanded}
+              planColorsByName={planColorsByName}
+              inheritedAccentColor={nodeAccentColor}
               onToggle={onToggle}
               handlers={handlers}
             />
@@ -755,6 +770,7 @@ export const PlanSideSummary = ({
 
 type PlanHierarchySectionProps = {
   trees: PlanTreeNode[];
+  planColorsByName: Record<string, string>;
   searchValue: string;
   expandedNodeIds: Record<number, boolean>;
   forceExpanded: boolean;
@@ -768,6 +784,7 @@ type PlanHierarchySectionProps = {
 
 export const PlanHierarchySection = ({
   trees,
+  planColorsByName,
   searchValue,
   expandedNodeIds,
   forceExpanded,
@@ -913,6 +930,7 @@ export const PlanHierarchySection = ({
                     depth={0}
                     expandedNodeIds={expandedNodeIds}
                     forceExpanded={forceExpanded}
+                    planColorsByName={planColorsByName}
                     onToggle={onToggleNode}
                     handlers={handlers}
                   />

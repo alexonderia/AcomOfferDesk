@@ -18,7 +18,6 @@ from app.schemas.contractor_registration import (
     ContractorRegistrationResponse,
     ContractorRegistrationData,
 )
-from app.schemas.links import Link, LinkSet
 from app.schemas.tg_links import TgLinkData, TgLinkRequest, TgLinkResponse
 from app.schemas.tg_users import (
     TgStartData,
@@ -78,7 +77,6 @@ async def create_register_link(
 
     return TgLinkResponse(
         data=TgLinkData(url=url),
-        _links=LinkSet(self=Link(href="/api/v1/tg/links/register", method="POST")),
     )
 
 
@@ -94,9 +92,6 @@ async def register_tg_user(
 
     return TgUserStartResponse(
         data=TgUserStartData(tg_id=tg_user.id, status=tg_user.status),
-        _links=LinkSet(
-            self=Link(href="/api/v1/tg/users/start", method="POST"),
-        ),
     )
 
 
@@ -126,9 +121,6 @@ async def handle_tg_start(
                 for item in result.requests
             ],
             user_status=result.user_status,
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/tg/start", method="POST"),
         ),
     )
 
@@ -221,9 +213,6 @@ async def complete_tg_registration(
             user_id=user.id,
             status=user.status,
             tg_user_id=tg_id,
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/tg/register/complete", method="POST"),
         ),
     )
 

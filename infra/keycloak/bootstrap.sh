@@ -1,11 +1,14 @@
-﻿#!/bin/sh
+#!/bin/sh
 set -e
 set -u
 
 SERVER_URL="${KEYCLOAK_INTERNAL_BASE_URL:-${KEYCLOAK_INTERNAL_URL:-http://keycloak:8080/iam}}"
 MASTER_REALM="${KEYCLOAK_MASTER_REALM:-master}"
 APP_REALM="${KEYCLOAK_REALM:-acom-offerdesk}"
-CLIENT_ID="${KEYCLOAK_CLIENT_ID:-acom-offerdesk-web}"
+WEB_CLIENT_ID="${KEYCLOAK_WEB_CLIENT_ID:-${KEYCLOAK_CLIENT_ID:-acom-web}}"
+API_CLIENT_ID="${KEYCLOAK_API_CLIENT_ID:-acom-api}"
+ADMIN_SERVICE_CLIENT_ID="${KEYCLOAK_ADMIN_CLIENT_ID:-acom-admin-service}"
+ADMIN_SERVICE_CLIENT_SECRET="${KEYCLOAK_ADMIN_CLIENT_SECRET:-}"
 BACKEND_BASE_URL="${PUBLIC_BACKEND_BASE_URL:-http://localhost:8080}"
 WEB_BASE_URL="${WEB_BASE_URL:-http://localhost:8080}"
 BOOTSTRAP_USERNAME="${KEYCLOAK_BOOTSTRAP_APP_USERNAME:-superadmin}"
@@ -20,6 +23,7 @@ SMTP_PASSWORD="${KEYCLOAK_SMTP_PASSWORD:-${EMAIL_APP_PASSWORD:-}}"
 SMTP_FROM="${KEYCLOAK_SMTP_FROM:-${EMAIL_ADDRESS:-}}"
 SMTP_REPLY_TO="${KEYCLOAK_SMTP_REPLY_TO:-${EMAIL_ADDRESS:-}}"
 SMTP_FROM_DISPLAY_NAME="${KEYCLOAK_SMTP_FROM_DISPLAY_NAME:-${EMAIL_FROM_NAME:-AcomOfferDesk}}"
+SMTP_AUTH="${KEYCLOAK_SMTP_AUTH:-true}"
 SMTP_SSL="${KEYCLOAK_SMTP_SSL:-}"
 SMTP_STARTTLS="${KEYCLOAK_SMTP_STARTTLS:-}"
 KEYCLOAK_VERIFY_EMAIL="${KEYCLOAK_VERIFY_EMAIL:-}"
@@ -33,11 +37,308 @@ KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS="${KEYCLOAK_ACTION_TOKEN_USER_LIFESP
 BACKEND_BASE_URL="${BACKEND_BASE_URL%/}"
 WEB_BASE_URL="${WEB_BASE_URL%/}"
 
+APP_ENV_NORMALIZED="$(printf '%s' "${APP_ENV:-development}" | tr '[:upper:]' '[:lower:]')"
+
+is_true() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_weak_secret() {
+  normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  [ -z "$normalized" ] && return 0
+  case "$normalized" in
+    change-me|changeme|change_me|top-secret|top_secret|secret|password|admin|test|example)
+      return 0
+      ;;
+    change_me*|change-me*|*example)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+if [ -z "$ADMIN_SERVICE_CLIENT_SECRET" ] || is_weak_secret "$ADMIN_SERVICE_CLIENT_SECRET"; then
+  if [ "$APP_ENV_NORMALIZED" = "production" ]; then
+    echo "KEYCLOAK_ADMIN_CLIENT_SECRET must be set to a strong non-placeholder value"
+    exit 1
+  fi
+  echo "WARN: KEYCLOAK_ADMIN_CLIENT_SECRET uses a weak placeholder outside production"
+fi
+
+if [ "$APP_ENV_NORMALIZED" = "production" ]; then
+  if [ "${BACKEND_BASE_URL#https://}" = "$BACKEND_BASE_URL" ] || [ "${WEB_BASE_URL#https://}" = "$WEB_BASE_URL" ]; then
+    echo "PUBLIC_BACKEND_BASE_URL and WEB_BASE_URL must use https in production"
+    exit 1
+  fi
+fi
+
+PERMISSION_ROLE_NAMES=$(cat <<'EOF'
+users.read
+users.create
+users.status.update
+users.role.update_any
+users.role.update_economy
+users.login.update
+users.password.update
+users.manager.update
+profile.manage_own
+profile.manage_any
+company_contacts.manage_own
+company_contacts.manage_any
+requests.read
+requests.amounts.read
+requests.create
+requests.update
+requests.pricing.update
+requests.deadline.update
+requests.status.update
+requests.owner.change
+requests.files.upload
+requests.files.delete
+requests.open.read
+requests.offered.read
+requests.contractor_view.read
+requests.email_notifications.send
+requests.deleted_alerts.mark_viewed
+offers.create
+offers.manual.create
+offers.workspace.read
+offers.update
+offers.amount.update
+offers.details.update
+offers.status.update
+offers.files.upload
+offers.files.delete
+offers.contractor_info.read
+chat.read
+chat.message.send
+chat.message.attach
+chat.receipts.mark_received
+chat.receipts.mark_read
+feedback.read
+feedback.create
+dashboard.process.read
+dashboard.savings.read
+dashboard.plans.read
+normative_files.read
+normative_files.create
+normative_files.manage
+files.download
+unavailability.manage_all
+unavailability.manage_own
+unavailability.manage_subordinate
+contractors.manual.create
+contractors.manual.manage
+EOF
+)
+
+APP_ROLE_NAMES=$(cat <<'EOF'
+app.superadmin
+app.admin
+app.project_manager
+app.lead_economist
+app.economist
+app.operator
+app.contractor
+EOF
+)
+
+ALL_ROLE_NAMES=$(cat <<EOF
+$PERMISSION_ROLE_NAMES
+$APP_ROLE_NAMES
+EOF
+)
+
+ROLE_APP_SUPERADMIN=$(cat <<EOF
+$PERMISSION_ROLE_NAMES
+app.admin
+app.project_manager
+app.lead_economist
+app.economist
+app.operator
+app.contractor
+EOF
+)
+ROLE_APP_ADMIN=$(cat <<'EOF'
+profile.manage_own
+feedback.create
+users.read
+users.create
+users.status.update
+users.role.update_any
+users.login.update
+users.password.update
+profile.manage_any
+company_contacts.manage_any
+contractors.manual.create
+contractors.manual.manage
+EOF
+)
+ROLE_APP_CONTRACTOR=$(cat <<'EOF'
+profile.manage_own
+feedback.create
+company_contacts.manage_own
+requests.open.read
+requests.offered.read
+requests.contractor_view.read
+offers.create
+offers.workspace.read
+offers.update
+offers.amount.update
+offers.details.update
+offers.status.update
+offers.files.upload
+offers.files.delete
+offers.contractor_info.read
+chat.read
+chat.message.send
+chat.message.attach
+chat.receipts.mark_received
+chat.receipts.mark_read
+files.download
+EOF
+)
+ROLE_APP_PROJECT_MANAGER=$(cat <<'EOF'
+profile.manage_own
+feedback.create
+requests.read
+offers.workspace.read
+offers.contractor_info.read
+chat.read
+files.download
+users.read
+users.status.update
+users.role.update_economy
+users.manager.update
+requests.owner.change
+requests.amounts.read
+normative_files.read
+dashboard.process.read
+dashboard.savings.read
+dashboard.plans.read
+contractors.manual.create
+contractors.manual.manage
+unavailability.manage_subordinate
+unavailability.manage_own
+EOF
+)
+ROLE_APP_LEAD_ECONOMIST=$(cat <<'EOF'
+profile.manage_own
+feedback.create
+requests.read
+offers.workspace.read
+offers.contractor_info.read
+chat.read
+files.download
+requests.create
+requests.update
+requests.pricing.update
+requests.deadline.update
+requests.status.update
+requests.amounts.read
+requests.files.upload
+requests.files.delete
+requests.email_notifications.send
+requests.deleted_alerts.mark_viewed
+offers.update
+offers.amount.update
+offers.details.update
+offers.status.update
+chat.message.send
+chat.message.attach
+chat.receipts.mark_received
+chat.receipts.mark_read
+users.read
+users.create
+users.status.update
+users.role.update_economy
+users.manager.update
+requests.owner.change
+normative_files.read
+dashboard.process.read
+dashboard.savings.read
+dashboard.plans.read
+unavailability.manage_subordinate
+normative_files.manage
+normative_files.create
+profile.manage_any
+company_contacts.manage_any
+unavailability.manage_own
+offers.manual.create
+contractors.manual.create
+contractors.manual.manage
+EOF
+)
+ROLE_APP_ECONOMIST=$(cat <<'EOF'
+profile.manage_own
+feedback.create
+requests.read
+offers.workspace.read
+offers.contractor_info.read
+chat.read
+files.download
+requests.create
+requests.update
+requests.pricing.update
+requests.deadline.update
+requests.status.update
+requests.amounts.read
+requests.files.upload
+requests.files.delete
+requests.email_notifications.send
+requests.deleted_alerts.mark_viewed
+offers.update
+offers.amount.update
+offers.details.update
+offers.status.update
+chat.message.send
+chat.message.attach
+chat.receipts.mark_received
+chat.receipts.mark_read
+users.read
+users.status.update
+users.manager.update
+normative_files.read
+unavailability.manage_own
+unavailability.manage_subordinate
+offers.manual.create
+contractors.manual.create
+contractors.manual.manage
+EOF
+)
+ROLE_APP_OPERATOR=$(cat <<'EOF'
+profile.manage_own
+feedback.create
+requests.read
+requests.create
+requests.update
+requests.pricing.update
+requests.deadline.update
+requests.status.update
+requests.amounts.read
+normative_files.read
+EOF
+)
 if [ -z "$KEYCLOAK_VERIFY_EMAIL" ]; then
-  if [ "${APP_ENV:-development}" = "production" ]; then
+  if [ "$APP_ENV_NORMALIZED" = "production" ]; then
     KEYCLOAK_VERIFY_EMAIL="true"
   else
     KEYCLOAK_VERIFY_EMAIL="false"
+  fi
+fi
+
+if [ "$APP_ENV_NORMALIZED" = "production" ] && ! is_true "$KEYCLOAK_VERIFY_EMAIL"; then
+  echo "KEYCLOAK_VERIFY_EMAIL must be true in production"
+  exit 1
+fi
+
+if [ "$APP_ENV_NORMALIZED" = "production" ]; then
+  if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_PORT" ] || [ -z "$SMTP_USERNAME" ] || [ -z "$SMTP_PASSWORD" ] || [ -z "$SMTP_FROM" ]; then
+    echo "SMTP config is required in production when Keycloak email flows are enabled"
+    exit 1
   fi
 fi
 
@@ -59,6 +360,240 @@ if ! /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM" >/dev/null 2>&1; then
   echo "Realm $APP_REALM is not available"
   exit 1
 fi
+
+get_client_uuid() {
+  client_id="$1"
+  client_search=$(/opt/keycloak/bin/kcadm.sh get "clients?clientId=$client_id" -r "$APP_REALM")
+  printf '%s' "$client_search" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+get_client_role_id() {
+  client_uuid="$1"
+  role_name="$2"
+  role_payload=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name" -r "$APP_REALM")
+  printf '%s' "$role_payload" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+ensure_web_client() {
+  client_uuid="$(get_client_uuid "$WEB_CLIENT_ID")"
+  if [ -z "$client_uuid" ]; then
+    /opt/keycloak/bin/kcadm.sh create clients -r "$APP_REALM" \
+      -s "clientId=$WEB_CLIENT_ID" \
+      -s "name=AcomOfferDesk Web" \
+      -s enabled=true \
+      -s publicClient=true \
+      -s standardFlowEnabled=true \
+      -s directAccessGrantsEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s serviceAccountsEnabled=false \
+      -s fullScopeAllowed=true \
+      -s "rootUrl=$WEB_BASE_URL" \
+      -s "baseUrl=$WEB_BASE_URL" \
+      -s 'webOrigins=["'"$WEB_BASE_URL"'"]' \
+      -s 'redirectUris=["'"$BACKEND_BASE_URL"'/api/v1/auth/callback"]'
+    client_uuid="$(get_client_uuid "$WEB_CLIENT_ID")"
+  else
+    /opt/keycloak/bin/kcadm.sh update "clients/$client_uuid" -r "$APP_REALM" \
+      -s enabled=true \
+      -s publicClient=true \
+      -s standardFlowEnabled=true \
+      -s directAccessGrantsEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s serviceAccountsEnabled=false \
+      -s fullScopeAllowed=true \
+      -s "rootUrl=$WEB_BASE_URL" \
+      -s "baseUrl=$WEB_BASE_URL" \
+      -s 'webOrigins=["'"$WEB_BASE_URL"'"]' \
+      -s 'redirectUris=["'"$BACKEND_BASE_URL"'/api/v1/auth/callback"]'
+  fi
+}
+
+ensure_api_client() {
+  client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  if [ -z "$client_uuid" ]; then
+    /opt/keycloak/bin/kcadm.sh create clients -r "$APP_REALM" \
+      -s "clientId=$API_CLIENT_ID" \
+      -s "name=AcomOfferDesk API Roles" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s serviceAccountsEnabled=false \
+      -s fullScopeAllowed=true
+    client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  else
+    /opt/keycloak/bin/kcadm.sh update "clients/$client_uuid" -r "$APP_REALM" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s serviceAccountsEnabled=false \
+      -s fullScopeAllowed=true
+  fi
+}
+
+ensure_admin_service_client() {
+  client_uuid="$(get_client_uuid "$ADMIN_SERVICE_CLIENT_ID")"
+  if [ -z "$client_uuid" ]; then
+    /opt/keycloak/bin/kcadm.sh create clients -r "$APP_REALM" \
+      -s "clientId=$ADMIN_SERVICE_CLIENT_ID" \
+      -s "name=AcomOfferDesk Admin Service" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s "secret=$ADMIN_SERVICE_CLIENT_SECRET" \
+      -s standardFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s serviceAccountsEnabled=true \
+      -s fullScopeAllowed=false
+    client_uuid="$(get_client_uuid "$ADMIN_SERVICE_CLIENT_ID")"
+  else
+    /opt/keycloak/bin/kcadm.sh update "clients/$client_uuid" -r "$APP_REALM" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s "secret=$ADMIN_SERVICE_CLIENT_SECRET" \
+      -s standardFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s serviceAccountsEnabled=true \
+      -s fullScopeAllowed=false
+  fi
+}
+
+ensure_client_role() {
+  client_uuid="$1"
+  role_name="$2"
+  composite_flag="$3"
+
+  if /opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name" -r "$APP_REALM" >/dev/null 2>&1; then
+    /opt/keycloak/bin/kcadm.sh update "clients/$client_uuid/roles/$role_name" -r "$APP_REALM" \
+      -s "name=$role_name" \
+      -s "composite=$composite_flag" \
+      -s clientRole=true >/dev/null
+  else
+    /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles" -r "$APP_REALM" \
+      -s "name=$role_name" \
+      -s "composite=$composite_flag" \
+      -s clientRole=true >/dev/null
+  fi
+}
+
+sync_composite_role() {
+  role_name="$1"
+  desired_members="$2"
+  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+
+  if [ -z "$api_client_uuid" ]; then
+    echo "Unable to resolve API client UUID for $API_CLIENT_ID"
+    exit 1
+  fi
+
+  target_role_id="$(get_client_role_id "$api_client_uuid" "$role_name")"
+  if [ -z "$target_role_id" ]; then
+    echo "Unable to resolve role id for composite role: $role_name"
+    exit 1
+  fi
+
+  printf '%s\n' "$desired_members" | while IFS= read -r member_role; do
+    if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ]; then
+      /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
+        --rid "$target_role_id" \
+        --cclientid "$API_CLIENT_ID" \
+        --rolename "$member_role" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+ensure_api_roles_model() {
+  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  if [ -z "$api_client_uuid" ]; then
+    echo "Unable to resolve API client UUID for $API_CLIENT_ID"
+    exit 1
+  fi
+
+  printf '%s\n' "$PERMISSION_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -n "$role_name" ]; then
+      ensure_client_role "$api_client_uuid" "$role_name" "false"
+    fi
+  done
+
+  printf '%s\n' "$APP_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -n "$role_name" ]; then
+      ensure_client_role "$api_client_uuid" "$role_name" "true"
+    fi
+  done
+
+  sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
+  sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
+  sync_composite_role "app.contractor" "$ROLE_APP_CONTRACTOR"
+  sync_composite_role "app.project_manager" "$ROLE_APP_PROJECT_MANAGER"
+  sync_composite_role "app.lead_economist" "$ROLE_APP_LEAD_ECONOMIST"
+  sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
+  sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
+
+}
+
+ensure_admin_service_role_bindings() {
+  # Required for backend KeycloakAdminService operations:
+  # lookup users, create/update users, reset passwords, terminate sessions.
+  /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
+    --uusername "service-account-$ADMIN_SERVICE_CLIENT_ID" \
+    --cclientid realm-management \
+    --rolename query-users \
+    --rolename view-users \
+    --rolename manage-users >/dev/null 2>&1 || true
+}
+
+ensure_bootstrap_user() {
+  USER_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "users?username=$BOOTSTRAP_USERNAME&exact=true" -r "$APP_REALM")
+  USER_UUID=$(printf '%s' "$USER_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+
+  if [ -z "$USER_UUID" ]; then
+    /opt/keycloak/bin/kcadm.sh create users -r "$APP_REALM" \
+      -s "username=$BOOTSTRAP_USERNAME" \
+      -s enabled=true \
+      -s emailVerified=true \
+      -s "email=$BOOTSTRAP_EMAIL" \
+      -s "firstName=$BOOTSTRAP_FIRST_NAME" \
+      -s "lastName=$BOOTSTRAP_LAST_NAME"
+    USER_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "users?username=$BOOTSTRAP_USERNAME&exact=true" -r "$APP_REALM")
+    USER_UUID=$(printf '%s' "$USER_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+  fi
+
+  if [ -n "$USER_UUID" ]; then
+    USER_UPDATE_FILE="$(mktemp)"
+    cat >"$USER_UPDATE_FILE" <<EOF
+{
+  "enabled": true,
+  "emailVerified": true,
+  "email": "$BOOTSTRAP_EMAIL",
+  "firstName": "$BOOTSTRAP_FIRST_NAME",
+  "lastName": "$BOOTSTRAP_LAST_NAME",
+  "requiredActions": ["UPDATE_PASSWORD"]
+}
+EOF
+    /opt/keycloak/bin/kcadm.sh update "users/$USER_UUID" -r "$APP_REALM" -f "$USER_UPDATE_FILE"
+    rm -f "$USER_UPDATE_FILE"
+
+    if [ -n "$BOOTSTRAP_PASSWORD" ]; then
+      /opt/keycloak/bin/kcadm.sh set-password -r "$APP_REALM" \
+        --userid "$USER_UUID" \
+        --new-password "$BOOTSTRAP_PASSWORD" \
+        --temporary
+    fi
+
+    /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
+      --uusername "$BOOTSTRAP_USERNAME" \
+      --cclientid "$API_CLIENT_ID" \
+      --rolename app.superadmin >/dev/null 2>&1 || true
+  fi
+}
 
 REALM_UPDATE_FILE="$(mktemp)"
 
@@ -92,7 +627,7 @@ if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n
   "defaultLocale": "ru",
   "supportedLocales": ["ru"],
   "smtpServer": {
-    "auth": "true",
+    "auth": "$SMTP_AUTH",
     "host": "$SMTP_HOST",
     "port": "$SMTP_PORT",
     "user": "$SMTP_USERNAME",
@@ -132,66 +667,9 @@ fi
 /opt/keycloak/bin/kcadm.sh update "realms/$APP_REALM" -f "$REALM_UPDATE_FILE"
 rm -f "$REALM_UPDATE_FILE"
 
-CLIENT_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "clients?clientId=$CLIENT_ID" -r "$APP_REALM")
-CLIENT_UUID=$(printf '%s' "$CLIENT_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-
-if [ -z "$CLIENT_UUID" ]; then
-  /opt/keycloak/bin/kcadm.sh create clients -r "$APP_REALM" \
-    -s "clientId=$CLIENT_ID" \
-    -s "name=AcomOfferDesk Web" \
-    -s enabled=true \
-    -s publicClient=true \
-    -s standardFlowEnabled=true \
-    -s directAccessGrantsEnabled=false \
-    -s implicitFlowEnabled=false \
-    -s "rootUrl=$WEB_BASE_URL" \
-    -s "baseUrl=$WEB_BASE_URL" \
-    -s 'webOrigins=["'"$WEB_BASE_URL"'"]' \
-    -s 'redirectUris=["'"$BACKEND_BASE_URL"'/api/v1/auth/callback"]'
-  CLIENT_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "clients?clientId=$CLIENT_ID" -r "$APP_REALM")
-  CLIENT_UUID=$(printf '%s' "$CLIENT_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-else
-  /opt/keycloak/bin/kcadm.sh update "clients/$CLIENT_UUID" -r "$APP_REALM" \
-    -s "rootUrl=$WEB_BASE_URL" \
-    -s "baseUrl=$WEB_BASE_URL" \
-    -s 'webOrigins=["'"$WEB_BASE_URL"'"]' \
-    -s 'redirectUris=["'"$BACKEND_BASE_URL"'/api/v1/auth/callback"]'
-fi
-
-if [ -n "$BOOTSTRAP_PASSWORD" ]; then
-  USER_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "users?username=$BOOTSTRAP_USERNAME&exact=true" -r "$APP_REALM")
-  USER_UUID=$(printf '%s' "$USER_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-
-  if [ -z "$USER_UUID" ]; then
-    /opt/keycloak/bin/kcadm.sh create users -r "$APP_REALM" \
-      -s "username=$BOOTSTRAP_USERNAME" \
-      -s enabled=true \
-      -s emailVerified=true \
-      -s "email=$BOOTSTRAP_EMAIL" \
-      -s "firstName=$BOOTSTRAP_FIRST_NAME" \
-      -s "lastName=$BOOTSTRAP_LAST_NAME"
-    USER_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "users?username=$BOOTSTRAP_USERNAME&exact=true" -r "$APP_REALM")
-    USER_UUID=$(printf '%s' "$USER_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-  fi
-
-  if [ -n "$USER_UUID" ]; then
-    USER_UPDATE_FILE="$(mktemp)"
-    cat >"$USER_UPDATE_FILE" <<EOF
-{
-  "enabled": true,
-  "emailVerified": true,
-  "email": "$BOOTSTRAP_EMAIL",
-  "firstName": "$BOOTSTRAP_FIRST_NAME",
-  "lastName": "$BOOTSTRAP_LAST_NAME",
-  "requiredActions": ["UPDATE_PASSWORD"]
-}
-EOF
-    /opt/keycloak/bin/kcadm.sh update "users/$USER_UUID" -r "$APP_REALM" -f "$USER_UPDATE_FILE"
-    rm -f "$USER_UPDATE_FILE"
-    /opt/keycloak/bin/kcadm.sh set-password -r "$APP_REALM" \
-      --userid "$USER_UUID" \
-      --new-password "$BOOTSTRAP_PASSWORD" \
-      --temporary
-  fi
-fi
-
+ensure_web_client
+ensure_api_client
+ensure_admin_service_client
+ensure_api_roles_model
+ensure_admin_service_role_bindings
+ensure_bootstrap_user

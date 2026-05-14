@@ -33,10 +33,6 @@ export type CompleteTgRegistrationResponse = {
     status: string;
     tg_user_id: number;
   };
-  _links: {
-    self: { href: string; method: string };
-    available_action?: { href: string; method: string };
-  };
 };
 
 export const requestTgEmailVerification = async (payload: RequestTgEmailVerificationPayload): Promise<{ detail: string }> => {

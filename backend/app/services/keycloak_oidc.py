@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -9,6 +10,10 @@ from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.domain.exceptions import Forbidden, Unauthorized
+
+logger = logging.getLogger(__name__)
+
+_ALLOWED_KEYCLOAK_SIGNING_ALGORITHMS = {"RS256"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +38,7 @@ class KeycloakAccessTokenClaims:
     email: str | None
     email_verified: bool
     realm_roles: frozenset[str]
+    api_roles: frozenset[str]
 
 
 _jwks_cache: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
@@ -158,11 +164,15 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
     if key is None:
         raise Unauthorized("Unknown token key")
 
+    token_algorithm = str(header.get("alg") or "").strip()
+    if token_algorithm not in _ALLOWED_KEYCLOAK_SIGNING_ALGORITHMS:
+        raise Unauthorized("Invalid token algorithm")
+
     try:
         payload = jwt.decode(
             token,
             key,
-            algorithms=[str(header.get("alg") or "RS256")],
+            algorithms=sorted(_ALLOWED_KEYCLOAK_SIGNING_ALGORITHMS),
             issuer=settings.resolved_keycloak_issuer_url,
             options={"verify_aud": False},
         )
@@ -173,6 +183,12 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
     authorized_party = str(payload.get("azp") or "").strip()
     audience_values = audience if isinstance(audience, list) else [audience]
     if settings.keycloak_client_id not in [str(item) for item in audience_values if item] and authorized_party != settings.keycloak_client_id:
+        logger.warning(
+            "keycloak_invalid_audience configured_client_id=%s azp=%s aud=%s",
+            settings.keycloak_client_id,
+            authorized_party,
+            audience_values,
+        )
         raise Unauthorized("Invalid token audience")
 
     subject = str(payload.get("sub") or "").strip()
@@ -183,7 +199,34 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
 
     realm_access = payload.get("realm_access") or {}
     realm_roles_raw = realm_access.get("roles") if isinstance(realm_access, dict) else []
-    realm_roles = frozenset(str(item) for item in realm_roles_raw if isinstance(item, str) and item.strip())
+    realm_roles = frozenset(item.strip() for item in realm_roles_raw if isinstance(item, str) and item.strip())
+
+    resource_access = payload.get("resource_access") or {}
+    api_client_access = resource_access.get(settings.keycloak_api_client_id) if isinstance(resource_access, dict) else {}
+    if not isinstance(resource_access, dict) or settings.keycloak_api_client_id not in resource_access:
+        available_client_ids = sorted(resource_access.keys()) if isinstance(resource_access, dict) else []
+        logger.warning(
+            "keycloak_api_client_access_missing subject=%s configured_api_client_id=%s available_clients=%s",
+            subject,
+            settings.keycloak_api_client_id,
+            available_client_ids,
+        )
+    api_roles_raw = api_client_access.get("roles") if isinstance(api_client_access, dict) else []
+    api_roles = frozenset(item.strip() for item in api_roles_raw if isinstance(item, str) and item.strip())
+    if not api_roles:
+        logger.warning(
+            "keycloak_api_roles_empty subject=%s configured_api_client_id=%s",
+            subject,
+            settings.keycloak_api_client_id,
+        )
+    logger.debug(
+        "keycloak_roles_decoded subject=%s configured_api_client_id=%s api_roles_count=%s api_roles=%s",
+        subject,
+        settings.keycloak_api_client_id,
+        len(api_roles),
+        sorted(api_roles),
+    )
+
     return KeycloakAccessTokenClaims(
         subject=subject,
         issuer=issuer,
@@ -196,4 +239,5 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
         email=str(payload.get("email") or "").strip() or None,
         email_verified=bool(payload.get("email_verified")),
         realm_roles=realm_roles,
+        api_roles=api_roles,
     )

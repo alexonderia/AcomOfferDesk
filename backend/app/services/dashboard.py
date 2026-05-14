@@ -119,8 +119,17 @@ class DashboardService:
     async def get_responsibility_dashboard(self, *, current_user: CurrentUser) -> ResponsibilityDashboard:
         UserPolicy.ensure_can_view_responsibility_dashboard(current_user)
 
+        dashboard_role_ids = [settings.lead_economist_role_id, settings.economist_role_id]
+        if current_user.role_id == settings.superadmin_role_id:
+            dashboard_role_ids = [
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+                settings.operator_role_id,
+            ]
+
         staff_rows = await self._users.list_staff_with_profiles_and_roles_for_dashboard(
-            role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+            role_ids=dashboard_role_ids,
         )
 
         by_id = {user.id: (user, profile, role) for user, profile, role in staff_rows}

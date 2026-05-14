@@ -233,9 +233,23 @@ export const PlanProgressVisual = ({
           </Stack>
         </Box>
       </Box>
-      <Stack spacing={1}>
+      <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0 }}>
         
-        <Stack spacing={0.8}>
+        <Stack
+          spacing={0.8}
+          sx={{
+            minHeight: 0,
+            maxHeight: { xs: "none", sm: 108 },
+            overflowY: { xs: "visible", sm: "auto" },
+            overflowX: "hidden",
+            pr: 0.25,
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            "&::-webkit-scrollbar": {
+              display: "none",
+            },
+          }}
+        >
           {legendItems.map((item) => (
             <Stack
               key={item.key}
@@ -253,6 +267,8 @@ export const PlanProgressVisual = ({
                 sx={{
                   cursor: item.onClick ? "pointer" : "default",
                   opacity: item.selected ? 1 : 0.94,
+                  minWidth: 0,
+                  overflow: "hidden",
                 }}
               >
                 
@@ -267,7 +283,11 @@ export const PlanProgressVisual = ({
                 <Typography
                   variant="caption"
                   color="text.secondary"
-                  sx={{ fontSize: 12, lineHeight: 1.1 }}
+                  sx={{
+                    fontSize: 12,
+                    lineHeight: 1.1,
+                    overflowWrap: "anywhere",
+                  }}
                 >
                   {item.label}
                 </Typography>
@@ -667,7 +687,7 @@ export const PlanAnalyticsCards = ({
           }}
         >
           
-          <Stack spacing={1.1} sx={{ height: "100%" }}>
+          <Stack spacing={1.1} sx={{ height: "100%", minHeight: 0 }}>
             
             <Stack
               direction="row"
@@ -818,7 +838,21 @@ export const PlanAnalyticsCards = ({
                     </Stack>
                   </Box>
                 </Stack>
-                <Stack spacing={0.7} sx={{ overflow: "auto" }}>
+                <Stack
+                  spacing={0.7}
+                  sx={{
+                    minHeight: 0,
+                    maxHeight: { xs: "none", md: 132 },
+                    overflowY: { xs: "visible", md: "auto" },
+                    overflowX: "hidden",
+                    pr: 0.25,
+                    scrollbarWidth: "none",
+                    msOverflowStyle: "none",
+                    "&::-webkit-scrollbar": {
+                      display: "none",
+                    },
+                  }}
+                >
                   {distributionItems.map((item) => (
                     <Stack key={item.key} spacing={0.45}>
                       
@@ -827,6 +861,7 @@ export const PlanAnalyticsCards = ({
                         spacing={0.8}
                         alignItems="center"
                         minWidth={0}
+                        sx={{ overflow: "hidden" }}
                       >
                         
                         <Box
@@ -840,9 +875,12 @@ export const PlanAnalyticsCards = ({
                         />
                         <Typography
                           variant="body2"
-                          noWrap
                           fontWeight={700}
-                          sx={{ fontSize: 12.5, lineHeight: 1.2 }}
+                          sx={{
+                            fontSize: 12.5,
+                            lineHeight: 1.2,
+                            overflowWrap: "anywhere",
+                          }}
                         >
                           {item.label}
                         </Typography>

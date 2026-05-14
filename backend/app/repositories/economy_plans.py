@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import bindparam, func, select, text
@@ -345,7 +345,7 @@ class EconomyPlanRepository:
             plan.period_start = period_start
         if period_end is not None:
             plan.period_end = period_end
-        plan.updated_at = datetime.utcnow()
+        plan.updated_at = datetime.now(timezone.utc)
 
     async def close_subtree(self, *, root_plan_id: int, closed_at: date) -> None:
         stmt = text(

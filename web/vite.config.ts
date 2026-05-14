@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET ?? "http://gateway";
 
 export default defineConfig({
+  logLevel: process.env.VITEST ? "error" : "info",
   plugins: [react()],
   resolve: {
     alias: {
@@ -19,6 +20,7 @@ export default defineConfig({
     },
   },
   build: {
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -57,5 +59,11 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: "./src/test/setup.ts",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });

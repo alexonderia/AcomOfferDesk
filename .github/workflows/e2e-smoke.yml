@@ -1,0 +1,78 @@
+name: E2E Smoke (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_file:
+        description: "Env file path for helper scripts"
+        required: false
+        default: ".env.dev"
+      base_url:
+        description: "Public base URL for the target stand (optional)"
+        required: false
+        default: ""
+      strict_credentials:
+        description: "Fail if E2E credentials are missing"
+        required: false
+        type: boolean
+        default: false
+      provision_users:
+        description: "Create temporary e2e users before tests and cleanup after run"
+        required: false
+        type: boolean
+        default: true
+      keep_provisioned_users:
+        description: "Keep provisioned temporary users after run (debug only)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          npm --prefix web ci
+          npm --prefix web exec -- playwright install --with-deps
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run e2e smoke
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          ENV_FILE: ${{ inputs.env_file }}
+          BASE_URL: ${{ inputs.base_url }}
+          STRICT_CREDENTIALS: ${{ inputs.strict_credentials }}
+          PROVISION_USERS: ${{ inputs.provision_users }}
+          KEEP_PROVISIONED_USERS: ${{ inputs.keep_provisioned_users }}
+          E2E_SUPERADMIN_USERNAME: ${{ secrets.E2E_SUPERADMIN_USERNAME }}
+          E2E_SUPERADMIN_PASSWORD: ${{ secrets.E2E_SUPERADMIN_PASSWORD }}
+          E2E_ADMIN_USERNAME: ${{ secrets.E2E_ADMIN_USERNAME }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_PROJECT_MANAGER_USERNAME: ${{ secrets.E2E_PROJECT_MANAGER_USERNAME }}
+          E2E_PROJECT_MANAGER_PASSWORD: ${{ secrets.E2E_PROJECT_MANAGER_PASSWORD }}
+          E2E_LEAD_ECONOMIST_USERNAME: ${{ secrets.E2E_LEAD_ECONOMIST_USERNAME }}
+          E2E_LEAD_ECONOMIST_PASSWORD: ${{ secrets.E2E_LEAD_ECONOMIST_PASSWORD }}
+          E2E_ECONOMIST_USERNAME: ${{ secrets.E2E_ECONOMIST_USERNAME }}
+          E2E_ECONOMIST_PASSWORD: ${{ secrets.E2E_ECONOMIST_PASSWORD }}
+          E2E_OPERATOR_USERNAME: ${{ secrets.E2E_OPERATOR_USERNAME }}
+          E2E_OPERATOR_PASSWORD: ${{ secrets.E2E_OPERATOR_PASSWORD }}
+          E2E_CONTRACTOR_USERNAME: ${{ secrets.E2E_CONTRACTOR_USERNAME }}
+          E2E_CONTRACTOR_PASSWORD: ${{ secrets.E2E_CONTRACTOR_PASSWORD }}
+        run: ./scripts/e2e-smoke.sh

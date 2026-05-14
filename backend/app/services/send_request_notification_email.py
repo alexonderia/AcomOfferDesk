@@ -121,6 +121,9 @@ class SendRequestNotificationEmailUseCase:
                 )
 
             try:
+                # TODO(notification-center): worker-level SMTP delivery status is async.
+                # To emit precise `email.sent` / `email.failed` center notifications,
+                # add a feedback event from notifications_worker to backend service layer.
                 await self._email_service.send_email(
                     to_email=payload.to_email,
                     subject=payload.subject,

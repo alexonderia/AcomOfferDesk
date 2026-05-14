@@ -12,6 +12,7 @@ from app.repositories.economy_plans import EconomyPlanRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.feedback import FeedBackRepository
+from app.repositories.notifications import NotificationRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
@@ -35,6 +36,7 @@ class UnitOfWork:
         self.chats: ChatRepository | None = None
         self.messages: MessageRepository | None = None
         self.feedback: FeedBackRepository | None = None
+        self.notifications: NotificationRepository | None = None
         self.user_status_periods: UserStatusPeriodRepository | None = None
         self.user_auth_accounts: UserAuthAccountRepository | None = None
         self.user_contact_channels: UserContactChannelRepository | None = None
@@ -53,6 +55,7 @@ class UnitOfWork:
         self.chats = ChatRepository(self.session)
         self.messages = MessageRepository(self.session)
         self.feedback = FeedBackRepository(self.session)
+        self.notifications = NotificationRepository(self.session)
         self.user_status_periods = UserStatusPeriodRepository(self.session)
         self.user_auth_accounts = UserAuthAccountRepository(self.session)
         self.user_contact_channels = UserContactChannelRepository(self.session)

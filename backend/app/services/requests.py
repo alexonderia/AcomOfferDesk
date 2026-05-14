@@ -17,6 +17,7 @@ from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService
+from app.services.notifications import NotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
 
 PARTNER_CARD_NORMATIVE_ID = 1
@@ -208,6 +209,7 @@ class RequestService:
         user_status_periods: UserStatusPeriodRepository,
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
+        notifications: NotificationService | None = None,
     ):
         self._requests = requests
         self._files = files
@@ -216,6 +218,7 @@ class RequestService:
         self._user_status_periods = user_status_periods
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
+        self._notifications = notifications
 
     async def create_request(
         self,
@@ -328,6 +331,15 @@ class RequestService:
             request_id=request.id,
             additional_emails=normalized_additional_emails,
         )
+        if self._notifications is not None:
+            await self._notifications.notify_email_sent(
+                recipient_user_id=current_user.user_id,
+                body=f"Рассылка по заявке №{request.id} отправлена на {len(normalized_additional_emails)} адрес(ов).",
+                entity_type="request",
+                entity_id=request.id,
+                link_url=f"/requests/{request.id}",
+                payload={"sent_to": normalized_additional_emails},
+            )
 
         return RequestEmailNotificationResult(
             request_id=request.id,
@@ -438,6 +450,7 @@ class RequestService:
         if data.status is not None:
             if data.status not in EDITABLE_REQUEST_STATUSES:
                 raise Conflict("Unsupported request status")
+            previous_status = request.status
             status_changed = data.status != request.status
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
@@ -463,6 +476,14 @@ class RequestService:
                 )
                 for tg_id in tg_ids:
                     await notify_request_status_changed(tg_id=tg_id)
+            if status_changed and self._notifications is not None:
+                await self._notifications.notify_request_status_changed(
+                    actor_user_id=current_user.user_id,
+                    recipient_user_id=request.id_user,
+                    request_id=request.id,
+                    previous_status=previous_status,
+                    new_status=data.status,
+                )
 
         if data.deadline_at is not None:
             if _normalize_to_utc(data.deadline_at) < _utcnow():

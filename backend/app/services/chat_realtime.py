@@ -8,6 +8,7 @@ from app.core.uow import UnitOfWork
 from app.domain.exceptions import Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser
 from app.services.files import FileService
+from app.services.notifications import NotificationService
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.offers import (
     AttachmentFileInput,
@@ -38,6 +39,7 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
     assert uow.profiles is not None
     assert uow.company_contacts is not None
     assert uow.users is not None
+    notifications_repo = getattr(uow, "notifications", None)
     return OfferService(
         uow.requests,
         uow.offers,
@@ -49,6 +51,7 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
         uow.users,
         file_service=file_service,
         keycloak_admin=KeycloakAdminService(),
+        notifications=(NotificationService(notifications_repo) if notifications_repo is not None else None),
     )
 
 

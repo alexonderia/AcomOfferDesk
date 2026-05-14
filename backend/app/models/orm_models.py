@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     Text,
@@ -365,6 +366,33 @@ class MessageReceipt(Base):
     )
     delivered_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
     read_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+
+
+class UserNotification(Base):
+    __tablename__ = "user_notifications"
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('offer.created','message.created','email.sent','email.failed','request.status_changed','system.warning')",
+            name="user_notifications_type_chk",
+        ),
+        CheckConstraint(
+            "severity IN ('info','success','warning','error')",
+            name="user_notifications_severity_chk",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    entity_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    link_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    read_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
 
 class RequestFile(Base):

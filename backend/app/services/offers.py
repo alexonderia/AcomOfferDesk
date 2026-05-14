@@ -24,6 +24,7 @@ from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.files import FileService
 from app.services.keycloak_admin import KeycloakAdminService
+from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 
@@ -248,6 +249,7 @@ class OfferService:
         users: UserRepository,
         file_service: FileService | None = None,
         keycloak_admin: KeycloakAdminService | None = None,
+        notifications: NotificationService | None = None,
     ):
         self._requests = requests
         self._offers = offers
@@ -259,6 +261,7 @@ class OfferService:
         self._users = users
         self._file_service = file_service or FileService(files)
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
+        self._notifications = notifications
 
     def _build_read_only_chat_state(self, *, chat_id: int, last_message_id: int | None, last_message_at) -> ChatState:
         return ChatState(
@@ -552,6 +555,13 @@ class OfferService:
             contractor_user_id=current_user.user_id,
             offer_amount=offer_amount,
         )
+        if self._notifications is not None:
+            await self._notifications.notify_offer_created(
+                actor_user_id=current_user.user_id,
+                recipient_user_id=request.id_user,
+                request_id=request.id,
+                offer_id=offer.id,
+            )
         return offer.id
 
     async def create_manual_offer(
@@ -1025,6 +1035,17 @@ class OfferService:
             if db_file is None:
                 raise NotFound("File not found")
             await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
+
+        if self._notifications is not None:
+            participant_user_ids = await self._chats.list_active_participant_user_ids(chat_id=chat.id)
+            await self._notifications.notify_message_created(
+                author_user_id=current_user.user_id,
+                recipient_user_ids=participant_user_ids,
+                request_id=request.id,
+                offer_id=offer.id,
+                chat_id=chat.id,
+                message_id=message.id,
+            )
 
         if current_user.user_id != offer.id_user and settings.telegram_legacy_enabled:
             tg_id = await self._users.get_active_approved_contractor_tg_id(

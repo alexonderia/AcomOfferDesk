@@ -35,6 +35,17 @@ export const getCredentialsOrSkip = (
 };
 
 export const loginViaKeycloak = async (page: Page, credentials: Credentials): Promise<void> => {
+  const waitForPostLoginUrl = async (): Promise<void> => {
+    await page.waitForURL(
+      (url) =>
+        !url.pathname.startsWith('/iam') &&
+        !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
+        !url.pathname.startsWith('/auth/callback') &&
+        !url.pathname.startsWith('/api/v1/auth/callback'),
+      { timeout: 30_000, waitUntil: 'domcontentloaded' }
+    );
+  };
+
   await page.goto('/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1');
 
   const visitSiteButton = page.getByRole('button', { name: /visit site/i });
@@ -52,23 +63,11 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
   await submitButton.click();
 
   try {
-    await page.waitForURL(
-      (url) =>
-        !url.pathname.startsWith('/iam') &&
-        !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
-        !url.pathname.startsWith('/auth/callback'),
-      { timeout: 30_000 }
-    );
+    await waitForPostLoginUrl();
   } catch (error) {
     if (new URL(page.url()).pathname.startsWith('/iam')) {
       await submitButton.click();
-      await page.waitForURL(
-        (url) =>
-          !url.pathname.startsWith('/iam') &&
-          !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
-          !url.pathname.startsWith('/auth/callback'),
-        { timeout: 30_000 }
-      );
+      await waitForPostLoginUrl();
     } else {
       throw error;
     }

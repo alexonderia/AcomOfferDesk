@@ -124,7 +124,12 @@ class NotificationService:
             entity_type="offer",
             entity_id=offer_id,
             link_url=f"/requests/{request_id}",
-            payload={"request_id": request_id, "offer_id": offer_id},
+            payload={
+                "request_id": request_id,
+                "offer_id": offer_id,
+                "actor_user_id": actor_user_id,
+                "recipient_user_id": recipient_user_id,
+            },
         )
 
     async def notify_message_created(
@@ -152,6 +157,7 @@ class NotificationService:
                 "offer_id": offer_id,
                 "chat_id": chat_id,
                 "message_id": message_id,
+                "author_user_id": author_user_id,
             },
         )
 
@@ -215,7 +221,7 @@ class NotificationService:
         return await self.create_for_user(
             user_id=recipient_user_id,
             notification_type="request.status_changed",
-            severity="warning",
+            severity="info",
             title="Статус заявки изменен",
             body=f"Заявка №{request_id}: {previous_status} -> {new_status}.",
             entity_type="request",

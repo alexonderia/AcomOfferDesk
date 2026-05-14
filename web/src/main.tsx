@@ -6,6 +6,7 @@ import { appTheme } from '@shared/theme/appTheme';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from '@app/providers/AuthProvider';
 import { ChatRealtimeProvider } from '@app/providers/ChatRealtimeProvider';
+import { SnackbarProvider } from 'notistack';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -14,7 +15,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <AuthProvider>
           <ChatRealtimeProvider>
-            <App />
+            <SnackbarProvider
+              maxSnack={4}
+              autoHideDuration={4000}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+              <App />
+            </SnackbarProvider>
           </ChatRealtimeProvider>
         </AuthProvider>
       </BrowserRouter>

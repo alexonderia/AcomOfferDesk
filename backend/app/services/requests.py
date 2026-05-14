@@ -334,11 +334,15 @@ class RequestService:
         if self._notifications is not None:
             await self._notifications.notify_email_sent(
                 recipient_user_id=current_user.user_id,
-                body=f"Рассылка по заявке №{request.id} отправлена на {len(normalized_additional_emails)} адрес(ов).",
+                title="Письмо поставлено в очередь",
+                body=f"Рассылка по заявке №{request.id} поставлена в очередь для {len(normalized_additional_emails)} адрес(ов).",
                 entity_type="request",
                 entity_id=request.id,
                 link_url=f"/requests/{request.id}",
-                payload={"sent_to": normalized_additional_emails},
+                payload={
+                    "queued_to": normalized_additional_emails,
+                    "request_id": request.id,
+                },
             )
 
         return RequestEmailNotificationResult(

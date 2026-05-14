@@ -16,6 +16,7 @@ import { FeedbackButton } from '@shared/components/FeedbackButton';
 import { NormativeFileButton } from '@shared/components/NormativeFileButton';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
+import { NotificationBell } from '@features/notifications';
 import {
   MOBILE_BOTTOM_NAV_HEIGHT_PX,
   MOBILE_BOTTOM_NAV_SAFE_AREA,
@@ -234,6 +235,9 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
           zIndex: (theme) => theme.zIndex.appBar,
         }}
       >
+        <Box sx={{ position: 'absolute', top: -50, right: 14 }}>
+          <NotificationBell variant="floating" />
+        </Box>
         <Stack direction="row" alignItems="stretch" sx={{ height: MOBILE_BOTTOM_NAV_HEIGHT_PX }}>
           {navigationItems.map((item) => {
             const isActive = activeKey === item.key;

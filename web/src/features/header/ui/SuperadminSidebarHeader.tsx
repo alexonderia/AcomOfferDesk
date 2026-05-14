@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { ActionButton } from '@shared/components/ActionButton';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
+import { NotificationBell } from '@features/notifications';
 import { NormativeFileButton } from '@shared/components/NormativeFileButton';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
@@ -298,6 +299,7 @@ export const SuperadminSidebarHeader = ({
             borderColor: 'divider'
           }}
         >
+          <NotificationBell collapsed={collapsed} />
           {config.showRoleGuide ? <RoleGuideButton iconOnly={collapsed} sidebar /> : null}
           {config.showFeedback ? <FeedbackButton iconOnly={collapsed} sidebar /> : null}
 

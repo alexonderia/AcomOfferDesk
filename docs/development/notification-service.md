@@ -52,11 +52,25 @@ Already connected:
 - offer created -> notify request owner (except self-action);
 - chat message created -> notify active chat participants except author;
 - request status changed -> notify request owner (except self-action);
-- manual request email notification API success -> notify initiator (`email.sent`).
+- manual request email notification API enqueue -> notify initiator that email job is queued.
+
+## Frontend Notification Center (v1)
+
+- Source of truth: backend `user_notifications`.
+- Bell UI:
+  - desktop: notification popover from bell button;
+  - mobile: notification drawer from bell button.
+- Data loading:
+  - unread count is polled from `GET /api/v1/notifications/unread-count` every ~25 seconds while user is authenticated;
+  - list is loaded from `GET /api/v1/notifications` when center is opened.
+- Actions:
+  - `PATCH /api/v1/notifications/{notification_id}/read`;
+  - `PATCH /api/v1/notifications/read-all`.
+- Toast/snackbar layer is UX-only and does not replace persistent records in `user_notifications`.
 
 ## TODO / Clarifications
 
 - `email.failed` and real delivery confirmation currently require status feedback from `notifications_worker`.
 - At the moment backend enqueues email jobs through RabbitMQ; actual SMTP delivery happens asynchronously in worker.
 - For precise `email.sent`/`email.failed` delivery notifications, add a worker -> backend status event contract (or equivalent callback path) and persist via `NotificationService`.
-
+- Realtime push for notification center is intentionally postponed; current client behavior is polling-based.

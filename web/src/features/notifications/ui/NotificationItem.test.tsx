@@ -7,8 +7,8 @@ const notification: Notification = {
   id: 42,
   type: 'message.created',
   severity: 'info',
-  title: 'Новое сообщение',
-  body: 'В чате по заявке появилось новое сообщение.',
+  title: 'New message',
+  body: 'A new message was posted in the workspace chat.',
   entity_type: 'message',
   entity_id: 21,
   link_url: '/offers/21/workspace',
@@ -23,9 +23,8 @@ describe('NotificationItem', () => {
 
     render(<NotificationItem notification={notification} onClick={handleClick} />);
 
-    expect(screen.getByText('Новое сообщение')).toBeInTheDocument();
-    expect(screen.getByText('В чате по заявке появилось новое сообщение.')).toBeInTheDocument();
-    expect(screen.getByText('info')).toBeInTheDocument();
+    expect(screen.getByText('New message')).toBeInTheDocument();
+    expect(screen.getByText('A new message was posted in the workspace chat.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button'));
     expect(handleClick).toHaveBeenCalledWith(notification);

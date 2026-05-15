@@ -982,6 +982,42 @@ class OfferService:
         )
         return UploadedMessageAttachment(file_id=db_file.id, path=db_file.path, name=db_file.name)
 
+    async def _filter_message_notification_recipients(
+        self,
+        *,
+        chat_id: int,
+        participant_user_ids: Sequence[str],
+    ) -> list[str]:
+        unique_participants: list[str] = []
+        seen: set[str] = set()
+        for user_id in participant_user_ids:
+            normalized_user_id = user_id.strip()
+            if not normalized_user_id or normalized_user_id in seen:
+                continue
+            seen.add(normalized_user_id)
+            unique_participants.append(normalized_user_id)
+
+        try:
+            # Local import avoids circular dependency between realtime runtime and offer service modules.
+            from app.realtime.runtime import get_chat_runtime
+
+            runtime = get_chat_runtime()
+        except Exception:
+            return unique_participants
+
+        recipients: list[str] = []
+        for user_id in unique_participants:
+            try:
+                is_subscribed = await runtime.manager.is_user_subscribed(user_id=user_id, chat_id=chat_id)
+            except Exception:
+                recipients.append(user_id)
+                continue
+
+            if not is_subscribed:
+                recipients.append(user_id)
+
+        return recipients
+
     async def create_message(
         self,
         *,
@@ -1038,9 +1074,13 @@ class OfferService:
 
         if self._notifications is not None:
             participant_user_ids = await self._chats.list_active_participant_user_ids(chat_id=chat.id)
+            notification_recipients = await self._filter_message_notification_recipients(
+                chat_id=chat.id,
+                participant_user_ids=participant_user_ids,
+            )
             await self._notifications.notify_message_created(
                 author_user_id=current_user.user_id,
-                recipient_user_ids=participant_user_ids,
+                recipient_user_ids=notification_recipients,
                 request_id=request.id,
                 offer_id=offer.id,
                 chat_id=chat.id,

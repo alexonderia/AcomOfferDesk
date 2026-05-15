@@ -7,6 +7,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from '@app/providers/AuthProvider';
 import { ChatRealtimeProvider } from '@app/providers/ChatRealtimeProvider';
 import { SnackbarProvider } from 'notistack';
+import { NOTIFICATION_PUSH_MAX_SNACK } from '@features/notifications/model/constants';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -16,8 +17,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <AuthProvider>
           <ChatRealtimeProvider>
             <SnackbarProvider
-              maxSnack={4}
-              autoHideDuration={4000}
+              maxSnack={NOTIFICATION_PUSH_MAX_SNACK}
+              autoHideDuration={10000}
+              preventDuplicate
+              dense
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             >
               <App />

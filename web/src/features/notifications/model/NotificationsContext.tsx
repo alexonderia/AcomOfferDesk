@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
 import { useNotifications } from './useNotifications';
+import { NOTIFICATION_UNREAD_POLLING_INTERVAL_MS } from './constants';
 
 type NotificationsState = ReturnType<typeof useNotifications>;
 
@@ -15,7 +16,7 @@ export const NotificationsProvider = ({ children }: NotificationsProviderProps) 
   const { isAuthenticated } = useAuth();
   const notificationsState = useNotifications({
     enabled: isAuthenticated,
-    pollingIntervalMs: 25_000,
+    pollingIntervalMs: NOTIFICATION_UNREAD_POLLING_INTERVAL_MS,
   });
 
   return (

@@ -1,23 +1,23 @@
-# Notification Service (Backend)
+﻿# Сервис уведомлений (Backend)
 
-## Purpose
+## Назначение
 
-`NotificationService` is the backend entrypoint for user notification center data.  
-Notifications are created in the backend service layer, then persisted into `user_notifications`.
+`NotificationService` — backend-точка входа для данных центра уведомлений пользователя.  
+Уведомления формируются в сервисном слое backend и сохраняются в таблицу `user_notifications`.
 
-This keeps business events and notification ownership rules in one place:
-- who should receive notification;
-- when self-notifications must be skipped;
-- what safe text/link/payload should be produced.
+Это позволяет держать в одном месте:
+- правила выбора получателей;
+- правила исключения self-уведомлений;
+- безопасное формирование текста, ссылки и `payload`.
 
-## Why not DB triggers
+## Почему не триггеры БД
 
-DB triggers were intentionally not used because:
-- recipient selection depends on business context from services (offer owner, chat participants, initiator);
-- notification text/link needs application-level knowledge of routes and entities;
-- trigger-side logic is harder to test and evolve than service-level use cases.
+Триггеры БД намеренно не используются, потому что:
+- выбор получателей зависит от бизнес-контекста сервисов (владелец КП, участники чата, инициатор);
+- текст и ссылка уведомления требуют знания прикладных маршрутов и сущностей;
+- логику в сервисах проще тестировать и развивать, чем trigger-side реализацию.
 
-## Supported Notification Types (v1)
+## Поддерживаемые типы уведомлений (v1)
 
 - `offer.created`
 - `message.created`
@@ -26,51 +26,57 @@ DB triggers were intentionally not used because:
 - `request.status_changed`
 - `system.warning`
 
-Severity values:
+Поддерживаемые уровни важности (`severity`):
 - `info`
 - `success`
 - `warning`
 - `error`
 
-## API Endpoints
+## API-эндпоинты
 
 - `GET /api/v1/notifications`
-  - current user notifications only
-  - sorted by `created_at DESC`
-  - supports `limit` and `offset`
+  - возвращает только уведомления текущего пользователя;
+  - сортировка: `created_at DESC`;
+  - поддерживает `limit` и `offset`.
 - `GET /api/v1/notifications/unread-count`
-  - returns unread count for current user
+  - возвращает количество непрочитанных уведомлений текущего пользователя.
 - `PATCH /api/v1/notifications/{notification_id}/read`
-  - marks one notification as read for current user
-  - returns 404 if not found or belongs to another user
+  - помечает одно уведомление как прочитанное для текущего пользователя;
+  - возвращает `404`, если уведомление не найдено или принадлежит другому пользователю.
 - `PATCH /api/v1/notifications/read-all`
-  - marks all unread notifications for current user
+  - помечает все непрочитанные уведомления текущего пользователя.
 
-## Integrated Scenarios
+## Интегрированные сценарии
 
-Already connected:
-- offer created -> notify request owner (except self-action);
-- chat message created -> notify active chat participants except author;
-- request status changed -> notify request owner (except self-action);
-- manual request email notification API enqueue -> notify initiator that email job is queued.
+Уже подключены:
+- создание КП -> уведомление владельца заявки (кроме self-action);
+- создание сообщения в чате -> уведомление активных участников чата, кроме автора;
+- изменение статуса заявки -> уведомление владельца заявки (кроме self-action);
+- постановка email-рассылки в очередь через API -> уведомление инициатора, что задача поставлена в очередь.
 
-## Frontend Notification Center (v1)
+## Центр уведомлений на фронтенде (v1)
 
-- Source of truth: backend `user_notifications`.
-- Bell UI:
-  - desktop: notification popover from bell button;
-  - mobile: notification drawer from bell button.
-- Data loading:
-  - unread count is polled from `GET /api/v1/notifications/unread-count` every ~25 seconds while user is authenticated;
-  - list is loaded from `GET /api/v1/notifications` when center is opened.
-- Actions:
+- Источник истины: backend-таблица `user_notifications`.
+- UI колокольчика:
+  - desktop: `popover` по кнопке колокольчика;
+  - mobile: `drawer` по кнопке колокольчика.
+- Загрузка данных:
+  - `unread-count` опрашивается через `GET /api/v1/notifications/unread-count` примерно раз в 45 секунд, пока пользователь аутентифицирован;
+  - список загружается через `GET /api/v1/notifications` при открытии центра.
+- Действия:
   - `PATCH /api/v1/notifications/{notification_id}/read`;
   - `PATCH /api/v1/notifications/read-all`.
-- Toast/snackbar layer is UX-only and does not replace persistent records in `user_notifications`.
+- Слой toast/snackbar — только UX-слой и не заменяет персистентные записи в `user_notifications`.
+- В UI центра однотипные непрочитанные уведомления агрегируются по типу (например: «Новые сообщения (N)»), чтобы не показывать длинную однообразную ленту.
 
-## TODO / Clarifications
+## Поведение realtime для чата
 
-- `email.failed` and real delivery confirmation currently require status feedback from `notifications_worker`.
-- At the moment backend enqueues email jobs through RabbitMQ; actual SMTP delivery happens asynchronously in worker.
-- For precise `email.sent`/`email.failed` delivery notifications, add a worker -> backend status event contract (or equivalent callback path) and persist via `NotificationService`.
-- Realtime push for notification center is intentionally postponed; current client behavior is polling-based.
+- Если пользователь уже подписан на чат по websocket (то есть читает сообщения в реальном времени), запись `message.created` в центр уведомлений для него не создается.
+- Если чат не открыт и пользователь не подписан, уведомление сохраняется в центр как обычно.
+
+## TODO / Уточнения
+
+- Для `email.failed` и точного подтверждения фактической доставки пока нужен feedback по статусам из `notifications_worker`.
+- Сейчас backend ставит email-задачи в RabbitMQ, а фактическая SMTP-доставка выполняется асинхронно в worker.
+- Для точных уведомлений `email.sent`/`email.failed` нужно добавить контракт события статуса worker -> backend (или эквивалентный callback) и сохранять результат через `NotificationService`.
+- Realtime push для самого центра уведомлений пока отложен; текущая клиентская модель остается polling-based.

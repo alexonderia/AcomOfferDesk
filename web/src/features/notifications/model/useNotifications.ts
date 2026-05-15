@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getNotifications,
   getUnreadCount,
@@ -6,8 +6,28 @@ import {
   markNotificationRead,
 } from '../api/notificationsApi';
 import type { Notification } from './types';
+import { NOTIFICATION_UNREAD_POLLING_INTERVAL_MS } from './constants';
 
-const DEFAULT_POLLING_INTERVAL_MS = 25_000;
+const DEFAULT_POLLING_INTERVAL_MS = NOTIFICATION_UNREAD_POLLING_INTERVAL_MS;
+
+const hasSameNotificationItems = (left: Notification[], right: Notification[]) => {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((item, index) => {
+    const candidate = right[index];
+    return (
+      candidate &&
+      item.id === candidate.id &&
+      item.read_at === candidate.read_at &&
+      item.created_at === candidate.created_at &&
+      item.title === candidate.title &&
+      item.body === candidate.body &&
+      item.severity === candidate.severity
+    );
+  });
+};
 
 type LoadOptions = {
   silent?: boolean;
@@ -30,13 +50,16 @@ export const useNotifications = ({
   const [isMarkAllPending, setIsMarkAllPending] = useState(false);
   const [markingIds, setMarkingIds] = useState<Set<number>>(new Set());
 
+  const listLoadInFlightRef = useRef<Promise<Notification[]> | null>(null);
+  const markingIdsRef = useRef<Set<number>>(new Set());
+
   const refreshUnreadCount = useCallback(async () => {
     if (!enabled) {
       return 0;
     }
 
     const result = await getUnreadCount();
-    setUnreadCount(result.count);
+    setUnreadCount((current) => (current === result.count ? current : result.count));
     return result.count;
   }, [enabled]);
 
@@ -46,26 +69,38 @@ export const useNotifications = ({
         return [] as Notification[];
       }
 
+      if (listLoadInFlightRef.current) {
+        return listLoadInFlightRef.current;
+      }
+
       const silent = options.silent ?? false;
       if (!silent) {
         setIsLoadingList(true);
       }
       setListError(null);
 
-      try {
-        const response = await getNotifications({ limit: 50, offset: 0 });
-        setItems(response.items);
-        setIsListLoaded(true);
-        return response.items;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Не удалось загрузить уведомления';
-        setListError(message);
-        throw error;
-      } finally {
-        if (!silent) {
-          setIsLoadingList(false);
+      const requestPromise = (async () => {
+        try {
+          const response = await getNotifications({ limit: 50, offset: 0 });
+          setItems((current) =>
+            hasSameNotificationItems(current, response.items) ? current : response.items
+          );
+          setIsListLoaded(true);
+          return response.items;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to load notifications';
+          setListError(message);
+          throw error;
+        } finally {
+          listLoadInFlightRef.current = null;
+          if (!silent) {
+            setIsLoadingList(false);
+          }
         }
-      }
+      })();
+
+      listLoadInFlightRef.current = requestPromise;
+      return requestPromise;
     },
     [enabled]
   );
@@ -82,13 +117,14 @@ export const useNotifications = ({
       if (!enabled) {
         return;
       }
-      if (markingIds.has(notificationId)) {
+      if (markingIdsRef.current.has(notificationId)) {
         return;
       }
 
       setMarkingIds((current) => {
         const next = new Set(current);
         next.add(notificationId);
+        markingIdsRef.current = next;
         return next;
       });
 
@@ -104,11 +140,12 @@ export const useNotifications = ({
         setMarkingIds((current) => {
           const next = new Set(current);
           next.delete(notificationId);
+          markingIdsRef.current = next;
           return next;
         });
       }
     },
-    [enabled, markingIds, syncAfterMarkAction]
+    [enabled, syncAfterMarkAction]
   );
 
   const markAllAsRead = useCallback(async () => {
@@ -135,6 +172,8 @@ export const useNotifications = ({
       setIsLoadingList(false);
       setIsMarkAllPending(false);
       setMarkingIds(new Set());
+      markingIdsRef.current = new Set();
+      listLoadInFlightRef.current = null;
       return;
     }
 

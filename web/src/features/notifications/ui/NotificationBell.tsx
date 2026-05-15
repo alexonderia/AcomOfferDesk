@@ -5,7 +5,7 @@ import { useAuth } from '@app/providers/AuthProvider';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 import { ActionButton } from '@shared/components/ActionButton';
 import type { MouseEvent } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 import { useNotificationsState } from '../model/NotificationsContext';
@@ -17,6 +17,77 @@ import { NotificationCenterPopover } from './NotificationCenterPopover';
 type NotificationBellProps = {
   collapsed?: boolean;
   variant?: 'sidebar' | 'floating';
+};
+
+const buildGroupedTypeTitle = (type: string, count: number): string => {
+  if (type === 'message.created') {
+    return `Новые сообщения (${count})`;
+  }
+  if (type === 'offer.created') {
+    return `Новые КП (${count})`;
+  }
+  if (type === 'request.status_changed') {
+    return `Обновления статуса заявок (${count})`;
+  }
+  return `Новые уведомления (${count})`;
+};
+
+const buildGroupedTypeBody = (type: string, count: number): string => {
+  if (type === 'message.created') {
+    return `У вас ${count} новых сообщений.`;
+  }
+  if (type === 'offer.created') {
+    return `У вас ${count} новых коммерческих предложений.`;
+  }
+  if (type === 'request.status_changed') {
+    return `У вас ${count} обновлений статуса заявок.`;
+  }
+  return `У вас ${count} новых уведомлений этого типа.`;
+};
+
+const buildCenterDisplayNotifications = (items: Notification[]) => {
+  const groupedUnreadByType = new Map<string, { displayIndex: number; ids: number[] }>();
+  const displayNotifications: Notification[] = [];
+  const sourceIdsByDisplayId = new Map<number, number[]>();
+
+  items.forEach((item) => {
+    if (item.read_at !== null) {
+      displayNotifications.push(item);
+      sourceIdsByDisplayId.set(item.id, [item.id]);
+      return;
+    }
+
+    const existingGroup = groupedUnreadByType.get(item.type);
+    if (!existingGroup) {
+      displayNotifications.push(item);
+      groupedUnreadByType.set(item.type, {
+        displayIndex: displayNotifications.length - 1,
+        ids: [item.id],
+      });
+      sourceIdsByDisplayId.set(item.id, [item.id]);
+      return;
+    }
+
+    existingGroup.ids.push(item.id);
+  });
+
+  groupedUnreadByType.forEach(({ displayIndex, ids }) => {
+    if (ids.length <= 1) {
+      return;
+    }
+
+    const base = displayNotifications[displayIndex];
+    const groupedNotification: Notification = {
+      ...base,
+      title: buildGroupedTypeTitle(base.type, ids.length),
+      body: buildGroupedTypeBody(base.type, ids.length),
+    };
+
+    displayNotifications[displayIndex] = groupedNotification;
+    sourceIdsByDisplayId.set(groupedNotification.id, [...ids]);
+  });
+
+  return { displayNotifications, sourceIdsByDisplayId };
 };
 
 export const NotificationBell = ({
@@ -43,6 +114,22 @@ export const NotificationBell = ({
     markAllAsRead,
   } = useNotificationsState();
 
+  const { displayNotifications, sourceIdsByDisplayId } = useMemo(
+    () => buildCenterDisplayNotifications(items),
+    [items]
+  );
+
+  const displayMarkingIds = useMemo(() => {
+    const mapped = new Set<number>();
+    displayNotifications.forEach((notification) => {
+      const sourceIds = sourceIdsByDisplayId.get(notification.id) ?? [notification.id];
+      if (sourceIds.some((id) => markingIds.has(id))) {
+        mapped.add(notification.id);
+      }
+    });
+    return mapped;
+  }, [displayNotifications, markingIds, sourceIdsByDisplayId]);
+
   if (!isAuthenticated) {
     return null;
   }
@@ -64,17 +151,19 @@ export const NotificationBell = ({
     try {
       await loadNotifications();
     } catch {
-      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ', { variant: 'error' });
+      enqueueSnackbar('Не удалось загрузить уведомления', { variant: 'error' });
     }
   };
 
   const handleNotificationClick = async (notification: Notification) => {
+    const sourceIds = sourceIdsByDisplayId.get(notification.id) ?? [notification.id];
+
     try {
       if (notification.read_at === null) {
-        await markOneAsRead(notification.id);
+        await Promise.all(sourceIds.map((id) => markOneAsRead(id)));
       }
     } catch {
-      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµС‚РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёРµ РєР°Рє РїСЂРѕС‡РёС‚Р°РЅРЅРѕРµ', { variant: 'error' });
+      enqueueSnackbar('Не удалось отметить уведомление как прочитанное', { variant: 'error' });
       return;
     }
 
@@ -89,10 +178,10 @@ export const NotificationBell = ({
     try {
       const updatedCount = await markAllAsRead();
       if (updatedCount > 0) {
-        enqueueSnackbar('Р’СЃРµ СѓРІРµРґРѕРјР»РµРЅРёСЏ РѕС‚РјРµС‡РµРЅС‹ РєР°Рє РїСЂРѕС‡РёС‚Р°РЅРЅС‹Рµ', { variant: 'success' });
+        enqueueSnackbar('Все уведомления отмечены как прочитанные', { variant: 'success' });
       }
     } catch {
-      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµС‚РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ РєР°Рє РїСЂРѕС‡РёС‚Р°РЅРЅС‹Рµ', { variant: 'error' });
+      enqueueSnackbar('Не удалось отметить уведомления как прочитанные', { variant: 'error' });
     }
   };
 
@@ -100,7 +189,7 @@ export const NotificationBell = ({
     try {
       await loadNotifications();
     } catch {
-      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ', { variant: 'error' });
+      enqueueSnackbar('Не удалось загрузить уведомления', { variant: 'error' });
     }
   };
 
@@ -113,10 +202,10 @@ export const NotificationBell = ({
   return (
     <>
       {variant === 'floating' ? (
-        <Tooltip title="РЈРІРµРґРѕРјР»РµРЅРёСЏ" placement="top">
+        <Tooltip title="Уведомления" placement="top">
           <IconButton
             onClick={openCenter}
-            aria-label="РћС‚РєСЂС‹С‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ"
+            aria-label="Открыть уведомления"
             sx={{
               border: '1px solid',
               borderColor: 'divider',
@@ -131,7 +220,7 @@ export const NotificationBell = ({
           </IconButton>
         </Tooltip>
       ) : (
-        <Tooltip title="РЈРІРµРґРѕРјР»РµРЅРёСЏ" placement="right" enterDelay={150} disableHoverListener={!collapsed}>
+        <Tooltip title="Уведомления" placement="right" enterDelay={150} disableHoverListener={!collapsed}>
           <Stack component="span" sx={{ display: 'block', width: '100%' }}>
             <ActionButton
               kind="custom"
@@ -166,7 +255,7 @@ export const NotificationBell = ({
                   transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease',
                 }}
               >
-                РЈРІРµРґРѕРјР»РµРЅРёСЏ
+                Уведомления
               </Typography>
             </ActionButton>
           </Stack>
@@ -176,12 +265,12 @@ export const NotificationBell = ({
       {isMobileViewport ? (
         <NotificationCenterDrawer
           open={open}
-          notifications={items}
+          notifications={displayNotifications}
           unreadCount={unreadCount}
           isLoading={isLoadingList}
           isMarkAllPending={isMarkAllPending}
           error={listError}
-          markingIds={markingIds}
+          markingIds={displayMarkingIds}
           onClose={closeCenter}
           onRetry={handleRetry}
           onMarkAll={handleMarkAll}
@@ -191,12 +280,12 @@ export const NotificationBell = ({
         <NotificationCenterPopover
           anchorEl={anchorEl}
           open={open}
-          notifications={items}
+          notifications={displayNotifications}
           unreadCount={unreadCount}
           isLoading={isLoadingList}
           isMarkAllPending={isMarkAllPending}
           error={listError}
-          markingIds={markingIds}
+          markingIds={displayMarkingIds}
           onClose={closeCenter}
           onRetry={handleRetry}
           onMarkAll={handleMarkAll}

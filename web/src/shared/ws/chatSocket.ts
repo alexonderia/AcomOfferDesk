@@ -1,3 +1,4 @@
+import { createWsTicket } from '@shared/api/wsTickets';
 export type RealtimeConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting';
 
 type AckPayload = {
@@ -36,11 +37,11 @@ type PendingRequest = {
 
 const REQUEST_TIMEOUT_MS = 15000;
 
-const buildSocketUrl = (token: string) => {
+const buildSocketUrl = (ticket: string) => {
   const url = new URL(window.location.origin);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.pathname = '/api/v1/ws/chat';
-  url.searchParams.set('token', token);
+  url.searchParams.set('ticket', ticket);
   return url.toString();
 };
 
@@ -49,7 +50,7 @@ const createEventId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-
 
 class ChatSocketClient {
   private socket: WebSocket | null = null;
-  private token: string | null = null;
+  private shouldStayConnected = false;
   private desiredChats = new Set<number>();
   private eventListeners = new Set<EventListener>();
   private stateListeners = new Set<StateListener>();
@@ -58,6 +59,8 @@ class ChatSocketClient {
   private reconnectAttempts = 0;
   private connectionState: RealtimeConnectionState = 'idle';
   private manualDisconnect = false;
+  private ticketRequestPromise: Promise<string> | null = null;
+  private openSocketPromise: Promise<void> | null = null;
 
   getState() {
     return this.connectionState;
@@ -78,25 +81,22 @@ class ChatSocketClient {
     };
   }
 
-  connect(token: string) {
-    if (!token) {
-      this.disconnect();
+  connect() {
+    if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
       return;
     }
 
-    if (this.token === token && (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
-
-    this.token = token;
+    this.shouldStayConnected = true;
     this.manualDisconnect = false;
     this.clearReconnectTimer();
-    this.openSocket();
+    this.ensureSocketOpen();
   }
 
   disconnect() {
     this.manualDisconnect = true;
-    this.token = null;
+    this.shouldStayConnected = false;
+    this.ticketRequestPromise = null;
+    this.openSocketPromise = null;
     this.desiredChats.clear();
     this.clearReconnectTimer();
     this.rejectPendingRequests('Соединение с чатом закрыто');
@@ -148,8 +148,28 @@ class ChatSocketClient {
     return this.sendRequest('typing.stop', { chat_id: chatId });
   }
 
-  private openSocket() {
-    if (!this.token) {
+  private async getConnectionTicket(): Promise<string> {
+    if (!this.ticketRequestPromise) {
+      this.ticketRequestPromise = createWsTicket('chat_ws')
+        .then((payload) => payload.ticket)
+        .finally(() => {
+          this.ticketRequestPromise = null;
+        });
+    }
+    return await this.ticketRequestPromise;
+  }
+
+  private ensureSocketOpen() {
+    if (this.openSocketPromise) {
+      return;
+    }
+    this.openSocketPromise = this.openSocket().finally(() => {
+      this.openSocketPromise = null;
+    });
+  }
+
+  private async openSocket() {
+    if (!this.shouldStayConnected) {
       return;
     }
 
@@ -158,7 +178,23 @@ class ChatSocketClient {
     }
 
     this.setState(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
-    const socket = new WebSocket(buildSocketUrl(this.token));
+    let ticket: string;
+    try {
+      ticket = await this.getConnectionTicket();
+    } catch {
+      if (!this.manualDisconnect && this.shouldStayConnected) {
+        this.scheduleReconnect();
+      } else {
+        this.setState('idle');
+      }
+      return;
+    }
+    if (!this.shouldStayConnected || this.manualDisconnect) {
+      this.setState('idle');
+      return;
+    }
+
+    const socket = new WebSocket(buildSocketUrl(ticket));
     this.socket = socket;
 
     socket.addEventListener('open', () => {
@@ -204,7 +240,7 @@ class ChatSocketClient {
         return;
       }
 
-      if (this.manualDisconnect || !this.token) {
+      if (this.manualDisconnect || !this.shouldStayConnected) {
         this.setState('idle');
         return;
       }
@@ -276,7 +312,7 @@ class ChatSocketClient {
     const delayMs = Math.min(1000 * 2 ** Math.min(this.reconnectAttempts, 4), 15000);
     this.reconnectTimerId = window.setTimeout(() => {
       this.reconnectTimerId = null;
-      this.openSocket();
+      this.ensureSocketOpen();
     }, delayMs);
   }
 

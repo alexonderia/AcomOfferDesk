@@ -8,3 +8,4 @@ export * as plansApi from './plans';
 export * from './client';
 export * from './fileDownload';
 export * from './mappers';
+export * from './wsTickets';

@@ -75,6 +75,14 @@
 ## Поведение realtime для чата
 
 - Chat realtime использует один WebSocket-клиент через `ChatRealtimeProvider/chatSocketClient` на пользователя.
+- WebSocket-аутентификация чата выполняется через short-lived one-time ticket:
+  - frontend вызывает `POST /api/v1/ws/tickets` с `purpose=chat_ws`;
+  - backend возвращает `{ ticket, expires_in, expires_at }`;
+  - клиент открывает `wss://.../api/v1/ws/chat?ticket=...`.
+- `access_token` больше не передается в query string websocket URL.
+- Ticket хранится в backend только как `sha256` hash, привязан к `user_id + purpose`, TTL по умолчанию 30 секунд, и может быть использован только один раз.
+- При reconnect запрашивается новый ticket; старый не переиспользуется.
+- Purpose уже включает задел для будущего общего realtime-сокета (`realtime_ws`), но endpoint `/ws/realtime` в текущем этапе не реализуется.
 - Отдельный WebSocket для центра уведомлений не используется: центр остается polling-based.
 - Если пользователь уже подписан на чат по websocket (то есть читает сообщения в реальном времени), запись `message.created` в центр уведомлений для него не создается.
 - Если чат не открыт и пользователь не подписан, уведомление сохраняется в центр как обычно.
@@ -147,5 +155,32 @@ Backend consumer читает `notify.email.delivery` и через `Notificatio
 - Админский email delivery audit/log.
 - UI-фильтры уведомлений через backend query params.
 - Realtime push для самого центра уведомлений (сейчас polling-based).
-- ws-ticket/cookie-based WS auth вместо `access token` в query-string.
+- При текущей deployment-модели Redis для ws-ticket не требуется: in-memory store достаточен для одного backend instance.
+- Если в будущем backend будет запущен в нескольких репликах без sticky sessions, понадобится общее TTL-хранилище для ws-ticket (или другой общий механизм one-time consume).
+- Общий websocket endpoint `/api/v1/ws/realtime?ticket=...` для chat + notifications.
+- Удаление legacy token query fallback для websocket (если включен в dev через feature flag).
 - user notification preferences.
+
+## WebSocket ticket smoke-check
+
+Manual QA:
+1. Запустить backend и web.
+2. Авторизоваться.
+3. Открыть страницу с чатом.
+4. В DevTools -> Network -> WS проверить URL:
+   - есть `/api/v1/ws/chat?ticket=...`;
+   - нет `token=...`;
+   - нет `access_token=...`.
+5. Отправить и получить сообщение.
+6. Обновить страницу: создается новый ticket.
+7. Смоделировать reconnect: запрашивается новый ticket.
+8. Logout: socket закрывается, reconnect не продолжается.
+9. Попытаться повторно использовать старый ticket: backend отклоняет.
+10. Попытаться использовать ticket c wrong purpose: backend отклоняет.
+
+Проверки:
+- `python -m pytest backend/tests/unit/test_ws_ticket_service_unit.py -v`
+- `python -m pytest backend/tests/integration/test_ws_tickets_integration.py -v`
+- `npm --prefix web run lint`
+- `npm --prefix web run build`
+- `npm --prefix web run test:unit -- src/shared/ws/chatSocket.test.ts`

@@ -2,25 +2,82 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import UTC
+from typing import Literal
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from pydantic import ValidationError
 from starlette.websockets import WebSocketState
 
 from app.api.dependencies import build_current_user_from_keycloak_claims
+from app.api.dependencies import get_current_user
+from app.core.config import settings
 from app.core.session_tokens import AccessTokenClaims
 from app.core.uow import UnitOfWork
+from app.domain.auth_context import CurrentUser as HttpCurrentUser
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.realtime.contracts import OutboundEnvelope, client_event_adapter
 from app.realtime.runtime import get_chat_runtime
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import decode_keycloak_access_token, looks_like_keycloak_token
+from app.services.ws_ticket_service import WsTicketPurpose, get_ws_ticket_service
 
 router = APIRouter()
 
 
-async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[CurrentUser, AccessTokenClaims]:
+class CreateWsTicketRequest(BaseModel):
+    purpose: str
+
+
+class CreateWsTicketResponse(BaseModel):
+    ticket: str
+    expires_in: int
+    expires_at: str
+
+
+@router.post("/ws/tickets", response_model=CreateWsTicketResponse)
+async def create_ws_ticket(
+    payload: CreateWsTicketRequest,
+    current_user: HttpCurrentUser = Depends(get_current_user),
+) -> CreateWsTicketResponse:
+    if payload.purpose not in {"chat_ws", "realtime_ws", "notifications_ws"}:
+        raise HTTPException(status_code=400, detail="Unknown websocket ticket purpose")
+    purpose: WsTicketPurpose = payload.purpose
+    service = get_ws_ticket_service()
+    raw_ticket, expires_at = await service.issue_ticket(user_id=current_user.user_id, purpose=purpose)
+    now = int(time.time())
+    expires_ts = int(expires_at.timestamp())
+    return CreateWsTicketResponse(
+        ticket=raw_ticket,
+        expires_in=max(0, expires_ts - now),
+        expires_at=expires_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+    )
+
+
+async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[CurrentUser, AccessTokenClaims | None]:
+    ticket = (websocket.query_params.get("ticket") or "").strip()
+    if ticket:
+        service = get_ws_ticket_service()
+        user_id = await service.consume_ticket(raw_ticket=ticket, expected_purpose="chat_ws")
+        async with UnitOfWork() as uow:
+            user = await uow.users.get_by_id(user_id) if uow.users else None
+            if user is None:
+                raise Unauthorized("Invalid websocket ticket")
+            UserPolicy.ensure_can_login(user.status)
+            current_user = build_current_user_from_keycloak_claims(
+                user_id=user.id,
+                role_id=user.id_role,
+                status=user.status,
+                keycloak_api_roles=frozenset(),
+            )
+            return current_user, None
+
+    if not settings.ws_legacy_query_token_enabled:
+        raise Unauthorized("Missing credentials")
+
+    # TODO: remove legacy token query fallback after ws-ticket rollout stabilizes.
     token = (websocket.query_params.get("token") or "").strip()
     if not token:
         raise Unauthorized("Missing credentials")
@@ -87,6 +144,8 @@ async def chat_websocket(websocket: WebSocket) -> None:
     expiry_task: asyncio.Task[None] | None = None
 
     async def close_on_expiry() -> None:
+        if claims is None:
+            return
         delay = max(0, claims.expires_at - int(time.time()))
         try:
             await asyncio.sleep(delay)

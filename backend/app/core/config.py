@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
     jwt_exp_minutes: int = Field(default=60, validation_alias="JWT_EXP_MINUTES")
     access_token_ttl_seconds: int = Field(default=300, validation_alias="ACCESS_TOKEN_TTL_SECONDS")
+    ws_ticket_ttl_seconds: int = Field(default=30, validation_alias="WS_TICKET_TTL_SECONDS")
+    ws_legacy_query_token_enabled: bool = Field(default=False, validation_alias="WS_LEGACY_QUERY_TOKEN_ENABLED")
     refresh_token_idle_ttl_seconds: int = Field(default=1800, validation_alias="REFRESH_TOKEN_IDLE_TTL_SECONDS")
     refresh_token_max_ttl_seconds: int = Field(default=43200, validation_alias="REFRESH_TOKEN_MAX_TTL_SECONDS")
     refresh_cookie_name: str = Field(default="acom_refresh_token", validation_alias="REFRESH_COOKIE_NAME")
@@ -248,6 +250,10 @@ class Settings(BaseSettings):
             self.s3_presigned_get_ttl_seconds = 300
         if self.max_upload_size_bytes <= 0:
             self.max_upload_size_bytes = 10 * 1024 * 1024
+        if self.ws_ticket_ttl_seconds < 30:
+            self.ws_ticket_ttl_seconds = 30
+        if self.ws_ticket_ttl_seconds > 60:
+            self.ws_ticket_ttl_seconds = 60
 
         self.keycloak_internal_base_url = self.keycloak_internal_base_url.rstrip("/")
         self.keycloak_client_id = self.keycloak_client_id.strip() or "acom-web"

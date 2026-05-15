@@ -205,3 +205,9 @@ PowerShell:
 $env:ENV_FILE=".env.prod-like"
 powershell -ExecutionPolicy Bypass -File .\scripts\check-keycloak-bootstrap.ps1
 ```
+
+## WebSocket ticket env defaults
+
+- `WS_TICKET_TTL_SECONDS=30` (recommended range: 30-60).
+- `WS_LEGACY_QUERY_TOKEN_ENABLED=false` for prod-like/prod.
+- Legacy `?token=` websocket fallback is temporary dev compatibility only and should stay disabled by default.

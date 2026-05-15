@@ -229,4 +229,29 @@ describe('NotificationsPushLayer', () => {
 
     vi.useRealTimers();
   });
+
+  it('shows a single aggregated push for 3+ fresh notifications', async () => {
+    notificationsState.loadNotifications
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        messageNotification(21, 11),
+        messageNotification(22, 11),
+        messageNotification(23, 12),
+      ]);
+
+    const { rerender } = render(<NotificationsPushLayer />);
+
+    await waitFor(() => {
+      expect(notificationsState.loadNotifications).toHaveBeenCalledTimes(1);
+    });
+
+    notificationsState.unreadCount = 3;
+    rerender(<NotificationsPushLayer />);
+
+    await waitFor(() => {
+      expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(enqueueSnackbarMock.mock.calls[0][0]).toContain('You have 3 new notifications');
+  });
 });

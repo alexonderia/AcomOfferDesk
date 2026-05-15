@@ -33,8 +33,8 @@ const buildBatchSummaryNotification = (
   return {
     type: 'system.warning',
     severity: count >= 6 ? 'warning' : 'info',
-    title: `You have ${count} new notifications`,
-    body: latest?.title ?? 'Open the notification center to review details.',
+    title: `У вас ${count} новых уведомлений`,
+    body: latest?.title ?? 'Откройте центр уведомлений, чтобы посмотреть детали.',
     created_at: latest?.created_at ?? new Date().toISOString(),
   };
 };
@@ -125,7 +125,7 @@ export const NotificationsPushLayer = () => {
         (left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)
       );
 
-      if (notificationsToShow.length > NOTIFICATION_PUSH_BURST_THRESHOLD) {
+      if (notificationsToShow.length >= NOTIFICATION_PUSH_BURST_THRESHOLD) {
         const summary = buildBatchSummaryNotification(notificationsToShow);
         const latestRoutePath = resolveNotificationLink(
           notificationsToShow[notificationsToShow.length - 1]?.link_url ?? null

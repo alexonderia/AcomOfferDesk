@@ -1,6 +1,7 @@
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import { Alert, Box, CircularProgress, Drawer, IconButton, List, Stack, Typography } from '@mui/material';
 import { ActionButton } from '@shared/components/ActionButton';
+import type { ReactNode } from 'react';
 import type { Notification } from '../model/types';
 import { NotificationEmptyState } from './NotificationEmptyState';
 import { NotificationItem } from './NotificationItem';
@@ -16,7 +17,11 @@ type NotificationCenterDrawerProps = {
   onClose: () => void;
   onRetry: () => void;
   onMarkAll: () => void;
+  filterControls?: ReactNode;
   onNotificationClick: (notification: Notification) => void;
+  canLoadMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 };
 
 export const NotificationCenterDrawer = ({
@@ -30,7 +35,11 @@ export const NotificationCenterDrawer = ({
   onClose,
   onRetry,
   onMarkAll,
+  filterControls,
   onNotificationClick,
+  canLoadMore = false,
+  isLoadingMore = false,
+  onLoadMore,
 }: NotificationCenterDrawerProps) => (
   <Drawer
     anchor="right"
@@ -63,6 +72,8 @@ export const NotificationCenterDrawer = ({
       </Stack>
     </Stack>
 
+    {filterControls ? <Box sx={{ pb: 1 }}>{filterControls}</Box> : null}
+
     {isLoading ? (
       <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 180 }}>
         <CircularProgress size={24} />
@@ -93,8 +104,20 @@ export const NotificationCenterDrawer = ({
             />
           ))}
         </List>
+        {canLoadMore ? (
+          <Stack alignItems="center" sx={{ pt: 1.1 }}>
+            <ActionButton
+              kind="outlined"
+              showNavigationIcons={false}
+              disabled={isLoadingMore}
+              onClick={onLoadMore}
+              sx={{ minHeight: 34, textTransform: 'none' }}
+            >
+              {isLoadingMore ? 'Загрузка...' : 'Показать еще'}
+            </ActionButton>
+          </Stack>
+        ) : null}
       </Box>
     )}
   </Drawer>
 );
-

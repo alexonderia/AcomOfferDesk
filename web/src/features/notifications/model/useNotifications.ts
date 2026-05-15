@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getNotifications,
   getUnreadCount,
@@ -6,7 +6,7 @@ import {
   markNotificationRead,
 } from '../api/notificationsApi';
 import type { Notification } from './types';
-import { NOTIFICATION_UNREAD_POLLING_INTERVAL_MS } from './constants';
+import { NOTIFICATION_PAGE_SIZE, NOTIFICATION_UNREAD_POLLING_INTERVAL_MS } from './constants';
 
 const DEFAULT_POLLING_INTERVAL_MS = NOTIFICATION_UNREAD_POLLING_INTERVAL_MS;
 
@@ -31,6 +31,9 @@ const hasSameNotificationItems = (left: Notification[], right: Notification[]) =
 
 type LoadOptions = {
   silent?: boolean;
+  append?: boolean;
+  offset?: number;
+  limit?: number;
 };
 
 type UseNotificationsOptions = {
@@ -49,8 +52,10 @@ export const useNotifications = ({
   const [listError, setListError] = useState<string | null>(null);
   const [isMarkAllPending, setIsMarkAllPending] = useState(false);
   const [markingIds, setMarkingIds] = useState<Set<number>>(new Set());
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const listLoadInFlightRef = useRef<Promise<Notification[]> | null>(null);
+  const listLoadInFlightRef = useRef<Map<string, Promise<Notification[]>>>(new Map());
   const markingIdsRef = useRef<Set<number>>(new Set());
 
   const refreshUnreadCount = useCallback(async () => {
@@ -69,22 +74,50 @@ export const useNotifications = ({
         return [] as Notification[];
       }
 
-      if (listLoadInFlightRef.current) {
-        return listLoadInFlightRef.current;
+      const silent = options.silent ?? false;
+      const append = options.append ?? false;
+      const limit = options.limit ?? NOTIFICATION_PAGE_SIZE;
+      const offset = options.offset ?? (append ? items.length : 0);
+      const requestKey = `${offset}:${limit}:${append ? 'append' : 'replace'}`;
+
+      const inFlight = listLoadInFlightRef.current.get(requestKey);
+      if (inFlight) {
+        return inFlight;
       }
 
-      const silent = options.silent ?? false;
       if (!silent) {
-        setIsLoadingList(true);
+        if (append) {
+          setIsLoadingMore(true);
+        } else {
+          setIsLoadingList(true);
+        }
       }
       setListError(null);
 
       const requestPromise = (async () => {
         try {
-          const response = await getNotifications({ limit: 50, offset: 0 });
-          setItems((current) =>
-            hasSameNotificationItems(current, response.items) ? current : response.items
-          );
+          const response = await getNotifications({ limit, offset });
+
+          setItems((current) => {
+            if (!append) {
+              return hasSameNotificationItems(current, response.items) ? current : response.items;
+            }
+
+            if (response.items.length === 0) {
+              return current;
+            }
+
+            const existingIds = new Set(current.map((item) => item.id));
+            const merged = [...current];
+            response.items.forEach((item) => {
+              if (!existingIds.has(item.id)) {
+                merged.push(item);
+              }
+            });
+            return merged;
+          });
+
+          setHasMore(response.items.length >= limit);
           setIsListLoaded(true);
           return response.items;
         } catch (error) {
@@ -92,23 +125,46 @@ export const useNotifications = ({
           setListError(message);
           throw error;
         } finally {
-          listLoadInFlightRef.current = null;
+          listLoadInFlightRef.current.delete(requestKey);
           if (!silent) {
-            setIsLoadingList(false);
+            if (append) {
+              setIsLoadingMore(false);
+            } else {
+              setIsLoadingList(false);
+            }
           }
         }
       })();
 
-      listLoadInFlightRef.current = requestPromise;
+      listLoadInFlightRef.current.set(requestKey, requestPromise);
       return requestPromise;
     },
-    [enabled]
+    [enabled, items.length]
   );
+
+  const loadMoreNotifications = useCallback(async () => {
+    if (!enabled || !isListLoaded || !hasMore || isLoadingMore) {
+      return [] as Notification[];
+    }
+
+    return loadNotifications({
+      append: true,
+      offset: items.length,
+      limit: NOTIFICATION_PAGE_SIZE,
+    });
+  }, [enabled, hasMore, isListLoaded, isLoadingMore, items.length, loadNotifications]);
 
   const syncAfterMarkAction = useCallback(async () => {
     await Promise.all([
       refreshUnreadCount(),
-      isListLoaded ? loadNotifications({ silent: true }) : Promise.resolve([] as Notification[]),
+      isListLoaded
+        ? loadNotifications({
+            silent: true,
+            offset: 0,
+            append: false,
+            limit: NOTIFICATION_PAGE_SIZE,
+          })
+        : Promise.resolve([] as Notification[]),
     ]);
   }, [isListLoaded, loadNotifications, refreshUnreadCount]);
 
@@ -173,7 +229,9 @@ export const useNotifications = ({
       setIsMarkAllPending(false);
       setMarkingIds(new Set());
       markingIdsRef.current = new Set();
-      listLoadInFlightRef.current = null;
+      setHasMore(true);
+      setIsLoadingMore(false);
+      listLoadInFlightRef.current.clear();
       return;
     }
 
@@ -195,7 +253,10 @@ export const useNotifications = ({
     listError,
     isMarkAllPending,
     markingIds,
+    hasMore,
+    isLoadingMore,
     loadNotifications,
+    loadMoreNotifications,
     refreshUnreadCount,
     markOneAsRead,
     markAllAsRead,

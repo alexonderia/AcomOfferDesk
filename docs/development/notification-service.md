@@ -62,15 +62,20 @@
   - mobile: `drawer` по кнопке колокольчика.
 - Загрузка данных:
   - `unread-count` опрашивается через `GET /api/v1/notifications/unread-count` примерно раз в 45 секунд, пока пользователь аутентифицирован;
-  - список загружается через `GET /api/v1/notifications` при открытии центра.
+  - список загружается через `GET /api/v1/notifications` при открытии центра, после `mark read`/`mark all`, и поддерживает `limit/offset` для кнопки «Показать еще».
 - Действия:
   - `PATCH /api/v1/notifications/{notification_id}/read`;
   - `PATCH /api/v1/notifications/read-all`.
 - Слой toast/snackbar — только UX-слой и не заменяет персистентные записи в `user_notifications`.
+- Push dedupe выполняется по `notification.id`, чтобы одно и то же непрочитанное уведомление не показывалось повторно.
+- При приходе 3+ новых уведомлений вместо пачки toast показывается один агрегированный push.
 - В UI центра однотипные непрочитанные уведомления агрегируются по типу (например: «Новые сообщения (N)»), чтобы не показывать длинную однообразную ленту.
+- Для `message.created` push suppress включается, если пользователь уже открыт в соответствующем `/offers/{offer_id}/workspace`.
 
 ## Поведение realtime для чата
 
+- Chat realtime использует один WebSocket-клиент через `ChatRealtimeProvider/chatSocketClient` на пользователя.
+- Отдельный WebSocket для центра уведомлений не используется: центр остается polling-based.
 - Если пользователь уже подписан на чат по websocket (то есть читает сообщения в реальном времени), запись `message.created` в центр уведомлений для него не создается.
 - Если чат не открыт и пользователь не подписан, уведомление сохраняется в центр как обычно.
 
@@ -78,5 +83,9 @@
 
 - Для `email.failed` и точного подтверждения фактической доставки пока нужен feedback по статусам из `notifications_worker`.
 - Сейчас backend ставит email-задачи в RabbitMQ, а фактическая SMTP-доставка выполняется асинхронно в worker.
+- Пока нет feedback канала worker -> backend, `email.sent` в ручной рассылке используется с честным queued-текстом («поставлено в очередь»), а не как гарантия SMTP-факта.
 - Для точных уведомлений `email.sent`/`email.failed` нужно добавить контракт события статуса worker -> backend (или эквивалентный callback) и сохранять результат через `NotificationService`.
 - Realtime push для самого центра уведомлений пока отложен; текущая клиентская модель остается polling-based.
+- TODO: ws-ticket/cookie-based WS auth вместо `access token` в query-string.
+- TODO: user notification preferences.
+- TODO: backend dedupe policy for cross-service retries.

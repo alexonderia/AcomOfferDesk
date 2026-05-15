@@ -1,5 +1,5 @@
-import NotificationsNoneOutlined from '@mui/icons-material/NotificationsNoneOutlined';
-import { Badge, Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+п»їimport NotificationsNoneOutlined from '@mui/icons-material/NotificationsNoneOutlined';
+import { Badge, Box, IconButton, Stack, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useAuth } from '@app/providers/AuthProvider';
 import { useIsMobileViewport } from '@shared/lib/responsive';
@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 import { useNotificationsState } from '../model/NotificationsContext';
 import { resolveNotificationLink } from '../model/resolveNotificationLink';
+import { NOTIFICATION_PAGE_SIZE } from '../model/constants';
 import type { Notification } from '../model/types';
 import { NotificationCenterDrawer } from './NotificationCenterDrawer';
 import { NotificationCenterPopover } from './NotificationCenterPopover';
@@ -19,30 +20,32 @@ type NotificationBellProps = {
   variant?: 'sidebar' | 'floating';
 };
 
+type NotificationFilter = 'all' | 'unread' | 'messages' | 'offers' | 'errors';
+
 const buildGroupedTypeTitle = (type: string, count: number): string => {
   if (type === 'message.created') {
-    return `Новые сообщения (${count})`;
+    return `РќРѕРІС‹Рµ СЃРѕРѕР±С‰РµРЅРёСЏ (${count})`;
   }
   if (type === 'offer.created') {
-    return `Новые КП (${count})`;
+    return `РќРѕРІС‹Рµ РљРџ (${count})`;
   }
   if (type === 'request.status_changed') {
-    return `Обновления статуса заявок (${count})`;
+    return `РћР±РЅРѕРІР»РµРЅРёСЏ СЃС‚Р°С‚СѓСЃР° Р·Р°СЏРІРѕРє (${count})`;
   }
-  return `Новые уведомления (${count})`;
+  return `РќРѕРІС‹Рµ СѓРІРµРґРѕРјР»РµРЅРёСЏ (${count})`;
 };
 
 const buildGroupedTypeBody = (type: string, count: number): string => {
   if (type === 'message.created') {
-    return `У вас ${count} новых сообщений.`;
+    return `РЈ РІР°СЃ ${count} РЅРѕРІС‹С… СЃРѕРѕР±С‰РµРЅРёР№.`;
   }
   if (type === 'offer.created') {
-    return `У вас ${count} новых коммерческих предложений.`;
+    return `РЈ РІР°СЃ ${count} РЅРѕРІС‹С… РєРѕРјРјРµСЂС‡РµСЃРєРёС… РїСЂРµРґР»РѕР¶РµРЅРёР№.`;
   }
   if (type === 'request.status_changed') {
-    return `У вас ${count} обновлений статуса заявок.`;
+    return `РЈ РІР°СЃ ${count} РѕР±РЅРѕРІР»РµРЅРёР№ СЃС‚Р°С‚СѓСЃР° Р·Р°СЏРІРѕРє.`;
   }
-  return `У вас ${count} новых уведомлений этого типа.`;
+  return `РЈ РІР°СЃ ${count} РЅРѕРІС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№ СЌС‚РѕРіРѕ С‚РёРїР°.`;
 };
 
 const buildCenterDisplayNotifications = (items: Notification[]) => {
@@ -101,6 +104,7 @@ export const NotificationBell = ({
   const isMobileViewport = useIsMobileViewport();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
 
   const {
     items,
@@ -110,14 +114,38 @@ export const NotificationBell = ({
     isMarkAllPending,
     markingIds,
     loadNotifications,
+    loadMoreNotifications,
     markOneAsRead,
     markAllAsRead,
+    hasMore,
+    isLoadingMore,
   } = useNotificationsState();
 
   const { displayNotifications, sourceIdsByDisplayId } = useMemo(
     () => buildCenterDisplayNotifications(items),
     [items]
   );
+
+  const filteredDisplayNotifications = useMemo(() => {
+    if (activeFilter === 'all') {
+      return displayNotifications;
+    }
+    return displayNotifications.filter((notification) => {
+      if (activeFilter === 'unread') {
+        return notification.read_at === null;
+      }
+      if (activeFilter === 'messages') {
+        return notification.type === 'message.created';
+      }
+      if (activeFilter === 'offers') {
+        return notification.type === 'offer.created';
+      }
+      if (activeFilter === 'errors') {
+        return notification.severity === 'error' || notification.severity === 'warning';
+      }
+      return true;
+    });
+  }, [activeFilter, displayNotifications]);
 
   const displayMarkingIds = useMemo(() => {
     const mapped = new Set<number>();
@@ -149,9 +177,9 @@ export const NotificationBell = ({
     }
 
     try {
-      await loadNotifications();
+      await loadNotifications({ offset: 0, limit: NOTIFICATION_PAGE_SIZE });
     } catch {
-      enqueueSnackbar('Не удалось загрузить уведомления', { variant: 'error' });
+      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ', { variant: 'error', autoHideDuration: 14_000 });
     }
   };
 
@@ -163,7 +191,7 @@ export const NotificationBell = ({
         await Promise.all(sourceIds.map((id) => markOneAsRead(id)));
       }
     } catch {
-      enqueueSnackbar('Не удалось отметить уведомление как прочитанное', { variant: 'error' });
+      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµС‚РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёРµ РєР°Рє РїСЂРѕС‡РёС‚Р°РЅРЅРѕРµ', { variant: 'error', autoHideDuration: 14_000 });
       return;
     }
 
@@ -178,20 +206,49 @@ export const NotificationBell = ({
     try {
       const updatedCount = await markAllAsRead();
       if (updatedCount > 0) {
-        enqueueSnackbar('Все уведомления отмечены как прочитанные', { variant: 'success' });
+        enqueueSnackbar('Р’СЃРµ СѓРІРµРґРѕРјР»РµРЅРёСЏ РѕС‚РјРµС‡РµРЅС‹ РєР°Рє РїСЂРѕС‡РёС‚Р°РЅРЅС‹Рµ', { variant: 'success' });
       }
     } catch {
-      enqueueSnackbar('Не удалось отметить уведомления как прочитанные', { variant: 'error' });
+      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµС‚РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ РєР°Рє РїСЂРѕС‡РёС‚Р°РЅРЅС‹Рµ', { variant: 'error', autoHideDuration: 14_000 });
     }
   };
 
   const handleRetry = async () => {
     try {
-      await loadNotifications();
+      await loadNotifications({ offset: 0, limit: NOTIFICATION_PAGE_SIZE });
     } catch {
-      enqueueSnackbar('Не удалось загрузить уведомления', { variant: 'error' });
+      enqueueSnackbar('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ', { variant: 'error', autoHideDuration: 14_000 });
     }
   };
+
+  const filterControls = (
+    <Tabs
+      value={activeFilter}
+      onChange={(_event, value: NotificationFilter) => setActiveFilter(value)}
+      variant="scrollable"
+      scrollButtons="auto"
+      allowScrollButtonsMobile
+      sx={{
+        minHeight: 34,
+        '& .MuiTabs-indicator': {
+          height: 2,
+          borderRadius: 2,
+        },
+        '& .MuiTab-root': {
+          minHeight: 34,
+          px: 1.2,
+          fontSize: 12,
+          textTransform: 'none',
+        },
+      }}
+    >
+      <Tab value="all" label="Р’СЃРµ" />
+      <Tab value="unread" label="РќРµРїСЂРѕС‡РёС‚Р°РЅРЅС‹Рµ" />
+      <Tab value="messages" label="РЎРѕРѕР±С‰РµРЅРёСЏ" />
+      <Tab value="offers" label="РљРџ" />
+      <Tab value="errors" label="РћС€РёР±РєРё" />
+    </Tabs>
+  );
 
   const icon = (
     <Badge badgeContent={unreadCount} color="error" max={99}>
@@ -202,10 +259,10 @@ export const NotificationBell = ({
   return (
     <>
       {variant === 'floating' ? (
-        <Tooltip title="Уведомления" placement="top">
+        <Tooltip title="РЈРІРµРґРѕРјР»РµРЅРёСЏ" placement="top">
           <IconButton
             onClick={openCenter}
-            aria-label="Открыть уведомления"
+            aria-label="РћС‚РєСЂС‹С‚СЊ СѓРІРµРґРѕРјР»РµРЅРёСЏ"
             sx={{
               border: '1px solid',
               borderColor: 'divider',
@@ -220,7 +277,7 @@ export const NotificationBell = ({
           </IconButton>
         </Tooltip>
       ) : (
-        <Tooltip title="Уведомления" placement="right" enterDelay={150} disableHoverListener={!collapsed}>
+        <Tooltip title="РЈРІРµРґРѕРјР»РµРЅРёСЏ" placement="right" enterDelay={150} disableHoverListener={!collapsed}>
           <Stack component="span" sx={{ display: 'block', width: '100%' }}>
             <ActionButton
               kind="custom"
@@ -255,7 +312,7 @@ export const NotificationBell = ({
                   transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease',
                 }}
               >
-                Уведомления
+                РЈРІРµРґРѕРјР»РµРЅРёСЏ
               </Typography>
             </ActionButton>
           </Stack>
@@ -265,7 +322,7 @@ export const NotificationBell = ({
       {isMobileViewport ? (
         <NotificationCenterDrawer
           open={open}
-          notifications={displayNotifications}
+          notifications={filteredDisplayNotifications}
           unreadCount={unreadCount}
           isLoading={isLoadingList}
           isMarkAllPending={isMarkAllPending}
@@ -274,13 +331,19 @@ export const NotificationBell = ({
           onClose={closeCenter}
           onRetry={handleRetry}
           onMarkAll={handleMarkAll}
+          filterControls={filterControls}
           onNotificationClick={handleNotificationClick}
+          canLoadMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={() => {
+            void loadMoreNotifications();
+          }}
         />
       ) : (
         <NotificationCenterPopover
           anchorEl={anchorEl}
           open={open}
-          notifications={displayNotifications}
+          notifications={filteredDisplayNotifications}
           unreadCount={unreadCount}
           isLoading={isLoadingList}
           isMarkAllPending={isMarkAllPending}
@@ -289,7 +352,13 @@ export const NotificationBell = ({
           onClose={closeCenter}
           onRetry={handleRetry}
           onMarkAll={handleMarkAll}
+          filterControls={filterControls}
           onNotificationClick={handleNotificationClick}
+          canLoadMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={() => {
+            void loadMoreNotifications();
+          }}
         />
       )}
     </>

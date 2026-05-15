@@ -569,14 +569,10 @@ export const RequestDetailsView = () => {
         }
 
         if (!nextAdditionalEmails || nextAdditionalEmails.length === 0) {
-            setErrorMessage('Добавьте хотя бы один e-mail для отправки');
-            setSuccessMessage(null);
             return;
         }
 
         setIsSendingEmails(true);
-        setErrorMessage(null);
-        setSuccessMessage(null);
 
         try {
             const response = await sendRequestEmailNotifications({
@@ -584,14 +580,6 @@ export const RequestDetailsView = () => {
                 additional_emails: nextAdditionalEmails
             });
             setAdditionalEmails(response.data.sent_to);
-            setSuccessMessage(
-                response.data.sent_to.length === 1
-                    ? `Письмо отправлено: ${response.data.sent_to[0]}`
-                    : `Писем отправлено: ${response.data.sent_to.length}`
-            );
-        } catch (error) {
-            setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить письма');
-            setSuccessMessage(null);
         } finally {
             setIsSendingEmails(false);
         }
@@ -916,3 +904,4 @@ export const RequestDetailsView = () => {
         </Box>
     );
 };
+

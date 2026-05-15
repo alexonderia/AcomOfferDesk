@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, String, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm_models import UserNotification
@@ -64,3 +64,17 @@ class NotificationRepository:
         result = await self._session.execute(stmt)
         return int(result.rowcount or 0)
 
+    async def exists_by_type_user_and_correlation_id(
+        self,
+        *,
+        user_id: str,
+        notification_type: str,
+        correlation_id: str,
+    ) -> bool:
+        stmt = select(UserNotification.id).where(
+            UserNotification.user_id == user_id,
+            UserNotification.type == notification_type,
+            cast(UserNotification.payload["correlation_id"], String) == correlation_id,
+        ).limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None

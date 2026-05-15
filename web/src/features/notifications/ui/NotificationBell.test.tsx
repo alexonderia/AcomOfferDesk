@@ -9,7 +9,6 @@ const loadNotificationsMock = vi.fn();
 const markOneAsReadMock = vi.fn();
 const markAllAsReadMock = vi.fn();
 const navigateMock = vi.fn();
-const enqueueSnackbarMock = vi.fn();
 
 const notificationItem: Notification = {
   id: 11,
@@ -55,12 +54,6 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-vi.mock('notistack', () => ({
-  useSnackbar: () => ({
-    enqueueSnackbar: enqueueSnackbarMock,
-  }),
-}));
-
 vi.mock('../model/NotificationsContext', () => ({
   useNotificationsState: () => notificationsState,
 }));
@@ -71,7 +64,6 @@ describe('NotificationBell', () => {
     markOneAsReadMock.mockReset();
     markAllAsReadMock.mockReset();
     navigateMock.mockReset();
-    enqueueSnackbarMock.mockReset();
 
     notificationsState.items = [];
     notificationsState.unreadCount = 3;
@@ -92,7 +84,7 @@ describe('NotificationBell', () => {
 
     expect(screen.getByText('3')).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole('button')[0]);
+    fireEvent.click(screen.getByRole('button', { name: /уведомления/i }));
 
     await waitFor(() => {
       expect(loadNotificationsMock).toHaveBeenCalledTimes(1);
@@ -110,7 +102,7 @@ describe('NotificationBell', () => {
       </ThemeProvider>
     );
 
-    fireEvent.click(screen.getAllByRole('button')[0]);
+    fireEvent.click(screen.getByRole('button', { name: /уведомления/i }));
 
     const notificationTitle = await screen.findByText('New message');
     const clickableNotification = notificationTitle.closest('[role="button"]');

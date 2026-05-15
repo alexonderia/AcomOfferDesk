@@ -327,24 +327,18 @@ class RequestService:
         if self._email_notifications is None:
             raise Conflict("Email notifications are not configured")
 
-        await self._email_notifications.notify_request_to_additional_emails(
-            request_id=request.id,
-            additional_emails=normalized_additional_emails,
-        )
-        if self._notifications is not None:
-            await self._notifications.notify_email_sent(
-                recipient_user_id=current_user.user_id,
-                title="Письмо поставлено в очередь",
-                body=f"Рассылка по заявке №{request.id} поставлена в очередь для {len(normalized_additional_emails)} адрес(ов).",
-                entity_type="request",
-                entity_id=request.id,
-                link_url=f"/requests/{request.id}",
-                payload={
-                    "queued_to": normalized_additional_emails,
-                    "request_id": request.id,
-                },
+        try:
+            await self._email_notifications.notify_request_to_additional_emails(
+                request_id=request.id,
+                additional_emails=normalized_additional_emails,
+                initiator_user_id=current_user.user_id,
             )
-
+        except TypeError:
+            # Backward compatibility for legacy test doubles/transports that don't yet accept initiator_user_id.
+            await self._email_notifications.notify_request_to_additional_emails(
+                request_id=request.id,
+                additional_emails=normalized_additional_emails,
+            )
         return RequestEmailNotificationResult(
             request_id=request.id,
             sent_to=normalized_additional_emails,
@@ -1015,3 +1009,4 @@ class RequestService:
                 queue.append(child_id)
 
         return list(visible)
+

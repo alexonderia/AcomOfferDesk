@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import BigInteger, and_, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.auth_models import UserAuthAccount, UserContactChannel
+from app.models.auth_models import UserAuthAccount
 from app.models.orm_models import Profile, User
 
 
@@ -53,18 +53,8 @@ class ProfileRepository:
                 UserAuthAccount,
                 and_(
                     UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "telegram",
+                    UserAuthAccount.provider == "keycloak",
                     UserAuthAccount.is_active.is_(True),
-                ),
-            )
-            .join(
-                UserContactChannel,
-                and_(
-                    UserContactChannel.id_user == User.id,
-                    UserContactChannel.channel_type == "telegram",
-                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
-                    UserContactChannel.is_active.is_(True),
-                    UserContactChannel.is_verified.is_(True),
                 ),
             )
             .where(User.id_role == contractor_role_id)
@@ -89,18 +79,8 @@ class ProfileRepository:
                 UserAuthAccount,
                 and_(
                     UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "telegram",
+                    UserAuthAccount.provider == "keycloak",
                     UserAuthAccount.is_active.is_(True),
-                ),
-            )
-            .join(
-                UserContactChannel,
-                and_(
-                    UserContactChannel.id_user == User.id,
-                    UserContactChannel.channel_type == "telegram",
-                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
-                    UserContactChannel.is_active.is_(True),
-                    UserContactChannel.is_verified.is_(True),
                 ),
             )
             .where(User.id_role == contractor_role_id)
@@ -123,24 +103,14 @@ class ProfileRepository:
         contractor_role_id: int,
     ) -> list[ActiveContractorEmailRecipient]:
         stmt = (
-            select(User.id, cast(UserAuthAccount.external_subject_id, BigInteger), Profile.mail)
+            select(User.id, cast(None, BigInteger), Profile.mail)
             .join(Profile, Profile.id == User.id)
             .join(
                 UserAuthAccount,
                 and_(
                     UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "telegram",
+                    UserAuthAccount.provider == "keycloak",
                     UserAuthAccount.is_active.is_(True),
-                ),
-            )
-            .join(
-                UserContactChannel,
-                and_(
-                    UserContactChannel.id_user == User.id,
-                    UserContactChannel.channel_type == "telegram",
-                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
-                    UserContactChannel.is_active.is_(True),
-                    UserContactChannel.is_verified.is_(True),
                 ),
             )
             .where(User.id_role == contractor_role_id)

@@ -252,6 +252,6 @@ describe('NotificationsPushLayer', () => {
       expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(enqueueSnackbarMock.mock.calls[0][0]).toContain('You have 3 new notifications');
+    expect(enqueueSnackbarMock.mock.calls[0][0]).toContain('У вас 3 новых уведомлений');
   });
 });

@@ -240,6 +240,9 @@ class NotificationService:
         recipient_user_id: str,
         title: str,
         body: str,
+        entity_type: str | None = None,
+        entity_id: int | None = None,
+        link_url: str | None = None,
         payload: dict | None = None,
     ) -> UserNotification:
         return await self.create_for_user(
@@ -248,6 +251,9 @@ class NotificationService:
             severity="warning",
             title=title,
             body=body,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            link_url=link_url,
             payload=payload,
         )
 

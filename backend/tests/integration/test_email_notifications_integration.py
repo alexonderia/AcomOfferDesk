@@ -125,11 +125,18 @@ class _FakeEmailNotificationService:
             }
         )
 
-    async def notify_request_to_additional_emails(self, *, request_id: int, additional_emails: list[str]) -> None:
+    async def notify_request_to_additional_emails(
+        self,
+        *,
+        request_id: int,
+        additional_emails: list[str],
+        initiator_user_id: str | None = None,
+    ) -> None:
         self.calls.append(
             {
                 "request_id": request_id,
                 "additional_emails": additional_emails,
+                "initiator_user_id": initiator_user_id,
             }
         )
 

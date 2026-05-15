@@ -7,7 +7,6 @@ import { ActionButton } from '@shared/components/ActionButton';
 import type { MouseEvent } from 'react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSnackbar } from 'notistack';
 import { useNotificationsState } from '../model/NotificationsContext';
 import { resolveNotificationLink } from '../model/resolveNotificationLink';
 import { NOTIFICATION_PAGE_SIZE } from '../model/constants';
@@ -99,7 +98,6 @@ export const NotificationBell = ({
 }: NotificationBellProps) => {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { enqueueSnackbar } = useSnackbar();
   const { isAuthenticated } = useAuth();
   const isMobileViewport = useIsMobileViewport();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -178,9 +176,7 @@ export const NotificationBell = ({
 
     try {
       await loadNotifications({ offset: 0, limit: NOTIFICATION_PAGE_SIZE });
-    } catch {
-      enqueueSnackbar('Не удалось загрузить уведомления', { variant: 'error', autoHideDuration: 14_000 });
-    }
+    } catch {}
   };
 
   const handleNotificationClick = async (notification: Notification) => {
@@ -191,7 +187,6 @@ export const NotificationBell = ({
         await Promise.all(sourceIds.map((id) => markOneAsRead(id)));
       }
     } catch {
-      enqueueSnackbar('Не удалось отметить уведомление как прочитанное', { variant: 'error', autoHideDuration: 14_000 });
       return;
     }
 
@@ -204,21 +199,14 @@ export const NotificationBell = ({
 
   const handleMarkAll = async () => {
     try {
-      const updatedCount = await markAllAsRead();
-      if (updatedCount > 0) {
-        enqueueSnackbar('Все уведомления отмечены как прочитанные', { variant: 'success' });
-      }
-    } catch {
-      enqueueSnackbar('Не удалось отметить уведомления как прочитанные', { variant: 'error', autoHideDuration: 14_000 });
-    }
+      await markAllAsRead();
+    } catch {}
   };
 
   const handleRetry = async () => {
     try {
       await loadNotifications({ offset: 0, limit: NOTIFICATION_PAGE_SIZE });
-    } catch {
-      enqueueSnackbar('Не удалось загрузить уведомления', { variant: 'error', autoHideDuration: 14_000 });
-    }
+    } catch {}
   };
 
   const filterControls = (

@@ -52,7 +52,7 @@
 - создание КП -> уведомление владельца заявки (кроме self-action);
 - создание сообщения в чате -> уведомление активных участников чата, кроме автора;
 - изменение статуса заявки -> уведомление владельца заявки (кроме self-action);
-- постановка email-рассылки в очередь через API -> уведомление инициатора, что задача поставлена в очередь.
+- постановка email-рассылки в очередь через API без отдельного queued-уведомления в центре.
 
 ## Центр уведомлений на фронтенде (v1)
 
@@ -79,13 +79,73 @@
 - Если пользователь уже подписан на чат по websocket (то есть читает сообщения в реальном времени), запись `message.created` в центр уведомлений для него не создается.
 - Если чат не открыт и пользователь не подписан, уведомление сохраняется в центр как обычно.
 
+## Email Delivery Flow (worker feedback)
+
+### Типы и семантика
+
+- `email.sent` — письмо реально отправлено SMTP и это подтверждено `notifications_worker`.
+- `email.failed` — SMTP-отправка реально завершилась ошибкой в `notifications_worker`.
+
+Важно: `email.sent` больше не должен означать "поставлено в очередь".
+
+### Контракт delivery-result события
+
+Worker публикует в `app.events`:
+- `email.delivery.succeeded`
+- `email.delivery.failed`
+
+Payload:
+
+```json
+{
+  "event_type": "email.delivery.failed",
+  "correlation_id": "uuid",
+  "recipient_user_id": "user-id",
+  "request_id": 42,
+  "offer_id": 100,
+  "to_email": "contractor@example.com",
+  "safe_error_code": "SMTP_AUTH_FAILED",
+  "safe_error_message": "Не удалось отправить письмо. Проверьте настройки почты.",
+  "occurred_at": "2026-05-15T12:00:00Z"
+}
+```
+
+Правила:
+- `correlation_id` обязателен (если старый payload без него — worker генерирует fallback и логирует warning).
+- `recipient_user_id` обязателен для пользовательского уведомления.
+- `request_id/offer_id` опциональны.
+- Никаких stack trace, SMTP password, token и внутренних exception details в event payload.
+
+### RabbitMQ routing
+
+- queue отправки писем: `notify.email` (`email.send`)
+- queue результатов доставки: `notify.email.delivery`
+- routing keys результатов: `email.delivery.succeeded`, `email.delivery.failed`
+
+### Как backend формирует user_notifications
+
+Backend consumer читает `notify.email.delivery` и через `NotificationService` создает:
+- `email.sent` (severity `success`) при `email.delivery.succeeded`
+- `email.failed` (severity `error`) при `email.delivery.failed`
+
+Если есть `request_id/offer_id`, добавляются `entity_type/entity_id/link_url`.
+
+### Dedupe (best effort, без миграции)
+
+Перед созданием уведомления backend проверяет наличие записи с тем же:
+- `type` (`email.sent` или `email.failed`)
+- `user_id`
+- `payload.correlation_id`
+
+При совпадении дубль не создается.
+
 ## TODO / Уточнения
 
-- Для `email.failed` и точного подтверждения фактической доставки пока нужен feedback по статусам из `notifications_worker`.
-- Сейчас backend ставит email-задачи в RabbitMQ, а фактическая SMTP-доставка выполняется асинхронно в worker.
-- Пока нет feedback канала worker -> backend, `email.sent` в ручной рассылке используется с честным queued-текстом («поставлено в очередь»), а не как гарантия SMTP-факта.
-- Для точных уведомлений `email.sent`/`email.failed` нужно добавить контракт события статуса worker -> backend (или эквивалентный callback) и сохранять результат через `NotificationService`.
-- Realtime push для самого центра уведомлений пока отложен; текущая клиентская модель остается polling-based.
-- TODO: ws-ticket/cookie-based WS auth вместо `access token` в query-string.
-- TODO: user notification preferences.
-- TODO: backend dedupe policy for cross-service retries.
+- Полноценный retry policy (с четкой финализацией delivery result).
+- Dead-letter queue для невалидных/необрабатываемых событий.
+- Явный dedupe_key в БД (отдельное поле + индекс).
+- Админский email delivery audit/log.
+- UI-фильтры уведомлений через backend query params.
+- Realtime push для самого центра уведомлений (сейчас polling-based).
+- ws-ticket/cookie-based WS auth вместо `access token` в query-string.
+- user notification preferences.

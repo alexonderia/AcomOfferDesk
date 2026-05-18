@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 
 from app.core.config import settings
 from app.scripts.sync_keycloak_user_app_roles import role_mapping_by_local_role_id
@@ -7,6 +9,11 @@ from app.services.keycloak_admin import KeycloakAdminService
 
 def _run(coroutine):
     return asyncio.run(coroutine)
+
+
+def _jwt_with_claims(payload: dict) -> str:
+    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    return f"header.{encoded}.signature"
 
 
 def test_role_mapping_by_local_role_id_matches_expected_app_roles():
@@ -128,3 +135,58 @@ def test_sync_user_app_role_for_local_role_resolves_target_app_role(monkeypatch)
     assert synced is True
     assert removed_count == 0
     assert observed == {"target_app_role": "app.operator"}
+
+
+def test_token_has_admin_claims_rejects_empty_service_account_token():
+    token = _jwt_with_claims(
+        {
+            "azp": "acom-admin-service",
+            "preferred_username": "service-account-acom-admin-service",
+            "realm_access": None,
+            "resource_access": None,
+        }
+    )
+
+    assert KeycloakAdminService._token_has_admin_claims(token) is False
+
+
+def test_get_admin_token_falls_back_to_password_grant_when_service_token_has_no_roles(monkeypatch):
+    monkeypatch.setattr(settings, "keycloak_enabled", True)
+    service = KeycloakAdminService()
+    service._realm = "acom-offerdesk"
+    service._admin_realm = "master"
+
+    service_token = _jwt_with_claims(
+        {
+            "azp": "acom-admin-service",
+            "preferred_username": "service-account-acom-admin-service",
+            "realm_access": None,
+            "resource_access": None,
+        }
+    )
+
+    observed_calls: list[dict[str, str]] = []
+
+    async def fake_request_token(*, base_url: str, realm: str, form_data: dict[str, str]):
+        observed_calls.append({"base_url": base_url, "realm": realm, "grant_type": form_data["grant_type"]})
+        if form_data["grant_type"] == "client_credentials":
+            return service_token
+        return "password-grant-token"
+
+    monkeypatch.setattr(service, "_candidate_base_urls", lambda: ("http://keycloak:8080/iam",))
+    monkeypatch.setattr(service, "_candidate_password_grant_realms", lambda: ("acom-offerdesk", "master"))
+    monkeypatch.setattr(service, "_request_token", fake_request_token)
+
+    token = _run(service.get_admin_token())
+
+    assert token == "password-grant-token"
+    assert [call["grant_type"] for call in observed_calls] == [
+        "client_credentials",
+        "client_credentials",
+        "password",
+    ]
+    assert [call["realm"] for call in observed_calls] == [
+        "acom-offerdesk",
+        "master",
+        "acom-offerdesk",
+    ]

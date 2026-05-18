@@ -130,9 +130,14 @@ jobs:
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
-            docker compose --env-file "$COMPOSE_ENV_FILE" down --remove-orphans || true
-            docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_db_prepare
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build; then
+            docker rm -f keycloak_db_prepare keycloak_bootstrap keycloak_user_role_sync >/dev/null 2>&1 || true
+
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml run --rm --no-deps --name keycloak_db_prepare_run keycloak_db_prepare; then
+              echo "=== keycloak_db_prepare logs are streamed above (one-off run) ==="
+              exit 1
+            fi
+
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build --force-recreate --remove-orphans keycloak rabbitmq minio backend web notifications_worker; then
               echo "=== docker compose ps -a ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               echo "=== keycloak logs (tail) ==="
@@ -141,10 +146,24 @@ jobs:
               docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
               exit 1
             fi
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_bootstrap; then
-              echo "=== keycloak bootstrap logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
+
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" exec -T gateway nginx -s reload; then
+              if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --force-recreate gateway; then
+                echo "=== gateway logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 gateway || true
+                exit 1
+              fi
+            fi
+
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml run --rm --no-deps --name keycloak_bootstrap_run keycloak_bootstrap; then
               echo "=== keycloak logs (tail) ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
+              exit 1
+            fi
+
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml run --rm --no-deps --name keycloak_user_role_sync_run keycloak_user_role_sync; then
+              echo "=== keycloak user role sync logs are streamed above (one-off run) ==="
+              echo "=== backend logs (tail) ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
               exit 1
             fi

@@ -2,7 +2,7 @@
 set -e
 set -u
 
-SERVER_URL="${KEYCLOAK_INTERNAL_BASE_URL:-${KEYCLOAK_INTERNAL_URL:-http://keycloak:8080/iam}}"
+SERVER_URL="${KEYCLOAK_INTERNAL_BASE_URL:-${KEYCLOAK_INTERNAL_URL:-http://keycloak:8080}}"
 MASTER_REALM="${KEYCLOAK_MASTER_REALM:-master}"
 APP_REALM="${KEYCLOAK_REALM:-acom-offerdesk}"
 WEB_CLIENT_ID="${KEYCLOAK_WEB_CLIENT_ID:-${KEYCLOAK_CLIENT_ID:-acom-web}}"
@@ -374,6 +374,57 @@ get_client_role_id() {
   printf '%s' "$role_payload" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
+get_user_uuid() {
+  username="$1"
+  user_search=$(/opt/keycloak/bin/kcadm.sh get "users?username=$username&exact=true" -r "$APP_REALM")
+  printf '%s' "$user_search" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+payload_has_role_name() {
+  payload="$1"
+  role_name="$2"
+  printf '%s' "$payload" | grep -Eq "\"name\"[[:space:]]*:[[:space:]]*\"$role_name\""
+}
+
+create_single_role_payload_file() {
+  client_uuid="$1"
+  role_name="$2"
+  role_payload=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name" -r "$APP_REALM")
+  payload_file="$(mktemp)"
+  printf '[%s]\n' "$role_payload" >"$payload_file"
+  printf '%s\n' "$payload_file"
+}
+
+ensure_user_has_client_role() {
+  user_uuid="$1"
+  client_uuid="$2"
+  role_name="$3"
+
+  current_mappings=$(/opt/keycloak/bin/kcadm.sh get "users/$user_uuid/role-mappings/clients/$client_uuid" -r "$APP_REALM")
+  if payload_has_role_name "$current_mappings" "$role_name"; then
+    return 0
+  fi
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$role_name")"
+  /opt/keycloak/bin/kcadm.sh create "users/$user_uuid/role-mappings/clients/$client_uuid" -r "$APP_REALM" -f "$payload_file" >/dev/null
+  rm -f "$payload_file"
+}
+
+ensure_composite_role_has_member() {
+  client_uuid="$1"
+  composite_role_name="$2"
+  member_role_name="$3"
+
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM")
+  if payload_has_role_name "$current_composites" "$member_role_name"; then
+    return 0
+  fi
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
+  /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null
+  rm -f "$payload_file"
+}
+
 ensure_web_client() {
   client_uuid="$(get_client_uuid "$WEB_CLIENT_ID")"
   if [ -z "$client_uuid" ]; then
@@ -494,20 +545,19 @@ sync_composite_role() {
     exit 1
   fi
 
-  target_role_id="$(get_client_role_id "$api_client_uuid" "$role_name")"
-  if [ -z "$target_role_id" ]; then
-    echo "Unable to resolve role id for composite role: $role_name"
-    exit 1
-  fi
+  /opt/keycloak/bin/kcadm.sh update "clients/$api_client_uuid/roles/$role_name" -r "$APP_REALM" \
+    -s "name=$role_name" \
+    -s composite=true \
+    -s clientRole=true >/dev/null
 
-  printf '%s\n' "$desired_members" | while IFS= read -r member_role; do
+  desired_members_file="$(mktemp)"
+  printf '%s\n' "$desired_members" >"$desired_members_file"
+  while IFS= read -r member_role; do
     if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ]; then
-      /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
-        --rid "$target_role_id" \
-        --cclientid "$API_CLIENT_ID" \
-        --rolename "$member_role" >/dev/null 2>&1 || true
+      ensure_composite_role_has_member "$api_client_uuid" "$role_name" "$member_role"
     fi
-  done
+  done <"$desired_members_file"
+  rm -f "$desired_members_file"
 }
 
 ensure_api_roles_model() {
@@ -542,12 +592,17 @@ ensure_api_roles_model() {
 ensure_admin_service_role_bindings() {
   # Required for backend KeycloakAdminService operations:
   # lookup users, create/update users, reset passwords, terminate sessions.
-  /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
-    --uusername "service-account-$ADMIN_SERVICE_CLIENT_ID" \
-    --cclientid realm-management \
-    --rolename query-users \
-    --rolename view-users \
-    --rolename manage-users >/dev/null 2>&1 || true
+  service_account_user_uuid="$(get_user_uuid "service-account-$ADMIN_SERVICE_CLIENT_ID")"
+  realm_management_uuid="$(get_client_uuid "realm-management")"
+
+  if [ -z "$service_account_user_uuid" ] || [ -z "$realm_management_uuid" ]; then
+    echo "Unable to resolve service account or realm-management client for $ADMIN_SERVICE_CLIENT_ID"
+    exit 1
+  fi
+
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "query-users"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "view-users"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "manage-users"
 }
 
 ensure_bootstrap_user() {
@@ -588,10 +643,13 @@ EOF
         --temporary
     fi
 
-    /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
-      --uusername "$BOOTSTRAP_USERNAME" \
-      --cclientid "$API_CLIENT_ID" \
-      --rolename app.superadmin >/dev/null 2>&1 || true
+    api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+    if [ -z "$api_client_uuid" ]; then
+      echo "Unable to resolve API client UUID for $API_CLIENT_ID"
+      exit 1
+    fi
+
+    ensure_user_has_client_role "$USER_UUID" "$api_client_uuid" "app.superadmin"
   fi
 }
 

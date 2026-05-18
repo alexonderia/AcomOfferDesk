@@ -39,6 +39,11 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
 
   useEffect(() => {
     const unsubscribe = realtimeSocketClient.onEvent((event) => {
+      if (event.type === 'connection.ready') {
+        void syncNotifications().catch(() => undefined);
+        return;
+      }
+
       if (event.type === 'error' && event.data.code === 'auth_failed') {
         if (refreshAttemptInFlightRef.current) {
           return;
@@ -58,13 +63,16 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
 
       const createdEvent = parseNotificationCreatedEvent(event);
       if (!createdEvent) {
+        if (event.type === 'notification.created') {
+          console.warn('Ignore invalid notification.created realtime payload');
+        }
         return;
       }
 
       applyRealtimeNotificationCreated(createdEvent.notification, createdEvent.hasUnread);
     });
     return unsubscribe;
-  }, [applyRealtimeNotificationCreated, logout, refresh]);
+  }, [applyRealtimeNotificationCreated, logout, refresh, syncNotifications]);
 
   useEffect(() => {
     if (status === 'anonymous' || !session?.token || !session.businessAccess) {

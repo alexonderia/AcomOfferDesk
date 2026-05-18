@@ -18,7 +18,7 @@
   - Событие важно пользователю независимо от текущей страницы.
   - Сохраняется в `user_notifications`.
   - Целевое размещение: бизнес-toast `bottom-right` + центр уведомлений.
-  - Сейчас push-слой работает через polling; доставка через `/ws/realtime` запланирована, но не реализована на этом этапе.
+  - Основной push-механизм: realtime доставка через `/api/v1/ws/realtime` (`notification.created`), polling остается только как sync/fallback.
 
 ## Таблица Событий
 
@@ -56,19 +56,19 @@
 | plan.overdue | business | yes | bottom-right | Планировщик/producer просрочки не найден | Владелец/менеджер плана (требует уточнения) | маршрут dashboard плана (требует уточнения) | `plan_id`, дата срока, величина просрочки | todo | Нужен источник обнаружения просрочки и правила отправки. |
 | system.warning | business | yes | bottom-right | Обработчик есть в `process_notification_events.py`, producer в сервисах не найден | Явно переданные получатели из payload | payload `link_url` или none | произвольный payload + `event_id`/`dedupe_key` | partial | Consumer-путь готов, публикация в бизнес-сервисах не подключена. |
 | system.worker_failed | business | yes | bottom-right | Мост из ошибок воркера в notification pipeline не найден | Ops/admin получатели (требует уточнения) | worker/admin route (требует уточнения) | `worker_name`, `error_code`, корреляционные поля | todo | В текущем process/email flow не реализовано. |
-| ui.request.save.success | system_ui | no | top-center | `web/src/features/request-details/ui/RequestDetailsView.tsx` (`setSuccessMessage`) | Текущий пользователь страницы | none | локальный текст | partial | Сейчас это inline `Alert`, не top-center toast. |
-| ui.request.save.error | system_ui | no | top-center | `web/src/features/request-details/ui/RequestDetailsView.tsx` (`setErrorMessage`) | Текущий пользователь страницы | none | локальный текст ошибки | partial | Сейчас это inline `Alert`. |
-| ui.request.create.error | system_ui | no | top-center | `web/src/pages/requests/CreateRequestPage.tsx` | Текущий пользователь страницы | none | локальный текст ошибки | partial | Локальная обратная связь есть, единого toast-стандарта нет. |
+| ui.request.save.success | system_ui | no | top-center | local API result (`RequestDetailsView`) | Текущий пользователь страницы | none | локальный текст | implemented | Показывается через единый system toast facade. |
+| ui.request.save.error | system_ui | no | top-center | local API result (`RequestDetailsView`) | Текущий пользователь страницы | none | локальный текст ошибки | implemented | Показывается через единый system toast facade. |
+| ui.request.create.error | system_ui | no | top-center | local API result (`CreateRequestPage`) | Текущий пользователь страницы | none | локальный текст ошибки | implemented | Ошибка создания заявки показывается как system toast. |
 | ui.plan.mutation.success | system_ui | no | top-center | `web/src/features/dashboard/model/usePlanDashboard.ts` | Текущий пользователь страницы | none | локальный текст успеха | partial | Локальные сообщения для create/update/delegate/close/remove. |
 | ui.plan.mutation.error | system_ui | no | top-center | `web/src/features/dashboard/model/usePlanDashboard.ts` | Текущий пользователь страницы | none | локальный текст ошибки | partial | Только локальная ошибка в UI. |
-| ui.user.create.success | system_ui | no | top-center | `web/src/features/admin/model/useAdminPage.ts` | Текущий пользователь страницы | none | локальный текст успеха | partial | Локальный feedback в стиле `Alert`. |
-| ui.user.create.error | system_ui | no | top-center | `web/src/features/admin/model/useAdminPage.ts` | Текущий пользователь страницы | none | локальный текст ошибки | partial | Локальный feedback в форме. |
-| ui.profile.review.submit.success | system_ui | no | top-center | `web/src/pages/auth/AccountStatePage.tsx` | Текущий пользователь страницы | none | локальный текст успеха | partial | Сообщение после отправки данных на проверку. |
-| ui.file.upload.normative.success | system_ui | no | top-center | `web/src/shared/components/NormativeFileButton.tsx` | Текущий пользователь страницы | none | локальный текст успеха | partial | Локальный компонентный успех/ошибка через `Alert`. |
-| ui.feedback.submit.success | system_ui | no | top-center | `web/src/shared/components/FeedbackButton.tsx` | Текущий пользователь страницы | none | локальный текст успеха | partial | Локальный компонентный успех/ошибка через `Alert`. |
+| ui.user.create.success | system_ui | no | top-center | local API result (`useAdminPage`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Показывается через единый system toast facade. |
+| ui.user.create.error | system_ui | no | top-center | local API result (`useAdminPage`) | Текущий пользователь страницы | none | локальный текст ошибки | implemented | Показывается через единый system toast facade. |
+| ui.profile.review.submit.success | system_ui | no | top-center | local API result (`AccountStatePage`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Отправка на проверку подтверждается system toast. |
+| ui.file.upload.normative.success | system_ui | no | top-center | local API result (`NormativeFileButton`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Компонент использует system toast facade для success/error. |
+| ui.feedback.submit.success | system_ui | no | top-center | local API result (`FeedbackButton`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Компонент использует system toast facade для success/error. |
 
 ## Примечания
 
-- Бизнес-пуши реализованы через `NotificationsPushLayer` и сейчас появляются после polling unread-count + загрузки списка; доставка через `/ws/realtime` пока не реализована.
+- Бизнес-пуши реализованы через `NotificationsPushLayer` и приходят по realtime-событию `notification.created` (`/api/v1/ws/realtime`), без запуска push от роста unread-count polling.
 - Визуальные иконки в центре уведомлений сейчас явно сопоставлены с типами: `offer.created`, `message.created`, `request.status_changed`, `email.sent`, `email.failed`, `system.warning`.
 - `message.read` — это событие чата в realtime-канале и его следует оставлять вне `user_notifications`, пока бизнес-требования не изменятся.

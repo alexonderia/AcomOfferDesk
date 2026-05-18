@@ -141,4 +141,23 @@ describe('RealtimeProvider', () => {
       expect(syncNotificationsMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('runs notifications sync on connection.ready event', async () => {
+    render(<div />, { wrapper: Wrapper });
+
+    emitRealtimeEvent({
+      type: 'connection.ready',
+      event_id: 'evt-ready',
+      ts: '2026-05-18T12:00:00Z',
+      data: {
+        connection_id: 'conn-1',
+        user_id: 'user-1',
+        transport: 'websocket',
+      },
+    });
+
+    await waitFor(() => {
+      expect(syncNotificationsMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });

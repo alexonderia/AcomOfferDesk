@@ -153,6 +153,26 @@ async def test_create_for_user_keeps_flow_when_user_offline():
 
 
 @pytest.mark.asyncio
+async def test_create_for_user_uses_payload_event_id_for_realtime_envelope():
+    repo = _Repo()
+    sender = _RealtimeSender()
+    service = NotificationService(repo, realtime_sender=sender)
+
+    await service.create_for_user(
+        user_id="user-1",
+        notification_type="system.warning",
+        severity="warning",
+        title="Process event",
+        body="Payload includes event id",
+        payload={"event_id": "process-event-123"},
+    )
+
+    assert len(sender.calls) == 1
+    _, event = sender.calls[0]
+    assert event.event_id == "process-event-123"
+
+
+@pytest.mark.asyncio
 async def test_create_for_user_logs_and_keeps_flow_on_realtime_failure(caplog: pytest.LogCaptureFixture):
     repo = _Repo()
     sender = _RealtimeSender(should_fail=True)

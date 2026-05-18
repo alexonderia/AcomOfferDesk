@@ -13,6 +13,7 @@ const TRANSIENT_NAVIGATION_ERRORS = [
   'ERR_TUNNEL_CONNECTION_FAILED',
   'ERR_NETWORK_CHANGED',
   'ERR_TIMED_OUT',
+  'ERR_NGROK_3200',
 ];
 
 const isTransientNavigationError = (error: unknown): boolean => {
@@ -25,6 +26,11 @@ export const bypassNgrokInterstitialIfPresent = async (page: Page): Promise<void
   if (await visitSiteButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await visitSiteButton.click();
   }
+};
+
+const isNgrokEndpointOfflinePage = async (page: Page): Promise<boolean> => {
+  const offlineHeading = page.getByRole('heading', { name: /ERR_NGROK_3200/i });
+  return offlineHeading.isVisible({ timeout: 1_000 }).catch(() => false);
 };
 
 export const gotoWithRetry = async (
@@ -41,6 +47,9 @@ export const gotoWithRetry = async (
     try {
       await page.goto(url, { timeout: timeoutMs, waitUntil });
       await bypassNgrokInterstitialIfPresent(page);
+      if (await isNgrokEndpointOfflinePage(page)) {
+        throw new Error('ERR_NGROK_3200 endpoint offline');
+      }
       return;
     } catch (error) {
       lastError = error;
@@ -82,6 +91,8 @@ export const getCredentialsOrSkip = (
 };
 
 export const loginViaKeycloak = async (page: Page, credentials: Credentials): Promise<void> => {
+  const loginUrl = '/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1';
+
   const waitForPostLoginUrl = async (): Promise<void> => {
     await page.waitForURL(
       (url) =>
@@ -93,28 +104,42 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
     );
   };
 
-  await gotoWithRetry(page, '/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1', {
-    attempts: 5,
-    waitUntil: 'domcontentloaded',
-  });
-
   const usernameInput = page.locator('input[name="username"], input#username').first();
   const passwordInput = page.locator('input[name="password"], input#password').first();
-  await usernameInput.waitFor({ state: 'visible', timeout: 30_000 });
-  await usernameInput.fill(credentials.username);
-  await passwordInput.fill(credentials.password);
-
   const submitButton = page.locator('#kc-login, button[type="submit"], input[type="submit"]').first();
-  await submitButton.click();
 
-  try {
-    await waitForPostLoginUrl();
-  } catch (error) {
-    if (new URL(page.url()).pathname.startsWith('/iam')) {
-      await submitButton.click();
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await gotoWithRetry(page, loginUrl, {
+      attempts: 5,
+      waitUntil: 'domcontentloaded',
+    });
+
+    const loginFormVisible = await usernameInput
+      .waitFor({ state: 'visible', timeout: 30_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!loginFormVisible) {
+      if (attempt >= 3) {
+        throw new Error(`Keycloak login form is not visible after ${attempt} attempts (url: ${page.url()})`);
+      }
+      await page.waitForTimeout(1_000 * attempt);
+      continue;
+    }
+
+    await usernameInput.fill(credentials.username);
+    await passwordInput.fill(credentials.password);
+    await submitButton.click();
+
+    try {
       await waitForPostLoginUrl();
-    } else {
-      throw error;
+      break;
+    } catch (error) {
+      const currentPath = new URL(page.url()).pathname;
+      if (attempt >= 3 || !currentPath.startsWith('/iam')) {
+        throw error;
+      }
+      await page.waitForTimeout(1_000 * attempt);
     }
   }
 
@@ -153,6 +178,14 @@ export const assertNoSevereConsoleErrors = async (
   action: () => Promise<void>
 ): Promise<void> => {
   const severeErrors: string[] = [];
+  const isIgnorableTransientResourceError = (text: string): boolean =>
+    text.startsWith('Failed to load resource: net::') &&
+    (text.includes('ERR_CONNECTION_CLOSED') ||
+      text.includes('ERR_CONNECTION_RESET') ||
+      text.includes('ERR_TUNNEL_CONNECTION_FAILED') ||
+      text.includes('ERR_NETWORK_CHANGED') ||
+      text.includes('ERR_TIMED_OUT'));
+
   const listener = (msg: { type: () => string; text: () => string }) => {
     if (msg.type() !== 'error') {
       return;
@@ -160,6 +193,9 @@ export const assertNoSevereConsoleErrors = async (
 
     const text = msg.text();
     if (text.includes('the server responded with a status of 401')) {
+      return;
+    }
+    if (isIgnorableTransientResourceError(text)) {
       return;
     }
 

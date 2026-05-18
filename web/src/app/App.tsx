@@ -5,6 +5,8 @@ import { RealtimeProvider } from '@app/providers/RealtimeProvider';
 import { AppRoutes } from '@app/routes/AppRoutes';
 import { NotificationsProvider, NotificationsPushLayer } from '@features/notifications';
 import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
+import { SnackbarProvider } from 'notistack';
+import { NOTIFICATION_PUSH_MAX_SNACK } from '@features/notifications/model/constants';
 
 export const App = () => {
   const { session } = useAuth();
@@ -18,7 +20,15 @@ export const App = () => {
   return (
     <NotificationsProvider>
       <RealtimeProvider>
-        <NotificationsPushLayer />
+        <SnackbarProvider
+          maxSnack={NOTIFICATION_PUSH_MAX_SNACK}
+          autoHideDuration={10_000}
+          preventDuplicate
+          dense
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <NotificationsPushLayer />
+        </SnackbarProvider>
         <AppRoutes
           defaultPath={defaultPath}
           hasSession={Boolean(session)}

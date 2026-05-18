@@ -197,6 +197,24 @@ Dedupe реализован best-effort через JSON-ключи в payload:
   - сохраняются suppress для `message.created` при уже открытом соответствующем workspace, dedupe по id и burst-aggregation для серии событий.
 - Polling unread-count допускается только как sync/fallback механизм.
 
+## System UI Toast vs Business Notification
+
+- `system_ui`:
+  - локальный результат действия пользователя на текущей странице;
+  - показывается как компактный toast `top-center`;
+  - не сохраняется в `user_notifications`;
+  - не влияет на red dot и центр уведомлений.
+- `business`:
+  - процессное событие, важное вне текущей страницы;
+  - сохраняется в `user_notifications`;
+  - доставляется через `/api/v1/ws/realtime` событием `notification.created`;
+  - показывается как push toast `bottom-right` и в центре уведомлений.
+
+Почему разделение важно:
+- центр уведомлений не захламляется локальными success/error;
+- процессные сигналы не теряются среди технического UI-feedback;
+- UX предсказуем: локальные действия сверху, кросс-страничные события справа снизу.
+
 ## Операционное Ограничение (Без Outbox)
 
 Так как outbox нет:

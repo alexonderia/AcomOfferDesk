@@ -14,6 +14,7 @@ import { ROLE } from '@shared/constants/roles';
 import { isValidRuPhone } from '@shared/lib/phone';
 import { addUserButtonSx, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
 import { resolveUserTabFromParam } from './helpers';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const innRegex = /^\d{10}$|^\d{12}$/;
@@ -189,8 +190,6 @@ export const useAdminPage = () => {
   const canOpenCreateDialog = hasPermission(session, 'users.create') || canCreateManualContractor;
   const canViewRoleIds = hasAnyPermission(session, ['users.role.update_any', 'users.role.update_economy']);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<UserTab>(() =>
     isLeadLike ? 'economists' : resolveUserTabFromParam(searchParams.get('users_tab'))
   );
@@ -249,6 +248,7 @@ export const useAdminPage = () => {
 
   const canCreateUser = hasPermission(session, 'users.create');
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
 
   const form = useForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
@@ -386,14 +386,10 @@ export const useAdminPage = () => {
       next.delete('create');
       return next;
     }, { replace: true });
-    setErrorMessage(null);
-    setSuccessMessage(null);
     resetForm();
   };
 
   const onSubmit = async (values: AdminUserFormValues) => {
-    setErrorMessage(null);
-    setSuccessMessage(null);
     try {
       if (values.role_id === ROLE.CONTRACTOR) {
         const response = await createManualContractor({
@@ -405,7 +401,7 @@ export const useAdminPage = () => {
           note: values.note?.trim() || undefined
         });
 
-        setSuccessMessage(`Контрагент ${response.userId} создан.`);
+        showSuccessToast(`Контрагент ${response.userId} создан.`);
       } else {
         const response = await registerUser({
           login: values.login?.trim() ?? '',
@@ -414,13 +410,13 @@ export const useAdminPage = () => {
           id_parent: values.id_parent?.trim() || undefined
         });
 
-        setSuccessMessage(`Пользователь ${response.data.user_id} создан.`);
+        showSuccessToast(`Пользователь ${response.data.user_id} создан.`);
       }
 
       resetForm();
       await Promise.all([loadUsers(), loadManagers()]);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать пользователя');
+      showErrorToast(error instanceof Error ? error.message : 'Не удалось создать пользователя');
     }
   };
 
@@ -430,8 +426,6 @@ export const useAdminPage = () => {
     canViewRoleIds,
     isDialogOpen,
     setIsDialogOpen,
-    errorMessage,
-    successMessage,
     activeTab,
     handleTabChange,
     users,

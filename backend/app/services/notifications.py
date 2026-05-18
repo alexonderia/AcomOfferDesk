@@ -285,14 +285,20 @@ class NotificationService:
             sender = await self._resolve_realtime_sender()
             if sender is None:
                 return
+            payload = notification.payload if isinstance(notification.payload, dict) else {}
+            process_event_id = payload.get("event_id")
+            normalized_event_id = str(process_event_id).strip() if process_event_id is not None else ""
 
-            envelope = OutboundEnvelope(
-                type="notification.created",
-                data={
+            envelope_kwargs = {
+                "type": "notification.created",
+                "data": {
                     "notification": notification_to_realtime_dict(notification),
                     "has_unread": True,
                 },
-            )
+            }
+            if normalized_event_id:
+                envelope_kwargs["event_id"] = normalized_event_id
+            envelope = OutboundEnvelope(**envelope_kwargs)
             delivered = await sender(user_id=notification.user_id, event=envelope)
             if not delivered:
                 logger.debug(

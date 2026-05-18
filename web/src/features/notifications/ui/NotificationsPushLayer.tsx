@@ -5,20 +5,17 @@ import { useAuth } from '@app/providers/AuthProvider';
 import { useRealtime } from '@app/providers/RealtimeProvider';
 import { useNotificationsState } from '../model/NotificationsContext';
 import {
-  NOTIFICATION_PUSH_AUTOCLOSE_MS,
   NOTIFICATION_PUSH_BURST_THRESHOLD,
-  NOTIFICATION_PUSH_ERROR_AUTOCLOSE_MS,
 } from '../model/constants';
 import { isNotificationForCurrentOpenChat } from '../model/isNotificationForCurrentOpenChat';
 import { parseNotificationCreatedEvent } from '../model/realtimeNotificationEvent';
 import { resolveNotificationLink } from '../model/resolveNotificationLink';
 import type { Notification } from '../model/types';
 import { NotificationPushToast } from './NotificationPushToast';
+import { getBusinessToastAutoHideDuration } from '@shared/ui/toasts';
 
 const getPushAutoHideDuration = (notification: Pick<Notification, 'severity'>): number =>
-  notification.severity === 'error' || notification.severity === 'warning'
-    ? NOTIFICATION_PUSH_ERROR_AUTOCLOSE_MS
-    : NOTIFICATION_PUSH_AUTOCLOSE_MS;
+  getBusinessToastAutoHideDuration(notification.severity);
 
 const isMobileViewport = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches;
@@ -32,8 +29,8 @@ const buildBatchSummaryNotification = (
   return {
     type: 'system.warning',
     severity: count >= 6 ? 'warning' : 'info',
-    title: `РЈ РІР°СЃ ${count} РЅРѕРІС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№`,
-    body: latest?.title ?? 'РћС‚РєСЂРѕР№С‚Рµ С†РµРЅС‚СЂ СѓРІРµРґРѕРјР»РµРЅРёР№, С‡С‚РѕР±С‹ РїРѕСЃРјРѕС‚СЂРµС‚СЊ РґРµС‚Р°Р»Рё.',
+    title: `У вас ${count} новых уведомлений`,
+    body: latest?.title ?? 'Откройте центр уведомлений, чтобы посмотреть детали.',
     created_at: latest?.created_at ?? new Date().toISOString(),
   };
 };

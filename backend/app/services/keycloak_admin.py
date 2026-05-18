@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -353,6 +355,14 @@ class KeycloakAdminService:
                 candidates.append(normalized)
         return tuple(candidates)
 
+    def _candidate_password_grant_realms(self) -> tuple[str, ...]:
+        realms: list[str] = []
+        for realm in (self._admin_realm, "master", self._realm):
+            normalized = (realm or "").strip()
+            if normalized and normalized not in realms:
+                realms.append(normalized)
+        return tuple(realms)
+
     async def _request_token(
         self,
         *,
@@ -378,6 +388,43 @@ class KeycloakAdminService:
             return access_token
         return None
 
+    @staticmethod
+    def _token_has_admin_claims(access_token: str) -> bool:
+        normalized = (access_token or "").strip()
+        if not normalized:
+            return False
+
+        parts = normalized.split(".")
+        if len(parts) < 2:
+            # If token is not a JWT, avoid false negatives and let the API decide.
+            return True
+
+        payload_segment = parts[1]
+        payload_segment += "=" * (-len(payload_segment) % 4)
+
+        try:
+            payload = json.loads(base64.urlsafe_b64decode(payload_segment.encode()))
+        except Exception:  # noqa: BLE001
+            return True
+
+        if not isinstance(payload, dict):
+            return True
+
+        realm_roles = payload.get("realm_access", {}).get("roles", [])
+        if isinstance(realm_roles, list) and any(str(role).strip() for role in realm_roles):
+            return True
+
+        resource_access = payload.get("resource_access", {})
+        if isinstance(resource_access, dict):
+            for resource_payload in resource_access.values():
+                if not isinstance(resource_payload, dict):
+                    continue
+                resource_roles = resource_payload.get("roles", [])
+                if isinstance(resource_roles, list) and any(str(role).strip() for role in resource_roles):
+                    return True
+
+        return False
+
     async def _get_admin_token(self) -> str:
         if self._admin_client_secret:
             for base_url in self._candidate_base_urls():
@@ -391,23 +438,24 @@ class KeycloakAdminService:
                             "client_secret": self._admin_client_secret,
                         },
                     )
-                    if access_token:
+                    if access_token and self._token_has_admin_claims(access_token):
                         return access_token
 
         if self._admin_username and self._admin_password:
             for base_url in self._candidate_base_urls():
-                access_token = await self._request_token(
-                    base_url=base_url,
-                    realm=self._admin_realm,
-                    form_data={
-                        "grant_type": "password",
-                        "client_id": "admin-cli",
-                        "username": self._admin_username,
-                        "password": self._admin_password,
-                    },
-                )
-                if access_token:
-                    return access_token
+                for realm in self._candidate_password_grant_realms():
+                    access_token = await self._request_token(
+                        base_url=base_url,
+                        realm=realm,
+                        form_data={
+                            "grant_type": "password",
+                            "client_id": "admin-cli",
+                            "username": self._admin_username,
+                            "password": self._admin_password,
+                        },
+                    )
+                    if access_token:
+                        return access_token
 
         raise Forbidden("Unable to authenticate in Keycloak admin API")
 

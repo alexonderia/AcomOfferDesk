@@ -12,7 +12,6 @@ export type WorkspaceOfferItem = {
   updated_at: string | null;
   files: ContractorRequestViewFile[];
   actions: OfferActions;
-  selfHref?: string;
 };
 
 export type OfferWorkspace = {
@@ -52,7 +51,7 @@ export type OfferWorkspace = {
   chatActions: ChatActions;
 };
 
-type ApiOfferItem = Omit<WorkspaceOfferItem, 'actions' | 'selfHref' | 'files'> & {
+type ApiOfferItem = Omit<WorkspaceOfferItem, 'actions' | 'files'> & {
   actions?: {
     can_open_workspace?: boolean;
     can_view_contractor_info?: boolean;
@@ -64,11 +63,6 @@ type ApiOfferItem = Omit<WorkspaceOfferItem, 'actions' | 'selfHref' | 'files'> &
     can_delete_files?: boolean;
   };
   files?: ContractorRequestViewFile[];
-  _links?: {
-    self?: {
-      href: string;
-    };
-  };
 };
 
 type ApiResponse = {
@@ -120,8 +114,7 @@ const mapOfferItem = (offer: ApiOfferItem, contractorUserId?: string): Workspace
   created_at: offer.created_at,
   updated_at: offer.updated_at,
   files: offer.files ?? [],
-  actions: normalizeOfferActions(offer.actions),
-  selfHref: offer._links?.self?.href
+  actions: normalizeOfferActions(offer.actions)
 });
 
 export const getOfferWorkspace = async (offerId: number): Promise<OfferWorkspace> => {

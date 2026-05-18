@@ -1,5 +1,4 @@
 import { fetchJson } from '../client';
-import type { AuthLink } from './loginWebUser';
 
 export type RegisterUserPayload = {
   login: string;
@@ -16,9 +15,6 @@ export type RegisterUserResponse = {
     user_id: string;
     role_id: number;
     status: string;
-  };
-  _links: {
-    self: AuthLink;
   };
 };
 

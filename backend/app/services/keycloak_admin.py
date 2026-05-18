@@ -27,6 +27,7 @@ class KeycloakAdminService:
         self._realm = settings.keycloak_realm
         self._admin_realm = settings.keycloak_admin_realm
         self._admin_client_id = settings.keycloak_admin_client_id
+        self._admin_client_secret = settings.keycloak_admin_client_secret
         self._admin_username = settings.keycloak_admin_username
         self._admin_password = settings.keycloak_admin_password
         self._timeout = settings.keycloak_http_timeout_seconds
@@ -99,7 +100,7 @@ class KeycloakAdminService:
             return
 
         admin_token = await self._get_admin_token()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 f"{self._users_endpoint}/{normalized_user_id}/logout",
                 headers=self._headers(admin_token),
@@ -107,21 +108,259 @@ class KeycloakAdminService:
         if response.status_code >= 400:
             raise Conflict("Unable to terminate Keycloak user sessions")
 
+    async def get_admin_token(self) -> str:
+        if not settings.keycloak_enabled:
+            raise Forbidden("Keycloak integration is disabled")
+        self._ensure_configured()
+        return await self._get_admin_token()
+
+    async def get_client_uuid_by_client_id(
+        self,
+        *,
+        client_id: str,
+        admin_token: str | None = None,
+    ) -> str:
+        if not settings.keycloak_enabled:
+            raise Forbidden("Keycloak integration is disabled")
+
+        normalized_client_id = (client_id or "").strip()
+        if not normalized_client_id:
+            raise Conflict("Keycloak clientId is required")
+
+        token = admin_token or await self.get_admin_token()
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+            response = await client.get(
+                f"{self._admin_base_url}/clients",
+                params={"clientId": normalized_client_id},
+                headers=self._headers(token),
+            )
+        if response.status_code >= 400:
+            raise Conflict("Unable to query Keycloak clients")
+
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise Conflict("Unable to query Keycloak clients")
+
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("clientId") or "").strip() != normalized_client_id:
+                continue
+            client_uuid = str(item.get("id") or "").strip()
+            if client_uuid:
+                return client_uuid
+        raise Conflict(f"Unable to resolve Keycloak client '{normalized_client_id}'")
+
+    async def get_client_role_by_name(
+        self,
+        *,
+        client_uuid: str,
+        role_name: str,
+        admin_token: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not settings.keycloak_enabled:
+            raise Forbidden("Keycloak integration is disabled")
+
+        normalized_client_uuid = (client_uuid or "").strip()
+        normalized_role_name = (role_name or "").strip()
+        if not normalized_client_uuid or not normalized_role_name:
+            raise Conflict("Keycloak role lookup requires client UUID and role name")
+
+        token = admin_token or await self.get_admin_token()
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+            response = await client.get(
+                f"{self._admin_base_url}/clients/{normalized_client_uuid}/roles/{normalized_role_name}",
+                headers=self._headers(token),
+            )
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            raise Conflict("Unable to query Keycloak client role")
+
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise Conflict("Unable to query Keycloak client role")
+        return payload
+
+    async def get_user_client_role_mappings(
+        self,
+        *,
+        keycloak_user_id: str,
+        client_uuid: str,
+        admin_token: str | None = None,
+    ) -> list[dict[str, Any]] | None:
+        if not settings.keycloak_enabled:
+            raise Forbidden("Keycloak integration is disabled")
+
+        normalized_user_id = (keycloak_user_id or "").strip()
+        normalized_client_uuid = (client_uuid or "").strip()
+        if not normalized_user_id or not normalized_client_uuid:
+            raise Conflict("Keycloak role mappings lookup requires user ID and client UUID")
+
+        token = admin_token or await self.get_admin_token()
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+            response = await client.get(
+                f"{self._users_endpoint}/{normalized_user_id}/role-mappings/clients/{normalized_client_uuid}",
+                headers=self._headers(token),
+            )
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            raise Conflict("Unable to query Keycloak user role mappings")
+
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise Conflict("Unable to query Keycloak user role mappings")
+        return [item for item in payload if isinstance(item, dict)]
+
+    async def add_user_client_roles(
+        self,
+        *,
+        keycloak_user_id: str,
+        client_uuid: str,
+        roles: list[dict[str, Any]],
+        admin_token: str | None = None,
+    ) -> None:
+        if not roles:
+            return
+        token = admin_token or await self.get_admin_token()
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+            response = await client.post(
+                f"{self._users_endpoint}/{keycloak_user_id}/role-mappings/clients/{client_uuid}",
+                json=roles,
+                headers=self._headers(token),
+            )
+        if response.status_code >= 400:
+            raise Conflict("Unable to assign Keycloak user role mappings")
+
+    async def remove_user_client_roles(
+        self,
+        *,
+        keycloak_user_id: str,
+        client_uuid: str,
+        roles: list[dict[str, Any]],
+        admin_token: str | None = None,
+    ) -> None:
+        if not roles:
+            return
+        token = admin_token or await self.get_admin_token()
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+            response = await client.request(
+                "DELETE",
+                f"{self._users_endpoint}/{keycloak_user_id}/role-mappings/clients/{client_uuid}",
+                json=roles,
+                headers=self._headers(token),
+            )
+        if response.status_code >= 400:
+            raise Conflict("Unable to remove Keycloak user role mappings")
+
+    async def replace_user_app_role(
+        self,
+        *,
+        keycloak_user_id: str,
+        api_client_uuid: str,
+        target_app_role: str,
+        admin_token: str | None = None,
+    ) -> tuple[bool, int]:
+        normalized_target_role = (target_app_role or "").strip()
+        if not normalized_target_role.startswith("app."):
+            raise Conflict("Target Keycloak role must be app.*")
+
+        token = admin_token or await self.get_admin_token()
+        current_roles = await self.get_user_client_role_mappings(
+            keycloak_user_id=keycloak_user_id,
+            client_uuid=api_client_uuid,
+            admin_token=token,
+        )
+        if current_roles is None:
+            return False, 0
+
+        app_roles_to_remove = [
+            role_payload
+            for role_payload in current_roles
+            if str(role_payload.get("name") or "").strip().startswith("app.")
+            and str(role_payload.get("name") or "").strip() != normalized_target_role
+        ]
+        removed_count = len(app_roles_to_remove)
+        if app_roles_to_remove:
+            await self.remove_user_client_roles(
+                keycloak_user_id=keycloak_user_id,
+                client_uuid=api_client_uuid,
+                roles=app_roles_to_remove,
+                admin_token=token,
+            )
+
+        current_role_names = {
+            str(role_payload.get("name") or "").strip()
+            for role_payload in current_roles
+            if isinstance(role_payload, dict)
+        }
+        current_role_names.discard("")
+
+        changed = bool(app_roles_to_remove)
+        if normalized_target_role not in current_role_names:
+            target_role_payload = await self.get_client_role_by_name(
+                client_uuid=api_client_uuid,
+                role_name=normalized_target_role,
+                admin_token=token,
+            )
+            if target_role_payload is None:
+                raise Conflict(f"Missing Keycloak role '{normalized_target_role}' in API client")
+            await self.add_user_client_roles(
+                keycloak_user_id=keycloak_user_id,
+                client_uuid=api_client_uuid,
+                roles=[target_role_payload],
+                admin_token=token,
+            )
+            changed = True
+
+        return True, removed_count if changed else 0
+
+    async def sync_user_app_role_for_local_role(
+        self,
+        *,
+        keycloak_user_id: str,
+        api_client_uuid: str,
+        local_role_id: int,
+        role_mapping: dict[int, str],
+        admin_token: str | None = None,
+    ) -> tuple[bool, int]:
+        target_app_role = role_mapping.get(local_role_id)
+        if target_app_role is None:
+            raise Conflict(f"Unsupported local role id '{local_role_id}' for Keycloak app-role sync")
+        return await self.replace_user_app_role(
+            keycloak_user_id=keycloak_user_id,
+            api_client_uuid=api_client_uuid,
+            target_app_role=target_app_role,
+            admin_token=admin_token,
+        )
+
     def _ensure_configured(self) -> None:
-        if not self._admin_username or not self._admin_password:
+        has_service_account_credentials = bool(self._admin_client_id and self._admin_client_secret)
+        has_password_grant_credentials = bool(self._admin_username and self._admin_password)
+        if not has_service_account_credentials and not has_password_grant_credentials:
             raise Forbidden("Keycloak admin integration is not configured")
 
     async def _get_admin_token(self) -> str:
         token_endpoint = f"{self._base_url}/realms/{self._admin_realm}/protocol/openid-connect/token"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        if self._admin_client_secret:
+            form_data = {
+                "grant_type": "client_credentials",
+                "client_id": self._admin_client_id,
+                "client_secret": self._admin_client_secret,
+            }
+        else:
+            form_data = {
+                "grant_type": "password",
+                "client_id": self._admin_client_id,
+                "username": self._admin_username or "",
+                "password": self._admin_password or "",
+            }
+
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 token_endpoint,
-                data={
-                    "grant_type": "password",
-                    "client_id": self._admin_client_id,
-                    "username": self._admin_username or "",
-                    "password": self._admin_password or "",
-                },
+                data=form_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
         if response.status_code >= 400:
@@ -151,7 +390,7 @@ class KeycloakAdminService:
         return self._pick_exact_user(payload, email=email)
 
     async def _get_users(self, admin_token: str, *, params: dict[str, str]) -> list[dict[str, Any]]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.get(
                 self._users_endpoint,
                 params=params,
@@ -209,7 +448,7 @@ class KeycloakAdminService:
         if email is not None:
             payload["email"] = email
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 self._users_endpoint,
                 json=payload,
@@ -243,7 +482,7 @@ class KeycloakAdminService:
         if email is not None:
             payload["email"] = email
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.put(
                 f"{self._users_endpoint}/{user_id}",
                 json=payload,
@@ -253,7 +492,7 @@ class KeycloakAdminService:
             raise Conflict("Unable to update Keycloak account")
 
     async def _set_password(self, admin_token: str, *, user_id: str, password: str) -> None:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.put(
                 f"{self._users_endpoint}/{user_id}/reset-password",
                 json={
@@ -275,3 +514,8 @@ class KeycloakAdminService:
     @property
     def _users_endpoint(self) -> str:
         return f"{self._base_url}/admin/realms/{self._realm}/users"
+
+    @property
+    def _admin_base_url(self) -> str:
+        return f"{self._base_url}/admin/realms/{self._realm}"
+

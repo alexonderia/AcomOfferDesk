@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Развёртывание PostgreSQL из alexonderia/order_database на VPS (Docker Compose).
-# Документация: docs/order-database-vps.md
+# Документация: docs/operations/order-database-vps.md
 # Flyway: https://github.com/alexonderia/order_database/blob/main/docs/flyway.md
 #
 # Приватный репозиторий order_database: нужен GITHUB_TOKEN или GH_TOKEN (classic PAT, scope repo).

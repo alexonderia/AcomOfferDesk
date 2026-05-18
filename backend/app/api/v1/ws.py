@@ -7,9 +7,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.websockets import WebSocketState
 
+from app.api.dependencies import build_current_user_from_keycloak_claims
 from app.core.session_tokens import AccessTokenClaims
 from app.core.uow import UnitOfWork
-from app.domain.auth_context import build_current_user
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.realtime.contracts import OutboundEnvelope, client_event_adapter
@@ -46,7 +46,13 @@ async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[Curren
         if user is None:
             raise Unauthorized("Invalid credentials")
         UserPolicy.ensure_can_login(user.status)
-        return build_current_user(user_id=user.id, role_id=user.id_role, status=user.status), claims
+        current_user = build_current_user_from_keycloak_claims(
+            user_id=user.id,
+            role_id=user.id_role,
+            status=user.status,
+            keycloak_api_roles=keycloak_claims.api_roles,
+        )
+        return current_user, claims
 
 
 async def _get_user_full_name(user_id: str) -> str | None:

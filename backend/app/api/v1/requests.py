@@ -8,7 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.api.action_flags import OfferActionBuilder, RequestActionBuilder, serialize_permissions
+from app.api.action_flags import OfferActionBuilder, RequestActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
@@ -16,7 +16,6 @@ from app.domain.authorization import has_permission
 from app.domain.exceptions import Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, RequestPolicy
-from app.schemas.links import Link, LinkSet
 from app.schemas.requests import (
     DeletedAlertViewed,
     DeletedAlertViewedResponse,
@@ -151,10 +150,6 @@ async def list_requests(
     return RequestListResponse(
         data=RequestListData(
             items=[_request_item_schema(current_user, item) for item in items],
-            permissions=serialize_permissions(current_user),
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/requests", method="GET"),
         ),
     )
 
@@ -175,10 +170,6 @@ async def list_open_requests(
     return OpenRequestListResponse(
         data=OpenRequestListData(
             items=[_open_request_item_schema(current_user, item) for item in items],
-            permissions=serialize_permissions(current_user),
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/requests/open", method="GET"),
         ),
     )
 
@@ -196,10 +187,6 @@ async def list_offered_requests(
     return OpenRequestListResponse(
         data=OpenRequestListData(
             items=[_open_request_item_schema(current_user, item) for item in items],
-            permissions=serialize_permissions(current_user),
-        ),
-        _links=LinkSet(
-            self=Link(href="/api/v1/requests/offered", method="GET"),
         ),
     )
 
@@ -283,10 +270,6 @@ async def get_request_details(
                     for offer in item.offers
                 ],
             ),
-            permissions=serialize_permissions(current_user),
-        ),
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
         ),
     )
 
@@ -346,9 +329,6 @@ async def create_request(
 
     return RequestCreateResponse(
         data={"request_id": request_id, "file_ids": file_ids},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-        ),
     )
 
 
@@ -377,9 +357,6 @@ async def update_request(
 
     return RequestMutationResponse(
         data={"request_id": request_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-        ),
     )
 
 
@@ -408,9 +385,6 @@ async def send_request_email_notifications(
 
     return RequestEmailNotificationResponse(
         data={"request_id": result.request_id, "sent_to": result.sent_to},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}/email-notifications", method="POST"),
-        ),
     )
 
 
@@ -451,9 +425,6 @@ async def add_request_file(
 
     return RequestFileMutationResponse(
         data={"request_id": request_id, "file_id": file_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
-        ),
     )
 
 
@@ -474,9 +445,6 @@ async def delete_request_file(
 
     return RequestFileMutationResponse(
         data={"request_id": request_id, "file_id": file_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-        ),
     )
 
 
@@ -502,9 +470,6 @@ async def mark_deleted_alert_viewed(
                 updated_at=updated_stats.updated_at,
             ),
         },
-        _links=LinkSet(
-            self=Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-        ),
     )
 
 

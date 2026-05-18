@@ -30,6 +30,8 @@ export type AuthSession = {
   businessAccess: boolean;
   onboardingState: string | null;
   permissions: string[];
+  appRoles: string[];
+  delegationRoles: string[];
 };
 
 type AuthContextValue = {
@@ -57,7 +59,9 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
   authProvider: response.data.auth_provider ?? 'keycloak',
   businessAccess: Boolean(response.data.business_access),
   onboardingState: response.data.onboarding_state ?? null,
-  permissions: response.data.permissions ?? []
+  permissions: response.data.permissions ?? [],
+  appRoles: response.data.app_roles ?? [],
+  delegationRoles: response.data.delegation_roles ?? []
 });
 
 const buildLoginUrl = (nextPath: string, forcePrompt: boolean) => {

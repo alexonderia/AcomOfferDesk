@@ -25,3 +25,6 @@ build/
 .agents/
 .trellis/
 artifacts/
+.tmp/
+AGENTS.md
+scripts/local-smoke-infra.commands.ps1

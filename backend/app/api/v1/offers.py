@@ -10,7 +10,6 @@ from app.domain.exceptions import Conflict
 from app.domain.policies import CurrentUser
 from app.realtime.contracts import OutboundEnvelope
 from app.realtime.runtime import get_chat_runtime
-from app.schemas.links import Link, LinkSet
 from app.schemas.offers import (
     ContractorInfoResponse,
     ContractorRequestViewResponse,
@@ -86,9 +85,6 @@ async def get_contractor_info(
             "address": contractor.address,
             "note": contractor.note,
         },
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers?id_user={contractor.user_id}", method="GET"),
-        ),
     )
 
 
@@ -137,9 +133,6 @@ async def get_contractor_request_view(
                 can_create_offer=can_create_offer,
             ),
         },
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}/contractor-view", method="GET"),
-        ),
     )
 
 
@@ -160,9 +153,6 @@ async def create_empty_offer(
 
     return OfferCreateResponse(
         data={"offer_id": offer_id, "request_id": request_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/workspace", method="GET"),
-        ),
     )
 
 
@@ -253,9 +243,6 @@ async def create_manual_offer(
             "contractor_user_id": result.contractor_user_id,
             "contractor_created": result.contractor_created,
         },
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{result.offer_id}/workspace", method="GET"),
-        ),
     )
 
 
@@ -341,9 +328,6 @@ async def get_offer_workspace(
             },
             "chat_actions": resolved.chat_actions,
         },
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/workspace", method="GET"),
-        ),
     )
 
 
@@ -360,9 +344,6 @@ async def update_offer_status(
 
     return OfferStatusMutationResponse(
         data={"offer_id": offer_id, "status": status},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/status", method="PATCH"),
-        ),
     )
 
 
@@ -383,9 +364,6 @@ async def update_offer(
 
     return OfferEditResponse(
         data={"offer_id": offer_id, "offer_amount": offer_amount},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}", method="PATCH"),
-        ),
     )
 
 
@@ -419,9 +397,6 @@ async def add_offer_file(
 
     return OfferFileMutationResponse(
         data={"offer_id": offer_id, "file_id": file_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/files", method="POST"),
-        ),
     )
 
 
@@ -438,9 +413,6 @@ async def delete_offer_file(
 
     return OfferFileMutationResponse(
         data={"offer_id": offer_id, "file_id": file_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/files/{file_id}", method="DELETE"),
-        ),
     )
 
 
@@ -485,9 +457,6 @@ async def list_offer_messages(
             ],
             actions=resolved.chat_actions,
         ),
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/messages", method="GET"),
-        ),
     )
 
 
@@ -515,9 +484,6 @@ async def create_offer_message(
 
     return OfferMessageCreateResponse(
         data={"offer_id": offer_id, "message_id": result.message_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/messages", method="POST"),
-        ),
     )
 
 
@@ -542,9 +508,6 @@ async def upload_offer_message_file(
 
     return OfferMessageFileUploadResponse(
         data=uploaded,
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/messages/files", method="POST"),
-        ),
     )
 
 
@@ -604,9 +567,6 @@ async def create_offer_message_with_attachments(
 
     return OfferMessageCreateResponse(
         data={"offer_id": offer_id, "message_id": result.message_id},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-        ),
     )
 
 
@@ -641,9 +601,6 @@ async def mark_offer_messages_received(
 
     return OfferMessageStatusUpdateResponse(
         data={"offer_id": offer_id, "updated_count": ack.updated_count},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-        ),
     )
 
 
@@ -684,7 +641,4 @@ async def mark_offer_messages_read(
 
     return OfferMessageStatusUpdateResponse(
         data={"offer_id": offer_id, "updated_count": ack.updated_count},
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-        ),
     )

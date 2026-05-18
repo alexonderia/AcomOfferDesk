@@ -380,7 +380,9 @@ export const buildExecutionSlices = (trees: PlanTreeNode[]): PlanExecutionSlice[
     return [];
   }
 
-  return baseNodes.map((node, index) => {
+  const sorted = [...baseNodes].sort((left, right) => right.plan_amount - left.plan_amount);
+
+  return sorted.map((node, index) => {
     const value = totalFact > 0 ? Math.max(node.fact_amount_subtree, 0) : Math.max(node.plan_amount, 0);
     return {
       key: String(node.plan_id),

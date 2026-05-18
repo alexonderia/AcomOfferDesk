@@ -7,3 +7,6 @@ export const hasPermission = (carrier: PermissionCarrier, permission: string): b
 
 export const hasAnyPermission = (carrier: PermissionCarrier, permissions: string[]): boolean =>
   permissions.some((permission) => hasPermission(carrier, permission));
+
+export const hasAllPermissions = (carrier: PermissionCarrier, permissions: string[]): boolean =>
+  permissions.every((permission) => hasPermission(carrier, permission));

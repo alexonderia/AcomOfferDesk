@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.contractor_validation import (
     validate_inn,
@@ -10,7 +10,6 @@ from app.domain.contractor_validation import (
     validate_ru_phone,
 )
 from app.schemas.actions import ChatActionsSchema, OfferActionsSchema, RequestActionsSchema
-from app.schemas.links import LinkSet
 from app.schemas.requests import RequestFileSchema
 
 
@@ -28,10 +27,7 @@ class ContractorInfoSchema(BaseModel):
 
 
 class ContractorInfoResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ContractorInfoSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferMessageReadBySchema(BaseModel):
@@ -75,10 +71,7 @@ class ContractorRequestViewSchema(BaseModel):
 
 
 class ContractorRequestViewResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ContractorRequestViewSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferWorkspaceRequestSchema(BaseModel):
@@ -129,10 +122,7 @@ class OfferWorkspaceSchema(BaseModel):
 
 
 class OfferWorkspaceResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferWorkspaceSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferCreateResponseData(BaseModel):
@@ -141,10 +131,7 @@ class OfferCreateResponseData(BaseModel):
 
 
 class OfferCreateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferCreateResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferFileMutationResponseData(BaseModel):
@@ -153,10 +140,7 @@ class OfferFileMutationResponseData(BaseModel):
 
 
 class OfferFileMutationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferFileMutationResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferMessageListData(BaseModel):
@@ -166,10 +150,7 @@ class OfferMessageListData(BaseModel):
 
 
 class OfferMessageListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferMessageListData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferMessageCreatePayload(BaseModel):
@@ -182,10 +163,7 @@ class OfferMessageCreateResponseData(BaseModel):
 
 
 class OfferMessageCreateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferMessageCreateResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferMessageStatusUpdatePayload(BaseModel):
@@ -199,10 +177,7 @@ class OfferMessageStatusUpdateResponseData(BaseModel):
 
 
 class OfferMessageStatusUpdateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferMessageStatusUpdateResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferMessageFileUploadResponseData(BaseModel):
@@ -215,10 +190,7 @@ class OfferMessageFileUploadResponseData(BaseModel):
 
 
 class OfferMessageFileUploadResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferMessageFileUploadResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferStatusUpdatePayload(BaseModel):
@@ -231,10 +203,7 @@ class OfferStatusMutationResponseData(BaseModel):
 
 
 class OfferStatusMutationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferStatusMutationResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferCreatePayload(BaseModel):
@@ -291,10 +260,7 @@ class ManualOfferCreateResponseData(BaseModel):
 
 
 class ManualOfferCreateResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: ManualOfferCreateResponseData
-    links: LinkSet = Field(alias="_links")
 
 
 class OfferEditPayload(BaseModel):
@@ -307,7 +273,4 @@ class OfferEditResponseData(BaseModel):
 
 
 class OfferEditResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: OfferEditResponseData
-    links: LinkSet = Field(alias="_links")

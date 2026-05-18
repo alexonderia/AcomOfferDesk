@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
+from app.domain.authorization import has_permission
 from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.domain.permissions import PermissionCodes
 from app.models.auth_models import UserAuthAccount, UserContactChannel
 from app.domain.policies import CurrentUser, UserPolicy
 from app.models.orm_models import CompanyContact, Profile, Role, TgUser, User, UserStatusPeriod
@@ -35,6 +37,11 @@ ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
 ROLE_NAME_ECONOMIST = "Экономист"
 ROLE_NAME_OPERATOR = "Оператор"
 PLACEHOLDER_TEXT = "Не указано"
+SUBORDINATE_PROFILE_ROLE_IDS = {
+    settings.lead_economist_role_id,
+    settings.economist_role_id,
+    settings.operator_role_id,
+}
 _LOGIN_CLEANUP_PATTERN = re.compile(r"[^a-z0-9_]+")
 _LOGIN_COLLAPSE_PATTERN = re.compile(r"_+")
 _CYRILLIC_TO_LATIN = {
@@ -123,11 +130,40 @@ def _collect_descendant_user_ids(
 
 
 def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -> bool:
+    if current_role_id == settings.superadmin_role_id:
+        return True
     if current_role_id == settings.project_manager_role_id:
-        return target_role_id in {settings.lead_economist_role_id, settings.economist_role_id}
+        return target_role_id in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+            settings.operator_role_id,
+        }
     if current_role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
-        return target_role_id == settings.economist_role_id
+        return target_role_id in {settings.economist_role_id, settings.operator_role_id}
     return False
+
+
+def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
+    if has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY):
+        return {
+            settings.admin_role_id,
+            settings.contractor_role_id,
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+            settings.operator_role_id,
+        }
+    if not has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):
+        return set()
+    if current_user.role_id == settings.project_manager_role_id:
+        return {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+            settings.operator_role_id,
+        }
+    if current_user.role_id == settings.lead_economist_role_id:
+        return {settings.economist_role_id, settings.operator_role_id}
+    return set()
 
 
 def _normalize_keycloak_email_value(value: str | None) -> str | None:
@@ -160,7 +196,7 @@ async def _bind_keycloak_account(
         exclude_user_id=user_id,
     )
     if conflicting_subject is not None:
-        raise Conflict("Keycloak account is already linked to another local user")
+        raise Conflict("Аккаунт Keycloak уже привязан к другому локальному пользователю")
 
     existing_binding = await user_auth_accounts.get_by_user_provider(
         user_id=user_id,
@@ -214,42 +250,42 @@ class UserRegistrationService:
         UserPolicy.ensure_can_register_user(current_user)
         target_role = await self._users.get_role_by_id(role_id)
         if target_role is None:
-            raise Conflict("Role is not allowed for creation")
+            raise Conflict("Роль недоступна для создания")
         if current_user.role_id == settings.superadmin_role_id and role_id == settings.superadmin_role_id:
-            raise Forbidden("Superadmin cannot create superadmin users")
+            raise Forbidden("Суперадминистратор не может создавать суперадминистраторов")
         if current_user.role_id == settings.lead_economist_role_id and role_id != settings.economist_role_id:
-            raise Forbidden("Lead economist can create only economist users")
+            raise Forbidden("Ведущий экономист может создавать только экономистов")
         current_role = await self._users.get_role_by_id(current_user.role_id)
         if current_role is None:
-            raise Forbidden("Access denied")
+            raise Forbidden("Доступ запрещен")
 
         if current_role.role not in {
             ROLE_NAME_SUPERADMIN,
             ROLE_NAME_ADMIN,
             ROLE_NAME_LEAD_ECONOMIST,
         }:
-            raise Forbidden("Access denied")
+            raise Forbidden("Доступ запрещен")
 
         if target_role.role == ROLE_NAME_SUPERADMIN:
-            raise Forbidden("Superadmin cannot create superadmin users")
+            raise Forbidden("Суперадминистратор не может создавать суперадминистраторов")
 
         if current_role.role == ROLE_NAME_ADMIN and target_role.role not in {
             ROLE_NAME_ECONOMIST,
             ROLE_NAME_OPERATOR,
         }:
-            raise Forbidden("Admin can create only economist and operator users")
+            raise Forbidden("Администратор может создавать только экономистов и операторов")
 
         if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
-            raise Forbidden("Lead economist can create only economist users")
+            raise Forbidden("Ведущий экономист может создавать только экономистов")
         if target_role.role == ROLE_NAME_ECONOMIST:
             if id_parent is None:
-                raise Conflict("Economist user must have an economist or lead economist manager")
+                raise Conflict("У экономиста должен быть руководитель с ролью экономиста или ведущего экономиста")
             parent_user = await self._users.get_by_id(id_parent)
             if parent_user is None:
-                raise NotFound("Parent user not found")
+                raise NotFound("Руководитель не найден")
             parent_role = await self._users.get_role_by_id(parent_user.id_role)
             if parent_role is None or parent_role.role not in {ROLE_NAME_ECONOMIST, ROLE_NAME_LEAD_ECONOMIST}:
-                raise Conflict("Economist user can have only economist or lead economist manager")
+                raise Conflict("У экономиста руководителем может быть только экономист или ведущий экономист")
             if current_user.role_id == settings.lead_economist_role_id:
                 rows = await self._users.list_by_role_ids_with_profiles_and_roles(
                     role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
@@ -264,26 +300,26 @@ class UserRegistrationService:
                     if user.id in descendant_ids and user.id_role == settings.economist_role_id
                 }
                 if id_parent not in allowed_parent_ids:
-                    raise Forbidden("Economist manager must belong to current user's responsibility")
+                    raise Forbidden("Руководитель-экономист должен входить в зону ответственности текущего пользователя")
         elif target_role.role == ROLE_NAME_LEAD_ECONOMIST:
             if id_parent is None:
-                raise Conflict("Lead economist user must have a project manager")
+                raise Conflict("У ведущего экономиста должен быть руководитель проекта")
             parent_user = await self._users.get_by_id(id_parent)
             if parent_user is None:
-                raise NotFound("Parent user not found")
+                raise NotFound("Руководитель не найден")
             parent_role = await self._users.get_role_by_id(parent_user.id_role)
             if parent_role is None or parent_user.id_role != settings.project_manager_role_id:
-                raise Conflict("Lead economist user can have only project manager")
+                raise Conflict("У ведущего экономиста руководителем может быть только руководитель проекта")
         else:
             id_parent = None
         if await self._users.exists(user_id):
-            raise Conflict("User already exists")
+            raise Conflict("Пользователь уже существует")
 
         normalized_full_name = (full_name or "").strip() or PLACEHOLDER_TEXT
         normalized_phone = (phone or "").strip() or PLACEHOLDER_TEXT
         normalized_mail = (mail or "").strip()
         if not normalized_mail:
-            raise Conflict("Email is required for user creation")
+            raise Conflict("Для создания пользователя требуется email")
         try:
             normalized_mail = validate_optional_email(normalized_mail, allow_placeholder=False) or normalized_mail
         except ValueError as exc:
@@ -352,10 +388,10 @@ class ContractorRegistrationService:
     ) -> User:
         telegram_subject = telegram_subject_value(tg_user_id)
         if await self._users.exists(login):
-            raise Conflict("User already exists")
+            raise Conflict("Пользователь уже существует")
         existing_by_tg = await self._users.get_by_tg_user_id(tg_user_id)
         if existing_by_tg is not None:
-            raise Conflict("TG user already linked")
+            raise Conflict("Пользователь Telegram уже привязан")
 
         user = User(
             id=login,
@@ -514,21 +550,30 @@ class UserQueryService:
         current_user: CurrentUser,
         subordinate: User,
     ) -> None:
+        if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
+            raise Conflict("Профиль подчиненного доступен только для разрешенных ролей")
+
         if not _can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
         ):
-            raise Conflict("Subordinate profile is available only for permitted subordinate roles")
+            raise Conflict("Профиль подчиненного доступен только для разрешенных ролей")
 
         if subordinate.id == current_user.user_id:
-            raise Forbidden("You can manage subordinate data only for your subordinates")
+            raise Forbidden("Вы можете управлять данными только своих подчиненных")
+
+        if (
+            has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY)
+            or has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL)
+        ):
+            return
 
         is_subordinate = await self._is_descendant(
             manager_user_id=current_user.user_id,
             subordinate_user_id=subordinate.id,
         )
         if not is_subordinate:
-            raise Forbidden("You can manage subordinate data only for your subordinates")
+            raise Forbidden("Вы можете управлять данными только своих подчиненных")
 
     async def list_users(self, current_user: CurrentUser, role_id: int | None = None) -> list[UserListItem]:
         UserPolicy.ensure_can_list_users(current_user)
@@ -539,7 +584,7 @@ class UserQueryService:
             settings.economist_role_id,
         }:
             if role_id is not None and role_id != settings.economist_role_id:
-                raise Forbidden("Project manager, lead economist and economist can view only economist users")
+                raise Forbidden("Руководитель проекта, ведущий экономист и экономист могут просматривать только экономистов")
             role_id = settings.economist_role_id
 
         if current_user.role_id == settings.economist_role_id:
@@ -655,17 +700,17 @@ class UserQueryService:
             UserPolicy.can_register_user(current_user)
             or UserPolicy.can_update_user_manager(current_user)
         ):
-            raise Forbidden("Insufficient permissions to view manager candidates")
+            raise Forbidden("Недостаточно прав для просмотра кандидатов в руководители")
 
         if current_user.role_id == settings.lead_economist_role_id and target_role_id != settings.economist_role_id:
-            raise Forbidden("Lead economist can manage only economist users")
+            raise Forbidden("Ведущий экономист может управлять только экономистами")
         if current_user.role_id == settings.economist_role_id and target_role_id != settings.economist_role_id:
-            raise Forbidden("Economist can manage only economist users")
+            raise Forbidden("Экономист может управлять только экономистами")
         if current_user.role_id == settings.project_manager_role_id and target_role_id not in {
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            raise Forbidden("Project manager can manage only lead economist and economist users")
+            raise Forbidden("Руководитель проекта может управлять только ведущими экономистами и экономистами")
 
         if target_role_id == settings.economist_role_id:
             rows = await self._users.list_by_role_ids_with_profiles_and_roles(
@@ -727,7 +772,7 @@ class UserQueryService:
 
         if target_role_id == settings.lead_economist_role_id:
             if current_user.role_id not in {settings.superadmin_role_id, settings.project_manager_role_id}:
-                raise Forbidden("Only superadmin and project manager can manage lead economist manager")
+                raise Forbidden("Только суперадминистратор и руководитель проекта могут управлять руководителем ведущего экономиста")
             rows = await self._users.list_users_with_profiles(role_id=settings.project_manager_role_id)
             return [
                 UserListItem(
@@ -765,7 +810,7 @@ class UserQueryService:
             or current_user.role_id == settings.lead_economist_role_id
             or current_user.role_id == settings.project_manager_role_id
         ):
-            raise Forbidden("Insufficient permissions to view request economists")
+            raise Forbidden("Недостаточно прав для просмотра экономистов заявки")
 
         rows = await self._users.list_by_role_ids_with_profiles_and_roles(
             role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
@@ -830,7 +875,7 @@ class UserQueryService:
 
         subordinate = await self._users.get_by_id(subordinate_user_id)
         if subordinate is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
 
         await self._ensure_accessible_subordinate(
             current_user=current_user,
@@ -839,7 +884,7 @@ class UserQueryService:
 
         profile = None
         descendant_rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-            role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+            role_ids=list(SUBORDINATE_PROFILE_ROLE_IDS),
         )
         for user, user_profile, _ in descendant_rows:
             if user.id == subordinate_user_id:
@@ -866,7 +911,7 @@ class UserQueryService:
 
         row = await self._users.get_with_profile_and_company_contacts(user_id=current_user.user_id)
         if row is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
 
         user, profile, company_contact = row
         unavailable_period = await self._user_status_periods.get_active_for_user(user_id=current_user.user_id)
@@ -946,9 +991,9 @@ class ManualContractorService:
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
         normalized = (value or "").strip()
         if not normalized:
-            raise Conflict(f"{field_name} is required")
+            raise Conflict(f"Поле {field_name} обязательно")
         if max_length is not None and len(normalized) > max_length:
-            raise Conflict(f"{field_name} is too long")
+            raise Conflict(f"Поле {field_name} слишком длинное")
         return normalized
 
     def _normalize_optional_text(self, value: str | None, *, max_length: int | None = None) -> str | None:
@@ -956,7 +1001,7 @@ class ManualContractorService:
         if not normalized:
             return None
         if max_length is not None and len(normalized) > max_length:
-            raise Conflict("Value is too long")
+            raise Conflict("Значение слишком длинное")
         return normalized
 
     def _validate_manual_contractor_create_data(
@@ -1041,7 +1086,7 @@ class ManualContractorService:
                 return login_candidate
             index += 1
             if index > 1000:
-                raise Conflict("Unable to generate unique login for manual contractor")
+                raise Conflict("Не удалось сгенерировать уникальный логин для ручного контрагента")
 
     def _build_manual_password(self) -> str:
         return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
@@ -1094,9 +1139,7 @@ class ManualContractorService:
         current_user: CurrentUser,
         data: ManualContractorCreateInput,
     ) -> str:
-        UserPolicy.ensure_can_register_user(current_user)
-        if current_user.role_id != settings.superadmin_role_id:
-            raise Forbidden("Only superadmin can create manual contractors")
+        UserPolicy.ensure_can_create_manual_contractors(current_user)
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
         return await self._create_manual_contractor(data=normalized_data)
@@ -1106,7 +1149,7 @@ class ManualContractorService:
             return None
         normalized = value.strip()
         if not normalized:
-            raise Conflict("Updated value cannot be empty")
+            raise Conflict("Обновляемое значение не может быть пустым")
         return normalized
 
     async def update_manual_contractor(
@@ -1121,24 +1164,24 @@ class ManualContractorService:
 
         user = await self._users.get_by_id(user_id)
         if user is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
         if user.id_role != settings.contractor_role_id:
-            raise Conflict("Only contractor can be updated by this endpoint")
+            raise Conflict("Через этот endpoint можно обновлять только контрагента")
         if user.tg_user_id is not None:
-            raise Conflict("Only manually created contractor can be updated by this endpoint")
+            raise Conflict("Через этот endpoint можно обновлять только вручную созданного контрагента")
 
         profile = await self._profiles.get_by_id(user.id)
         if profile is None:
-            raise NotFound("Profile not found")
+            raise NotFound("Профиль не найден")
         company_contact = await self._company_contacts.get_by_id(user.id)
         if company_contact is None:
-            raise NotFound("Company contacts not found")
+            raise NotFound("Контакты компании не найдены")
 
         next_login = self._normalize_value(data.login)
         next_password = self._normalize_value(data.password)
         if next_login is not None and next_login != user.id:
             if await self._users.exists(next_login):
-                raise Conflict("User already exists")
+                raise Conflict("Пользователь уже существует")
 
             cloned_user = User(
                 id=next_login,
@@ -1154,10 +1197,10 @@ class ManualContractorService:
             profile = await self._profiles.get_by_id(user.id)
             company_contact = await self._company_contacts.get_by_id(user.id)
             if profile is None or company_contact is None:
-                raise Conflict("Contractor profile data is inconsistent")
+                raise Conflict("Данные профиля контрагента неконсистентны")
 
         if next_password is not None:
-            raise Forbidden("Password is managed by the identity provider")
+            raise Forbidden("Пароль управляется провайдером аутентификации")
 
         full_name = self._normalize_value(data.full_name)
         phone = self._normalize_value(data.phone)
@@ -1218,15 +1261,33 @@ class UserRoleService:
     ) -> UserRoleUpdateResult:
         UserPolicy.ensure_can_update_user_role(current_user)
 
-        if role_id not in {settings.admin_role_id, settings.economist_role_id}:
-            raise Conflict("Only admin and economist roles are allowed for update")
-
         user = await self._users.get_by_id(user_id)
         if user is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
 
         if user.id_role == settings.superadmin_role_id:
-            raise Forbidden("Superadmin role cannot be changed")
+            raise Forbidden("Роль суперадминистратора нельзя изменить")
+
+        allowed_role_ids = _role_update_options_for_user(current_user)
+        if role_id not in allowed_role_ids:
+            raise Conflict("Выбранная роль недоступна для обновления")
+
+        has_role_update_any = has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY)
+        if not has_role_update_any and has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):
+            if user.id == current_user.user_id:
+                raise Forbidden("Вы можете обновлять роль только своих подчиненных")
+            if not _can_manage_subordinate_role(
+                current_role_id=current_user.role_id,
+                target_role_id=user.id_role,
+            ):
+                raise Forbidden("Вы можете обновлять роль только для разрешенных ролей подчиненных")
+            is_subordinate = await _is_descendant_user(
+                self._users,
+                ancestor_user_id=current_user.user_id,
+                target_user_id=user.id,
+            )
+            if not is_subordinate:
+                raise Forbidden("Вы можете обновлять роль только своих подчиненных")
 
         await self._users.update_role(user, role_id)
         return UserRoleUpdateResult(user_id=user.id, role_id=user.id_role)
@@ -1247,16 +1308,16 @@ class UserManagerService:
 
         user = await self._users.get_by_id(user_id)
         if user is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
 
         if not _can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=user.id_role,
         ):
-            raise Forbidden("You can update manager only for permitted subordinate roles")
+            raise Forbidden("Вы можете обновлять руководителя только для разрешенных ролей подчиненных")
 
         if user.id == current_user.user_id:
-            raise Forbidden("You can update manager only for your subordinates")
+            raise Forbidden("Вы можете обновлять руководителя только своих подчиненных")
 
         is_subordinate = await _is_descendant_user(
             self._users,
@@ -1264,13 +1325,13 @@ class UserManagerService:
             target_user_id=user.id,
         )
         if not is_subordinate:
-            raise Forbidden("You can update manager only for your subordinates")
+            raise Forbidden("Вы можете обновлять руководителя только своих подчиненных")
 
         manager_user = await self._users.get_by_id(manager_user_id)
         if manager_user is None:
-            raise NotFound("Manager user not found")
+            raise NotFound("Руководитель не найден")
         if manager_user.id == user.id:
-            raise Conflict("User cannot be own manager")
+            raise Conflict("Пользователь не может быть руководителем самого себя")
 
         if user.id_role == settings.economist_role_id:
             allowed_manager_role_ids = {
@@ -1280,10 +1341,10 @@ class UserManagerService:
         elif user.id_role == settings.lead_economist_role_id:
             allowed_manager_role_ids = {settings.project_manager_role_id}
         else:
-            raise Conflict("Manager can be updated only for lead economist and economist users")
+            raise Conflict("Руководителя можно менять только у ведущего экономиста и экономиста")
 
         if manager_user.id_role not in allowed_manager_role_ids:
-            raise Conflict("Selected manager role is not allowed for this user")
+            raise Conflict("Выбранная роль руководителя недопустима для этого пользователя")
 
         candidate_query = UserQueryService(
             self._users,
@@ -1297,7 +1358,7 @@ class UserManagerService:
             )
         }
         if manager_user.id not in allowed_manager_ids:
-            raise Forbidden("Selected manager is outside the allowed management scope")
+            raise Forbidden("Выбранный руководитель вне разрешенной зоны управления")
 
         would_create_cycle = await _is_descendant_user(
             self._users,
@@ -1305,7 +1366,7 @@ class UserManagerService:
             target_user_id=manager_user.id,
         )
         if would_create_cycle:
-            raise Conflict("Selected manager would create a hierarchy cycle")
+            raise Conflict("Выбранный руководитель создаст цикл в иерархии")
 
         await self._users.update_parent(user, manager_user.id)
         return UserManagerUpdateResult(user_id=user.id, manager_user_id=user.id_parent or manager_user.id)
@@ -1336,15 +1397,15 @@ class UserStatusService:
         UserPolicy.ensure_can_update_user_status(current_user)
 
         if user_status not in self.VALID_USER_STATUSES:
-            raise Conflict("Unsupported users.status value")
+            raise Conflict("Неподдерживаемое значение users.status")
         if tg_status is not None and tg_status not in self.VALID_TG_STATUSES:
-            raise Conflict("Unsupported Telegram status value")
+            raise Conflict("Неподдерживаемое значение статуса Telegram")
         if tg_status is not None and not settings.telegram_legacy_enabled:
-            raise Forbidden("Telegram legacy status updates are disabled")
+            raise Forbidden("Обновление legacy-статусов Telegram отключено")
 
         user = await self._users.get_by_id(user_id)
         if user is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
 
         if current_user.role_id in {
             settings.project_manager_role_id,
@@ -1355,16 +1416,16 @@ class UserStatusService:
                 current_role_id=current_user.role_id,
                 target_role_id=user.id_role,
             ):
-                raise Forbidden("You can update status only for permitted subordinate roles")
+                raise Forbidden("Вы можете обновлять статус только для разрешенных ролей подчиненных")
             if user.id == current_user.user_id:
-                raise Forbidden("You can update status only for your subordinates")
+                raise Forbidden("Вы можете обновлять статус только своих подчиненных")
             is_subordinate = await _is_descendant_user(
                 self._users,
                 ancestor_user_id=current_user.user_id,
                 target_user_id=user.id,
             )
             if not is_subordinate:
-                raise Forbidden("You can update status only for your subordinates")
+                raise Forbidden("Вы можете обновлять статус только своих подчиненных")
 
         tg_user: TgUser | None = None
         if settings.telegram_legacy_enabled and user.tg_user_id is not None:
@@ -1372,7 +1433,7 @@ class UserStatusService:
 
         if settings.telegram_legacy_enabled and tg_status is not None:
             if tg_user is None:
-                raise Conflict("User has no linked Telegram account")
+                raise Conflict("У пользователя нет привязанного аккаунта Telegram")
             await self._tg_users.update_status(tg_user, tg_status)
 
         if settings.telegram_legacy_enabled and tg_user is not None and tg_status is None:
@@ -1430,20 +1491,24 @@ class UserSelfService:
         current_user: CurrentUser,
         subordinate: User,
     ) -> None:
+        if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
+            raise Conflict("Данными подчиненного можно управлять только для разрешенных ролей подчиненных")
         if not _can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
         ):
-            raise Conflict("Subordinate data can be managed only for permitted subordinate roles")
+            raise Conflict("Данными подчиненного можно управлять только для разрешенных ролей подчиненных")
         if subordinate.id == current_user.user_id:
-            raise Forbidden("You can manage subordinate data only for your subordinates")
+            raise Forbidden("Вы можете управлять данными только своих подчиненных")
+        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
+            return
         is_subordinate = await _is_descendant_user(
             self._users,
             ancestor_user_id=current_user.user_id,
             target_user_id=subordinate.id,
         )
         if not is_subordinate:
-            raise Forbidden("You can manage subordinate data only for your subordinates")
+            raise Forbidden("Вы можете управлять данными только своих подчиненных")
 
     async def _ensure_no_period_overlap(
         self,
@@ -1459,7 +1524,7 @@ class UserSelfService:
         )
         if overlapping is not None:
             raise Conflict(
-                "User already has unavailability period in this time range "
+                "У пользователя уже есть период недоступности в этом диапазоне времени "
                 f"{overlapping.started_at.isoformat()} - {overlapping.ended_at.isoformat()}"
             )
 
@@ -1472,7 +1537,7 @@ class UserSelfService:
             has_date_overlap = period_start_date <= new_end_date and period_end_date >= new_start_date
             if has_date_overlap:
                 raise Conflict(
-                    "User already has unavailability period in this time range "
+                    "У пользователя уже есть период недоступности в этом диапазоне времени "
                     f"{period.started_at.isoformat()} - {period.ended_at.isoformat()}"
                 )
 
@@ -1484,7 +1549,7 @@ class UserSelfService:
         new_password: str,
     ) -> None:
         UserPolicy.ensure_can_manage_own_profile(current_user)
-        raise Forbidden("Password is managed by the identity provider")
+        raise Forbidden("Пароль управляется провайдером аутентификации")
 
     async def update_my_profile(
         self,
@@ -1531,7 +1596,7 @@ class UserSelfService:
         company_contacts = await self._company_contacts.get_by_id(current_user.user_id)
         if company_contacts is None:
             if company_name is None or inn is None:
-                raise NotFound("Company contacts not found")
+                raise NotFound("Контакты компании не найдены")
             await self._company_contacts.add(
                 CompanyContact(
                     id=current_user.user_id,
@@ -1570,17 +1635,17 @@ class UserSelfService:
         UserPolicy.ensure_can_manage_subordinate_unavailability(current_user)
 
         if status not in self.VALID_UNAVAILABILITY_STATUSES:
-            raise Conflict("Unsupported user_status_periods.status value")
+            raise Conflict("Неподдерживаемое значение user_status_periods.status")
 
         normalized_started_at = _normalize_db_timestamp(started_at)
         normalized_ended_at = _normalize_db_timestamp(ended_at)
 
         if normalized_ended_at < normalized_started_at:
-            raise Conflict("Period end date must be greater than or equal to start date")
+            raise Conflict("Дата окончания периода должна быть больше или равна дате начала")
 
         subordinate = await self._users.get_by_id(subordinate_user_id)
         if subordinate is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
 
         await self._ensure_accessible_subordinate(
             current_user=current_user,
@@ -1613,17 +1678,17 @@ class UserSelfService:
         UserPolicy.ensure_can_manage_own_unavailability(current_user)
 
         if status not in self.VALID_UNAVAILABILITY_STATUSES:
-            raise Conflict("Unsupported user_status_periods.status value")
+            raise Conflict("Неподдерживаемое значение user_status_periods.status")
 
         normalized_started_at = _normalize_db_timestamp(started_at)
         normalized_ended_at = _normalize_db_timestamp(ended_at)
 
         if normalized_ended_at < normalized_started_at:
-            raise Conflict("Period end date must be greater than or equal to start date")
+            raise Conflict("Дата окончания периода должна быть больше или равна дате начала")
 
         user = await self._users.get_by_id(current_user.user_id)
         if user is None:
-            raise NotFound("User not found")
+            raise NotFound("Пользователь не найден")
 
         await self._ensure_no_period_overlap(
             user_id=current_user.user_id,

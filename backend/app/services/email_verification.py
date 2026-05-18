@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import smtplib
 import time
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.email_token import EmailVerificationClaims, EmailVerificationTokenCodec

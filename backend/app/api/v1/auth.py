@@ -5,11 +5,12 @@ from urllib.parse import quote
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from app.api.action_flags import serialize_permissions
-from app.api.dependencies import get_current_user, get_uow
+from app.api.dependencies import build_current_user_from_keycloak_claims, get_current_user, get_uow
 from app.core.auth_cookies import (
     clear_keycloak_refresh_cookie,
     clear_keycloak_state_cookie,
@@ -28,7 +29,7 @@ from app.core.registration_invite_tokens import (
     RegistrationInviteTokenInvalidError,
 )
 from app.core.uow import UnitOfWork
-from app.domain.auth_context import CurrentUser, build_current_user
+from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Conflict, Forbidden, Unauthorized
 from app.domain.policies import UserPolicy
 from app.models.auth_models import UserAuthAccount
@@ -38,7 +39,6 @@ from app.schemas.auth import (
     RegisterUserRequest,
     RegisterUserResponse,
 )
-from app.schemas.links import Link, LinkSet
 from app.services.email_verification import EmailVerificationService
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import (
@@ -65,12 +65,6 @@ class RequestEmailVerificationRequest(BaseModel):
 
 class EmailVerificationActionResponse(BaseModel):
     detail: str
-
-
-def _build_auth_links(*, self_href: str) -> LinkSet:
-    return LinkSet(
-        self=Link(href=self_href, method="POST"),
-    )
 
 
 def _normalize_host_with_port(*, host_value: str, fallback_host: str, forwarded_port: str) -> str:
@@ -202,12 +196,13 @@ def _build_auth_response(
     role_id: int,
     status_value: str,
     auth_provider: str,
-    self_href: str,
+    keycloak_api_roles: frozenset[str] = frozenset(),
 ) -> LoginResponse:
-    current_user = build_current_user(
+    current_user = build_current_user_from_keycloak_claims(
         user_id=user_id,
         role_id=role_id,
         status=status_value,
+        keycloak_api_roles=keycloak_api_roles,
     )
     return LoginResponse(
         data={
@@ -222,15 +217,15 @@ def _build_auth_response(
             "business_access": status_value == "active",
             "onboarding_state": _onboarding_state(status_value),
             "permissions": serialize_permissions(current_user),
+            "app_roles": sorted(current_user.app_roles),
+            "delegation_roles": sorted(current_user.delegation_roles),
         },
-        _links=_build_auth_links(self_href=self_href),
     )
 
 
 async def _build_keycloak_auth_response(
     *,
     access_token: str,
-    self_href: str,
     uow: UnitOfWork,
 ) -> LoginResponse:
     claims = await decode_keycloak_access_token(access_token)
@@ -248,7 +243,7 @@ async def _build_keycloak_auth_response(
         role_id=synced.user.id_role,
         status_value=synced.user.status,
         auth_provider="keycloak",
-        self_href=self_href,
+        keycloak_api_roles=claims.api_roles,
     )
 
 
@@ -258,6 +253,7 @@ async def request_email_verification(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> EmailVerificationActionResponse:
+    UserPolicy.ensure_can_manage_own_profile(current_user)
     async with uow:
         service = EmailVerificationService(uow.profiles)
         result = await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
@@ -524,13 +520,16 @@ async def refresh_session(
         bundle = await refresh_tokens(refresh_token=keycloak_refresh_token)
     except Unauthorized:
         clear_keycloak_refresh_cookie(response)
-        raise Unauthorized("Missing credentials")
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Missing credentials"},
+            headers=dict(response.headers),
+        )
 
     set_keycloak_refresh_cookie(response, bundle.refresh_token, max_age=max(0, bundle.refresh_expires_in))
     async with uow:
         return await _build_keycloak_auth_response(
             access_token=bundle.access_token,
-            self_href="/api/v1/auth/refresh",
             uow=uow,
         )
 
@@ -600,9 +599,6 @@ async def register_user(
             "role_id": user.id_role,
             "status": user.status,
         },
-        _links=LinkSet(
-            self=Link(href=f"/api/v1/users/{user.id}", method="GET"),
-        ),
     )
 
 

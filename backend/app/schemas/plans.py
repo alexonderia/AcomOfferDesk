@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from app.schemas.links import LinkSet
+from pydantic import BaseModel, Field, model_validator
 
 
 class PlanNodeActionsSchema(BaseModel):
@@ -74,10 +72,7 @@ class PlanDashboardDataSchema(BaseModel):
 
 
 class PlanDashboardResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanDashboardDataSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class PlanRequestStatsDataSchema(BaseModel):
@@ -88,10 +83,7 @@ class PlanRequestStatsDataSchema(BaseModel):
 
 
 class PlanRequestStatsResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanRequestStatsDataSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class PlanTreeDataSchema(BaseModel):
@@ -102,10 +94,7 @@ class PlanTreeDataSchema(BaseModel):
 
 
 class PlanTreeResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanTreeDataSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class PlanSummaryDataSchema(BaseModel):
@@ -116,10 +105,7 @@ class PlanSummaryDataSchema(BaseModel):
 
 
 class PlanSummaryResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanSummaryDataSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class PlanRootCreateRequest(BaseModel):
@@ -177,10 +163,7 @@ class PlanMutationDataSchema(BaseModel):
 
 
 class PlanMutationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanMutationDataSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class PlanDeleteDataSchema(BaseModel):
@@ -188,10 +171,7 @@ class PlanDeleteDataSchema(BaseModel):
 
 
 class PlanDeleteResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanDeleteDataSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class PlanDelegateCandidateSchema(BaseModel):
@@ -208,10 +188,7 @@ class PlanDelegateCandidatesDataSchema(BaseModel):
 
 
 class PlanDelegateCandidatesResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanDelegateCandidatesDataSchema
-    links: LinkSet = Field(alias="_links")
 
 
 class PlanOptionSchema(BaseModel):
@@ -231,7 +208,4 @@ class PlanOptionsDataSchema(BaseModel):
 
 
 class PlanOptionsResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: PlanOptionsDataSchema
-    links: LinkSet = Field(alias="_links")

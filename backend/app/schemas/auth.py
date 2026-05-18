@@ -1,7 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.contractor_validation import validate_optional_email
-from app.schemas.links import LinkSet
 
 
 class LoginRequest(BaseModel):
@@ -28,12 +27,12 @@ class AuthSessionData(BaseModel):
     business_access: bool = False
     onboarding_state: str | None = None
     permissions: list[str] = Field(default_factory=list)
+    app_roles: list[str] = Field(default_factory=list)
+    delegation_roles: list[str] = Field(default_factory=list)
 
 
 class AuthSessionResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
     data: AuthSessionData
-    links: LinkSet = Field(alias="_links")
 
 
 LoginData = AuthSessionData
@@ -76,7 +75,4 @@ class RegisterUserData(BaseModel):
 
 
 class RegisterUserResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: RegisterUserData
-    links: LinkSet = Field(alias="_links")

@@ -4,7 +4,7 @@
 
 Этот README описывает legacy Telegram-модуль.
 Единый источник правды по основным окружениям и запуску проекта:
-- `docs/environments.md`
+- `docs/operations/environments.md`
 
 Статус модуля:
 - `tg_bot` — legacy и в основном root compose выключен по умолчанию.
@@ -107,6 +107,6 @@ docker compose -f tg_bot/docker-compose.yml logs -f tg_bot
 
 ## Связанные документы
 
-- `docs/runtime-architecture.md`
-- `docs/auth-and-onboarding.md`
-- `docs/environments.md`
+- `docs/product/runtime-architecture.md`
+- `docs/security/auth-and-onboarding.md`
+- `docs/operations/environments.md`

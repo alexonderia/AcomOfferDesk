@@ -174,6 +174,8 @@ class SendRequestNotificationEmailUseCase:
             normalized_email = email.strip().lower()
             if not normalized_email or normalized_email in hidden_emails:
                 continue
+            if normalized_email in recipient_emails:
+                continue
             matched_verified_recipient = recipients_by_email.get(normalized_email)
             if matched_verified_recipient is not None:
                 if matched_verified_recipient.email not in recipient_emails:

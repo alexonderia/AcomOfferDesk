@@ -23,6 +23,11 @@ export const useHeaderConfig = () => {
   const canLoadOfferedRequests = hasPermission(session, 'requests.offered.read');
   const canOpenUsersPage = hasPermission(session, 'users.read');
   const canRegisterUser = hasPermission(session, 'users.create');
+  const canCreateNormativeFile = hasPermission(session, 'normative_files.create');
+  const canViewFeedback = hasPermission(session, 'feedback.read');
+  const canViewDashboardProcess = hasPermission(session, 'dashboard.process.read');
+  const canViewDashboardSavings = hasPermission(session, 'dashboard.savings.read');
+  const canViewDashboardPlans = hasPermission(session, 'dashboard.plans.read');
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
   const requestMatch = location.pathname.match(/^\/requests\/(\d+)$/);
   const contractorRequestMatch = location.pathname.match(/^\/requests\/(\d+)\/contractor$/);
@@ -111,6 +116,11 @@ export const useHeaderConfig = () => {
         canLoadOpenRequests,
         canLoadOfferedRequests,
         canOpenUsersPage,
+        canCreateNormativeFile,
+        canViewFeedback,
+        canViewDashboardProcess,
+        canViewDashboardSavings,
+        canViewDashboardPlans,
         breadcrumbs,
         contractorTab,
         adminUsersTab,
@@ -154,6 +164,11 @@ export const useHeaderConfig = () => {
       canLoadOfferedRequests,
       canLoadOpenRequests,
       canOpenUsersPage,
+      canCreateNormativeFile,
+      canViewFeedback,
+      canViewDashboardProcess,
+      canViewDashboardSavings,
+      canViewDashboardPlans,
       canRegisterUser,
       contractorTab,
       breadcrumbs,

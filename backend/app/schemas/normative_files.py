@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.schemas.links import LinkSet
+from pydantic import BaseModel
 
 
 class NormativeFileMutationResponseData(BaseModel):
@@ -11,7 +9,4 @@ class NormativeFileMutationResponseData(BaseModel):
 
 
 class NormativeFileMutationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     data: NormativeFileMutationResponseData
-    links: LinkSet = Field(alias="_links")

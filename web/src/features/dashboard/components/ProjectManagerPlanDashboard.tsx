@@ -62,6 +62,7 @@ const emptyCardSx = {
 };
 
 const ALL_LEAD_MANAGERS_SCOPE = "__all_lead_managers__";
+const normalizePlanColorKey = (value: string) => value.trim().toLowerCase();
 
 type PlanLeadOption = {
   userId: string;
@@ -135,23 +136,9 @@ const isSingleMonthRange = (dateFrom: string, dateTo: string) => {
   return dayTo === String(monthEnd).padStart(2, "0");
 };
 
-const flattenPlanNodes = (nodes: PlanTreeNode[]): PlanTreeNode[] => {
-  const result: PlanTreeNode[] = [];
-  const walk = (node: PlanTreeNode) => {
-    result.push(node);
-    node.children.forEach(walk);
-  };
-  nodes.forEach(walk);
-  return result;
-};
-
 const collectLeadOptions = (nodes: PlanTreeNode[]): PlanLeadOption[] => {
   const optionsByUserId = new Map<string, PlanLeadOption>();
-  flattenPlanNodes(nodes).forEach((node) => {
-    const roleLabel = node.user_role.toLowerCase();
-    if (!roleLabel.includes("ведущ")) {
-      return;
-    }
+  nodes.forEach((node) => {
     if (!optionsByUserId.has(node.user_id)) {
       optionsByUserId.set(node.user_id, {
         userId: node.user_id,
@@ -452,10 +439,54 @@ export const ProjectManagerPlanDashboard = () => {
     () => buildDistributionItems(scopedTrees),
     [scopedTrees],
   );
+  const hierarchyPlanColorsByName = useMemo(() => {
+    const colorByName: Record<string, string> = {};
+    distributionItems.forEach((item) => {
+      if (item.planId === null) {
+        return;
+      }
+      const planNode = findPlanNodeByPlanId(presentationTrees, item.planId);
+      const planName = planNode?.plan_name?.trim();
+      if (!planName) {
+        return;
+      }
+      colorByName[normalizePlanColorKey(planName)] = item.color;
+    });
+    return colorByName;
+  }, [distributionItems, presentationTrees]);
   const executionSlices = useMemo(
     () => buildExecutionSlices(scopedTrees),
     [scopedTrees],
   );
+  const executionSlicesWithDistributionColors = useMemo(() => {
+    const colorByPlanId = new Map<number, string>();
+    const orderedPlanIds: number[] = [];
+    distributionItems.forEach((item) => {
+      if (item.planId !== null) {
+        orderedPlanIds.push(item.planId);
+        colorByPlanId.set(item.planId, item.color);
+      }
+    });
+
+    const byPlanId = new Map(executionSlices.map((slice) => [slice.planId, slice]));
+    const orderedSynced = orderedPlanIds
+      .map((planId) => byPlanId.get(planId))
+      .filter((slice): slice is NonNullable<typeof slice> => slice !== undefined)
+      .map((slice) => ({
+        ...slice,
+        color: colorByPlanId.get(slice.planId) ?? slice.color,
+      }));
+
+    const orderedSet = new Set(orderedPlanIds);
+    const remaining = executionSlices
+      .filter((slice) => !orderedSet.has(slice.planId))
+      .map((slice) => ({
+        ...slice,
+        color: "#cbd5e1",
+      }));
+
+    return [...orderedSynced, ...remaining];
+  }, [distributionItems, executionSlices]);
   const requestFactMetrics = useMemo(
     () => {
       if (selectedPlanTree) {
@@ -700,7 +731,7 @@ export const ProjectManagerPlanDashboard = () => {
             totalRemainingAmount={scopedSummary.total_remaining_amount}
             periodLabel={periodLabel}
             distributionItems={distributionItems}
-            executionSlices={executionSlices}
+            executionSlices={executionSlicesWithDistributionColors}
             selectedPlanId={selectedPlanId}
             requestFactMetrics={requestFactMetrics}
             showNoPeriodExecutionHint={showNoPeriodExecutionHint}
@@ -715,6 +746,7 @@ export const ProjectManagerPlanDashboard = () => {
           />
           <PlanHierarchySection
             trees={visibleTrees}
+            planColorsByName={hierarchyPlanColorsByName}
             searchValue={searchValue}
             expandedNodeIds={expandedNodeIds}
             forceExpanded={forceExpanded}

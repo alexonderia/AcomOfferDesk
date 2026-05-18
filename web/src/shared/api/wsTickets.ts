@@ -1,6 +1,6 @@
 import { fetchJson } from './client';
 
-export type WsTicketPurpose = 'chat_ws' | 'realtime_ws';
+export type WsTicketPurpose = 'chat_ws' | 'realtime_ws' | 'notifications_ws';
 
 type CreateWsTicketResponse = {
   ticket: string;

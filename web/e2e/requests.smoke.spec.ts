@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaKeycloak, logoutFromUi } from './helpers';
+import { assertNoSevereConsoleErrors, getCredentialsOrSkip, gotoWithRetry, loginViaKeycloak, logoutFromUi } from './helpers';
 
 test('economist requests smoke @smoke', async ({ page }, testInfo) => {
   const credentials = getCredentialsOrSkip(testInfo, 'E2E_ECONOMIST');
@@ -8,7 +8,7 @@ test('economist requests smoke @smoke', async ({ page }, testInfo) => {
   await loginViaKeycloak(page, credentials!);
 
   await assertNoSevereConsoleErrors(page, async () => {
-    await page.goto('/requests');
+    await gotoWithRetry(page, '/requests');
     await expect(page).toHaveURL(/\/requests/);
     await page.waitForLoadState('networkidle');
   });
@@ -23,7 +23,7 @@ test('contractor requests smoke @smoke', async ({ page }, testInfo) => {
 
   await loginViaKeycloak(page, credentials!);
 
-  await page.goto('/requests');
+  await gotoWithRetry(page, '/requests');
   await expect(page).toHaveURL(/\/requests/);
 
   const contractorLinks = page.locator('a[href*="/requests/"][href$="/contractor"]');
@@ -40,7 +40,7 @@ test('superadmin admin-page smoke @smoke', async ({ page }, testInfo) => {
   test.skip(!credentials, 'Missing superadmin credentials');
 
   await loginViaKeycloak(page, credentials!);
-  await page.goto('/admin');
+  await gotoWithRetry(page, '/admin');
   await expect(page).toHaveURL(/\/admin/);
   await page.waitForLoadState('networkidle');
 

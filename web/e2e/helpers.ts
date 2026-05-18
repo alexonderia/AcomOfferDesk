@@ -7,6 +7,53 @@ export type Credentials = {
   password: string;
 };
 
+const TRANSIENT_NAVIGATION_ERRORS = [
+  'ERR_CONNECTION_CLOSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_TUNNEL_CONNECTION_FAILED',
+  'ERR_NETWORK_CHANGED',
+  'ERR_TIMED_OUT',
+];
+
+const isTransientNavigationError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return TRANSIENT_NAVIGATION_ERRORS.some((fragment) => message.includes(fragment));
+};
+
+export const bypassNgrokInterstitialIfPresent = async (page: Page): Promise<void> => {
+  const visitSiteButton = page.getByRole('button', { name: /visit site/i });
+  if (await visitSiteButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await visitSiteButton.click();
+  }
+};
+
+export const gotoWithRetry = async (
+  page: Page,
+  url: string,
+  options: { attempts?: number; timeoutMs?: number; waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' | 'commit' } = {}
+): Promise<void> => {
+  const attempts = options.attempts ?? 4;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const waitUntil = options.waitUntil ?? 'domcontentloaded';
+
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await page.goto(url, { timeout: timeoutMs, waitUntil });
+      await bypassNgrokInterstitialIfPresent(page);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isTransientNavigationError(error)) {
+        throw error;
+      }
+      await page.waitForTimeout(600 * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Navigation failed for ${url}`);
+};
+
 export const getCredentialsOrSkip = (
   testInfo: TestInfo,
   prefix:
@@ -46,12 +93,10 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
     );
   };
 
-  await page.goto('/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1');
-
-  const visitSiteButton = page.getByRole('button', { name: /visit site/i });
-  if (await visitSiteButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await visitSiteButton.click();
-  }
+  await gotoWithRetry(page, '/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1', {
+    attempts: 5,
+    waitUntil: 'domcontentloaded',
+  });
 
   const usernameInput = page.locator('input[name="username"], input#username').first();
   const passwordInput = page.locator('input[name="password"], input#password').first();

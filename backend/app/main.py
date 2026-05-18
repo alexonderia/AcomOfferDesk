@@ -16,7 +16,12 @@ from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 from app.infrastructure.db import engine
 from app.infrastructure.email_delivery_consumer import EmailDeliveryConsumerRuntime
 from app.infrastructure.process_notification_consumer import ProcessNotificationConsumerRuntime
-from app.realtime.runtime import ChatRealtimeRuntime, set_chat_runtime
+from app.realtime.runtime import (
+    ChatRealtimeRuntime,
+    UnifiedRealtimeRuntime,
+    set_chat_runtime,
+    set_unified_realtime_runtime,
+)
 from app.services.files import FileService
 
 logger = logging.getLogger(__name__)
@@ -81,7 +86,9 @@ async def lifespan(_: FastAPI):
     is_leader = leader_lock.try_acquire()
     await FileService().ensure_bucket_exists()
     realtime_runtime = ChatRealtimeRuntime()
+    unified_realtime_runtime = UnifiedRealtimeRuntime()
     set_chat_runtime(realtime_runtime)
+    set_unified_realtime_runtime(unified_realtime_runtime)
     await realtime_runtime.start()
     email_delivery_runtime = EmailDeliveryConsumerRuntime()
     process_notification_runtime = ProcessNotificationConsumerRuntime()

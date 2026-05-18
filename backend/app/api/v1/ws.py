@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -19,7 +18,7 @@ from app.domain.auth_context import CurrentUser as HttpCurrentUser
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.realtime.contracts import OutboundEnvelope, client_event_adapter
-from app.realtime.runtime import get_chat_runtime
+from app.realtime.runtime import get_chat_runtime, get_unified_realtime_runtime
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import decode_keycloak_access_token, looks_like_keycloak_token
 from app.services.ws_ticket_service import WsTicketPurpose, get_ws_ticket_service
@@ -114,6 +113,30 @@ async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[Curren
         return current_user, claims
 
 
+async def _get_current_user_from_websocket_with_purpose(
+    websocket: WebSocket,
+    *,
+    expected_purpose: WsTicketPurpose,
+) -> tuple[CurrentUser, AccessTokenClaims | None]:
+    ticket = (websocket.query_params.get("ticket") or "").strip()
+    if ticket:
+        service = get_ws_ticket_service()
+        access = await service.consume_ticket(raw_ticket=ticket, expected_purpose=expected_purpose)
+        UserPolicy.ensure_can_login(access.status)
+        current_user = build_current_user_from_keycloak_claims(
+            user_id=access.user_id,
+            role_id=access.role_id,
+            status=access.status,
+            keycloak_api_roles=access.keycloak_api_roles,
+        )
+        return current_user, None
+
+    if expected_purpose != "chat_ws":
+        raise Unauthorized("Missing credentials")
+
+    return await _get_current_user_from_websocket(websocket)
+
+
 async def _get_user_full_name(user_id: str) -> str | None:
     async with UnitOfWork() as uow:
         if uow.profiles is None:
@@ -133,10 +156,64 @@ def _error_event(*, request_id: str | None, code: str, message: str) -> Outbound
     )
 
 
+_REALTIME_EVENT_TYPES = (
+    "notification.created",
+    "notification.read",
+    "notification.read_all",
+    "chat.message.created",
+    "system.toast",
+)
+
+
+@router.websocket("/ws/realtime")
+async def unified_realtime_websocket(websocket: WebSocket) -> None:
+    try:
+        current_user, _claims = await _get_current_user_from_websocket_with_purpose(
+            websocket,
+            expected_purpose="realtime_ws",
+        )
+    except (Conflict, Forbidden, Unauthorized):
+        await websocket.close(code=4401)
+        return
+
+    runtime = get_unified_realtime_runtime()
+    connection_id = await runtime.connect(websocket=websocket, user_id=current_user.user_id)
+    try:
+        await runtime.manager.send_to_connection(
+            connection_id=connection_id,
+            event=OutboundEnvelope(
+                type="connection.ready",
+                data={
+                    "connection_id": connection_id,
+                    "user_id": current_user.user_id,
+                    "transport": "websocket",
+                    "supported_event_types": list(_REALTIME_EVENT_TYPES),
+                },
+            ),
+        )
+
+        while True:
+            if websocket.client_state is not WebSocketState.CONNECTED:
+                break
+            try:
+                await websocket.receive()
+            except WebSocketDisconnect:
+                break
+            except RuntimeError as exc:
+                if "WebSocket is not connected" in str(exc):
+                    break
+                raise
+    finally:
+        await runtime.disconnect(connection_id=connection_id)
+
+
 @router.websocket("/ws/chat")
 async def chat_websocket(websocket: WebSocket) -> None:
     try:
-        current_user, claims = await _get_current_user_from_websocket(websocket)
+        current_user, claims = await _get_current_user_from_websocket_with_purpose(
+            websocket,
+            expected_purpose="chat_ws",
+        )
     except (Conflict, Forbidden, Unauthorized):
         await websocket.close(code=4401)
         return

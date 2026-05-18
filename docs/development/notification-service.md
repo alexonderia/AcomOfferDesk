@@ -1,33 +1,60 @@
-# Notification Service (Backend)
+﻿# Сервис Уведомлений (Backend)
 
-## Purpose
+## Назначение
 
-`user_notifications` is the source of truth for Notification Center data.
+`user_notifications` — источник истины для данных центра уведомлений.
 
-Backend now supports two independent RabbitMQ-driven flows:
+Подробная классификация событий находится в документе:
 
-1. Email delivery feedback flow (already existing):
+- `docs/development/notification-event-map.md`
+
+## Категории Уведомлений
+
+В проекте используются две категории:
+
+1. `system_ui`
+- Локальная обратная связь интерфейса на текущей странице (например: сохранение, создание, загрузка, валидация).
+- Такие уведомления **не** пишутся в `user_notifications`.
+- Целевое размещение: `top-center` toast (часть текущих сценариев пока использует inline `Alert`).
+
+2. `business`
+- Кросс-страничные бизнес-сигналы, важные независимо от текущего экрана.
+- Такие уведомления пишутся в `user_notifications`.
+- Отображаются в центре уведомлений.
+- Доставка сейчас выполняется через polling/push-слой frontend; в будущем — через `/ws/realtime` (на этом этапе не реализовано).
+
+Backend поддерживает два независимых RabbitMQ-потока:
+
+1. Поток обратной связи по доставке email (существовал ранее):
 - `email.delivery.succeeded`
 - `email.delivery.failed`
 
-2. Process notification flow (new centralized path):
+2. Поток процессных уведомлений (централизованный путь):
 - `offer.created`
 - `message.created`
 - `request.status_changed`
 - `system.warning`
 
-## Process Notification Pipeline
+## WebSocket Каналы (Текущее Состояние)
 
-Pipeline (publish-after-commit, no outbox):
+- `/api/v1/ws/chat?ticket=...` остается текущим рабочим каналом чата.
+- Добавлен общий endpoint `/api/v1/ws/realtime?ticket=...` для будущей унифицированной доставки событий чата и центра уведомлений.
+- Для `/ws/realtime` используется ws-ticket с `purpose = realtime_ws`.
+- Polling центра уведомлений пока не меняется и остается основным механизмом доставки уведомлений в UI.
+- Следующий этап: фактическая доставка `notification.created` и связанных событий через `/ws/realtime`.
+
+## Пайплайн Процессных Уведомлений
+
+Пайплайн (publish-after-commit, без outbox):
 
 `Business Service` -> `DB commit succeeded` -> `notification_publisher.publish_process_notification_event()` -> `RabbitMQ` -> `ProcessNotificationConsumerRuntime` -> `ProcessNotificationEventHandler` -> `NotificationService` -> `user_notifications`.
 
-Important:
-- No `notification_outbox`.
-- No Redis.
-- No DB migrations for dedupe.
+Важно:
+- Нет `notification_outbox`.
+- Нет Redis.
+- Нет миграции БД для dedupe.
 
-## RabbitMQ Contracts
+## Контракты RabbitMQ
 
 Exchange / queue / routing keys:
 
@@ -40,11 +67,11 @@ Exchange / queue / routing keys:
   - `email.delivery.succeeded`
   - `email.delivery.failed`
 
-## Process Event Envelope
+## Конверт Process Event
 
-Shared contract: `shared/process_notifications.py`.
+Общий контракт: `shared/process_notifications.py`.
 
-Payload shape:
+Формат payload:
 
 ```json
 {
@@ -63,110 +90,110 @@ Payload shape:
 }
 ```
 
-Rules:
-- `event_id`, `event_type`, `occurred_at` are required.
-- `actor_user_id`, `entity_type/entity_id`, `request_id/offer_id/chat_id/message_id`, `dedupe_key` are optional.
-- `payload` defaults to `{}`.
+Правила:
+- `event_id`, `event_type`, `occurred_at` — обязательны.
+- `actor_user_id`, `entity_type/entity_id`, `request_id/offer_id/chat_id/message_id`, `dedupe_key` — опциональны.
+- `payload` по умолчанию `{}`.
 
 ## Publish-After-Commit
 
-`UnitOfWork` now supports after-commit hooks (`add_after_commit_hook`).
+`UnitOfWork` поддерживает after-commit hooks (`add_after_commit_hook`).
 
-Business services schedule process events into this hook:
+Бизнес-сервисы планируют процессные события в этот hook:
 - `OfferService.create_offer` -> `offer.created`
 - `OfferService.create_message` -> `message.created`
-- `RequestService.update_request` (status change) -> `request.status_changed`
+- `RequestService.update_request` (смена статуса) -> `request.status_changed`
 
-Behavior:
-- If DB commit fails -> event is not published.
-- If DB commit succeeds but RabbitMQ publish finally fails -> business result remains successful; failure is only logged.
+Поведение:
+- Если commit в БД падает -> событие не публикуется.
+- Если commit в БД успешен, но публикация в RabbitMQ окончательно провалилась -> бизнес-операция остается успешной, ошибка только логируется.
 
-## Publisher Behavior
+## Поведение Publisher
 
-Implementation: `backend/app/infrastructure/notification_publisher.py`.
+Реализация: `backend/app/infrastructure/notification_publisher.py`.
 
-For process events:
-- uses existing RabbitMQ connection/config style;
-- publishes via `notification.process`;
-- retries with backoff (100ms / 300ms / 1000ms);
-- logs structured error with `event_id`, `event_type`, `entity_id` on final failure;
-- does not log secrets.
+Для process events:
+- использует текущий стиль подключения/конфига RabbitMQ;
+- публикует через `notification.process`;
+- делает retry с backoff (100ms / 300ms / 1000ms);
+- при финальной ошибке пишет структурированный лог с `event_id`, `event_type`, `entity_id`;
+- не логирует секреты.
 
 ## Process Consumer
 
-Implementation: `backend/app/infrastructure/process_notification_consumer.py`.
+Реализация: `backend/app/infrastructure/process_notification_consumer.py`.
 
-Pattern mirrors `email_delivery_consumer`:
-- robust connection;
+Паттерн повторяет `email_delivery_consumer`:
+- устойчивое соединение;
 - durable exchange/queue binding;
 - `prefetch_count=20`;
 - `message.process(requeue=False)`;
-- invalid payload is skipped with warning;
-- handler exceptions are logged without crashing runtime loop.
+- невалидный payload пропускается с warning;
+- ошибки handler логируются без падения runtime-loop.
 
-Startup/shutdown is wired in `backend/app/main.py` alongside `EmailDeliveryConsumerRuntime`.
+Запуск/остановка подключены в `backend/app/main.py` рядом с `EmailDeliveryConsumerRuntime`.
 
-## Event Handling Rules
+## Правила Обработки Событий
 
-Implementation: `backend/app/services/process_notification_events.py`.
+Реализация: `backend/app/services/process_notification_events.py`.
 
-Supported event types:
+Поддерживаемые типы событий:
 
 1. `offer.created`
-- recipient: request owner (`request.id_user`);
-- actor is excluded;
-- notification type/severity: `offer.created` / `info`;
-- title: `Новое коммерческое предложение`.
+- получатель: владелец заявки (`request.id_user`);
+- автор события исключается;
+- тип/severity уведомления: `offer.created` / `info`;
+- заголовок: `Новое коммерческое предложение`.
 
 2. `message.created`
-- recipients: chat participants excluding actor;
-- if `payload.recipient_user_ids` is provided, it is used (preserves realtime/chat-open suppression logic already computed in `OfferService`);
-- notification type/severity: `message.created` / `info`;
-- title: `Новое сообщение`;
-- link: `/offers/{offer_id}/workspace`.
+- получатели: участники чата, кроме автора;
+- если передан `payload.recipient_user_ids`, используется он (сохраняет логику suppress для открытого чата, уже рассчитанную в `OfferService`);
+- тип/severity уведомления: `message.created` / `info`;
+- заголовок: `Новое сообщение`;
+- ссылка: `/offers/{offer_id}/workspace`.
 
 3. `request.status_changed`
-- recipient: request owner (`request.id_user`);
-- actor is excluded;
-- notification type/severity: `request.status_changed` / `info`;
-- title: `Статус заявки изменен`.
+- получатель: владелец заявки (`request.id_user`);
+- автор события исключается;
+- тип/severity уведомления: `request.status_changed` / `info`;
+- заголовок: `Статус заявки изменен`.
 
 4. `system.warning`
-- recipients must be explicit in payload (`recipient_user_id` or `recipients`/`recipient_user_ids`);
-- if recipient is missing, event is skipped with warning.
+- получатели должны быть явно переданы в payload (`recipient_user_id` или `recipients`/`recipient_user_ids`);
+- если получатель не указан, событие пропускается с warning.
 
-## Dedupe Without Migration
+## Dedupe Без Миграции
 
-No schema migration was added.
+Миграция схемы не добавлялась.
 
-Dedupe is best-effort via JSON payload keys in repository:
+Dedupe реализован best-effort через JSON-ключи в payload:
 - `payload.event_id`
 - `payload.dedupe_key`
 
-Repository method:
+Метод репозитория:
 - `exists_by_type_user_and_payload_key(user_id, notification_type, key_name, key_value)`.
 
-Known limitation:
-- JSON-key checks may become expensive at high load without dedicated indexed columns.
+Известное ограничение:
+- проверки по JSON-ключам могут стать дорогими на высокой нагрузке без выделенных индексируемых колонок.
 
-## Email Delivery Flow Is Unchanged
+## Поток Email Delivery Не Менялся
 
-Email flow stays separate and is not merged into process events:
-- Worker publishes `email.delivery.succeeded` / `email.delivery.failed`.
-- Backend `EmailDeliveryConsumerRuntime` + `EmailDeliveryEventHandler` produce `email.sent` / `email.failed`.
+Почтовый поток остается отдельным и не объединяется с process events:
+- Worker публикует `email.delivery.succeeded` / `email.delivery.failed`.
+- Backend `EmailDeliveryConsumerRuntime` + `EmailDeliveryEventHandler` формируют `email.sent` / `email.failed`.
 
-This preserves current email delivery feedback behavior.
+Это сохраняет текущее поведение обратной связи по доставке email.
 
-## Operational Limitation (No Outbox)
+## Операционное Ограничение (Без Outbox)
 
-Because there is no outbox:
-- if DB commit succeeded and all publish retries failed, event can be lost.
+Так как outbox нет:
+- если commit в БД успешен и все retry публикации исчерпаны, событие может быть потеряно.
 
-This is logged by `notification_publisher` with event identifiers.
+Этот случай логируется в `notification_publisher` с идентификаторами события.
 
 ## TODO
 
-- Add dedicated `dedupe_key` column/index when load grows.
-- Evaluate bulk insert path for very large recipient sets.
-- Backend notification filters + cursor pagination.
-- Future `/ws/realtime` endpoint (not implemented now).
+- Добавить выделенную колонку/индекс `dedupe_key` при росте нагрузки.
+- Оценить bulk insert для очень больших наборов получателей.
+- Добавить backend-фильтры уведомлений и cursor-pagination.
+- Реализовать будущий endpoint `/ws/realtime` (пока не реализован).

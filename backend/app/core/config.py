@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     )
     keycloak_api_client_id: str = Field(default="acom-api", validation_alias="KEYCLOAK_API_CLIENT_ID")
     keycloak_internal_base_url: str = Field(
-        default="http://keycloak:8080",
+        default="http://keycloak:8080/iam",
         validation_alias="KEYCLOAK_INTERNAL_BASE_URL",
     )
     keycloak_public_base_url: str | None = Field(default=None, validation_alias="KEYCLOAK_PUBLIC_BASE_URL")

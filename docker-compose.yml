@@ -27,7 +27,7 @@ services:
           "CMD",
           "bash",
           "-ec",
-          "realm=\"$${KEYCLOAK_REALM:-acom-offerdesk}\"; for path in \"/realms/$$realm/.well-known/openid-configuration\" \"/$${KC_HTTP_RELATIVE_PATH#/}/realms/$$realm/.well-known/openid-configuration\"; do exec 3<>/dev/tcp/127.0.0.1/8080 || exit 1; printf 'HEAD %s HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' \"$$path\" >&3; if grep '200' <&3 >/dev/null; then exit 0; fi; exec 3<&-; exec 3>&-; done; exit 1",
+          "management_port=\"$${KC_HTTP_MANAGEMENT_PORT:-9000}\"; management_prefix=\"$${KC_HTTP_MANAGEMENT_RELATIVE_PATH:-}\"; if [ -z \"$$management_prefix\" ]; then management_prefix=\"$${KC_HTTP_RELATIVE_PATH:-}\"; fi; if [ -z \"$$management_prefix\" ] || [ \"$$management_prefix\" = \"/\" ]; then health_path=\"/health/ready\"; else health_path=\"$${management_prefix%/}/health/ready\"; fi; exec 3<>/dev/tcp/127.0.0.1/$$management_port; printf 'HEAD %s HTTP/1.0\\r\\n\\r\\n' \"$$health_path\" >&3; grep '200' <&3",
         ]
       interval: 10s
       timeout: 5s

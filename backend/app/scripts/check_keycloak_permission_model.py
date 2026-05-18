@@ -474,7 +474,7 @@ def _check_admin_service_client(
         report.warn("KEYCLOAK_ADMIN_CLIENT_SECRET looks like a placeholder, service-account token check skipped")
     else:
         token_endpoint = (
-            f"{_coalesce(env_map, 'KEYCLOAK_INTERNAL_BASE_URL', default='http://keycloak:8080').rstrip('/')}/"
+            f"{_coalesce(env_map, 'KEYCLOAK_INTERNAL_BASE_URL', default='http://keycloak:8080/iam').rstrip('/')}/"
             f"realms/{realm}/protocol/openid-connect/token"
         )
         try:
@@ -594,7 +594,7 @@ def main() -> int:
     timeout = float(_coalesce(env_map, "KEYCLOAK_HTTP_TIMEOUT_SECONDS", default="10") or "10")
     http = SimpleHttp(timeout=timeout)
 
-    internal_base = _coalesce(env_map, "KEYCLOAK_INTERNAL_BASE_URL", default="http://keycloak:8080")
+    internal_base = _coalesce(env_map, "KEYCLOAK_INTERNAL_BASE_URL", default="http://keycloak:8080/iam")
     realm = _coalesce(env_map, "KEYCLOAK_REALM", default="acom-offerdesk")
     admin_realm = _coalesce(env_map, "KEYCLOAK_ADMIN_REALM", default="master")
     web_base_url = _coalesce(env_map, "WEB_BASE_URL", default="http://localhost:8080")

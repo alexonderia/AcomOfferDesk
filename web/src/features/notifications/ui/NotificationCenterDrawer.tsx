@@ -9,7 +9,7 @@ import { NotificationItem } from './NotificationItem';
 type NotificationCenterDrawerProps = {
   open: boolean;
   notifications: Notification[];
-  unreadCount: number;
+  hasUnread: boolean;
   isLoading: boolean;
   isMarkAllPending: boolean;
   error: string | null;
@@ -27,7 +27,7 @@ type NotificationCenterDrawerProps = {
 export const NotificationCenterDrawer = ({
   open,
   notifications,
-  unreadCount,
+  hasUnread,
   isLoading,
   isMarkAllPending,
   error,
@@ -60,7 +60,7 @@ export const NotificationCenterDrawer = ({
         <ActionButton
           kind="custom"
           showNavigationIcons={false}
-          disabled={unreadCount <= 0 || isMarkAllPending}
+          disabled={!hasUnread || isMarkAllPending}
           onClick={onMarkAll}
           sx={{ minHeight: 32, px: 1.4, fontSize: 13, textTransform: 'none' }}
         >
@@ -121,3 +121,4 @@ export const NotificationCenterDrawer = ({
     )}
   </Drawer>
 );
+

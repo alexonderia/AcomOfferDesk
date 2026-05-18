@@ -106,7 +106,7 @@ export const NotificationBell = ({
 
   const {
     items,
-    unreadCount,
+    hasUnread,
     isLoadingList,
     listError,
     isMarkAllPending,
@@ -239,7 +239,7 @@ export const NotificationBell = ({
   );
 
   const icon = (
-    <Badge badgeContent={unreadCount} color="error" max={99}>
+    <Badge color="error" variant="dot" invisible={!hasUnread}>
       <NotificationsNoneOutlined fontSize="small" />
     </Badge>
   );
@@ -311,7 +311,7 @@ export const NotificationBell = ({
         <NotificationCenterDrawer
           open={open}
           notifications={filteredDisplayNotifications}
-          unreadCount={unreadCount}
+          hasUnread={hasUnread}
           isLoading={isLoadingList}
           isMarkAllPending={isMarkAllPending}
           error={listError}
@@ -332,7 +332,7 @@ export const NotificationBell = ({
           anchorEl={anchorEl}
           open={open}
           notifications={filteredDisplayNotifications}
-          unreadCount={unreadCount}
+          hasUnread={hasUnread}
           isLoading={isLoadingList}
           isMarkAllPending={isMarkAllPending}
           error={listError}

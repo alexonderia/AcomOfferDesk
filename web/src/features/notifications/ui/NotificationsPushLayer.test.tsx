@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotificationsPushLayer } from './NotificationsPushLayer';
 import type { Notification } from '../model/types';
 
@@ -10,23 +10,32 @@ const navigateMock = vi.fn();
 
 let currentPathname = '/requests';
 let isAuthenticated = true;
+let realtimeListener: Function | null = null;
 
 const notificationsState = {
-  unreadCount: 0,
-  loadNotifications: vi.fn(),
-  markOneAsRead: vi.fn()
+  markOneAsRead: vi.fn(),
 };
 
 vi.mock('../model/constants', () => ({
   NOTIFICATION_PUSH_AUTOCLOSE_MS: 10_000,
   NOTIFICATION_PUSH_ERROR_AUTOCLOSE_MS: 14_000,
   NOTIFICATION_PUSH_BURST_THRESHOLD: 3,
-  NOTIFICATION_PUSH_REFRESH_THROTTLE_MS: 1,
 }));
 
 vi.mock('@app/providers/AuthProvider', () => ({
   useAuth: () => ({
     isAuthenticated,
+  }),
+}));
+
+vi.mock('@app/providers/RealtimeProvider', () => ({
+  useRealtime: () => ({
+    onEvent: (listener: any) => {
+      realtimeListener = listener;
+      return () => {
+        realtimeListener = null;
+      };
+    },
   }),
 }));
 
@@ -70,17 +79,29 @@ const messageNotification = (id: number, offerId: number): Notification => ({
   created_at: `2026-05-15T10:00:0${id}Z`,
 });
 
+const emitRealtimeNotificationCreated = (notification: Notification) => {
+  realtimeListener?.({
+    type: 'notification.created',
+    event_id: 'event-1',
+    ts: '2026-05-15T10:00:00Z',
+    data: {
+      notification,
+      has_unread: true,
+    },
+  });
+};
+
 describe('NotificationsPushLayer', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     enqueueSnackbarMock.mockReset();
     closeSnackbarMock.mockReset();
     navigateMock.mockReset();
-    notificationsState.loadNotifications.mockReset();
     notificationsState.markOneAsRead.mockReset();
     notificationsState.markOneAsRead.mockResolvedValue(undefined);
-    notificationsState.unreadCount = 0;
     currentPathname = '/requests';
     isAuthenticated = true;
+    realtimeListener = null;
 
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -97,24 +118,17 @@ describe('NotificationsPushLayer', () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('does not show push for message.created in currently open chat', async () => {
     currentPathname = '/offers/11/workspace';
+    render(<NotificationsPushLayer />);
 
-    notificationsState.loadNotifications
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([messageNotification(1, 11)]);
-
-    const { rerender } = render(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(notificationsState.loadNotifications).toHaveBeenCalledTimes(1);
-    });
-
-    notificationsState.unreadCount = 1;
-    rerender(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(notificationsState.loadNotifications).toHaveBeenCalledTimes(2);
+    act(() => {
+      emitRealtimeNotificationCreated(messageNotification(1, 11));
+      vi.advanceTimersByTime(400);
     });
 
     expect(enqueueSnackbarMock).not.toHaveBeenCalled();
@@ -122,23 +136,14 @@ describe('NotificationsPushLayer', () => {
 
   it('shows push for message.created from another chat and marks as read on click', async () => {
     currentPathname = '/offers/99/workspace';
+    render(<NotificationsPushLayer />);
 
-    notificationsState.loadNotifications
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([messageNotification(2, 11)]);
-
-    const { rerender } = render(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(notificationsState.loadNotifications).toHaveBeenCalledTimes(1);
+    act(() => {
+      emitRealtimeNotificationCreated(messageNotification(2, 11));
+      vi.advanceTimersByTime(400);
     });
 
-    notificationsState.unreadCount = 1;
-    rerender(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
-    });
+    expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
 
     const enqueueOptions = enqueueSnackbarMock.mock.calls[0][1] as {
       content: () => ReactElement;
@@ -148,110 +153,39 @@ describe('NotificationsPushLayer', () => {
     const pushTitle = screen.getByText('Message #2');
     const pushButton = pushTitle.closest('[role="button"]');
     expect(pushButton).toBeTruthy();
-    fireEvent.click(pushButton as HTMLElement);
-
-    await waitFor(() => {
-      expect(notificationsState.markOneAsRead).toHaveBeenCalledWith(2);
+    await act(async () => {
+      fireEvent.click(pushButton as HTMLElement);
+      await Promise.resolve();
     });
+
+    expect(notificationsState.markOneAsRead).toHaveBeenCalledWith(2);
     expect(navigateMock).toHaveBeenCalledWith('/offers/11/workspace');
   });
 
   it('does not show duplicate push for the same notification id', async () => {
-    notificationsState.loadNotifications
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([messageNotification(3, 11)])
-      .mockResolvedValueOnce([messageNotification(3, 11)]);
+    render(<NotificationsPushLayer />);
 
-    const { rerender } = render(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(notificationsState.loadNotifications).toHaveBeenCalledTimes(1);
-    });
-
-    notificationsState.unreadCount = 1;
-    rerender(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
-    });
-
-    notificationsState.unreadCount = 2;
-    rerender(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(notificationsState.loadNotifications).toHaveBeenCalledTimes(3);
+    act(() => {
+      emitRealtimeNotificationCreated(messageNotification(3, 11));
+      emitRealtimeNotificationCreated(messageNotification(3, 11));
+      vi.advanceTimersByTime(400);
     });
 
     expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not run parallel loadNotifications during unread spikes', async () => {
-    vi.useFakeTimers();
+  it('shows a single aggregated push for 3+ notifications in a short burst', async () => {
+    render(<NotificationsPushLayer />);
 
-    let loadCalls = 0;
-    let inFlight = 0;
-    let maxInFlight = 0;
-
-    notificationsState.loadNotifications.mockImplementation(() => {
-      loadCalls += 1;
-      if (loadCalls === 1) {
-        return Promise.resolve([]);
-      }
-
-      inFlight += 1;
-      maxInFlight = Math.max(maxInFlight, inFlight);
-      return new Promise((resolve) => {
-        window.setTimeout(() => {
-          inFlight -= 1;
-          resolve([messageNotification(10 + loadCalls, 13)]);
-        }, 25);
-      });
+    act(() => {
+      emitRealtimeNotificationCreated(messageNotification(21, 11));
+      emitRealtimeNotificationCreated(messageNotification(22, 11));
+      emitRealtimeNotificationCreated(messageNotification(23, 12));
+      vi.advanceTimersByTime(400);
     });
 
-    const { rerender } = render(<NotificationsPushLayer />);
+    expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    notificationsState.unreadCount = 1;
-    rerender(<NotificationsPushLayer />);
-
-    notificationsState.unreadCount = 2;
-    rerender(<NotificationsPushLayer />);
-
-    await act(async () => {
-      vi.advanceTimersByTime(60);
-      await Promise.resolve();
-    });
-
-    expect(maxInFlight).toBe(1);
-
-    vi.useRealTimers();
-  });
-
-  it('shows a single aggregated push for 3+ fresh notifications', async () => {
-    notificationsState.loadNotifications
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        messageNotification(21, 11),
-        messageNotification(22, 11),
-        messageNotification(23, 12),
-      ]);
-
-    const { rerender } = render(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(notificationsState.loadNotifications).toHaveBeenCalledTimes(1);
-    });
-
-    notificationsState.unreadCount = 3;
-    rerender(<NotificationsPushLayer />);
-
-    await waitFor(() => {
-      expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
-    });
-
-    expect(enqueueSnackbarMock.mock.calls[0][0]).toContain('У вас 3 новых уведомлений');
+    expect(enqueueSnackbarMock.mock.calls[0][0]).toContain('РЈ РІР°СЃ 3 РЅРѕРІС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№');
   });
 });

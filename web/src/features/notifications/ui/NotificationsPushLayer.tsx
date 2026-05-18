@@ -2,19 +2,18 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '@app/providers/AuthProvider';
+import { useRealtime } from '@app/providers/RealtimeProvider';
 import { useNotificationsState } from '../model/NotificationsContext';
 import {
   NOTIFICATION_PUSH_AUTOCLOSE_MS,
   NOTIFICATION_PUSH_BURST_THRESHOLD,
   NOTIFICATION_PUSH_ERROR_AUTOCLOSE_MS,
-  NOTIFICATION_PUSH_REFRESH_THROTTLE_MS,
 } from '../model/constants';
 import { isNotificationForCurrentOpenChat } from '../model/isNotificationForCurrentOpenChat';
+import { parseNotificationCreatedEvent } from '../model/realtimeNotificationEvent';
 import { resolveNotificationLink } from '../model/resolveNotificationLink';
 import type { Notification } from '../model/types';
 import { NotificationPushToast } from './NotificationPushToast';
-
-const isUnread = (notification: Notification) => notification.read_at === null;
 
 const getPushAutoHideDuration = (notification: Pick<Notification, 'severity'>): number =>
   notification.severity === 'error' || notification.severity === 'warning'
@@ -33,87 +32,38 @@ const buildBatchSummaryNotification = (
   return {
     type: 'system.warning',
     severity: count >= 6 ? 'warning' : 'info',
-    title: `У вас ${count} новых уведомлений`,
-    body: latest?.title ?? 'Откройте центр уведомлений, чтобы посмотреть детали.',
+    title: `РЈ РІР°СЃ ${count} РЅРѕРІС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№`,
+    body: latest?.title ?? 'РћС‚РєСЂРѕР№С‚Рµ С†РµРЅС‚СЂ СѓРІРµРґРѕРјР»РµРЅРёР№, С‡С‚РѕР±С‹ РїРѕСЃРјРѕС‚СЂРµС‚СЊ РґРµС‚Р°Р»Рё.',
     created_at: latest?.created_at ?? new Date().toISOString(),
   };
 };
+
+const PUSH_BURST_WINDOW_MS = 350;
 
 export const NotificationsPushLayer = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { closeSnackbar, enqueueSnackbar } = useSnackbar();
   const { isAuthenticated } = useAuth();
-  const { unreadCount, loadNotifications, markOneAsRead } = useNotificationsState();
+  const { onEvent } = useRealtime();
+  const { markOneAsRead } = useNotificationsState();
 
-  const isBootstrappedRef = useRef(false);
-  const previousUnreadRef = useRef(0);
-  const shownUnreadIdsRef = useRef<Set<number>>(new Set());
-  const isPushRefreshInFlightRef = useRef(false);
-  const hasPendingPushRefreshRef = useRef(false);
-  const lastPushRefreshAtRef = useRef(0);
-  const scheduledPushRefreshTimerRef = useRef<number | null>(null);
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
+  const burstQueueRef = useRef<Notification[]>([]);
+  const burstTimerRef = useRef<number | null>(null);
 
   const resetPushRefs = useCallback(() => {
-    isBootstrappedRef.current = false;
-    previousUnreadRef.current = 0;
-    shownUnreadIdsRef.current = new Set();
-    isPushRefreshInFlightRef.current = false;
-    hasPendingPushRefreshRef.current = false;
-    lastPushRefreshAtRef.current = 0;
-    if (scheduledPushRefreshTimerRef.current !== null) {
-      window.clearTimeout(scheduledPushRefreshTimerRef.current);
-      scheduledPushRefreshTimerRef.current = null;
+    shownNotificationIdsRef.current = new Set();
+    burstQueueRef.current = [];
+    if (burstTimerRef.current !== null) {
+      window.clearTimeout(burstTimerRef.current);
+      burstTimerRef.current = null;
     }
   }, []);
 
-  const runPushRefresh = useCallback(async () => {
-    if (!isAuthenticated || !isBootstrappedRef.current) {
-      return;
-    }
-
-    if (isPushRefreshInFlightRef.current) {
-      hasPendingPushRefreshRef.current = true;
-      return;
-    }
-
-    const now = Date.now();
-    const msSinceLastRefresh = now - lastPushRefreshAtRef.current;
-    const remainingThrottleMs = NOTIFICATION_PUSH_REFRESH_THROTTLE_MS - msSinceLastRefresh;
-
-    if (remainingThrottleMs > 0) {
-      if (scheduledPushRefreshTimerRef.current === null) {
-        scheduledPushRefreshTimerRef.current = window.setTimeout(() => {
-          scheduledPushRefreshTimerRef.current = null;
-          void runPushRefresh();
-        }, remainingThrottleMs);
-      }
-      return;
-    }
-
-    isPushRefreshInFlightRef.current = true;
-    lastPushRefreshAtRef.current = Date.now();
-
-    try {
-      const latestItems = await loadNotifications({ silent: true });
-      const unreadItems = latestItems.filter(isUnread);
-      const freshUnreadItems: Notification[] = [];
-
-      unreadItems.forEach((item) => {
-        if (shownUnreadIdsRef.current.has(item.id)) {
-          return;
-        }
-
-        if (item.type === 'message.created' && isNotificationForCurrentOpenChat(item, location)) {
-          shownUnreadIdsRef.current.add(item.id);
-          return;
-        }
-
-        shownUnreadIdsRef.current.add(item.id);
-        freshUnreadItems.push(item);
-      });
-
-      if (freshUnreadItems.length === 0) {
+  const showNotifications = useCallback(
+    (notifications: Notification[]) => {
+      if (notifications.length === 0) {
         return;
       }
 
@@ -121,16 +71,16 @@ export const NotificationsPushLayer = () => {
         ? { vertical: 'bottom' as const, horizontal: 'center' as const }
         : { vertical: 'bottom' as const, horizontal: 'right' as const };
 
-      const notificationsToShow = [...freshUnreadItems].sort(
+      const orderedNotifications = [...notifications].sort(
         (left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)
       );
 
-      if (notificationsToShow.length >= NOTIFICATION_PUSH_BURST_THRESHOLD) {
-        const summary = buildBatchSummaryNotification(notificationsToShow);
+      if (orderedNotifications.length >= NOTIFICATION_PUSH_BURST_THRESHOLD) {
+        const summary = buildBatchSummaryNotification(orderedNotifications);
         const latestRoutePath = resolveNotificationLink(
-          notificationsToShow[notificationsToShow.length - 1]?.link_url ?? null
+          orderedNotifications[orderedNotifications.length - 1]?.link_url ?? null
         );
-        const snackbarKey = `notification-push-batch-${notificationsToShow.map((item) => item.id).join('-')}`;
+        const snackbarKey = `notification-push-batch-${orderedNotifications.map((item) => item.id).join('-')}`;
         enqueueSnackbar(summary.title, {
           key: snackbarKey,
           persist: false,
@@ -152,27 +102,27 @@ export const NotificationsPushLayer = () => {
         return;
       }
 
-      notificationsToShow.forEach((item) => {
-        const snackbarKey = `notification-push-${item.id}`;
-        enqueueSnackbar(item.title, {
+      orderedNotifications.forEach((notification) => {
+        const snackbarKey = `notification-push-${notification.id}`;
+        enqueueSnackbar(notification.title, {
           key: snackbarKey,
           persist: false,
-          autoHideDuration: getPushAutoHideDuration(item),
+          autoHideDuration: getPushAutoHideDuration(notification),
           anchorOrigin,
           content: (key) => (
             <NotificationPushToast
-              notification={item}
+              notification={notification}
               onClose={() => {
                 closeSnackbar(key);
               }}
               onClick={() => {
                 closeSnackbar(key);
                 void (async () => {
-                  if (item.read_at === null) {
-                    await markOneAsRead(item.id).catch(() => undefined);
+                  if (notification.read_at === null) {
+                    await markOneAsRead(notification.id).catch(() => undefined);
                   }
 
-                  const routePath = resolveNotificationLink(item.link_url);
+                  const routePath = resolveNotificationLink(notification.link_url);
                   if (routePath) {
                     navigate(routePath);
                   }
@@ -182,16 +132,27 @@ export const NotificationsPushLayer = () => {
           ),
         });
       });
-    } catch {
-      // Keep background push refresh silent. Notification center already has inline error state.
-    } finally {
-      isPushRefreshInFlightRef.current = false;
-      if (hasPendingPushRefreshRef.current) {
-        hasPendingPushRefreshRef.current = false;
-        void runPushRefresh();
+    },
+    [closeSnackbar, enqueueSnackbar, markOneAsRead, navigate]
+  );
+
+  const flushBurstQueue = useCallback(() => {
+    burstTimerRef.current = null;
+    const queued = burstQueueRef.current;
+    burstQueueRef.current = [];
+    showNotifications(queued);
+  }, [showNotifications]);
+
+  const queueNotification = useCallback(
+    (notification: Notification) => {
+      burstQueueRef.current.push(notification);
+      if (burstTimerRef.current !== null) {
+        return;
       }
-    }
-  }, [closeSnackbar, enqueueSnackbar, isAuthenticated, loadNotifications, location, markOneAsRead, navigate]);
+      burstTimerRef.current = window.setTimeout(flushBurstQueue, PUSH_BURST_WINDOW_MS);
+    },
+    [flushBurstQueue]
+  );
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -199,60 +160,37 @@ export const NotificationsPushLayer = () => {
       return;
     }
 
-    if (isBootstrappedRef.current) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const bootstrap = async () => {
-      try {
-        const initialItems = await loadNotifications({ silent: true });
-        if (cancelled) {
-          return;
-        }
-
-        const unreadItems = initialItems.filter(isUnread);
-        shownUnreadIdsRef.current = new Set(unreadItems.map((item) => item.id));
-        previousUnreadRef.current = Math.max(unreadCount, unreadItems.length);
-        isBootstrappedRef.current = true;
-      } catch {
-        if (cancelled) {
-          return;
-        }
-        previousUnreadRef.current = unreadCount;
-        isBootstrappedRef.current = true;
+    const unsubscribe = onEvent((event) => {
+      const createdEvent = parseNotificationCreatedEvent(event);
+      if (!createdEvent) {
+        return;
       }
-    };
 
-    void bootstrap();
+      const notification = createdEvent.notification;
+      if (shownNotificationIdsRef.current.has(notification.id)) {
+        return;
+      }
+      shownNotificationIdsRef.current.add(notification.id);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, loadNotifications, resetPushRefs, unreadCount]);
+      if (notification.type === 'message.created' && isNotificationForCurrentOpenChat(notification, location)) {
+        return;
+      }
 
-  useEffect(() => {
-    if (!isAuthenticated || !isBootstrappedRef.current) {
-      return;
-    }
+      queueNotification(notification);
+    });
 
-    const previousUnreadCount = previousUnreadRef.current;
-    previousUnreadRef.current = unreadCount;
+    return unsubscribe;
+  }, [isAuthenticated, location, onEvent, queueNotification, resetPushRefs]);
 
-    if (unreadCount <= previousUnreadCount) {
-      return;
-    }
-
-    void runPushRefresh();
-  }, [isAuthenticated, runPushRefresh, unreadCount]);
-
-  useEffect(() => () => {
-    if (scheduledPushRefreshTimerRef.current !== null) {
-      window.clearTimeout(scheduledPushRefreshTimerRef.current);
-      scheduledPushRefreshTimerRef.current = null;
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (burstTimerRef.current !== null) {
+        window.clearTimeout(burstTimerRef.current);
+        burstTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   return null;
 };

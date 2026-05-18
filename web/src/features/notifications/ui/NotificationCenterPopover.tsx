@@ -10,7 +10,7 @@ type NotificationCenterPopoverProps = {
   anchorEl: HTMLElement | null;
   open: boolean;
   notifications: Notification[];
-  unreadCount: number;
+  hasUnread: boolean;
   isLoading: boolean;
   isMarkAllPending: boolean;
   error: string | null;
@@ -29,7 +29,7 @@ export const NotificationCenterPopover = ({
   anchorEl,
   open,
   notifications,
-  unreadCount,
+  hasUnread,
   isLoading,
   isMarkAllPending,
   error,
@@ -66,7 +66,7 @@ export const NotificationCenterPopover = ({
         <ActionButton
           kind="custom"
           showNavigationIcons={false}
-          disabled={unreadCount <= 0 || isMarkAllPending}
+          disabled={!hasUnread || isMarkAllPending}
           onClick={onMarkAll}
           sx={{ minHeight: 32, px: 1.4, fontSize: 13, textTransform: 'none' }}
         >
@@ -127,3 +127,4 @@ export const NotificationCenterPopover = ({
     )}
   </Popover>
 );
+

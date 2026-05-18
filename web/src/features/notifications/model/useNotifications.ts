@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getNotifications,
   getUnreadCount,
@@ -6,9 +6,14 @@ import {
   markNotificationRead,
 } from '../api/notificationsApi';
 import type { Notification } from './types';
-import { NOTIFICATION_PAGE_SIZE, NOTIFICATION_UNREAD_POLLING_INTERVAL_MS } from './constants';
+import {
+  NOTIFICATION_PAGE_SIZE,
+  NOTIFICATION_UNREAD_FALLBACK_POLLING_INTERVAL_MS,
+} from './constants';
 
-const DEFAULT_POLLING_INTERVAL_MS = NOTIFICATION_UNREAD_POLLING_INTERVAL_MS;
+const DEFAULT_POLLING_INTERVAL_MS = NOTIFICATION_UNREAD_FALLBACK_POLLING_INTERVAL_MS;
+
+const isUnread = (notification: Notification) => notification.read_at === null;
 
 const hasSameNotificationItems = (left: Notification[], right: Notification[]) => {
   if (left.length !== right.length) {
@@ -46,7 +51,7 @@ export const useNotifications = ({
   pollingIntervalMs = DEFAULT_POLLING_INTERVAL_MS,
 }: UseNotificationsOptions) => {
   const [items, setItems] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [hasUnread, setHasUnread] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isListLoaded, setIsListLoaded] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -58,14 +63,15 @@ export const useNotifications = ({
   const listLoadInFlightRef = useRef<Map<string, Promise<Notification[]>>>(new Map());
   const markingIdsRef = useRef<Set<number>>(new Set());
 
-  const refreshUnreadCount = useCallback(async () => {
+  const refreshUnreadState = useCallback(async () => {
     if (!enabled) {
-      return 0;
+      return false;
     }
 
     const result = await getUnreadCount();
-    setUnreadCount((current) => (current === result.count ? current : result.count));
-    return result.count;
+    const nextHasUnread = result.count > 0;
+    setHasUnread((current) => (current === nextHasUnread ? current : nextHasUnread));
+    return nextHasUnread;
   }, [enabled]);
 
   const loadNotifications = useCallback(
@@ -119,6 +125,11 @@ export const useNotifications = ({
 
           setHasMore(response.items.length >= limit);
           setIsListLoaded(true);
+          if (!append && response.items.length > 0) {
+            setHasUnread((current) =>
+              current || response.items.some((notification) => notification.read_at === null)
+            );
+          }
           return response.items;
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to load notifications';
@@ -154,9 +165,12 @@ export const useNotifications = ({
     });
   }, [enabled, hasMore, isListLoaded, isLoadingMore, items.length, loadNotifications]);
 
-  const syncAfterMarkAction = useCallback(async () => {
+  const syncNotifications = useCallback(async () => {
+    if (!enabled) {
+      return;
+    }
     await Promise.all([
-      refreshUnreadCount(),
+      refreshUnreadState(),
       isListLoaded
         ? loadNotifications({
             silent: true,
@@ -166,7 +180,25 @@ export const useNotifications = ({
           })
         : Promise.resolve([] as Notification[]),
     ]);
-  }, [isListLoaded, loadNotifications, refreshUnreadCount]);
+  }, [enabled, isListLoaded, loadNotifications, refreshUnreadState]);
+
+  const applyRealtimeNotificationCreated = useCallback(
+    (notification: Notification, hasUnreadFlag: boolean = true) => {
+      if (!enabled) {
+        return;
+      }
+      setItems((current) => {
+        if (current.some((item) => item.id === notification.id)) {
+          return current;
+        }
+        return [notification, ...current];
+      });
+      if (hasUnreadFlag) {
+        setHasUnread(true);
+      }
+    },
+    [enabled]
+  );
 
   const markOneAsRead = useCallback(
     async (notificationId: number) => {
@@ -186,12 +218,16 @@ export const useNotifications = ({
 
       try {
         const response = await markNotificationRead(notificationId);
-        setItems((current) =>
-          current.map((item) =>
+        let nextHasUnread = false;
+        setItems((current) => {
+          const nextItems = current.map((item) =>
             item.id === notificationId ? { ...item, read_at: response.read_at } : item
-          )
-        );
-        await syncAfterMarkAction();
+          );
+          nextHasUnread = nextItems.some(isUnread);
+          return nextItems;
+        });
+        setHasUnread(nextHasUnread);
+        await refreshUnreadState();
       } finally {
         setMarkingIds((current) => {
           const next = new Set(current);
@@ -201,27 +237,29 @@ export const useNotifications = ({
         });
       }
     },
-    [enabled, syncAfterMarkAction]
+    [enabled, refreshUnreadState]
   );
 
   const markAllAsRead = useCallback(async () => {
-    if (!enabled || unreadCount <= 0 || isMarkAllPending) {
+    if (!enabled || !hasUnread || isMarkAllPending) {
       return 0;
     }
 
     setIsMarkAllPending(true);
     try {
       const response = await markAllNotificationsRead();
-      await syncAfterMarkAction();
+      const nowIso = new Date().toISOString();
+      setItems((current) => current.map((item) => (item.read_at ? item : { ...item, read_at: nowIso })));
+      setHasUnread(false);
       return response.updated_count;
     } finally {
       setIsMarkAllPending(false);
     }
-  }, [enabled, isMarkAllPending, syncAfterMarkAction, unreadCount]);
+  }, [enabled, hasUnread, isMarkAllPending]);
 
   useEffect(() => {
     if (!enabled) {
-      setUnreadCount(0);
+      setHasUnread(false);
       setItems([]);
       setIsListLoaded(false);
       setListError(null);
@@ -235,19 +273,19 @@ export const useNotifications = ({
       return;
     }
 
-    void refreshUnreadCount().catch(() => undefined);
+    void refreshUnreadState().catch(() => undefined);
     const intervalId = window.setInterval(() => {
-      void refreshUnreadCount().catch(() => undefined);
+      void refreshUnreadState().catch(() => undefined);
     }, pollingIntervalMs);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [enabled, pollingIntervalMs, refreshUnreadCount]);
+  }, [enabled, pollingIntervalMs, refreshUnreadState]);
 
   return {
     items,
-    unreadCount,
+    hasUnread,
     isLoadingList,
     isListLoaded,
     listError,
@@ -257,7 +295,9 @@ export const useNotifications = ({
     isLoadingMore,
     loadNotifications,
     loadMoreNotifications,
-    refreshUnreadCount,
+    refreshUnreadState,
+    syncNotifications,
+    applyRealtimeNotificationCreated,
     markOneAsRead,
     markAllAsRead,
   };

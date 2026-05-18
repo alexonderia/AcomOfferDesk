@@ -21,7 +21,8 @@
 - Кросс-страничные бизнес-сигналы, важные независимо от текущего экрана.
 - Такие уведомления пишутся в `user_notifications`.
 - Отображаются в центре уведомлений.
-- Доставка сейчас выполняется через polling/push-слой frontend; в будущем — через `/ws/realtime` (на этом этапе не реализовано).
+- Online-доставка выполняется через `/api/v1/ws/realtime` событием `notification.created`.
+- Polling не является основным push-механизмом и используется только как sync/fallback (открытие центра, reconnect, редкий fallback-опрос).
 
 Backend поддерживает два независимых RabbitMQ-потока:
 
@@ -38,10 +39,10 @@ Backend поддерживает два независимых RabbitMQ-пото
 ## WebSocket Каналы (Текущее Состояние)
 
 - `/api/v1/ws/chat?ticket=...` остается текущим рабочим каналом чата.
-- Добавлен общий endpoint `/api/v1/ws/realtime?ticket=...` для будущей унифицированной доставки событий чата и центра уведомлений.
+- `/api/v1/ws/realtime?ticket=...` используется для доставки событий realtime-центра уведомлений.
 - Для `/ws/realtime` используется ws-ticket с `purpose = realtime_ws`.
-- Polling центра уведомлений пока не меняется и остается основным механизмом доставки уведомлений в UI.
-- Следующий этап: фактическая доставка `notification.created` и связанных событий через `/ws/realtime`.
+- `notification.created` отправляется после успешного создания записи в `user_notifications` (best-effort: offline user не ошибка, ошибка отправки только логируется).
+- `/ws/chat` сохраняется и не удаляется на этом этапе.
 
 ## Пайплайн Процессных Уведомлений
 
@@ -184,6 +185,18 @@ Dedupe реализован best-effort через JSON-ключи в payload:
 
 Это сохраняет текущее поведение обратной связи по доставке email.
 
+## Frontend Поведение Центра Уведомлений
+
+- `user_notifications` остается source of truth.
+- REST `/api/v1/notifications` остается основным API для списка/прочтения/sync.
+- `NotificationBell` использует `hasUnread` (red dot), а не отображение numeric unread-count.
+- При `notification.created`:
+  - `hasUnread` становится `true`;
+  - при открытом центре новое уведомление добавляется в начало списка;
+  - показывается business toast в `bottom-right`;
+  - сохраняются suppress для `message.created` при уже открытом соответствующем workspace, dedupe по id и burst-aggregation для серии событий.
+- Polling unread-count допускается только как sync/fallback механизм.
+
 ## Операционное Ограничение (Без Outbox)
 
 Так как outbox нет:
@@ -196,4 +209,3 @@ Dedupe реализован best-effort через JSON-ключи в payload:
 - Добавить выделенную колонку/индекс `dedupe_key` при росте нагрузки.
 - Оценить bulk insert для очень больших наборов получателей.
 - Добавить backend-фильтры уведомлений и cursor-pagination.
-- Реализовать будущий endpoint `/ws/realtime` (пока не реализован).

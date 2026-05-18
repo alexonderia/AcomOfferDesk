@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -12,8 +13,12 @@ class _FakeNotificationsRepo:
     def __init__(self) -> None:
         self.created = []
         self._dedupe: set[tuple[str, str, str, str]] = set()
+        self._seq = 0
 
     async def create(self, notification):
+        self._seq += 1
+        notification.id = self._seq
+        notification.created_at = datetime.now(timezone.utc)
         self.created.append(notification)
         payload = notification.payload or {}
         event_id = str(payload.get("event_id") or "")
@@ -63,6 +68,15 @@ class _FakeUow:
 
     async def __aexit__(self, exc_type, exc, tb):
         _ = (exc_type, exc, tb)
+
+
+class _FakeRealtimeRuntime:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    async def send_to_user(self, *, user_id: str, event) -> bool:
+        self.calls.append((user_id, event))
+        return True
 
 
 @pytest.mark.asyncio
@@ -152,3 +166,27 @@ async def test_handler_ignores_invalid_event_payload(monkeypatch):
     await handler.handle(payload={"event_type": "offer.created"})
 
     assert repo.created == []
+
+
+@pytest.mark.asyncio
+async def test_handler_offer_created_sends_realtime_created_event(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    runtime = _FakeRealtimeRuntime()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo, owner_id="owner-2"))
+    monkeypatch.setattr("app.realtime.runtime.get_unified_realtime_runtime", lambda: runtime)
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="offer.created",
+        actor_user_id="contractor-1",
+        request_id=10,
+        offer_id=100,
+        dedupe_key="offer.created:100",
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(runtime.calls) == 1
+    user_id, envelope = runtime.calls[0]
+    assert user_id == "owner-2"
+    assert envelope.type == "notification.created"
+    assert envelope.data["has_unread"] is True

@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import type { Location } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
+import { RealtimeProvider } from '@app/providers/RealtimeProvider';
 import { AppRoutes } from '@app/routes/AppRoutes';
 import { NotificationsProvider, NotificationsPushLayer } from '@features/notifications';
 import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
@@ -16,13 +17,15 @@ export const App = () => {
 
   return (
     <NotificationsProvider>
-      <NotificationsPushLayer />
-      <AppRoutes
-        defaultPath={defaultPath}
-        hasSession={Boolean(session)}
-        location={location}
-        backgroundLocation={state?.backgroundLocation}
-      />
+      <RealtimeProvider>
+        <NotificationsPushLayer />
+        <AppRoutes
+          defaultPath={defaultPath}
+          hasSession={Boolean(session)}
+          location={location}
+          backgroundLocation={state?.backgroundLocation}
+        />
+      </RealtimeProvider>
     </NotificationsProvider>
   );
 };

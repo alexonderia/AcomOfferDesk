@@ -6,6 +6,7 @@ import type { Notification } from '../model/types';
 import { NotificationBell } from './NotificationBell';
 
 const loadNotificationsMock = vi.fn();
+const loadMoreNotificationsMock = vi.fn();
 const markOneAsReadMock = vi.fn();
 const markAllAsReadMock = vi.fn();
 const navigateMock = vi.fn();
@@ -26,12 +27,15 @@ const notificationItem: Notification = {
 
 const notificationsState = {
   items: [] as Notification[],
-  unreadCount: 3,
+  hasUnread: true,
   isLoadingList: false,
   listError: null as string | null,
   isMarkAllPending: false,
   markingIds: new Set<number>(),
+  hasMore: false,
+  isLoadingMore: false,
   loadNotifications: loadNotificationsMock,
+  loadMoreNotifications: loadMoreNotificationsMock,
   markOneAsRead: markOneAsReadMock,
   markAllAsRead: markAllAsReadMock,
 };
@@ -61,30 +65,32 @@ vi.mock('../model/NotificationsContext', () => ({
 describe('NotificationBell', () => {
   beforeEach(() => {
     loadNotificationsMock.mockReset();
+    loadMoreNotificationsMock.mockReset();
     markOneAsReadMock.mockReset();
     markAllAsReadMock.mockReset();
     navigateMock.mockReset();
 
     notificationsState.items = [];
-    notificationsState.unreadCount = 3;
+    notificationsState.hasUnread = true;
     notificationsState.listError = null;
     notificationsState.isLoadingList = false;
     notificationsState.isMarkAllPending = false;
     notificationsState.markingIds = new Set<number>();
   });
 
-  it('shows unread badge and loads notifications on click', async () => {
+  it('shows unread dot (without numeric count) and loads notifications on click', async () => {
     loadNotificationsMock.mockResolvedValue(undefined);
 
-    render(
+    const { container } = render(
       <ThemeProvider theme={appTheme}>
         <NotificationBell />
       </ThemeProvider>
     );
 
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.queryByText('3')).not.toBeInTheDocument();
+    expect(container.querySelector('.MuiBadge-badge')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /уведомления/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Уведомления/i }));
 
     await waitFor(() => {
       expect(loadNotificationsMock).toHaveBeenCalledTimes(1);
@@ -102,7 +108,7 @@ describe('NotificationBell', () => {
       </ThemeProvider>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /уведомления/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Уведомления/i }));
 
     const notificationTitle = await screen.findByText('New message');
     const clickableNotification = notificationTitle.closest('[role="button"]');

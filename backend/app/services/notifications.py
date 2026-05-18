@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Awaitable, Callable
 
 from app.domain.exceptions import NotFound
 from app.domain.notifications import (
@@ -10,12 +12,23 @@ from app.domain.notifications import (
     sanitize_notification_error_message,
 )
 from app.models.orm_models import UserNotification
+from app.realtime.contracts import OutboundEnvelope
 from app.repositories.notifications import NotificationRepository
+
+logger = logging.getLogger(__name__)
+
+
+RealtimeNotificationSender = Callable[..., Awaitable[bool]]
 
 
 class NotificationService:
-    def __init__(self, notifications: NotificationRepository):
+    def __init__(
+        self,
+        notifications: NotificationRepository,
+        realtime_sender: RealtimeNotificationSender | None = None,
+    ):
         self._notifications = notifications
+        self._realtime_sender = realtime_sender
 
     async def create_for_user(
         self,
@@ -47,7 +60,9 @@ class NotificationService:
             link_url=(link_url.strip() if link_url else None),
             payload=payload,
         )
-        return await self._notifications.create(notification)
+        created = await self._notifications.create(notification)
+        await self._send_created_event_best_effort(created)
+        return created
 
     async def create_many_for_users(
         self,
@@ -265,6 +280,46 @@ class NotificationService:
         if value not in NOTIFICATION_SEVERITIES:
             raise ValueError(f"Unsupported notification severity: {value}")
 
+    async def _send_created_event_best_effort(self, notification: UserNotification) -> None:
+        try:
+            sender = await self._resolve_realtime_sender()
+            if sender is None:
+                return
+
+            envelope = OutboundEnvelope(
+                type="notification.created",
+                data={
+                    "notification": notification_to_realtime_dict(notification),
+                    "has_unread": True,
+                },
+            )
+            delivered = await sender(user_id=notification.user_id, event=envelope)
+            if not delivered:
+                logger.debug(
+                    "Realtime notification not delivered because user is offline: user_id=%s notification_id=%s",
+                    notification.user_id,
+                    notification.id,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to send realtime notification.created event: user_id=%s notification_id=%s",
+                notification.user_id,
+                notification.id,
+            )
+
+    async def _resolve_realtime_sender(self) -> RealtimeNotificationSender | None:
+        if self._realtime_sender is not None:
+            return self._realtime_sender
+        try:
+            # Local import prevents circular dependency between realtime runtime and notification service.
+            from app.realtime.runtime import get_unified_realtime_runtime
+
+            runtime = get_unified_realtime_runtime()
+            return runtime.send_to_user
+        except Exception:
+            logger.exception("Realtime runtime is unavailable for notification delivery")
+            return None
+
 
 def notification_to_dict(notification: UserNotification) -> dict:
     return {
@@ -281,6 +336,12 @@ def notification_to_dict(notification: UserNotification) -> dict:
         "read_at": _as_datetime(notification.read_at, allow_none=True),
         "created_at": _as_datetime(notification.created_at),
     }
+
+
+def notification_to_realtime_dict(notification: UserNotification) -> dict:
+    payload = notification_to_dict(notification)
+    payload.pop("user_id", None)
+    return payload
 
 
 def _as_datetime(value, *, allow_none: bool = False) -> datetime | None:

@@ -7,7 +7,7 @@
             <p class="aod-status-card__title">${message.summary}</p>
             <#if requiredActions??>
               <p class="aod-status-card__text">
-                Следующие шаги: <strong><#items as reqActionItem>${kcSanitize(msg("requiredAction.${reqActionItem}"))?no_esc}<#sep>, </#items></strong>
+                Следующие шаги: <strong><#list requiredActions as reqActionItem>${kcSanitize(msg("requiredAction.${reqActionItem}"))?no_esc}<#sep>, </#list></strong>
               </p>
             </#if>
 

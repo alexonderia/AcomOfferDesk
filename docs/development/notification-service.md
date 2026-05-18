@@ -1,186 +1,172 @@
-﻿# Сервис уведомлений (Backend)
+# Notification Service (Backend)
 
-## Назначение
+## Purpose
 
-`NotificationService` — backend-точка входа для данных центра уведомлений пользователя.  
-Уведомления формируются в сервисном слое backend и сохраняются в таблицу `user_notifications`.
+`user_notifications` is the source of truth for Notification Center data.
 
-Это позволяет держать в одном месте:
-- правила выбора получателей;
-- правила исключения self-уведомлений;
-- безопасное формирование текста, ссылки и `payload`.
+Backend now supports two independent RabbitMQ-driven flows:
 
-## Почему не триггеры БД
-
-Триггеры БД намеренно не используются, потому что:
-- выбор получателей зависит от бизнес-контекста сервисов (владелец КП, участники чата, инициатор);
-- текст и ссылка уведомления требуют знания прикладных маршрутов и сущностей;
-- логику в сервисах проще тестировать и развивать, чем trigger-side реализацию.
-
-## Поддерживаемые типы уведомлений (v1)
-
-- `offer.created`
-- `message.created`
-- `email.sent`
-- `email.failed`
-- `request.status_changed`
-- `system.warning`
-
-Поддерживаемые уровни важности (`severity`):
-- `info`
-- `success`
-- `warning`
-- `error`
-
-## API-эндпоинты
-
-- `GET /api/v1/notifications`
-  - возвращает только уведомления текущего пользователя;
-  - сортировка: `created_at DESC`;
-  - поддерживает `limit` и `offset`.
-- `GET /api/v1/notifications/unread-count`
-  - возвращает количество непрочитанных уведомлений текущего пользователя.
-- `PATCH /api/v1/notifications/{notification_id}/read`
-  - помечает одно уведомление как прочитанное для текущего пользователя;
-  - возвращает `404`, если уведомление не найдено или принадлежит другому пользователю.
-- `PATCH /api/v1/notifications/read-all`
-  - помечает все непрочитанные уведомления текущего пользователя.
-
-## Интегрированные сценарии
-
-Уже подключены:
-- создание КП -> уведомление владельца заявки (кроме self-action);
-- создание сообщения в чате -> уведомление активных участников чата, кроме автора;
-- изменение статуса заявки -> уведомление владельца заявки (кроме self-action);
-- постановка email-рассылки в очередь через API без отдельного queued-уведомления в центре.
-
-## Центр уведомлений на фронтенде (v1)
-
-- Источник истины: backend-таблица `user_notifications`.
-- UI колокольчика:
-  - desktop: `popover` по кнопке колокольчика;
-  - mobile: `drawer` по кнопке колокольчика.
-- Загрузка данных:
-  - `unread-count` опрашивается через `GET /api/v1/notifications/unread-count` примерно раз в 45 секунд, пока пользователь аутентифицирован;
-  - список загружается через `GET /api/v1/notifications` при открытии центра, после `mark read`/`mark all`, и поддерживает `limit/offset` для кнопки «Показать еще».
-- Действия:
-  - `PATCH /api/v1/notifications/{notification_id}/read`;
-  - `PATCH /api/v1/notifications/read-all`.
-- Слой toast/snackbar — только UX-слой и не заменяет персистентные записи в `user_notifications`.
-- Push dedupe выполняется по `notification.id`, чтобы одно и то же непрочитанное уведомление не показывалось повторно.
-- При приходе 3+ новых уведомлений вместо пачки toast показывается один агрегированный push.
-- В UI центра однотипные непрочитанные уведомления агрегируются по типу (например: «Новые сообщения (N)»), чтобы не показывать длинную однообразную ленту.
-- Для `message.created` push suppress включается, если пользователь уже открыт в соответствующем `/offers/{offer_id}/workspace`.
-
-## Поведение realtime для чата
-
-- Chat realtime использует один WebSocket-клиент через `ChatRealtimeProvider/chatSocketClient` на пользователя.
-- WebSocket-аутентификация чата выполняется через short-lived one-time ticket:
-  - frontend вызывает `POST /api/v1/ws/tickets` с `purpose=chat_ws`;
-  - backend возвращает `{ ticket, expires_in, expires_at }`;
-  - клиент открывает `wss://.../api/v1/ws/chat?ticket=...`.
-- `access_token` больше не передается в query string websocket URL.
-- Ticket хранится в backend только как `sha256` hash, привязан к `user_id + purpose`, TTL по умолчанию 30 секунд, и может быть использован только один раз.
-- При reconnect запрашивается новый ticket; старый не переиспользуется.
-- Purpose уже включает задел для будущего общего realtime-сокета (`realtime_ws`), но endpoint `/ws/realtime` в текущем этапе не реализуется.
-- Отдельный WebSocket для центра уведомлений не используется: центр остается polling-based.
-- Если пользователь уже подписан на чат по websocket (то есть читает сообщения в реальном времени), запись `message.created` в центр уведомлений для него не создается.
-- Если чат не открыт и пользователь не подписан, уведомление сохраняется в центр как обычно.
-
-## Email Delivery Flow (worker feedback)
-
-### Типы и семантика
-
-- `email.sent` — письмо реально отправлено SMTP и это подтверждено `notifications_worker`.
-- `email.failed` — SMTP-отправка реально завершилась ошибкой в `notifications_worker`.
-
-Важно: `email.sent` больше не должен означать "поставлено в очередь".
-
-### Контракт delivery-result события
-
-Worker публикует в `app.events`:
+1. Email delivery feedback flow (already existing):
 - `email.delivery.succeeded`
 - `email.delivery.failed`
 
-Payload:
+2. Process notification flow (new centralized path):
+- `offer.created`
+- `message.created`
+- `request.status_changed`
+- `system.warning`
+
+## Process Notification Pipeline
+
+Pipeline (publish-after-commit, no outbox):
+
+`Business Service` -> `DB commit succeeded` -> `notification_publisher.publish_process_notification_event()` -> `RabbitMQ` -> `ProcessNotificationConsumerRuntime` -> `ProcessNotificationEventHandler` -> `NotificationService` -> `user_notifications`.
+
+Important:
+- No `notification_outbox`.
+- No Redis.
+- No DB migrations for dedupe.
+
+## RabbitMQ Contracts
+
+Exchange / queue / routing keys:
+
+- exchange: `app.events`
+- process queue: `notify.process`
+- process routing key: `notification.process`
+- email queue: `notify.email`
+- email delivery queue: `notify.email.delivery`
+- email delivery routing keys:
+  - `email.delivery.succeeded`
+  - `email.delivery.failed`
+
+## Process Event Envelope
+
+Shared contract: `shared/process_notifications.py`.
+
+Payload shape:
 
 ```json
 {
-  "event_type": "email.delivery.failed",
-  "correlation_id": "uuid",
-  "recipient_user_id": "user-id",
+  "event_id": "uuid",
+  "event_type": "offer.created",
+  "occurred_at": "2026-05-18T12:00:00Z",
+  "actor_user_id": "user-id-or-null",
+  "entity_type": "offer",
+  "entity_id": "123",
   "request_id": 42,
-  "offer_id": 100,
-  "to_email": "contractor@example.com",
-  "safe_error_code": "SMTP_AUTH_FAILED",
-  "safe_error_message": "Не удалось отправить письмо. Проверьте настройки почты.",
-  "occurred_at": "2026-05-15T12:00:00Z"
+  "offer_id": 123,
+  "chat_id": 123,
+  "message_id": 555,
+  "dedupe_key": "offer.created:123",
+  "payload": {}
 }
 ```
 
-Правила:
-- `correlation_id` обязателен (если старый payload без него — worker генерирует fallback и логирует warning).
-- `recipient_user_id` обязателен для пользовательского уведомления.
-- `request_id/offer_id` опциональны.
-- Никаких stack trace, SMTP password, token и внутренних exception details в event payload.
+Rules:
+- `event_id`, `event_type`, `occurred_at` are required.
+- `actor_user_id`, `entity_type/entity_id`, `request_id/offer_id/chat_id/message_id`, `dedupe_key` are optional.
+- `payload` defaults to `{}`.
 
-### RabbitMQ routing
+## Publish-After-Commit
 
-- queue отправки писем: `notify.email` (`email.send`)
-- queue результатов доставки: `notify.email.delivery`
-- routing keys результатов: `email.delivery.succeeded`, `email.delivery.failed`
+`UnitOfWork` now supports after-commit hooks (`add_after_commit_hook`).
 
-### Как backend формирует user_notifications
+Business services schedule process events into this hook:
+- `OfferService.create_offer` -> `offer.created`
+- `OfferService.create_message` -> `message.created`
+- `RequestService.update_request` (status change) -> `request.status_changed`
 
-Backend consumer читает `notify.email.delivery` и через `NotificationService` создает:
-- `email.sent` (severity `success`) при `email.delivery.succeeded`
-- `email.failed` (severity `error`) при `email.delivery.failed`
+Behavior:
+- If DB commit fails -> event is not published.
+- If DB commit succeeds but RabbitMQ publish finally fails -> business result remains successful; failure is only logged.
 
-Если есть `request_id/offer_id`, добавляются `entity_type/entity_id/link_url`.
+## Publisher Behavior
 
-### Dedupe (best effort, без миграции)
+Implementation: `backend/app/infrastructure/notification_publisher.py`.
 
-Перед созданием уведомления backend проверяет наличие записи с тем же:
-- `type` (`email.sent` или `email.failed`)
-- `user_id`
-- `payload.correlation_id`
+For process events:
+- uses existing RabbitMQ connection/config style;
+- publishes via `notification.process`;
+- retries with backoff (100ms / 300ms / 1000ms);
+- logs structured error with `event_id`, `event_type`, `entity_id` on final failure;
+- does not log secrets.
 
-При совпадении дубль не создается.
+## Process Consumer
 
-## TODO / Уточнения
+Implementation: `backend/app/infrastructure/process_notification_consumer.py`.
 
-- Полноценный retry policy (с четкой финализацией delivery result).
-- Dead-letter queue для невалидных/необрабатываемых событий.
-- Явный dedupe_key в БД (отдельное поле + индекс).
-- Админский email delivery audit/log.
-- UI-фильтры уведомлений через backend query params.
-- Realtime push для самого центра уведомлений (сейчас polling-based).
-- При текущей deployment-модели Redis для ws-ticket не требуется: in-memory store достаточен для одного backend instance.
-- Если в будущем backend будет запущен в нескольких репликах без sticky sessions, понадобится общее TTL-хранилище для ws-ticket (или другой общий механизм one-time consume).
-- Общий websocket endpoint `/api/v1/ws/realtime?ticket=...` для chat + notifications.
-- Удаление legacy token query fallback для websocket (если включен в dev через feature flag).
-- user notification preferences.
+Pattern mirrors `email_delivery_consumer`:
+- robust connection;
+- durable exchange/queue binding;
+- `prefetch_count=20`;
+- `message.process(requeue=False)`;
+- invalid payload is skipped with warning;
+- handler exceptions are logged without crashing runtime loop.
 
-## WebSocket ticket smoke-check
+Startup/shutdown is wired in `backend/app/main.py` alongside `EmailDeliveryConsumerRuntime`.
 
-Manual QA:
-1. Запустить backend и web.
-2. Авторизоваться.
-3. Открыть страницу с чатом.
-4. В DevTools -> Network -> WS проверить URL:
-   - есть `/api/v1/ws/chat?ticket=...`;
-   - нет `token=...`;
-   - нет `access_token=...`.
-5. Отправить и получить сообщение.
-6. Обновить страницу: создается новый ticket.
-7. Смоделировать reconnect: запрашивается новый ticket.
-8. Logout: socket закрывается, reconnect не продолжается.
-9. Попытаться повторно использовать старый ticket: backend отклоняет.
-10. Попытаться использовать ticket c wrong purpose: backend отклоняет.
+## Event Handling Rules
 
-Проверки:
-- `python -m pytest backend/tests/unit/test_ws_ticket_service_unit.py -v`
-- `python -m pytest backend/tests/integration/test_ws_tickets_integration.py -v`
-- `npm --prefix web run lint`
-- `npm --prefix web run build`
-- `npm --prefix web run test:unit -- src/shared/ws/chatSocket.test.ts`
+Implementation: `backend/app/services/process_notification_events.py`.
+
+Supported event types:
+
+1. `offer.created`
+- recipient: request owner (`request.id_user`);
+- actor is excluded;
+- notification type/severity: `offer.created` / `info`;
+- title: `Новое коммерческое предложение`.
+
+2. `message.created`
+- recipients: chat participants excluding actor;
+- if `payload.recipient_user_ids` is provided, it is used (preserves realtime/chat-open suppression logic already computed in `OfferService`);
+- notification type/severity: `message.created` / `info`;
+- title: `Новое сообщение`;
+- link: `/offers/{offer_id}/workspace`.
+
+3. `request.status_changed`
+- recipient: request owner (`request.id_user`);
+- actor is excluded;
+- notification type/severity: `request.status_changed` / `info`;
+- title: `Статус заявки изменен`.
+
+4. `system.warning`
+- recipients must be explicit in payload (`recipient_user_id` or `recipients`/`recipient_user_ids`);
+- if recipient is missing, event is skipped with warning.
+
+## Dedupe Without Migration
+
+No schema migration was added.
+
+Dedupe is best-effort via JSON payload keys in repository:
+- `payload.event_id`
+- `payload.dedupe_key`
+
+Repository method:
+- `exists_by_type_user_and_payload_key(user_id, notification_type, key_name, key_value)`.
+
+Known limitation:
+- JSON-key checks may become expensive at high load without dedicated indexed columns.
+
+## Email Delivery Flow Is Unchanged
+
+Email flow stays separate and is not merged into process events:
+- Worker publishes `email.delivery.succeeded` / `email.delivery.failed`.
+- Backend `EmailDeliveryConsumerRuntime` + `EmailDeliveryEventHandler` produce `email.sent` / `email.failed`.
+
+This preserves current email delivery feedback behavior.
+
+## Operational Limitation (No Outbox)
+
+Because there is no outbox:
+- if DB commit succeeded and all publish retries failed, event can be lost.
+
+This is logged by `notification_publisher` with event identifiers.
+
+## TODO
+
+- Add dedicated `dedupe_key` column/index when load grows.
+- Evaluate bulk insert path for very large recipient sets.
+- Backend notification filters + cursor pagination.
+- Future `/ws/realtime` endpoint (not implemented now).

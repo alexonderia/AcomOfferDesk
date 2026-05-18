@@ -61,6 +61,7 @@ def _build_request_service(
     email_notifications: EmailNotificationService | None = None,
     file_service: FileService | None = None,
 ) -> RequestService:
+    after_commit_hook_registrar = getattr(uow, "add_after_commit_hook", None)
     return RequestService(
         uow.requests,
         uow.files,
@@ -70,6 +71,7 @@ def _build_request_service(
         email_notifications=email_notifications,
         file_service=file_service,
         notifications=_build_notification_service(uow),
+        after_commit_hook_registrar=after_commit_hook_registrar,
     )
 
 

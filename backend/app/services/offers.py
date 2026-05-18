@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
@@ -22,11 +23,13 @@ from app.repositories.offers import OfferRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.files import FileService
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 DEFAULT_PARTNER_CARD_PATH = (
     "uploads/"
@@ -250,6 +253,8 @@ class OfferService:
         file_service: FileService | None = None,
         keycloak_admin: KeycloakAdminService | None = None,
         notifications: NotificationService | None = None,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._requests = requests
         self._offers = offers
@@ -262,6 +267,16 @@ class OfferService:
         self._file_service = file_service or FileService(files)
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
         self._notifications = notifications
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     def _build_read_only_chat_state(self, *, chat_id: int, last_message_id: int | None, last_message_at) -> ChatState:
         return ChatState(
@@ -555,7 +570,18 @@ class OfferService:
             contractor_user_id=current_user.user_id,
             offer_amount=offer_amount,
         )
-        if self._notifications is not None:
+        event = build_process_notification_event(
+            event_type="offer.created",
+            actor_user_id=current_user.user_id,
+            entity_type="offer",
+            entity_id=offer.id,
+            request_id=request.id,
+            offer_id=offer.id,
+            dedupe_key=f"offer.created:{offer.id}",
+            payload={"recipient_user_id": request.id_user},
+        )
+        is_scheduled = self._schedule_process_notification_event(event)
+        if not is_scheduled and self._notifications is not None:
             await self._notifications.notify_offer_created(
                 actor_user_id=current_user.user_id,
                 recipient_user_id=request.id_user,
@@ -1072,12 +1098,25 @@ class OfferService:
                 raise NotFound("File not found")
             await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
 
-        if self._notifications is not None:
-            participant_user_ids = await self._chats.list_active_participant_user_ids(chat_id=chat.id)
-            notification_recipients = await self._filter_message_notification_recipients(
-                chat_id=chat.id,
-                participant_user_ids=participant_user_ids,
-            )
+        participant_user_ids = await self._chats.list_active_participant_user_ids(chat_id=chat.id)
+        notification_recipients = await self._filter_message_notification_recipients(
+            chat_id=chat.id,
+            participant_user_ids=participant_user_ids,
+        )
+        event = build_process_notification_event(
+            event_type="message.created",
+            actor_user_id=current_user.user_id,
+            entity_type="message",
+            entity_id=message.id,
+            request_id=request.id,
+            offer_id=offer.id,
+            chat_id=chat.id,
+            message_id=message.id,
+            dedupe_key=f"message.created:{message.id}",
+            payload={"recipient_user_ids": notification_recipients},
+        )
+        is_scheduled = self._schedule_process_notification_event(event)
+        if not is_scheduled and self._notifications is not None:
             await self._notifications.notify_message_created(
                 author_user_id=current_user.user_id,
                 recipient_user_ids=notification_recipients,

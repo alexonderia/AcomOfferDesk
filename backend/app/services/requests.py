@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.domain.authorization import require_any_permission, require_permission
@@ -15,10 +16,12 @@ from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService
 from app.services.notifications import NotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 PARTNER_CARD_NORMATIVE_ID = 1
 EDITABLE_REQUEST_STATUSES = {"open", "review", "closed", "cancelled"}
@@ -210,6 +213,8 @@ class RequestService:
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
         notifications: NotificationService | None = None,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._requests = requests
         self._files = files
@@ -219,6 +224,16 @@ class RequestService:
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
         self._notifications = notifications
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     async def create_request(
         self,
@@ -474,14 +489,29 @@ class RequestService:
                 )
                 for tg_id in tg_ids:
                     await notify_request_status_changed(tg_id=tg_id)
-            if status_changed and self._notifications is not None:
-                await self._notifications.notify_request_status_changed(
+            if status_changed:
+                event = build_process_notification_event(
+                    event_type="request.status_changed",
                     actor_user_id=current_user.user_id,
-                    recipient_user_id=request.id_user,
+                    entity_type="request",
+                    entity_id=request.id,
                     request_id=request.id,
-                    previous_status=previous_status,
-                    new_status=data.status,
+                    dedupe_key=f"request.status_changed:{request.id}:{data.status}",
+                    payload={
+                        "recipient_user_id": request.id_user,
+                        "old_status": previous_status,
+                        "new_status": data.status,
+                    },
                 )
+                is_scheduled = self._schedule_process_notification_event(event)
+                if not is_scheduled and self._notifications is not None:
+                    await self._notifications.notify_request_status_changed(
+                        actor_user_id=current_user.user_id,
+                        recipient_user_id=request.id_user,
+                        request_id=request.id,
+                        previous_status=previous_status,
+                        new_status=data.status,
+                    )
 
         if data.deadline_at is not None:
             if _normalize_to_utc(data.deadline_at) < _utcnow():

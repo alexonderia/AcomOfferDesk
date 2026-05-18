@@ -44,6 +44,88 @@ class KeycloakAccessTokenClaims:
 _jwks_cache: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
 
 
+def _normalize_role_values(values: Any) -> frozenset[str]:
+    if not isinstance(values, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(item.strip() for item in values if isinstance(item, str) and item.strip())
+
+
+def _extract_roles_from_permissions_claim(values: Any) -> frozenset[str]:
+    if not isinstance(values, (list, tuple, set, frozenset)):
+        return frozenset()
+
+    extracted: set[str] = set()
+    for item in values:
+        if isinstance(item, str):
+            normalized = item.strip()
+            if normalized:
+                extracted.add(normalized)
+            continue
+        if not isinstance(item, dict):
+            continue
+
+        for key in ("permissions", "scopes"):
+            nested = item.get(key)
+            if isinstance(nested, (list, tuple, set, frozenset)):
+                extracted.update(value.strip() for value in nested if isinstance(value, str) and value.strip())
+
+        for key in ("name", "permission", "rsname", "resource"):
+            nested_value = item.get(key)
+            if isinstance(nested_value, str):
+                normalized = nested_value.strip()
+                if normalized:
+                    extracted.add(normalized)
+
+    return frozenset(extracted)
+
+
+def _extract_api_roles(payload: dict[str, Any], *, subject: str) -> frozenset[str]:
+    resource_access = payload.get("resource_access") or {}
+    api_client_access = resource_access.get(settings.keycloak_api_client_id) if isinstance(resource_access, dict) else {}
+    if not isinstance(resource_access, dict) or settings.keycloak_api_client_id not in resource_access:
+        available_client_ids = sorted(resource_access.keys()) if isinstance(resource_access, dict) else []
+        logger.warning(
+            "keycloak_api_client_access_missing subject=%s configured_api_client_id=%s available_clients=%s",
+            subject,
+            settings.keycloak_api_client_id,
+            available_client_ids,
+        )
+    api_roles_raw = api_client_access.get("roles") if isinstance(api_client_access, dict) else []
+    api_roles = _normalize_role_values(api_roles_raw)
+    if api_roles:
+        return api_roles
+
+    authorization = payload.get("authorization")
+    authorization_permissions = authorization.get("permissions") if isinstance(authorization, dict) else None
+    api_roles_from_authorization = _extract_roles_from_permissions_claim(authorization_permissions)
+    if api_roles_from_authorization:
+        logger.info(
+            "keycloak_api_roles_extracted_from_authorization_permissions subject=%s configured_api_client_id=%s count=%s",
+            subject,
+            settings.keycloak_api_client_id,
+            len(api_roles_from_authorization),
+        )
+        return api_roles_from_authorization
+
+    top_level_permissions = payload.get("permissions")
+    api_roles_from_top_level = _extract_roles_from_permissions_claim(top_level_permissions)
+    if api_roles_from_top_level:
+        logger.info(
+            "keycloak_api_roles_extracted_from_top_level_permissions subject=%s configured_api_client_id=%s count=%s",
+            subject,
+            settings.keycloak_api_client_id,
+            len(api_roles_from_top_level),
+        )
+        return api_roles_from_top_level
+
+    logger.warning(
+        "keycloak_api_roles_empty subject=%s configured_api_client_id=%s",
+        subject,
+        settings.keycloak_api_client_id,
+    )
+    return frozenset()
+
+
 async def _post_form(data: dict[str, str]) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=settings.keycloak_http_timeout_seconds) as client:
         response = await client.post(
@@ -199,26 +281,8 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
 
     realm_access = payload.get("realm_access") or {}
     realm_roles_raw = realm_access.get("roles") if isinstance(realm_access, dict) else []
-    realm_roles = frozenset(item.strip() for item in realm_roles_raw if isinstance(item, str) and item.strip())
-
-    resource_access = payload.get("resource_access") or {}
-    api_client_access = resource_access.get(settings.keycloak_api_client_id) if isinstance(resource_access, dict) else {}
-    if not isinstance(resource_access, dict) or settings.keycloak_api_client_id not in resource_access:
-        available_client_ids = sorted(resource_access.keys()) if isinstance(resource_access, dict) else []
-        logger.warning(
-            "keycloak_api_client_access_missing subject=%s configured_api_client_id=%s available_clients=%s",
-            subject,
-            settings.keycloak_api_client_id,
-            available_client_ids,
-        )
-    api_roles_raw = api_client_access.get("roles") if isinstance(api_client_access, dict) else []
-    api_roles = frozenset(item.strip() for item in api_roles_raw if isinstance(item, str) and item.strip())
-    if not api_roles:
-        logger.warning(
-            "keycloak_api_roles_empty subject=%s configured_api_client_id=%s",
-            subject,
-            settings.keycloak_api_client_id,
-        )
+    realm_roles = _normalize_role_values(realm_roles_raw)
+    api_roles = _extract_api_roles(payload, subject=subject)
     logger.debug(
         "keycloak_roles_decoded subject=%s configured_api_client_id=%s api_roles_count=%s api_roles=%s",
         subject,

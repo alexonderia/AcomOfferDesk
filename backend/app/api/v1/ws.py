@@ -46,7 +46,13 @@ async def create_ws_ticket(
         raise HTTPException(status_code=400, detail="Unknown websocket ticket purpose")
     purpose: WsTicketPurpose = payload.purpose
     service = get_ws_ticket_service()
-    raw_ticket, expires_at = await service.issue_ticket(user_id=current_user.user_id, purpose=purpose)
+    raw_ticket, expires_at = await service.issue_ticket(
+        user_id=current_user.user_id,
+        role_id=current_user.role_id,
+        status=current_user.status,
+        keycloak_api_roles=current_user.keycloak_roles,
+        purpose=purpose,
+    )
     now = int(time.time())
     expires_ts = int(expires_at.timestamp())
     return CreateWsTicketResponse(
@@ -60,19 +66,15 @@ async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[Curren
     ticket = (websocket.query_params.get("ticket") or "").strip()
     if ticket:
         service = get_ws_ticket_service()
-        user_id = await service.consume_ticket(raw_ticket=ticket, expected_purpose="chat_ws")
-        async with UnitOfWork() as uow:
-            user = await uow.users.get_by_id(user_id) if uow.users else None
-            if user is None:
-                raise Unauthorized("Invalid websocket ticket")
-            UserPolicy.ensure_can_login(user.status)
-            current_user = build_current_user_from_keycloak_claims(
-                user_id=user.id,
-                role_id=user.id_role,
-                status=user.status,
-                keycloak_api_roles=frozenset(),
-            )
-            return current_user, None
+        access = await service.consume_ticket(raw_ticket=ticket, expected_purpose="chat_ws")
+        UserPolicy.ensure_can_login(access.status)
+        current_user = build_current_user_from_keycloak_claims(
+            user_id=access.user_id,
+            role_id=access.role_id,
+            status=access.status,
+            keycloak_api_roles=access.keycloak_api_roles,
+        )
+        return current_user, None
 
     if not settings.ws_legacy_query_token_enabled:
         raise Unauthorized("Missing credentials")

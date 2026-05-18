@@ -78,3 +78,19 @@ class NotificationRepository:
         ).limit(1)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def exists_by_type_user_and_payload_key(
+        self,
+        *,
+        user_id: str,
+        notification_type: str,
+        key_name: str,
+        key_value: str,
+    ) -> bool:
+        stmt = select(UserNotification.id).where(
+            UserNotification.user_id == user_id,
+            UserNotification.type == notification_type,
+            cast(UserNotification.payload[key_name], String) == key_value,
+        ).limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None

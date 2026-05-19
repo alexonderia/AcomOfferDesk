@@ -71,7 +71,14 @@ jobs:
             }
 
             cd /opt/acome-offer-desk
-            git fetch upstream
+            # Concurrent fetch (CI + manual) can corrupt refs/remotes/upstream/*:
+            # "cannot lock ref ... is at <sha> but expected <old-sha>".
+            git remote prune upstream 2>/dev/null || true
+            if ! git fetch upstream test dev 2>/dev/null; then
+              git update-ref -d refs/remotes/upstream/test 2>/dev/null || true
+              git update-ref -d refs/remotes/upstream/dev 2>/dev/null || true
+              git fetch upstream refs/heads/test:refs/remotes/upstream/test refs/heads/dev:refs/remotes/upstream/dev
+            fi
             git checkout test
             # Совпадать с удалённой веткой целиком: иначе git pull падает, если на сервере
             # остались локальные правки отслеживаемых файлов (например ручной scp поверх checkout).

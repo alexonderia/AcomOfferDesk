@@ -34,6 +34,7 @@ docker compose --env-file "$COMPOSE_ENV_FILE" exec -T \
   -e SMOKE_HTTP_TIMEOUT_SECONDS=8 \
   -e SMOKE_HTTP_RETRIES=1 \
   -e SMOKE_SKIP_RABBITMQ=true \
+  -e SMOKE_S3_ENDPOINT=minio:9000 \
   -e SMOKE_MINIO_TIMEOUT_SECONDS=8 \
   -e PYTHONUNBUFFERED=1 \
   backend \

@@ -153,9 +153,17 @@ def _load_env_file(path: str) -> dict[str, str]:
     return result
 
 
-def _coalesce(env_map: dict[str, str], *keys: str, default: str = "") -> str:
+def _coalesce(
+    env_map: dict[str, str],
+    *keys: str,
+    default: str = "",
+    prefer_env_file: bool = False,
+) -> str:
     for key in keys:
-        value = os.getenv(key) or env_map.get(key)
+        if prefer_env_file:
+            value = env_map.get(key) or os.getenv(key)
+        else:
+            value = os.getenv(key) or env_map.get(key)
         if value:
             return value.strip()
     return default
@@ -184,6 +192,7 @@ class KeycloakAdminApi:
         report: Report,
         env_map: dict[str, str],
         http: SimpleHttp,
+        prefer_env_file: bool = False,
     ) -> None:
         self._internal_base_url = internal_base_url.rstrip("/")
         self._realm = realm
@@ -191,6 +200,7 @@ class KeycloakAdminApi:
         self._report = report
         self._env_map = env_map
         self._http = http
+        self._prefer_env_file = prefer_env_file
         self._token = ""
 
     @property
@@ -200,12 +210,42 @@ class KeycloakAdminApi:
         return self._token
 
     def _authenticate(self) -> str:
-        admin_user = _coalesce(self._env_map, "KC_BOOTSTRAP_ADMIN_USERNAME", "KEYCLOAK_ADMIN_USERNAME")
-        admin_password = _coalesce(self._env_map, "KC_BOOTSTRAP_ADMIN_PASSWORD", "KEYCLOAK_ADMIN_PASSWORD")
-        admin_client_secret = _coalesce(self._env_map, "KEYCLOAK_ADMIN_CLIENT_SECRET")
-        admin_client_id = _coalesce(self._env_map, "KEYCLOAK_ADMIN_CLIENT_ID", default="acom-admin-service")
+        prefer = self._prefer_env_file
+        admin_user = _coalesce(
+            self._env_map,
+            "KC_BOOTSTRAP_ADMIN_USERNAME",
+            "KEYCLOAK_ADMIN_USERNAME",
+            prefer_env_file=prefer,
+        )
+        admin_password = _coalesce(
+            self._env_map,
+            "KC_BOOTSTRAP_ADMIN_PASSWORD",
+            "KEYCLOAK_ADMIN_PASSWORD",
+            prefer_env_file=prefer,
+        )
+        admin_client_secret = _coalesce(
+            self._env_map,
+            "KEYCLOAK_ADMIN_CLIENT_SECRET",
+            prefer_env_file=prefer,
+        )
+        admin_client_id = _coalesce(
+            self._env_map,
+            "KEYCLOAK_ADMIN_CLIENT_ID",
+            default="acom-admin-service",
+            prefer_env_file=prefer,
+        )
 
-        token_endpoint = f"{self._internal_base_url}/realms/{self._admin_realm}/protocol/openid-connect/token"
+        # Admin-cli / master-realm token (not the application realm in KEYCLOAK_ADMIN_REALM).
+        token_realm = _coalesce(
+            self._env_map,
+            "KEYCLOAK_MASTER_REALM",
+            "KC_BOOTSTRAP_ADMIN_REALM",
+            default="master",
+            prefer_env_file=prefer,
+        )
+        token_endpoint = (
+            f"{self._internal_base_url}/realms/{token_realm}/protocol/openid-connect/token"
+        )
 
         if admin_user and admin_password:
             try:
@@ -226,9 +266,12 @@ class KeycloakAdminApi:
                 pass
 
         if admin_client_id and admin_client_secret:
+            client_token_endpoint = (
+                f"{self._internal_base_url}/realms/{self._realm}/protocol/openid-connect/token"
+            )
             try:
                 payload = self._http.post_form_json(
-                    url=token_endpoint,
+                    url=client_token_endpoint,
                     form_data={
                         "grant_type": "client_credentials",
                         "client_id": admin_client_id,
@@ -589,24 +632,80 @@ def main() -> int:
     args = parser.parse_args()
 
     env_map = _load_env_file(args.env_file)
+    prefer_env_file = True
     report = Report()
 
-    timeout = float(_coalesce(env_map, "KEYCLOAK_HTTP_TIMEOUT_SECONDS", default="10") or "10")
+    timeout = float(
+        _coalesce(
+            env_map,
+            "KEYCLOAK_HTTP_TIMEOUT_SECONDS",
+            default="10",
+            prefer_env_file=prefer_env_file,
+        )
+        or "10"
+    )
     http = SimpleHttp(timeout=timeout)
 
-    internal_base = _coalesce(env_map, "KEYCLOAK_INTERNAL_BASE_URL", default="http://keycloak:8080/iam")
-    realm = _coalesce(env_map, "KEYCLOAK_REALM", default="acom-offerdesk")
-    admin_realm = _coalesce(env_map, "KEYCLOAK_ADMIN_REALM", default="master")
-    web_base_url = _coalesce(env_map, "WEB_BASE_URL", default="http://localhost:8080")
-    backend_base_url = _coalesce(env_map, "PUBLIC_BACKEND_BASE_URL", "WEB_BASE_URL", default="http://localhost:8080")
-    issuer = _coalesce(env_map, "KEYCLOAK_ISSUER_URL")
+    internal_base = _coalesce(
+        env_map,
+        "KEYCLOAK_INTERNAL_BASE_URL",
+        default="http://keycloak:8080/iam",
+        prefer_env_file=prefer_env_file,
+    )
+    realm = _coalesce(
+        env_map,
+        "KEYCLOAK_REALM",
+        default="acom-offerdesk",
+        prefer_env_file=prefer_env_file,
+    )
+    admin_realm = _coalesce(
+        env_map,
+        "KEYCLOAK_ADMIN_REALM",
+        default="master",
+        prefer_env_file=prefer_env_file,
+    )
+    web_base_url = _coalesce(
+        env_map,
+        "WEB_BASE_URL",
+        default="http://localhost:8080",
+        prefer_env_file=prefer_env_file,
+    )
+    backend_base_url = _coalesce(
+        env_map,
+        "PUBLIC_BACKEND_BASE_URL",
+        "WEB_BASE_URL",
+        default="http://localhost:8080",
+        prefer_env_file=prefer_env_file,
+    )
+    issuer = _coalesce(env_map, "KEYCLOAK_ISSUER_URL", prefer_env_file=prefer_env_file)
     if not issuer:
-        public_base = _coalesce(env_map, "KEYCLOAK_PUBLIC_BASE_URL", default=f"{web_base_url.rstrip('/')}/iam")
+        public_base = _coalesce(
+            env_map,
+            "KEYCLOAK_PUBLIC_BASE_URL",
+            default=f"{web_base_url.rstrip('/')}/iam",
+            prefer_env_file=prefer_env_file,
+        )
         issuer = f"{public_base.rstrip('/')}/realms/{realm}"
 
-    web_client_id = _coalesce(env_map, "KEYCLOAK_WEB_CLIENT_ID", "KEYCLOAK_CLIENT_ID", default="acom-web")
-    api_client_id = _coalesce(env_map, "KEYCLOAK_API_CLIENT_ID", default="acom-api")
-    admin_service_client_id = _coalesce(env_map, "KEYCLOAK_ADMIN_CLIENT_ID", default="acom-admin-service")
+    web_client_id = _coalesce(
+        env_map,
+        "KEYCLOAK_WEB_CLIENT_ID",
+        "KEYCLOAK_CLIENT_ID",
+        default="acom-web",
+        prefer_env_file=prefer_env_file,
+    )
+    api_client_id = _coalesce(
+        env_map,
+        "KEYCLOAK_API_CLIENT_ID",
+        default="acom-api",
+        prefer_env_file=prefer_env_file,
+    )
+    admin_service_client_id = _coalesce(
+        env_map,
+        "KEYCLOAK_ADMIN_CLIENT_ID",
+        default="acom-admin-service",
+        prefer_env_file=prefer_env_file,
+    )
 
     try:
         admin_api = KeycloakAdminApi(
@@ -616,6 +715,7 @@ def main() -> int:
             report=report,
             env_map=env_map,
             http=http,
+            prefer_env_file=prefer_env_file,
         )
         _ = admin_api.token
     except Exception as exc:  # noqa: BLE001

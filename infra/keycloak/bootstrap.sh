@@ -603,6 +603,10 @@ ensure_admin_service_role_bindings() {
   ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "query-users"
   ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "view-users"
   ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "manage-users"
+  # Required for read-only permission-model checks (realm, clients, roles).
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "view-realm"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "query-clients"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "view-clients"
 }
 
 ensure_bootstrap_user() {

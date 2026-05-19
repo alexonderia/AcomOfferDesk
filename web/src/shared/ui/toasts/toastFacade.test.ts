@@ -1,12 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { showBusinessNotificationToast, showErrorToast, showSuccessToast, showSystemToast } from './toastFacade';
 
 describe('toastFacade', () => {
   it('shows system toast at top-center', () => {
     const enqueueSnackbar = vi.fn();
+    const closeSnackbar = vi.fn();
 
     showSystemToast(
-      { enqueueSnackbar },
+      { enqueueSnackbar, closeSnackbar },
       {
         severity: 'success',
         message: 'Изменения сохранены',
@@ -38,8 +39,9 @@ describe('toastFacade', () => {
 
   it('maps success helper to success variant', () => {
     const enqueueSnackbar = vi.fn();
+    const closeSnackbar = vi.fn();
 
-    showSuccessToast({ enqueueSnackbar }, 'ok');
+    showSuccessToast({ enqueueSnackbar, closeSnackbar }, 'ok');
 
     expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
     expect(enqueueSnackbar.mock.calls[0][1]).toMatchObject({
@@ -50,8 +52,9 @@ describe('toastFacade', () => {
 
   it('maps error helper to error variant', () => {
     const enqueueSnackbar = vi.fn();
+    const closeSnackbar = vi.fn();
 
-    showErrorToast({ enqueueSnackbar }, 'fail');
+    showErrorToast({ enqueueSnackbar, closeSnackbar }, 'fail');
 
     expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
     expect(enqueueSnackbar.mock.calls[0][1]).toMatchObject({

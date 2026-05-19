@@ -372,7 +372,7 @@ class UserNotification(Base):
     __tablename__ = "user_notifications"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('offer.created','message.created','email.sent','email.failed','request.status_changed','system.warning')",
+            "type IN ('offer.created','offer.accepted','offer.rejected','offer.deleted','message.created','email.sent','email.failed','request.created','request.responsible_changed','request.deadline_changed','request.status_changed','system.warning')",
             name="user_notifications_type_chk",
         ),
         CheckConstraint(

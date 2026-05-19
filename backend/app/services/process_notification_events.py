@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
@@ -58,8 +58,44 @@ class ProcessNotificationEventHandler:
         if event.event_type == "offer.created":
             await self._handle_offer_created(uow=uow, service=service, repo=repo, event=event)
             return
+        if event.event_type == "offer.accepted":
+            await self._handle_offer_status_event(
+                uow=uow,
+                service=service,
+                repo=repo,
+                event=event,
+                title="Коммерческое предложение принято",
+            )
+            return
+        if event.event_type == "offer.rejected":
+            await self._handle_offer_status_event(
+                uow=uow,
+                service=service,
+                repo=repo,
+                event=event,
+                title="Коммерческое предложение отклонено",
+            )
+            return
+        if event.event_type == "offer.deleted":
+            await self._handle_offer_status_event(
+                uow=uow,
+                service=service,
+                repo=repo,
+                event=event,
+                title="Коммерческое предложение удалено",
+            )
+            return
         if event.event_type == "message.created":
             await self._handle_message_created(uow=uow, service=service, repo=repo, event=event)
+            return
+        if event.event_type == "request.created":
+            await self._handle_request_created(service=service, repo=repo, event=event)
+            return
+        if event.event_type == "request.responsible_changed":
+            await self._handle_request_responsible_changed(service=service, repo=repo, event=event)
+            return
+        if event.event_type == "request.deadline_changed":
+            await self._handle_request_deadline_changed(service=service, repo=repo, event=event)
             return
         if event.event_type == "request.status_changed":
             await self._handle_request_status_changed(uow=uow, service=service, repo=repo, event=event)
@@ -171,6 +207,56 @@ class ProcessNotificationEventHandler:
             },
         )
 
+    async def _handle_offer_status_event(
+        self,
+        *,
+        uow: UnitOfWork,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+        title: str,
+    ) -> None:
+        payload = event.payload or {}
+        recipients = _normalize_user_ids(payload.get("recipient_user_ids") or payload.get("recipients") or [])
+        if not recipients and uow.requests is not None and event.request_id is not None:
+            request_row = await uow.requests.get_by_id(request_id=event.request_id)
+            owner_id = _normalize_optional_str(getattr(request_row, "id_user", None)) if request_row is not None else None
+            recipients = _normalize_user_ids([owner_id])
+
+        if event.actor_user_id is not None:
+            recipients = [user_id for user_id in recipients if user_id != event.actor_user_id]
+        if not recipients:
+            logger.warning("Skip %s event without resolved recipients: event_id=%s", event.event_type, event.event_id)
+            return
+
+        filtered_recipients: list[str] = []
+        for user_id in recipients:
+            if await self._is_duplicate(repo=repo, user_id=user_id, notification_type=event.event_type, event=event):
+                continue
+            filtered_recipients.append(user_id)
+        if not filtered_recipients:
+            return
+
+        await service.create_many_for_users(
+            user_ids=filtered_recipients,
+            notification_type=event.event_type,
+            severity="info",
+            title=title,
+            body=f"По заявке №{event.request_id} изменен статус КП." if event.request_id is not None else "Изменен статус коммерческого предложения.",
+            entity_type="offer",
+            entity_id=event.offer_id,
+            link_url=f"/offers/{event.offer_id}/workspace" if event.offer_id is not None else None,
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "request_id": event.request_id,
+                "offer_id": event.offer_id,
+                "actor_user_id": event.actor_user_id,
+                "old_status": _normalize_optional_str(payload.get("old_status")),
+                "new_status": _normalize_optional_str(payload.get("new_status")),
+            },
+        )
+
     async def _handle_request_status_changed(
         self,
         *,
@@ -213,6 +299,130 @@ class ProcessNotificationEventHandler:
                 "request_id": event.request_id,
                 "old_status": previous_status,
                 "new_status": new_status,
+                "actor_user_id": event.actor_user_id,
+            },
+        )
+
+    async def _handle_request_created(
+        self,
+        *,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        payload = event.payload or {}
+        recipients = _normalize_user_ids(payload.get("recipient_user_ids") or payload.get("recipients") or [])
+        if not recipients:
+            responsible_user_id = _normalize_optional_str(payload.get("responsible_user_id"))
+            recipients = _normalize_user_ids([responsible_user_id])
+
+        if event.actor_user_id is not None:
+            recipients = [user_id for user_id in recipients if user_id != event.actor_user_id]
+        if not recipients:
+            logger.warning("Skip request.created event due to ambiguous recipients: event_id=%s", event.event_id)
+            # TODO: clarify recipient matrix for request.created beyond actor/executor.
+            return
+
+        filtered_recipients: list[str] = []
+        for user_id in recipients:
+            if await self._is_duplicate(repo=repo, user_id=user_id, notification_type=event.event_type, event=event):
+                continue
+            filtered_recipients.append(user_id)
+        if not filtered_recipients:
+            return
+
+        await service.create_many_for_users(
+            user_ids=filtered_recipients,
+            notification_type="request.created",
+            severity="info",
+            title="Новая заявка",
+            body=f"Создана новая заявка №{event.request_id}." if event.request_id is not None else "Создана новая заявка.",
+            entity_type="request",
+            entity_id=event.request_id,
+            link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "request_id": event.request_id,
+                "actor_user_id": event.actor_user_id,
+            },
+        )
+
+    async def _handle_request_responsible_changed(
+        self,
+        *,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        payload = event.payload or {}
+        old_responsible = _normalize_optional_str(payload.get("old_responsible_user_id"))
+        new_responsible = _normalize_optional_str(payload.get("new_responsible_user_id"))
+        recipients = _normalize_user_ids(payload.get("recipient_user_ids") or [old_responsible, new_responsible])
+        if event.actor_user_id is not None:
+            recipients = [user_id for user_id in recipients if user_id != event.actor_user_id]
+        if not recipients:
+            return
+
+        filtered_recipients: list[str] = []
+        for user_id in recipients:
+            if await self._is_duplicate(repo=repo, user_id=user_id, notification_type=event.event_type, event=event):
+                continue
+            filtered_recipients.append(user_id)
+        if not filtered_recipients:
+            return
+
+        await service.create_many_for_users(
+            user_ids=filtered_recipients,
+            notification_type="request.responsible_changed",
+            severity="info",
+            title="Изменен ответственный по заявке",
+            body=f"По заявке №{event.request_id} изменен ответственный." if event.request_id is not None else "Изменен ответственный по заявке.",
+            entity_type="request",
+            entity_id=event.request_id,
+            link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "request_id": event.request_id,
+                "old_responsible_user_id": old_responsible,
+                "new_responsible_user_id": new_responsible,
+                "actor_user_id": event.actor_user_id,
+            },
+        )
+
+    async def _handle_request_deadline_changed(
+        self,
+        *,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        payload = event.payload or {}
+        recipient_user_id = _normalize_optional_str(payload.get("responsible_user_id"))
+        if recipient_user_id is None:
+            logger.warning("Skip request.deadline_changed event without responsible user: event_id=%s", event.event_id)
+            return
+        if event.actor_user_id is not None and event.actor_user_id == recipient_user_id:
+            return
+        if await self._is_duplicate(repo=repo, user_id=recipient_user_id, notification_type=event.event_type, event=event):
+            return
+
+        await service.create_for_user(
+            user_id=recipient_user_id,
+            notification_type="request.deadline_changed",
+            severity="info",
+            title="Изменен срок заявки",
+            body=f"По заявке №{event.request_id} изменен срок." if event.request_id is not None else "Изменен срок заявки.",
+            entity_type="request",
+            entity_id=event.request_id,
+            link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "request_id": event.request_id,
+                "old_deadline": _normalize_optional_str(payload.get("old_deadline")),
+                "new_deadline": _normalize_optional_str(payload.get("new_deadline")),
                 "actor_user_id": event.actor_user_id,
             },
         )

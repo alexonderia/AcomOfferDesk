@@ -92,7 +92,6 @@ export const RequestDetailsView = () => {
     const [isSendingEmails, setIsSendingEmails] = useState(false);
     const [isClearingDeletedAlert, setIsClearingDeletedAlert] = useState(false);
     const [isStatusChangeSaveConfirmed, setIsStatusChangeSaveConfirmed] = useState(false);
-    const [pendingOfferConfirmations, setPendingOfferConfirmations] = useState<Record<number, OfferDecisionStatus>>({});
     const previousHasPendingChangesRef = useRef(false);
     const suppressPendingChangesToastRef = useRef(false);
 
@@ -440,7 +439,7 @@ export const RequestDetailsView = () => {
             setIsStatusChangeSaveConfirmed(true);
             showSystemToast({
                 severity: 'warning',
-                message: '??????? ??????????? ??? ???, ????? ??????????? ????????? ??????? ??????',
+                message: 'Требуется подтверждение: нажмите «Сохранить» ещё раз, чтобы применить изменение статуса заявки',
             });
             return;
         }
@@ -477,7 +476,11 @@ export const RequestDetailsView = () => {
         }
     };
 
-    const handleOfferStatusChange = async (offerId: number, value: OfferDecisionStatus) => {
+    const handleOfferStatusChange = async (
+        offerId: number,
+        value: OfferDecisionStatus,
+        requireConfirmation = true
+    ) => {
         const targetOffer = offers.find((offer) => offer.offer_id === offerId);
         if (!targetOffer || (!targetOffer.actions.accept && !targetOffer.actions.reject)) {
             return;
@@ -491,11 +494,6 @@ export const RequestDetailsView = () => {
         }));
 
         if (!value) {
-            setPendingOfferConfirmations((prev) => {
-                const next = { ...prev };
-                delete next[offerId];
-                return next;
-            });
             return;
         }
         if (value === 'accepted' && acceptedOfferId && acceptedOfferId !== offerId) {
@@ -503,30 +501,28 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: previousStatus
             }));
-            setOffersError('?????? ???????? ????? ?????? ?? ? ?????? ????? ??????');
+            setOffersError('Нельзя принять второе КП, пока у заявки уже есть принятое предложение');
             return;
         }
 
-        if (pendingOfferConfirmations[offerId] !== value) {
+        if (requireConfirmation) {
             setOffersStatusMap((prev) => ({
                 ...prev,
                 [offerId]: previousStatus
             }));
-            setPendingOfferConfirmations((prev) => ({ ...prev, [offerId]: value }));
             showSystemToast({
                 severity: 'warning',
                 message: value === 'accepted'
-                    ? '??????? ??? ?? ?????? ??? ???, ????? ??????????? ???????? ??'
-                    : '??????? ??? ?? ?????? ??? ???, ????? ??????????? ?????????? ??',
+                    ? 'Подтвердите, что вы хотите установить статус «Принято»'
+                    : 'Подтвердите, что вы хотите установить статус «Отказано»',
+                actionLabel: 'Подтвердить',
+                onAction: () => {
+                    void handleOfferStatusChange(offerId, value, false);
+                },
+                cancelLabel: 'Отмена',
             });
             return;
         }
-
-        setPendingOfferConfirmations((prev) => {
-            const next = { ...prev };
-            delete next[offerId];
-            return next;
-        });
 
         try {
             const response = await updateOfferStatus({
@@ -549,7 +545,7 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: previousStatus
             }));
-            setOffersError(error instanceof Error ? error.message : '?? ??????? ???????? ?????? ??');
+            setOffersError(error instanceof Error ? error.message : 'Не удалось обновить статус КП');
         }
     };
 

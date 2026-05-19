@@ -53,7 +53,7 @@ const normalizeDraftValue = (value: string | null | undefined) => {
   if (!normalized) {
     return '';
   }
-  if (['РЅРµ СѓРєР°Р·Р°РЅРѕ', 'none', 'null'].includes(normalized.toLowerCase())) {
+  if (['не указано', 'none', 'null'].includes(normalized.toLowerCase())) {
     return '';
   }
   return normalized;
@@ -74,28 +74,28 @@ const buildDraft = (profile: CurrentUserProfile | null): ProfileDraft => ({
 const getStatusContent = (status: string): StatusContent => {
   if (status === 'review') {
     return {
-      title: 'РџСЂРѕРІРµСЂСЏРµРј РґР°РЅРЅС‹Рµ',
-      description: 'Р—Р°РїРѕР»РЅРёС‚Рµ Р»РёС‡РЅС‹Рµ РґР°РЅРЅС‹Рµ Рё РґР°РЅРЅС‹Рµ РєРѕРјРїР°РЅРёРё. РџРѕСЃР»Рµ РїСЂРѕРІРµСЂРєРё РјС‹ СѓРІРµРґРѕРјРёРј Рѕ РІС‹РґР°С‡Рµ РґРѕСЃС‚СѓРїР° РїРѕ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚Рµ.',
+      title: 'Проверяем данные',
+      description: 'Заполните личные данные и данные компании. После проверки мы уведомим о выдаче доступа по электронной почте.',
       severity: 'info'
     };
   }
   if (status === 'inactive') {
     return {
-      title: 'Р”РѕСЃС‚СѓРї РІСЂРµРјРµРЅРЅРѕ РѕС‚РєР»СЋС‡С‘РЅ',
-      description: 'РћР±СЂР°С‚РёС‚РµСЃСЊ Рє Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ РїСЂРѕРµРєС‚Р°.',
+      title: 'Доступ временно отключён',
+      description: 'Обратитесь к администратору проекта.',
       severity: 'warning'
     };
   }
   if (status === 'blacklist') {
     return {
-      title: 'Р”РѕСЃС‚СѓРї Р·Р°РєСЂС‹С‚',
-      description: 'Р”Р»СЏ СѓС‚РѕС‡РЅРµРЅРёСЏ РґРµС‚Р°Р»РµР№ СЃРІСЏР¶РёС‚РµСЃСЊ СЃ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј РїСЂРѕРµРєС‚Р°.',
+      title: 'Доступ закрыт',
+      description: 'Для уточнения деталей свяжитесь с администратором проекта.',
       severity: 'error'
     };
   }
   return {
-    title: 'РћР¶РёРґР°Р№С‚Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ',
-    description: 'РњС‹ СѓРІРµРґРѕРјРёРј РІР°СЃ, РєРѕРіРґР° РґРѕСЃС‚СѓРї Р±СѓРґРµС‚ РѕС‚РєСЂС‹С‚.',
+    title: 'Ожидайте подтверждения',
+    description: 'Мы уведомим вас, когда доступ будет открыт.',
     severity: 'info'
   };
 };
@@ -113,22 +113,22 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   const note = draft.note.trim();
 
   if (!fullName) {
-    errors.fullName = 'РЈРєР°Р¶РёС‚Рµ Р¤РРћ';
+    errors.fullName = '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0424\u0418\u041e';
   } else if (fullName.length > 256) {
-    errors.fullName = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
+    errors.fullName = 'Максимум 256 символов';
   }
 
   if (!phone) {
-    errors.phone = 'РЈРєР°Р¶РёС‚Рµ С‚РµР»РµС„РѕРЅ';
+    errors.phone = 'Укажите телефон';
   } else if (!isValidRuPhone(phone)) {
-    errors.phone = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ С‚РµР»РµС„РѕРЅР°';
+    errors.phone = 'Некорректный формат телефона';
   }
 
   if (mail) {
     if (mail.length > 256) {
-      errors.mail = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
+      errors.mail = 'Максимум 256 символов';
     } else if (!emailRegex.test(mail)) {
-      errors.mail = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ email';
+      errors.mail = 'Некорректный email';
     }
   }
 
@@ -137,36 +137,36 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   }
 
   if (!companyName) {
-    errors.companyName = 'РЈРєР°Р¶РёС‚Рµ РЅР°РёРјРµРЅРѕРІР°РЅРёРµ РєРѕРјРїР°РЅРёРё';
+    errors.companyName = 'Укажите наименование компании';
   } else if (companyName.length > 256) {
-    errors.companyName = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
+    errors.companyName = 'Максимум 256 символов';
   }
 
   if (!inn) {
-    errors.inn = 'РЈРєР°Р¶РёС‚Рµ РРќРќ';
+    errors.inn = '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0418\u041d\u041d';
   } else if (!innRegex.test(inn)) {
-    errors.inn = 'РРќРќ РґРѕР»Р¶РµРЅ СЃРѕРґРµСЂР¶Р°С‚СЊ 10 РёР»Рё 12 С†РёС„СЂ';
+    errors.inn = '\u0418\u041d\u041d \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c 10 \u0438\u043b\u0438 12 \u0446\u0438\u0444\u0440';
   }
 
   if (!companyPhone) {
-    errors.companyPhone = 'РЈРєР°Р¶РёС‚Рµ С‚РµР»РµС„РѕРЅ РєРѕРјРїР°РЅРёРё';
+    errors.companyPhone = 'Укажите телефон компании';
   } else if (!isValidRuPhone(companyPhone)) {
-    errors.companyPhone = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ С‚РµР»РµС„РѕРЅР°';
+    errors.companyPhone = 'Некорректный формат телефона';
   }
 
   if (companyMail) {
     if (companyMail.length > 256) {
-      errors.companyMail = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
+      errors.companyMail = 'Максимум 256 символов';
     } else if (!emailRegex.test(companyMail)) {
-      errors.companyMail = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ email';
+      errors.companyMail = 'Некорректный email';
     }
   }
 
   if (address.length > 256) {
-    errors.address = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
+    errors.address = 'Максимум 256 символов';
   }
   if (note.length > 1024) {
-    errors.note = 'РњР°РєСЃРёРјСѓРј 1024 СЃРёРјРІРѕР»Р°';
+    errors.note = 'Максимум 1024 символа';
   }
 
   return errors;
@@ -210,7 +210,7 @@ export const AccountStatePage = () => {
       })
       .catch((error) => {
         if (!cancelled) {
-          setErrorMessage(error instanceof Error ? error.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґР°РЅРЅС‹Рµ.');
+          setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить данные.');
         }
       })
       .finally(() => {
@@ -253,7 +253,7 @@ export const AccountStatePage = () => {
     setErrorMessage(null);
     setShowValidation(true);
     if (Object.keys(validationErrors).length > 0) {
-      setErrorMessage('РџСЂРѕРІРµСЂСЊС‚Рµ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ Р·Р°РїРѕР»РЅРµРЅРёСЏ РїРѕР»РµР№.');
+      setErrorMessage('Проверьте корректность заполнения полей.');
       return;
     }
 
@@ -277,7 +277,7 @@ export const AccountStatePage = () => {
       } else {
         setDraft(buildDraft(nextProfile));
       }
-      showSuccessToast('Р”Р°РЅРЅС‹Рµ РїРµСЂРµРґР°РЅС‹ РЅР° РїСЂРѕРІРµСЂРєСѓ. РњС‹ СѓРІРµРґРѕРјРёРј РІР°СЃ Рѕ РІС‹РґР°С‡Рµ РґРѕСЃС‚СѓРїР° РїРѕ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚Рµ.');
+      showSuccessToast('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось сохранить данные';
       setErrorMessage(message);
@@ -298,7 +298,7 @@ export const AccountStatePage = () => {
           <Stack alignItems="center" spacing={2}>
             <CircularProgress size={28} />
             <Typography variant="body2" color="text.secondary">
-              Р—Р°РіСЂСѓР¶Р°РµРј РґР°РЅРЅС‹Рµ.
+              {'\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c \u0434\u0430\u043d\u043d\u044b\u0435.'}
             </Typography>
           </Stack>
         ) : (
@@ -312,15 +312,15 @@ export const AccountStatePage = () => {
               </Typography>
             </Stack>
 
-            <Alert severity={statusContent.severity}>РЎС‚Р°С‚СѓСЃ: {statusContent.title.toLowerCase()}.</Alert>
+            <Alert severity={statusContent.severity}>{'\u0421\u0442\u0430\u0442\u0443\u0441'}: {statusContent.title.toLowerCase()}.</Alert>
             {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
 
             {!isBlocked ? (
               <>
                 <Stack spacing={1.5}>
-                  <Typography variant="subtitle1" fontWeight={600}>Р›РёС‡РЅС‹Рµ РґР°РЅРЅС‹Рµ</Typography>
+                  <Typography variant="subtitle1" fontWeight={600}>{'\u041b\u0438\u0447\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435'}</Typography>
                   <TextField
-                    label="Р¤РРћ"
+                    label="\u0424\u0418\u041e"
                     value={draft.fullName}
                     onBlur={() => markFieldTouched('fullName')}
                     onChange={(event) => {
@@ -331,7 +331,7 @@ export const AccountStatePage = () => {
                     helperText={getFieldHelperText('fullName')}
                   />
                   <TextField
-                    label="РўРµР»РµС„РѕРЅ"
+                    label="Телефон"
                     value={draft.phone}
                     onBlur={() => markFieldTouched('phone')}
                     onChange={(event) => {
@@ -356,9 +356,9 @@ export const AccountStatePage = () => {
 
                 {canEditCompany ? (
                   <Stack spacing={1.5}>
-                    <Typography variant="subtitle1" fontWeight={600}>Р”Р°РЅРЅС‹Рµ РєРѕРјРїР°РЅРёРё</Typography>
+                    <Typography variant="subtitle1" fontWeight={600}>{'\u0414\u0430\u043d\u043d\u044b\u0435 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438'}</Typography>
                     <TextField
-                      label="РљРѕРјРїР°РЅРёСЏ"
+                      label="Компания"
                       value={draft.companyName}
                       onBlur={() => markFieldTouched('companyName')}
                       onChange={(event) => {
@@ -369,7 +369,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyName')}
                     />
                     <TextField
-                      label="РРќРќ"
+                      label="\u0418\u041d\u041d"
                       value={draft.inn}
                       onBlur={() => markFieldTouched('inn')}
                       onChange={(event) => {
@@ -380,7 +380,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('inn')}
                     />
                     <TextField
-                      label="РўРµР»РµС„РѕРЅ РєРѕРјРїР°РЅРёРё"
+                      label="Телефон компании"
                       value={draft.companyPhone}
                       onBlur={() => markFieldTouched('companyPhone')}
                       onChange={(event) => {
@@ -391,7 +391,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyPhone')}
                     />
                     <TextField
-                      label="E-mail РєРѕРјРїР°РЅРёРё"
+                      label="E-mail компании"
                       value={draft.companyMail}
                       onBlur={() => markFieldTouched('companyMail')}
                       onChange={(event) => {
@@ -402,7 +402,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyMail')}
                     />
                     <TextField
-                      label="РђРґСЂРµСЃ"
+                      label="Адрес"
                       value={draft.address}
                       onBlur={() => markFieldTouched('address')}
                       onChange={(event) => {
@@ -413,7 +413,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('address')}
                     />
                     <TextField
-                      label="РџСЂРёРјРµС‡Р°РЅРёРµ"
+                      label="Примечание"
                       value={draft.note}
                       multiline
                       minRows={3}
@@ -434,14 +434,14 @@ export const AccountStatePage = () => {
                   disabled={isSaving}
                   sx={{ alignSelf: 'flex-start', textTransform: 'none', boxShadow: 'none' }}
                 >
-                  {isSaving ? 'РЎРѕС…СЂР°РЅСЏРµРј...' : 'РћС‚РїСЂР°РІРёС‚СЊ РґР°РЅРЅС‹Рµ'}
+                  {isSaving ? 'Сохраняем...' : 'Отправить данные'}
                 </Button>
               </>
             ) : null}
 
             <Stack direction="row" spacing={1.5}>
               <Button variant="outlined" onClick={logout} sx={{ textTransform: 'none' }}>
-                Р’С‹Р№С‚Рё
+                {'\u0412\u044b\u0439\u0442\u0438'}
               </Button>
             </Stack>
           </Stack>

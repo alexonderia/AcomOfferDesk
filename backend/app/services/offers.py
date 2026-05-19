@@ -892,6 +892,7 @@ class OfferService:
                 raise Conflict("Cannot accept offer for closed or cancelled request")
 
         status_changed = offer.status != status
+        previous_status = offer.status
         await self._offers.update_status(offer=offer, status=status)
 
         if status_changed and status in {"accepted", "rejected"} and settings.telegram_legacy_enabled:
@@ -901,6 +902,23 @@ class OfferService:
             )
             if tg_id is not None:
                 await notify_offer_status_finalized(tg_id=tg_id)
+
+        if status_changed and status in {"accepted", "rejected", "deleted"}:
+            event = build_process_notification_event(
+                event_type=f"offer.{status}",
+                actor_user_id=current_user.user_id,
+                entity_type="offer",
+                entity_id=offer.id,
+                request_id=request.id,
+                offer_id=offer.id,
+                dedupe_key=f"offer.{status}:{offer.id}:{previous_status}->{status}",
+                payload={
+                    "recipient_user_ids": [offer.id_user, request.id_user],
+                    "old_status": previous_status,
+                    "new_status": status,
+                },
+            )
+            self._schedule_process_notification_event(event)
 
         return offer.status
 

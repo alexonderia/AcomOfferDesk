@@ -37,6 +37,7 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Insufficient permissions to create manual offers': 'Недостаточно прав для ручного создания КП',
   'Economist can create manual offers only for own requests': 'Экономист может создавать КП вручную только для своих заявок',
   'Manual offer can be created only for open request': 'Ручное КП можно создать только для открытой заявки',
+  'Accepted offer amount is required when request is closed with accepted offer': 'У принятого КП должна быть указана сумма',
   'Unsupported contractor mode': 'Некорректный режим выбора контрагента',
   'Existing contractor is required': 'Выберите контрагента из списка',
   'Contractor is required': 'Укажите контрагента',
@@ -254,3 +255,4 @@ export const fetchEmpty = async (
     throw new Error(await getErrorMessage(response, fallbackError));
   }
 };
+

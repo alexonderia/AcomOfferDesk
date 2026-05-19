@@ -309,6 +309,21 @@ class RequestService:
                 hidden_contractor_ids=normalized_hidden_contractor_ids,
             )
 
+        created_event = build_process_notification_event(
+            event_type="request.created",
+            actor_user_id=current_user.user_id,
+            entity_type="request",
+            entity_id=request.id,
+            request_id=request.id,
+            dedupe_key=f"request.created:{request.id}",
+            payload={
+                # TODO: Confirm recipient policy for request.created (assigned user vs other observers).
+                "responsible_user_id": request.id_user,
+                "recipient_user_ids": [request.id_user],
+            },
+        )
+        self._schedule_process_notification_event(created_event)
+
         return request.id, file_ids
 
     async def send_request_email_notification(
@@ -516,7 +531,22 @@ class RequestService:
         if data.deadline_at is not None:
             if _normalize_to_utc(data.deadline_at) < _utcnow():
                 raise Conflict("Deadline cannot be in the past")
+            previous_deadline_iso = request.deadline_at.isoformat() if request.deadline_at is not None else None
             await self._requests.update_deadline(request=request, deadline_at=data.deadline_at)
+            deadline_event = build_process_notification_event(
+                event_type="request.deadline_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.deadline_changed:{request.id}:{data.deadline_at.isoformat()}",
+                payload={
+                    "responsible_user_id": request.id_user,
+                    "old_deadline": previous_deadline_iso,
+                    "new_deadline": data.deadline_at.isoformat(),
+                },
+            )
+            self._schedule_process_notification_event(deadline_event)
 
         if data.owner_user_id is not None:
             RequestPolicy.ensure_can_change_owner(current_user, request_owner_user_id=request.id_user)
@@ -543,7 +573,23 @@ class RequestService:
                     "Owner user is unavailable in selected period "
                     f"{owner_unavailability.started_at.isoformat()} - {owner_unavailability.ended_at.isoformat()}"
                 )
+            previous_owner_user_id = request.id_user
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
+            if previous_owner_user_id != data.owner_user_id:
+                owner_event = build_process_notification_event(
+                    event_type="request.responsible_changed",
+                    actor_user_id=current_user.user_id,
+                    entity_type="request",
+                    entity_id=request.id,
+                    request_id=request.id,
+                    dedupe_key=f"request.responsible_changed:{request.id}:{previous_owner_user_id}:{data.owner_user_id}",
+                    payload={
+                        "old_responsible_user_id": previous_owner_user_id,
+                        "new_responsible_user_id": data.owner_user_id,
+                        "recipient_user_ids": [previous_owner_user_id, data.owner_user_id],
+                    },
+                )
+                self._schedule_process_notification_event(owner_event)
 
         if data.id_plan_provided:
             await self._ensure_plan_assignment_allowed(

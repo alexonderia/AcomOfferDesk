@@ -190,3 +190,81 @@ async def test_handler_offer_created_sends_realtime_created_event(monkeypatch):
     assert user_id == "owner-2"
     assert envelope.type == "notification.created"
     assert envelope.data["has_unread"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("event_type", "expected_title"),
+    (
+        ("offer.accepted", "Коммерческое предложение принято"),
+        ("offer.rejected", "Коммерческое предложение отклонено"),
+        ("offer.deleted", "Коммерческое предложение удалено"),
+    ),
+)
+async def test_handler_offer_status_events_create_notifications(monkeypatch, event_type: str, expected_title: str):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo, owner_id="owner-2"))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type=event_type,
+        actor_user_id="actor-1",
+        request_id=10,
+        offer_id=100,
+        dedupe_key=f"{event_type}:100",
+        payload={"recipient_user_ids": ["owner-2", "contractor-1"]},
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 2
+    assert sorted(item.user_id for item in repo.created) == ["contractor-1", "owner-2"]
+    assert all(item.title == expected_title for item in repo.created)
+    assert all(item.type == event_type for item in repo.created)
+
+
+@pytest.mark.asyncio
+async def test_handler_request_responsible_changed_notifies_old_and_new_without_actor(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo, owner_id="owner-2"))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="request.responsible_changed",
+        actor_user_id="old-owner",
+        request_id=55,
+        dedupe_key="request.responsible_changed:55:old-owner:new-owner",
+        payload={
+            "old_responsible_user_id": "old-owner",
+            "new_responsible_user_id": "new-owner",
+            "recipient_user_ids": ["old-owner", "new-owner"],
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "new-owner"
+    assert repo.created[0].type == "request.responsible_changed"
+
+
+@pytest.mark.asyncio
+async def test_handler_request_deadline_changed_notifies_responsible(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="request.deadline_changed",
+        actor_user_id="manager-1",
+        request_id=77,
+        dedupe_key="request.deadline_changed:77",
+        payload={
+            "responsible_user_id": "owner-9",
+            "old_deadline": "2026-05-20T10:00:00Z",
+            "new_deadline": "2026-05-21T10:00:00Z",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "owner-9"
+    assert repo.created[0].type == "request.deadline_changed"

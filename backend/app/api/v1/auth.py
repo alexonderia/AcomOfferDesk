@@ -260,14 +260,14 @@ async def request_email_verification(
 
     if result == "same_email":
         return EmailVerificationActionResponse(
-            detail="РЈРєР°Р·Р°РЅ С‚РµРєСѓС‰РёР№ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Р№ email"
+            detail="Указан текущий подтверждённый email"
         )
     if result == "already_sent":
         return EmailVerificationActionResponse(
-            detail="РџРёСЃСЊРјРѕ СѓР¶Рµ РѕС‚РїСЂР°РІР»РµРЅРѕ. РџСЂРѕРІРµСЂСЊС‚Рµ РІР°С€Сѓ РїРѕС‡С‚Сѓ"
+            detail="Письмо уже отправлено. Проверьте вашу почту"
         )
     return EmailVerificationActionResponse(
-        detail="РџРёСЃСЊРјРѕ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ email РѕС‚РїСЂР°РІР»РµРЅРѕ"
+        detail="Письмо для подтверждения email отправлено"
     )
 
 
@@ -281,8 +281,8 @@ async def verify_email(
         updated = await service.confirm_profile_verification(token=token)
 
     if updated:
-        return EmailVerificationActionResponse(detail="Email РїРѕРґС‚РІРµСЂР¶РґС‘РЅ")
-    return EmailVerificationActionResponse(detail="Email СѓР¶Рµ РїРѕРґС‚РІРµСЂР¶РґС‘РЅ")
+        return EmailVerificationActionResponse(detail="Email подтверждён")
+    return EmailVerificationActionResponse(detail="Email уже подтверждён")
 
 
 @router.get("/auth/oidc/login", response_class=RedirectResponse)

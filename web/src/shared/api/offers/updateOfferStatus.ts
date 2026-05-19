@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 
 export type UpdateOfferStatusPayload = {
   offer_id: number;

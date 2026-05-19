@@ -1,4 +1,5 @@
-﻿import type { SnackbarKey, VariantType, ProviderContext } from 'notistack';
+﻿import { createElement } from 'react';
+import type { SnackbarKey, VariantType, ProviderContext } from 'notistack';
 import type { Notification } from '@features/notifications/model/types';
 
 type ToastSeverity = Extract<VariantType, 'success' | 'info' | 'warning' | 'error'>;
@@ -7,9 +8,13 @@ type ShowSystemToastInput = {
   title?: string;
   message: string;
   severity: ToastSeverity;
+  actionLabel?: string;
+  onAction?: () => void;
+  cancelLabel?: string;
+  onCancel?: () => void;
 };
 
-type ShowSystemToastDeps = Pick<ProviderContext, 'enqueueSnackbar'>;
+type ShowSystemToastDeps = Pick<ProviderContext, 'enqueueSnackbar' | 'closeSnackbar'>;
 
 type ShowBusinessToastInput = {
   notification: Pick<Notification, 'severity' | 'title'>;
@@ -35,7 +40,7 @@ const toSafeMessage = (value: unknown, fallback: string) => {
   return normalized || fallback;
 };
 
-export const showSystemToast = ({ enqueueSnackbar }: ShowSystemToastDeps, input: ShowSystemToastInput) => {
+export const showSystemToast = ({ enqueueSnackbar, closeSnackbar }: ShowSystemToastDeps, input: ShowSystemToastInput) => {
   const message = toSafeMessage(input.message, 'Операция завершена');
   const title = toSafeMessage(input.title, '');
   enqueueSnackbar(title ? `${title}: ${message}` : message, {
@@ -43,6 +48,54 @@ export const showSystemToast = ({ enqueueSnackbar }: ShowSystemToastDeps, input:
     anchorOrigin: { vertical: 'top', horizontal: 'center' },
     autoHideDuration: getAutoHideDurationBySeverity(input.severity),
     preventDuplicate: true,
+    action: (input.actionLabel && input.onAction) || input.cancelLabel
+      ? (snackbarId) => createElement(
+        'span',
+        { style: { display: 'inline-flex', gap: 10 } },
+        input.cancelLabel
+          ? createElement(
+            'button',
+            {
+              type: 'button',
+              onClick: () => {
+                input.onCancel?.();
+                closeSnackbar(snackbarId);
+              },
+              style: {
+                border: 0,
+                background: 'transparent',
+                color: 'inherit',
+                cursor: 'pointer',
+                fontWeight: 500,
+                textDecoration: 'underline',
+              },
+            },
+            input.cancelLabel,
+          )
+          : null,
+        input.actionLabel && input.onAction
+          ? createElement(
+            'button',
+            {
+              type: 'button',
+              onClick: () => {
+                input.onAction?.();
+                closeSnackbar(snackbarId);
+              },
+              style: {
+                border: 0,
+                background: 'transparent',
+                color: 'inherit',
+                cursor: 'pointer',
+                fontWeight: 600,
+                textDecoration: 'underline',
+              },
+            },
+            input.actionLabel,
+          )
+          : null,
+      )
+      : undefined,
   });
 };
 

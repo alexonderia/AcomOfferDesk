@@ -180,6 +180,7 @@ export const NotificationBell = ({
   };
 
   const handleNotificationClick = async (notification: Notification) => {
+    closeCenter();
     const sourceIds = sourceIdsByDisplayId.get(notification.id) ?? [notification.id];
 
     try {
@@ -187,12 +188,11 @@ export const NotificationBell = ({
         await Promise.all(sourceIds.map((id) => markOneAsRead(id)));
       }
     } catch {
-      return;
+      // Center is already closed; keep UX stable even if mark-as-read fails.
     }
 
     const routePath = resolveNotificationLink(notification.link_url);
     if (routePath) {
-      closeCenter();
       navigate(routePath);
     }
   };

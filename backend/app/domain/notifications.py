@@ -1,12 +1,18 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 
 NOTIFICATION_TYPES = {
     "offer.created",
+    "offer.accepted",
+    "offer.rejected",
+    "offer.deleted",
     "message.created",
     "email.sent",
     "email.failed",
+    "request.created",
+    "request.responsible_changed",
+    "request.deadline_changed",
     "request.status_changed",
     "system.warning",
 }

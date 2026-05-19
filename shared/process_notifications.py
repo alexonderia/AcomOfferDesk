@@ -7,7 +7,13 @@ from uuid import UUID, uuid4
 
 PROCESS_EVENT_TYPES = {
     "offer.created",
+    "offer.accepted",
+    "offer.rejected",
+    "offer.deleted",
     "message.created",
+    "request.created",
+    "request.responsible_changed",
+    "request.deadline_changed",
     "request.status_changed",
     "system.warning",
 }

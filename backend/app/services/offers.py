@@ -827,6 +827,26 @@ class OfferService:
             upload=prepared,
         )
         await self._offers.attach_file(offer_id=offer.id, file_id=db_file.id)
+        original_name = getattr(db_file, "original_name", None) or upload.original_name
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="offer.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="offer",
+                entity_id=offer.id,
+                request_id=request.id,
+                offer_id=offer.id,
+                dedupe_key=f"offer.files_changed:{offer.id}:{db_file.id}",
+                payload={
+                    "request_id": request.id,
+                    "offer_id": offer.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [db_file.id],
+                    "changed_file_count": 1,
+                    "original_names": [original_name],
+                },
+            )
+        )
         return db_file.id
 
     async def remove_file(self, *, current_user: CurrentUser, offer_id: int, file_id: int) -> None:
@@ -868,6 +888,24 @@ class OfferService:
             raise NotFound("File is not attached to offer")
 
         await self._file_service.delete_file(file_id=file_id)
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="offer.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="offer",
+                entity_id=offer.id,
+                request_id=request.id,
+                offer_id=offer.id,
+                dedupe_key=f"offer.files_changed:{offer.id}:{file_id}:deleted",
+                payload={
+                    "request_id": request.id,
+                    "offer_id": offer.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [file_id],
+                    "changed_file_count": 1,
+                },
+            )
+        )
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         require_permission(
@@ -1131,7 +1169,11 @@ class OfferService:
             chat_id=chat.id,
             message_id=message.id,
             dedupe_key=f"message.created:{message.id}",
-            payload={"recipient_user_ids": notification_recipients},
+            payload={
+                "recipient_user_ids": notification_recipients,
+                "has_files": bool(new_attachments or stored_file_refs),
+                "file_count": len(new_attachments) + len(stored_file_refs),
+            },
         )
         is_scheduled = self._schedule_process_notification_event(event)
         if not is_scheduled and self._notifications is not None:

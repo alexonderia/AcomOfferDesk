@@ -11,10 +11,13 @@ import type { NotificationSeverity } from '../model/types';
 
 const typeIconMap: Record<string, ReactNode> = {
   'offer.created': <DescriptionOutlined fontSize="small" />,
+  'offer.files_changed': <DescriptionOutlined fontSize="small" />,
   'message.created': <ChatBubbleOutlineRounded fontSize="small" />,
   'email.sent': <CheckCircleOutlineRounded fontSize="small" />,
   'email.failed': <ErrorOutlineRounded fontSize="small" />,
+  'request.files_changed': <InfoOutlined fontSize="small" />,
   'request.status_changed': <InfoOutlined fontSize="small" />,
+  'user.status_changed': <InfoOutlined fontSize="small" />,
   'system.warning': <WarningAmberRounded fontSize="small" />,
 };
 

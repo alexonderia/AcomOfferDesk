@@ -4,6 +4,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.repositories.notifications import NotificationRepository
 from app.services.notifications import NotificationService
@@ -29,6 +30,17 @@ def _normalize_user_ids(values: Sequence[Any]) -> list[str]:
         seen.add(user_id)
         normalized.append(user_id)
     return normalized
+
+
+def _status_severity(status: str | None) -> str:
+    normalized = (status or "").strip().lower()
+    if normalized in {"active", "approved"}:
+        return "success"
+    if normalized in {"inactive", "rejected"}:
+        return "warning"
+    if normalized in {"blacklist", "blocked"}:
+        return "error"
+    return "info"
 
 
 class ProcessNotificationEventHandler:
@@ -88,6 +100,12 @@ class ProcessNotificationEventHandler:
         if event.event_type == "message.created":
             await self._handle_message_created(uow=uow, service=service, repo=repo, event=event)
             return
+        if event.event_type == "request.files_changed":
+            await self._handle_request_files_changed(uow=uow, service=service, repo=repo, event=event)
+            return
+        if event.event_type == "offer.files_changed":
+            await self._handle_offer_files_changed(uow=uow, service=service, repo=repo, event=event)
+            return
         if event.event_type == "request.created":
             await self._handle_request_created(service=service, repo=repo, event=event)
             return
@@ -99,6 +117,9 @@ class ProcessNotificationEventHandler:
             return
         if event.event_type == "request.status_changed":
             await self._handle_request_status_changed(uow=uow, service=service, repo=repo, event=event)
+            return
+        if event.event_type == "user.status_changed":
+            await self._handle_user_status_changed(uow=uow, service=service, repo=repo, event=event)
             return
         if event.event_type == "system.warning":
             await self._handle_system_warning(service=service, repo=repo, event=event)
@@ -345,6 +366,175 @@ class ProcessNotificationEventHandler:
                 "dedupe_key": event.dedupe_key,
                 "request_id": event.request_id,
                 "actor_user_id": event.actor_user_id,
+            },
+        )
+
+    async def _handle_request_files_changed(
+        self,
+        *,
+        uow: UnitOfWork,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        if uow.requests is None or uow.offers is None:
+            logger.warning("Skip request.files_changed due to missing repositories")
+            return
+        if event.request_id is None:
+            logger.warning("Skip request.files_changed without request_id: event_id=%s", event.event_id)
+            return
+
+        payload = event.payload or {}
+        request_row = await uow.requests.get_by_id(request_id=event.request_id)
+        recipients = []
+        if request_row is not None:
+            recipients.append(getattr(request_row, "id_user", None))
+        offer_rows = await uow.offers.list_by_request(request_id=event.request_id)
+        recipients.extend(
+            offer.id_user
+            for offer in offer_rows
+            if offer.status in {"submitted", "accepted"}
+        )
+        normalized_recipients = _normalize_user_ids(recipients)
+        if event.actor_user_id is not None:
+            normalized_recipients = [user_id for user_id in normalized_recipients if user_id != event.actor_user_id]
+        if not normalized_recipients:
+            logger.info("Skip request.files_changed without recipients: event_id=%s", event.event_id)
+            return
+
+        filtered_recipients: list[str] = []
+        for user_id in normalized_recipients:
+            if await self._is_duplicate(repo=repo, user_id=user_id, notification_type=event.event_type, event=event):
+                continue
+            filtered_recipients.append(user_id)
+        if not filtered_recipients:
+            return
+
+        await service.create_many_for_users(
+            user_ids=filtered_recipients,
+            notification_type="request.files_changed",
+            severity="info",
+            title="Изменены файлы заявки",
+            body=f"По заявке №{event.request_id} обновлены вложения.",
+            entity_type="request",
+            entity_id=event.request_id,
+            link_url=f"/requests/{event.request_id}",
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "request_id": event.request_id,
+                "file_ids": payload.get("file_ids"),
+                "changed_file_count": payload.get("changed_file_count"),
+                "actor_user_id": event.actor_user_id,
+            },
+        )
+
+    async def _handle_offer_files_changed(
+        self,
+        *,
+        uow: UnitOfWork,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        if uow.offers is None or uow.requests is None:
+            logger.warning("Skip offer.files_changed due to missing repositories")
+            return
+
+        payload = event.payload or {}
+        request_id = event.request_id
+        if request_id is None and event.offer_id is not None:
+            offer_row = await uow.offers.get_by_id(offer_id=event.offer_id)
+            request_id = offer_row.id_request if offer_row is not None else None
+        if request_id is None:
+            logger.warning("Skip offer.files_changed without request_id: event_id=%s", event.event_id)
+            return
+
+        request_row = await uow.requests.get_by_id(request_id=request_id)
+        recipient_user_id = _normalize_optional_str(getattr(request_row, "id_user", None)) if request_row is not None else None
+        if recipient_user_id is None or recipient_user_id == event.actor_user_id:
+            return
+        if await self._is_duplicate(repo=repo, user_id=recipient_user_id, notification_type=event.event_type, event=event):
+            return
+
+        await service.create_for_user(
+            user_id=recipient_user_id,
+            notification_type="offer.files_changed",
+            severity="info",
+            title="Изменены файлы КП",
+            body="По коммерческому предложению обновлены вложения.",
+            entity_type="offer",
+            entity_id=event.offer_id,
+            link_url=f"/offers/{event.offer_id}/workspace" if event.offer_id is not None else None,
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "request_id": request_id,
+                "offer_id": event.offer_id,
+                "file_ids": payload.get("file_ids"),
+                "changed_file_count": payload.get("changed_file_count"),
+                "actor_user_id": event.actor_user_id,
+            },
+        )
+
+    async def _handle_user_status_changed(
+        self,
+        *,
+        uow: UnitOfWork,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        if uow.users is None or uow.profiles is None:
+            logger.warning("Skip user.status_changed due to missing repositories")
+            return
+        payload = event.payload or {}
+        actor_user_id = event.actor_user_id
+        target_user_id = _normalize_optional_str(payload.get("target_user_id"))
+        old_status = _normalize_optional_str(payload.get("old_status"))
+        new_status = _normalize_optional_str(payload.get("new_status"))
+
+        rows = await uow.users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=[settings.admin_role_id, settings.superadmin_role_id],
+        )
+        recipients = _normalize_user_ids(
+            user.id for user, _, _ in rows if user.id != actor_user_id
+        )
+        if not recipients:
+            return
+
+        filtered_recipients: list[str] = []
+        for user_id in recipients:
+            if await self._is_duplicate(repo=repo, user_id=user_id, notification_type=event.event_type, event=event):
+                continue
+            filtered_recipients.append(user_id)
+        if not filtered_recipients:
+            return
+
+        target_descriptor = target_user_id or "-"
+        target_profile = await uow.profiles.get_by_id(target_user_id) if target_user_id is not None else None
+        if target_profile is not None:
+            target_descriptor = target_profile.full_name or target_profile.mail or target_descriptor
+
+        await service.create_many_for_users(
+            user_ids=filtered_recipients,
+            notification_type="user.status_changed",
+            severity=_status_severity(new_status),
+            title="Изменен статус пользователя",
+            body=f"Изменен статус пользователя {target_descriptor}.",
+            entity_type="user",
+            entity_id=None,
+            link_url="/admin/users",
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "target_user_id": target_user_id,
+                "old_status": old_status,
+                "new_status": new_status,
+                "target_role": payload.get("target_role"),
+                "actor_user_id": actor_user_id,
+                "email_notification_queued": payload.get("email_notification_queued"),
+                "email_notification_reason": payload.get("email_notification_reason"),
             },
         )
 

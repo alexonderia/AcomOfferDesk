@@ -56,6 +56,7 @@ async def handle_message(message: AbstractIncomingMessage) -> None:
                         request_id=_as_optional_int(payload.get("request_id")),
                         offer_id=_as_optional_int(payload.get("offer_id")),
                         to_email=str(payload.get("to_email") or "").strip(),
+                        suppress_delivery_notification=bool(payload.get("suppress_delivery_notification")),
                         safe_error_code=result.safe_error_code,
                         safe_error_message=result.safe_error_message,
                         occurred_at=utc_now_iso(),

@@ -4,6 +4,7 @@ import re
 
 NOTIFICATION_TYPES = {
     "offer.created",
+    "offer.files_changed",
     "offer.accepted",
     "offer.rejected",
     "offer.deleted",
@@ -11,9 +12,11 @@ NOTIFICATION_TYPES = {
     "email.sent",
     "email.failed",
     "request.created",
+    "request.files_changed",
     "request.responsible_changed",
     "request.deadline_changed",
     "request.status_changed",
+    "user.status_changed",
     "system.warning",
 }
 

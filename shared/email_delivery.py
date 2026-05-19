@@ -28,7 +28,7 @@ class EmailDeliveryResultEvent:
     request_id: int | None
     offer_id: int | None
     to_email: str
+    suppress_delivery_notification: bool
     safe_error_code: str | None
     safe_error_message: str | None
     occurred_at: str
-

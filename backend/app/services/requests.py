@@ -725,6 +725,24 @@ class RequestService:
             upload=prepared,
         )
         await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
+        original_name = getattr(db_file, "original_name", None) or file_data.original_name
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="request.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.files_changed:{request.id}:{db_file.id}",
+                payload={
+                    "request_id": request.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [db_file.id],
+                    "changed_file_count": 1,
+                    "original_names": [original_name],
+                },
+            )
+        )
         return db_file.id
 
     async def remove_file(
@@ -753,6 +771,22 @@ class RequestService:
             raise NotFound("File is not attached to request")
 
         await self._file_service.delete_file(file_id=file_id)
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="request.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.files_changed:{request.id}:{file_id}:deleted",
+                payload={
+                    "request_id": request.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [file_id],
+                    "changed_file_count": 1,
+                },
+            )
+        )
 
     async def _attach_partner_card_file(self, *, request_id: int) -> int:
         partner_card = await self._files.get_normative_file(normative_id=PARTNER_CARD_NORMATIVE_ID)

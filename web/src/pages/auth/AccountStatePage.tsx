@@ -81,15 +81,15 @@ const getStatusContent = (status: string): StatusContent => {
   }
   if (status === 'inactive') {
     return {
-      title: 'Доступ временно отключён',
-      description: 'Обратитесь к администратору проекта.',
+      title: 'Доступ к сайту закрыт',
+      description: '',
       severity: 'warning'
     };
   }
   if (status === 'blacklist') {
     return {
-      title: 'Доступ закрыт',
-      description: 'Для уточнения деталей свяжитесь с администратором проекта.',
+      title: 'Доступ к сайту закрыт',
+      description: '',
       severity: 'error'
     };
   }
@@ -307,13 +307,17 @@ export const AccountStatePage = () => {
               <Typography variant="h5" fontWeight={700}>
                 {statusContent.title}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {statusContent.description}
-              </Typography>
+              {statusContent.description ? (
+                <Typography variant="body2" color="text.secondary">
+                  {statusContent.description}
+                </Typography>
+              ) : null}
             </Stack>
 
-            <Alert severity={statusContent.severity}>{'\u0421\u0442\u0430\u0442\u0443\u0441'}: {statusContent.title.toLowerCase()}.</Alert>
-            {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
+            {!isBlocked ? (
+              <Alert severity={statusContent.severity}>{'\u0421\u0442\u0430\u0442\u0443\u0441'}: {statusContent.title.toLowerCase()}.</Alert>
+            ) : null}
+            {!isBlocked && errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
 
             {!isBlocked ? (
               <>
@@ -450,5 +454,3 @@ export const AccountStatePage = () => {
     </Box>
   );
 };
-
-

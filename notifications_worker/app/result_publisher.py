@@ -25,6 +25,7 @@ async def publish_email_delivery_result(event: EmailDeliveryResultEvent) -> None
             "request_id": event.request_id,
             "offer_id": event.offer_id,
             "to_email": event.to_email,
+            "suppress_delivery_notification": event.suppress_delivery_notification,
             "safe_error_code": event.safe_error_code,
             "safe_error_message": event.safe_error_message,
             "occurred_at": event.occurred_at,
@@ -39,4 +40,3 @@ async def publish_email_delivery_result(event: EmailDeliveryResultEvent) -> None
         logger.exception("Failed to publish email delivery result event")
     finally:
         await connection.close()
-

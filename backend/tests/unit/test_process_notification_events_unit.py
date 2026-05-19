@@ -57,11 +57,50 @@ class _FakeChatsRepo:
         return list(self._recipients)
 
 
+class _FakeOffersRepo:
+    def __init__(self, *, offers_by_request: dict[int, list[SimpleNamespace]] | None = None) -> None:
+        self._offers_by_request = offers_by_request or {}
+
+    async def list_by_request(self, *, request_id: int):
+        return list(self._offers_by_request.get(request_id, []))
+
+    async def get_by_id(self, *, offer_id: int):
+        for items in self._offers_by_request.values():
+            for offer in items:
+                if offer.id == offer_id:
+                    return offer
+        return None
+
+
+class _FakeUsersRepo:
+    async def list_by_role_ids_with_profiles_and_roles(self, *, role_ids: list[int]):
+        _ = role_ids
+        return [
+            (SimpleNamespace(id="admin-1"), None, None),
+            (SimpleNamespace(id="admin-2"), None, None),
+        ]
+
+
+class _FakeProfilesRepo:
+    async def get_by_id(self, user_id: str):
+        return SimpleNamespace(full_name="Target User", mail="target@example.com", id=user_id)
+
+
 class _FakeUow:
-    def __init__(self, repo: _FakeNotificationsRepo, *, owner_id: str = "owner-1", chat_recipients: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        repo: _FakeNotificationsRepo,
+        *,
+        owner_id: str = "owner-1",
+        chat_recipients: list[str] | None = None,
+        offers_by_request: dict[int, list[SimpleNamespace]] | None = None,
+    ) -> None:
         self.notifications = repo
         self.requests = _FakeRequestsRepo(owner_id=owner_id)
         self.chats = _FakeChatsRepo(chat_recipients)
+        self.offers = _FakeOffersRepo(offers_by_request=offers_by_request)
+        self.users = _FakeUsersRepo()
+        self.profiles = _FakeProfilesRepo()
 
     async def __aenter__(self):
         return self
@@ -268,3 +307,53 @@ async def test_handler_request_deadline_changed_notifies_responsible(monkeypatch
     assert len(repo.created) == 1
     assert repo.created[0].user_id == "owner-9"
     assert repo.created[0].type == "request.deadline_changed"
+
+
+@pytest.mark.asyncio
+async def test_handler_request_files_changed_notifies_responsible_and_submitted_accepted(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    offers = {
+        77: [
+            SimpleNamespace(id=1, id_user="contractor-submitted", status="submitted"),
+            SimpleNamespace(id=2, id_user="contractor-accepted", status="accepted"),
+            SimpleNamespace(id=3, id_user="contractor-rejected", status="rejected"),
+        ]
+    }
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo, owner_id="owner-9", offers_by_request=offers))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="request.files_changed",
+        actor_user_id="owner-9",
+        request_id=77,
+        dedupe_key="request.files_changed:77:1",
+        payload={"file_ids": [1], "changed_file_count": 1},
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert sorted(item.user_id for item in repo.created) == ["contractor-accepted", "contractor-submitted"]
+
+
+@pytest.mark.asyncio
+async def test_handler_user_status_changed_notifies_admins_except_actor(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="user.status_changed",
+        actor_user_id="admin-1",
+        dedupe_key="user.status_changed:target-1:review:active",
+        payload={
+            "target_user_id": "target-1",
+            "old_status": "review",
+            "new_status": "active",
+            "target_role": 7,
+            "email_notification_queued": True,
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "admin-2"
+    assert repo.created[0].type == "user.status_changed"

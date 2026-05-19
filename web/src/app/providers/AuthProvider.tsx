@@ -46,6 +46,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const IDLE_WINDOW_MS = 30 * 60 * 1000;
+const SESSION_SYNC_POLL_MS = 10000;
 
 const mapSession = (response: AuthSessionResponse): AuthSession => ({
   token: response.data.access_token,
@@ -217,6 +218,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
   }, [applySession, refresh]);
+
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.token) {
+      return;
+    }
+    const timerId = window.setInterval(() => {
+      void refresh('http_401');
+    }, SESSION_SYNC_POLL_MS);
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [refresh, session?.token, status]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

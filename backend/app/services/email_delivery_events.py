@@ -35,6 +35,15 @@ class EmailDeliveryEventHandler:
         to_email = str(payload.get("to_email") or "").strip()
         safe_error_code = str(payload.get("safe_error_code") or "").strip() or None
         safe_error_message = str(payload.get("safe_error_message") or "").strip() or None
+        suppress_delivery_notification = bool(payload.get("suppress_delivery_notification"))
+
+        if suppress_delivery_notification:
+            logger.info(
+                "Skip email delivery center notification due to suppress flag: correlation_id=%s recipient_user_id=%s",
+                correlation_id,
+                recipient_user_id,
+            )
+            return
 
         async with UnitOfWork() as uow:
             notifications_repo = uow.notifications

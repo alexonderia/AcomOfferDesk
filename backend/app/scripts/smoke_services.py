@@ -333,9 +333,15 @@ async def _check_rabbitmq(reporter: Reporter, env_map: dict[str, str]) -> None:
         return
 
     try:
-        connection = await aio_pika.connect_robust(rabbitmq_url, timeout=7)
-        await connection.close()
+
+        async def _connect_and_close() -> None:
+            connection = await aio_pika.connect_robust(rabbitmq_url, timeout=7)
+            await connection.close()
+
+        await asyncio.wait_for(_connect_and_close(), timeout=15.0)
         reporter.ok("RabbitMQ", "AMQP connection succeeded")
+    except TimeoutError:
+        reporter.fail("RabbitMQ", "AMQP connection timed out after 15s")
     except Exception as exc:  # noqa: BLE001
         host = ""
         try:
@@ -413,7 +419,10 @@ async def run_checks(
     await _check_postgres(reporter, env_map)
     await _check_keycloak(reporter, env_map, timeout, resolved_base_url)
     await _check_s3_minio(reporter, env_map)
-    await _check_rabbitmq(reporter, env_map)
+    if _to_bool(_coalesce(env_map, "SMOKE_SKIP_RABBITMQ", default="false")):
+        reporter.warn("RabbitMQ", "SMOKE_SKIP_RABBITMQ=true, check skipped")
+    else:
+        await _check_rabbitmq(reporter, env_map)
 
     reporter.print()
     return 1 if reporter.has_failures() else 0

@@ -33,6 +33,7 @@ docker compose --env-file "$COMPOSE_ENV_FILE" exec -T \
   -e KEYCLOAK_INTERNAL_BASE_URL="${KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080/iam}" \
   -e SMOKE_HTTP_TIMEOUT_SECONDS=8 \
   -e SMOKE_HTTP_RETRIES=1 \
+  -e SMOKE_SKIP_RABBITMQ=true \
   -e PYTHONUNBUFFERED=1 \
   backend \
   python - <<'PY'

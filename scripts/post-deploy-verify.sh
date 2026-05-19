@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-backend/.env}"
-CONTAINER_ENV_PATH="/tmp/post-deploy-verify.env"
+CONTAINER_ENV_PATH="/app/post-deploy-verify.env"
 BASE_URL="${POST_DEPLOY_BASE_URL:-}"
 
 if ! docker network inspect project_net >/dev/null 2>&1; then

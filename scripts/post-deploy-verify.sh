@@ -24,7 +24,7 @@ echo "=== post-deploy: materialize env from running backend ==="
 docker compose --env-file "$COMPOSE_ENV_FILE" exec -T backend python - <<'PY'
 import os
 
-path = "/tmp/post-deploy-verify.env"
+path = "/app/post-deploy-verify.env"
 skip_prefixes = ("_",)
 skip_keys = {"PATH", "HOSTNAME", "HOME", "TERM", "SHLVL", "PWD", "PYTHONPATH"}
 

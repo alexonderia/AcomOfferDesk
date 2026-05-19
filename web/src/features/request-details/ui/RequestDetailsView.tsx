@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert,
     Box,
     Button,
     MenuItem,
@@ -10,6 +9,7 @@ import {
     Typography
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { useSnackbar } from 'notistack';
 import { OffersTable } from './OffersTable';
 import type { OfferDecisionStatus, OfferStatusOption } from './OffersTable';
 import { getRequestDetails } from '@shared/api/requests/getRequestDetails';
@@ -38,6 +38,7 @@ import {
 } from '../model/requestDetailsUtils';
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
 import { RequestDetailsMainCard } from './RequestDetailsMainCard';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 const offerStatusOptions: OfferStatusOption[] = [
     { value: 'accepted', label: 'Принято' },
@@ -54,6 +55,8 @@ const requestStatusToneByValue: Record<RequestStatus, 'success' | 'warning' | 'n
 export const RequestDetailsView = () => {
     const { navigate, requestId } = useRequestDetails();
     const theme = useTheme();
+    const { closeSnackbar } = useSnackbar();
+    const { showErrorToast, showSuccessToast, showSystemToast } = useSystemToasts();
 
     const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
     const [status, setStatus] = useState<RequestStatus>('open');
@@ -87,9 +90,11 @@ export const RequestDetailsView = () => {
 
     const [isSaving, setIsSaving] = useState(false);
     const [isSendingEmails, setIsSendingEmails] = useState(false);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isClearingDeletedAlert, setIsClearingDeletedAlert] = useState(false);
+    const [isStatusChangeSaveConfirmed, setIsStatusChangeSaveConfirmed] = useState(false);
+    const [pendingOfferConfirmations, setPendingOfferConfirmations] = useState<Record<number, OfferDecisionStatus>>({});
+    const previousHasPendingChangesRef = useRef(false);
+    const suppressPendingChangesToastRef = useRef(false);
 
     const [offers, setOffers] = useState<RequestDetailsOffer[]>([]);
     const [offersStatusMap, setOffersStatusMap] = useState<Record<number, OfferDecisionStatus>>({});
@@ -100,13 +105,19 @@ export const RequestDetailsView = () => {
 
     const hasDeletedAlert = (requestDetails?.count_deleted_alert ?? 0) > 0;
     const hasFileChanges = deletedFileIds.length > 0 || Boolean(newFile);
+    const todayDate = useMemo(() => {
+        const now = new Date();
+        const offsetMs = now.getTimezoneOffset() * 60000;
+        return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
+    }, []);
     const canViewRequestAmounts = useMemo(
         () => Boolean(requestDetails?.actions.view_amounts),
         [requestDetails?.actions.view_amounts]
     );
+    const effectiveDeadlineForChange = status === 'review' ? todayDate : deadline;
     const hasRequestFieldChanges =
         status !== baselineStatus ||
-        deadline !== baselineDeadline ||
+        effectiveDeadlineForChange !== baselineDeadline ||
         (canViewRequestAmounts && initialAmount !== baselineInitialAmount) ||
         (canViewRequestAmounts && finalAmount !== baselineFinalAmount) ||
         planId !== baselinePlanId;
@@ -116,6 +127,23 @@ export const RequestDetailsView = () => {
     useEffect(() => {
         hasPendingChangesRef.current = hasPendingChanges;
     }, [hasPendingChanges]);
+
+    useEffect(() => {
+        if (suppressPendingChangesToastRef.current && !hasPendingChanges) {
+            suppressPendingChangesToastRef.current = false;
+        }
+        if (suppressPendingChangesToastRef.current) {
+            previousHasPendingChangesRef.current = hasPendingChanges;
+            return;
+        }
+        if (hasPendingChanges && !previousHasPendingChangesRef.current) {
+            showSystemToast({
+                severity: 'warning',
+                message: 'Есть несохраненные изменения',
+            });
+        }
+        previousHasPendingChangesRef.current = hasPendingChanges;
+    }, [hasPendingChanges, showSystemToast]);
 
     const canEditRequest = useMemo(() => Boolean(requestDetails?.actions.edit), [requestDetails?.actions.edit]);
     const canEditOwner = useMemo(
@@ -154,12 +182,6 @@ export const RequestDetailsView = () => {
         : statusTone === 'warning'
             ? theme.palette.warning.main
             : theme.palette.text.secondary;
-
-    const todayDate = useMemo(() => {
-        const now = new Date();
-        const offsetMs = now.getTimezoneOffset() * 60000;
-        return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
-    }, []);
 
     const syncRequestState = useCallback((nextRequest: RequestDetails, forceBaseline: boolean) => {
         const nextSignature = buildRequestDetailsSignature(nextRequest);
@@ -384,9 +406,6 @@ export const RequestDetailsView = () => {
         return null;
     };
 
-    const effectiveDeadlineForValidation = status === 'review' ? todayDate : deadline;
-    const saveValidationError = getSaveValidationError(status, effectiveDeadlineForValidation, initialAmount, finalAmount);
-
     const acceptedOfferId = useMemo(
         () => offers.find((offer) => offer.status === 'accepted')?.offer_id ?? null,
         [offers]
@@ -414,15 +433,21 @@ export const RequestDetailsView = () => {
 
         const validationError = getSaveValidationError(status, effectiveDeadline, initialAmount, finalAmount);
         if (validationError) {
-            setErrorMessage(validationError);
-            setSuccessMessage(null);
+            showSystemToast({ severity: 'warning', message: validationError });
+            return;
+        }
+        if (statusChanged && !isStatusChangeSaveConfirmed) {
+            setIsStatusChangeSaveConfirmed(true);
+            showSystemToast({
+                severity: 'warning',
+                message: '??????? ??????????? ??? ???, ????? ??????????? ????????? ??????? ??????',
+            });
             return;
         }
         setIsSaving(true);
-        setErrorMessage(null);
-        setSuccessMessage(null);
 
         try {
+            suppressPendingChangesToastRef.current = true;
             await updateRequestDetails({
                 requestId: currentRequest.id,
                 status: statusChanged ? status : undefined,
@@ -443,9 +468,10 @@ export const RequestDetailsView = () => {
             setIsEditMode(false);
             setDeletedFileIds([]);
             setNewFile(null);
-            setSuccessMessage('Изменения сохранены');
+            closeSnackbar();
+            showSuccessToast('Изменения сохранены');
         } catch (error) {
-            setErrorMessage(error instanceof Error ? error.message : 'Не удалось сохранить изменения');
+            showErrorToast(error instanceof Error ? error.message : 'Не удалось сохранить изменения');
         } finally {
             setIsSaving(false);
         }
@@ -456,7 +482,7 @@ export const RequestDetailsView = () => {
         if (!targetOffer || (!targetOffer.actions.accept && !targetOffer.actions.reject)) {
             return;
         }
-        
+
         const previousStatus = offersStatusMap[offerId] ?? '';
 
         setOffersStatusMap((prev) => ({
@@ -465,6 +491,11 @@ export const RequestDetailsView = () => {
         }));
 
         if (!value) {
+            setPendingOfferConfirmations((prev) => {
+                const next = { ...prev };
+                delete next[offerId];
+                return next;
+            });
             return;
         }
         if (value === 'accepted' && acceptedOfferId && acceptedOfferId !== offerId) {
@@ -472,24 +503,30 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: previousStatus
             }));
-            setOffersError('Нельзя одобрить более одного КП в рамках одной заявки');
+            setOffersError('?????? ???????? ????? ?????? ?? ? ?????? ????? ??????');
             return;
         }
 
-        const confirmMessage =
-            value === 'accepted'
-                ? 'Если принять это КП, остальные КП по заявке автоматически получат статус «Отказано». Продолжить?'
-                : 'Вы уверены, что хотите изменить статус КП на «Отказано»?';
-
-        const isConfirmed = window.confirm(confirmMessage);
-
-        if (!isConfirmed) {
+        if (pendingOfferConfirmations[offerId] !== value) {
             setOffersStatusMap((prev) => ({
                 ...prev,
                 [offerId]: previousStatus
             }));
+            setPendingOfferConfirmations((prev) => ({ ...prev, [offerId]: value }));
+            showSystemToast({
+                severity: 'warning',
+                message: value === 'accepted'
+                    ? '??????? ??? ?? ?????? ??? ???, ????? ??????????? ???????? ??'
+                    : '??????? ??? ?? ?????? ??? ???, ????? ??????????? ?????????? ??',
+            });
             return;
         }
+
+        setPendingOfferConfirmations((prev) => {
+            const next = { ...prev };
+            delete next[offerId];
+            return next;
+        });
 
         try {
             const response = await updateOfferStatus({
@@ -512,10 +549,9 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: previousStatus
             }));
-            setOffersError(error instanceof Error ? error.message : 'Не удалось обновить статус КП');
+            setOffersError(error instanceof Error ? error.message : '?? ??????? ???????? ?????? ??');
         }
     };
-
 
     const handleDeletedAlertViewed = async () => {
         if (!hasDeletedAlert || !requestDetails) {
@@ -523,7 +559,6 @@ export const RequestDetailsView = () => {
         }
 
         setIsClearingDeletedAlert(true);
-        setErrorMessage(null);
         try {
             const response = await markDeletedAlertViewed({
                 request_id: requestDetails.id
@@ -539,7 +574,7 @@ export const RequestDetailsView = () => {
                 };
             });
         } catch (error) {
-            setErrorMessage(error instanceof Error ? error.message : 'Не удалось отметить уведомление');
+            showErrorToast(error instanceof Error ? error.message : 'Не удалось отметить уведомление');
         } finally {
             setIsClearingDeletedAlert(false);
         }
@@ -549,7 +584,7 @@ export const RequestDetailsView = () => {
         try {
             await downloadFile(downloadUrl, fileName);
         } catch (error) {
-            setErrorMessage(error instanceof Error ? error.message : 'Не удалось скачать файл');
+            showErrorToast(error instanceof Error ? error.message : 'Не удалось скачать файл');
         }
     };
 
@@ -592,11 +627,11 @@ export const RequestDetailsView = () => {
         setInitialAmount(baselineInitialAmount);
         setFinalAmount(baselineFinalAmount);
         setPlanId(baselinePlanId);
+        setExistingFiles(requestDetails?.files ?? []);
         setDeletedFileIds([]);
         setNewFile(null);
         setIsEditMode(false);
-        setErrorMessage(null);
-        setSuccessMessage(null);
+        setIsStatusChangeSaveConfirmed(false);
     };
 
     const ownerField = canEditOwner && isEditMode ? (
@@ -637,19 +672,13 @@ export const RequestDetailsView = () => {
     const descriptionText = requestDetails?.description?.trim() ?? '';
     const canExpandDescription = isDescriptionOverflowing;
     const handleStatusSelection = (nextStatus: RequestStatus) => {
-        if (nextStatus !== status) {
-            const isConfirmed = window.confirm(
-                `Вы уверены, что хотите изменить статус заявки на «${statusOptions.find((option) => option.value === nextStatus)?.label ?? nextStatus}»?`
-            );
-            if (!isConfirmed) {
-                return;
-            }
-        }
         setStatus(nextStatus);
+        setIsStatusChangeSaveConfirmed(false);
         if (nextStatus === 'review') {
             setDeadline(todayDate);
         }
     };
+
 
     useEffect(() => {
         const element = descriptionTextRef.current;
@@ -699,26 +728,6 @@ export const RequestDetailsView = () => {
 
     return (
         <Box>
-            {hasPendingChanges && (
-                <Typography role="status" color="warning.main" sx={{ mb: 2 }}>
-                    Есть несохраненные изменения. При уходе со страницы они будут потеряны.
-                </Typography>
-            )}
-            {hasPendingChanges && saveValidationError && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                    {saveValidationError}
-                </Alert>
-            )}
-            {errorMessage && (
-                <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 2 }}>
-                    {errorMessage}
-                </Alert>
-            )}
-            {successMessage && (
-                <Alert severity="success" onClose={() => setSuccessMessage(null)} sx={{ mb: 2 }}>
-                    {successMessage}
-                </Alert>
-            )}
 
             <RequestDetailsMainCard
                 requestId={requestDetails.id}
@@ -757,7 +766,7 @@ export const RequestDetailsView = () => {
                 isSaving={isSaving}
                 canSaveRequestChanges={canSaveRequestChanges}
                 hasPendingChanges={hasPendingChanges}
-                hasValidationError={Boolean(saveValidationError)}
+                hasValidationError={false}
                 canEnterEditMode={canEnterEditMode}
                 onCancelEditing={handleCancelEditing}
                 onSave={() => void handleSave()}

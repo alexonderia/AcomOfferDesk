@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { showBusinessNotificationToast, showSystemToast } from './toastFacade';
+import { showBusinessNotificationToast, showErrorToast, showSuccessToast, showSystemToast } from './toastFacade';
 
 describe('toastFacade', () => {
   it('shows system toast at top-center', () => {
@@ -35,5 +35,28 @@ describe('toastFacade', () => {
       autoHideDuration: 10000,
     });
   });
-});
 
+  it('maps success helper to success variant', () => {
+    const enqueueSnackbar = vi.fn();
+
+    showSuccessToast({ enqueueSnackbar }, 'ok');
+
+    expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
+    expect(enqueueSnackbar.mock.calls[0][1]).toMatchObject({
+      variant: 'success',
+      anchorOrigin: { vertical: 'top', horizontal: 'center' },
+    });
+  });
+
+  it('maps error helper to error variant', () => {
+    const enqueueSnackbar = vi.fn();
+
+    showErrorToast({ enqueueSnackbar }, 'fail');
+
+    expect(enqueueSnackbar).toHaveBeenCalledTimes(1);
+    expect(enqueueSnackbar.mock.calls[0][1]).toMatchObject({
+      variant: 'error',
+      anchorOrigin: { vertical: 'top', horizontal: 'center' },
+    });
+  });
+});

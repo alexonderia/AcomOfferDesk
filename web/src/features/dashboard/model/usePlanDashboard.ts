@@ -11,6 +11,7 @@ import {
   type PlanDashboardResult,
   type PlanDelegateCandidate,
 } from '@shared/api/plans';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 const getCurrentPeriod = () => {
   const now = new Date();
@@ -38,7 +39,7 @@ export const usePlanDashboard = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
 
   const loadDashboard = useCallback(async () => {
     setIsLoading(true);
@@ -60,12 +61,13 @@ export const usePlanDashboard = () => {
   const withMutation = useCallback(async (action: () => Promise<void>) => {
     setIsMutating(true);
     setErrorMessage(null);
-    setSuccessMessage(null);
     try {
       await action();
       await loadDashboard();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Операция с планом не выполнена');
+      const message = error instanceof Error ? error.message : 'Операция с планом не выполнена';
+      setErrorMessage(message);
+      showErrorToast(message);
     } finally {
       setIsMutating(false);
     }
@@ -85,7 +87,7 @@ export const usePlanDashboard = () => {
         name,
         plan_amount: planAmount,
       });
-      setSuccessMessage('Корневой план создан');
+      showSuccessToast('Корневой план создан');
     });
   }, [period, withMutation]);
 
@@ -97,7 +99,7 @@ export const usePlanDashboard = () => {
         period_start: undefined,
         plan_amount: amount,
       });
-      setSuccessMessage('Подплан создан');
+      showSuccessToast('Подплан создан');
     });
   }, [withMutation]);
 
@@ -118,7 +120,7 @@ export const usePlanDashboard = () => {
         child_user_id: childUserId,
         plan_amount: amount,
       });
-      setSuccessMessage('Подплан создан');
+      showSuccessToast('Подплан создан');
     });
   }, [withMutation]);
 
@@ -135,7 +137,7 @@ export const usePlanDashboard = () => {
         child_period_start: childPeriodStart,
         child_plan_amount: childPlanAmount,
       });
-      setSuccessMessage('План делегирован');
+      showSuccessToast('План делегирован');
     });
   }, [withMutation]);
 
@@ -149,21 +151,21 @@ export const usePlanDashboard = () => {
         name: payload.name,
         period_end: payload.periodEnd,
       });
-      setSuccessMessage('План обновлен');
+      showSuccessToast('План обновлен');
     });
   }, [withMutation]);
 
   const removeChildPlan = useCallback(async (planId: number) => {
     await withMutation(async () => {
       await deletePlan(planId);
-      setSuccessMessage('План удален');
+      showSuccessToast('План удален');
     });
   }, [withMutation]);
 
   const closePlanNode = useCallback(async (planId: number) => {
     await withMutation(async () => {
       await closePlan(planId);
-      setSuccessMessage('План закрыт');
+      showSuccessToast('План закрыт');
     });
   }, [withMutation]);
 
@@ -191,8 +193,6 @@ export const usePlanDashboard = () => {
     isLoading,
     isMutating,
     errorMessage,
-    successMessage,
-    setSuccessMessage,
     reload: loadDashboard,
     createRoot,
     createSubplanNode,

@@ -1,4 +1,4 @@
-import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
+﻿import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -11,6 +11,7 @@ import {
 import { ROLE } from '@shared/constants/roles';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 type ProfileDraft = {
   fullName: string;
@@ -52,7 +53,7 @@ const normalizeDraftValue = (value: string | null | undefined) => {
   if (!normalized) {
     return '';
   }
-  if (['не указано', 'none', 'null'].includes(normalized.toLowerCase())) {
+  if (['РЅРµ СѓРєР°Р·Р°РЅРѕ', 'none', 'null'].includes(normalized.toLowerCase())) {
     return '';
   }
   return normalized;
@@ -73,28 +74,28 @@ const buildDraft = (profile: CurrentUserProfile | null): ProfileDraft => ({
 const getStatusContent = (status: string): StatusContent => {
   if (status === 'review') {
     return {
-      title: 'Проверяем данные',
-      description: 'Заполните личные данные и данные компании. После проверки мы уведомим о выдаче доступа по электронной почте.',
+      title: 'РџСЂРѕРІРµСЂСЏРµРј РґР°РЅРЅС‹Рµ',
+      description: 'Р—Р°РїРѕР»РЅРёС‚Рµ Р»РёС‡РЅС‹Рµ РґР°РЅРЅС‹Рµ Рё РґР°РЅРЅС‹Рµ РєРѕРјРїР°РЅРёРё. РџРѕСЃР»Рµ РїСЂРѕРІРµСЂРєРё РјС‹ СѓРІРµРґРѕРјРёРј Рѕ РІС‹РґР°С‡Рµ РґРѕСЃС‚СѓРїР° РїРѕ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚Рµ.',
       severity: 'info'
     };
   }
   if (status === 'inactive') {
     return {
-      title: 'Доступ временно отключён',
-      description: 'Обратитесь к администратору проекта.',
+      title: 'Р”РѕСЃС‚СѓРї РІСЂРµРјРµРЅРЅРѕ РѕС‚РєР»СЋС‡С‘РЅ',
+      description: 'РћР±СЂР°С‚РёС‚РµСЃСЊ Рє Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂСѓ РїСЂРѕРµРєС‚Р°.',
       severity: 'warning'
     };
   }
   if (status === 'blacklist') {
     return {
-      title: 'Доступ закрыт',
-      description: 'Для уточнения деталей свяжитесь с администратором проекта.',
+      title: 'Р”РѕСЃС‚СѓРї Р·Р°РєСЂС‹С‚',
+      description: 'Р”Р»СЏ СѓС‚РѕС‡РЅРµРЅРёСЏ РґРµС‚Р°Р»РµР№ СЃРІСЏР¶РёС‚РµСЃСЊ СЃ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј РїСЂРѕРµРєС‚Р°.',
       severity: 'error'
     };
   }
   return {
-    title: 'Ожидайте подтверждения',
-    description: 'Мы уведомим вас, когда доступ будет открыт.',
+    title: 'РћР¶РёРґР°Р№С‚Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ',
+    description: 'РњС‹ СѓРІРµРґРѕРјРёРј РІР°СЃ, РєРѕРіРґР° РґРѕСЃС‚СѓРї Р±СѓРґРµС‚ РѕС‚РєСЂС‹С‚.',
     severity: 'info'
   };
 };
@@ -112,22 +113,22 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   const note = draft.note.trim();
 
   if (!fullName) {
-    errors.fullName = 'Укажите ФИО';
+    errors.fullName = 'РЈРєР°Р¶РёС‚Рµ Р¤РРћ';
   } else if (fullName.length > 256) {
-    errors.fullName = 'Максимум 256 символов';
+    errors.fullName = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
   }
 
   if (!phone) {
-    errors.phone = 'Укажите телефон';
+    errors.phone = 'РЈРєР°Р¶РёС‚Рµ С‚РµР»РµС„РѕРЅ';
   } else if (!isValidRuPhone(phone)) {
-    errors.phone = 'Некорректный формат телефона';
+    errors.phone = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ С‚РµР»РµС„РѕРЅР°';
   }
 
   if (mail) {
     if (mail.length > 256) {
-      errors.mail = 'Максимум 256 символов';
+      errors.mail = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
     } else if (!emailRegex.test(mail)) {
-      errors.mail = 'Некорректный email';
+      errors.mail = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ email';
     }
   }
 
@@ -136,36 +137,36 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   }
 
   if (!companyName) {
-    errors.companyName = 'Укажите наименование компании';
+    errors.companyName = 'РЈРєР°Р¶РёС‚Рµ РЅР°РёРјРµРЅРѕРІР°РЅРёРµ РєРѕРјРїР°РЅРёРё';
   } else if (companyName.length > 256) {
-    errors.companyName = 'Максимум 256 символов';
+    errors.companyName = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
   }
 
   if (!inn) {
-    errors.inn = 'Укажите ИНН';
+    errors.inn = 'РЈРєР°Р¶РёС‚Рµ РРќРќ';
   } else if (!innRegex.test(inn)) {
-    errors.inn = 'ИНН должен содержать 10 или 12 цифр';
+    errors.inn = 'РРќРќ РґРѕР»Р¶РµРЅ СЃРѕРґРµСЂР¶Р°С‚СЊ 10 РёР»Рё 12 С†РёС„СЂ';
   }
 
   if (!companyPhone) {
-    errors.companyPhone = 'Укажите телефон компании';
+    errors.companyPhone = 'РЈРєР°Р¶РёС‚Рµ С‚РµР»РµС„РѕРЅ РєРѕРјРїР°РЅРёРё';
   } else if (!isValidRuPhone(companyPhone)) {
-    errors.companyPhone = 'Некорректный формат телефона';
+    errors.companyPhone = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ С‚РµР»РµС„РѕРЅР°';
   }
 
   if (companyMail) {
     if (companyMail.length > 256) {
-      errors.companyMail = 'Максимум 256 символов';
+      errors.companyMail = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
     } else if (!emailRegex.test(companyMail)) {
-      errors.companyMail = 'Некорректный email';
+      errors.companyMail = 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ email';
     }
   }
 
   if (address.length > 256) {
-    errors.address = 'Максимум 256 символов';
+    errors.address = 'РњР°РєСЃРёРјСѓРј 256 СЃРёРјРІРѕР»РѕРІ';
   }
   if (note.length > 1024) {
-    errors.note = 'Максимум 1024 символа';
+    errors.note = 'РњР°РєСЃРёРјСѓРј 1024 СЃРёРјРІРѕР»Р°';
   }
 
   return errors;
@@ -174,11 +175,11 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
 export const AccountStatePage = () => {
   const navigate = useNavigate();
   const { session, logout } = useAuth();
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
   const [draft, setDraft] = useState<ProfileDraft>(emptyDraft);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showValidation, setShowValidation] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Partial<Record<keyof ProfileDraft, boolean>>>({});
 
@@ -209,7 +210,7 @@ export const AccountStatePage = () => {
       })
       .catch((error) => {
         if (!cancelled) {
-          setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить данные.');
+          setErrorMessage(error instanceof Error ? error.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґР°РЅРЅС‹Рµ.');
         }
       })
       .finally(() => {
@@ -250,10 +251,9 @@ export const AccountStatePage = () => {
 
   const saveProfile = async () => {
     setErrorMessage(null);
-    setSuccessMessage(null);
     setShowValidation(true);
     if (Object.keys(validationErrors).length > 0) {
-      setErrorMessage('Проверьте корректность заполнения полей.');
+      setErrorMessage('РџСЂРѕРІРµСЂСЊС‚Рµ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ Р·Р°РїРѕР»РЅРµРЅРёСЏ РїРѕР»РµР№.');
       return;
     }
 
@@ -277,9 +277,11 @@ export const AccountStatePage = () => {
       } else {
         setDraft(buildDraft(nextProfile));
       }
-      setSuccessMessage('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.');
+      showSuccessToast('Р”Р°РЅРЅС‹Рµ РїРµСЂРµРґР°РЅС‹ РЅР° РїСЂРѕРІРµСЂРєСѓ. РњС‹ СѓРІРµРґРѕРјРёРј РІР°СЃ Рѕ РІС‹РґР°С‡Рµ РґРѕСЃС‚СѓРїР° РїРѕ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚Рµ.');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось сохранить данные.');
+      const message = error instanceof Error ? error.message : 'Не удалось сохранить данные';
+      setErrorMessage(message);
+      showErrorToast(message);
     } finally {
       setIsSaving(false);
     }
@@ -296,7 +298,7 @@ export const AccountStatePage = () => {
           <Stack alignItems="center" spacing={2}>
             <CircularProgress size={28} />
             <Typography variant="body2" color="text.secondary">
-              Загружаем данные.
+              Р—Р°РіСЂСѓР¶Р°РµРј РґР°РЅРЅС‹Рµ.
             </Typography>
           </Stack>
         ) : (
@@ -310,16 +312,15 @@ export const AccountStatePage = () => {
               </Typography>
             </Stack>
 
-            <Alert severity={statusContent.severity}>Статус: {statusContent.title.toLowerCase()}.</Alert>
+            <Alert severity={statusContent.severity}>РЎС‚Р°С‚СѓСЃ: {statusContent.title.toLowerCase()}.</Alert>
             {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-            {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
 
             {!isBlocked ? (
               <>
                 <Stack spacing={1.5}>
-                  <Typography variant="subtitle1" fontWeight={600}>Личные данные</Typography>
+                  <Typography variant="subtitle1" fontWeight={600}>Р›РёС‡РЅС‹Рµ РґР°РЅРЅС‹Рµ</Typography>
                   <TextField
-                    label="ФИО"
+                    label="Р¤РРћ"
                     value={draft.fullName}
                     onBlur={() => markFieldTouched('fullName')}
                     onChange={(event) => {
@@ -330,7 +331,7 @@ export const AccountStatePage = () => {
                     helperText={getFieldHelperText('fullName')}
                   />
                   <TextField
-                    label="Телефон"
+                    label="РўРµР»РµС„РѕРЅ"
                     value={draft.phone}
                     onBlur={() => markFieldTouched('phone')}
                     onChange={(event) => {
@@ -355,9 +356,9 @@ export const AccountStatePage = () => {
 
                 {canEditCompany ? (
                   <Stack spacing={1.5}>
-                    <Typography variant="subtitle1" fontWeight={600}>Данные компании</Typography>
+                    <Typography variant="subtitle1" fontWeight={600}>Р”Р°РЅРЅС‹Рµ РєРѕРјРїР°РЅРёРё</Typography>
                     <TextField
-                      label="Компания"
+                      label="РљРѕРјРїР°РЅРёСЏ"
                       value={draft.companyName}
                       onBlur={() => markFieldTouched('companyName')}
                       onChange={(event) => {
@@ -368,7 +369,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyName')}
                     />
                     <TextField
-                      label="ИНН"
+                      label="РРќРќ"
                       value={draft.inn}
                       onBlur={() => markFieldTouched('inn')}
                       onChange={(event) => {
@@ -379,7 +380,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('inn')}
                     />
                     <TextField
-                      label="Телефон компании"
+                      label="РўРµР»РµС„РѕРЅ РєРѕРјРїР°РЅРёРё"
                       value={draft.companyPhone}
                       onBlur={() => markFieldTouched('companyPhone')}
                       onChange={(event) => {
@@ -390,7 +391,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyPhone')}
                     />
                     <TextField
-                      label="E-mail компании"
+                      label="E-mail РєРѕРјРїР°РЅРёРё"
                       value={draft.companyMail}
                       onBlur={() => markFieldTouched('companyMail')}
                       onChange={(event) => {
@@ -401,7 +402,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyMail')}
                     />
                     <TextField
-                      label="Адрес"
+                      label="РђРґСЂРµСЃ"
                       value={draft.address}
                       onBlur={() => markFieldTouched('address')}
                       onChange={(event) => {
@@ -412,7 +413,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('address')}
                     />
                     <TextField
-                      label="Примечание"
+                      label="РџСЂРёРјРµС‡Р°РЅРёРµ"
                       value={draft.note}
                       multiline
                       minRows={3}
@@ -433,14 +434,14 @@ export const AccountStatePage = () => {
                   disabled={isSaving}
                   sx={{ alignSelf: 'flex-start', textTransform: 'none', boxShadow: 'none' }}
                 >
-                  {isSaving ? 'Сохраняем...' : 'Отправить данные'}
+                  {isSaving ? 'РЎРѕС…СЂР°РЅСЏРµРј...' : 'РћС‚РїСЂР°РІРёС‚СЊ РґР°РЅРЅС‹Рµ'}
                 </Button>
               </>
             ) : null}
 
             <Stack direction="row" spacing={1.5}>
               <Button variant="outlined" onClick={logout} sx={{ textTransform: 'none' }}>
-                Выйти
+                Р’С‹Р№С‚Рё
               </Button>
             </Stack>
           </Stack>
@@ -449,4 +450,5 @@ export const AccountStatePage = () => {
     </Box>
   );
 };
+
 

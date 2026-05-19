@@ -7,6 +7,7 @@ import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
 import { hasPermission } from '@shared/auth/permissions';
 import { ActionButton } from '@shared/components/ActionButton';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 const dialogPaperSx = (theme: Theme) => ({
   borderRadius: 2,
@@ -37,10 +38,10 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
   const theme = useTheme();
   const { session } = useAuth();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!hasPermission(session, 'normative_files.create')) {
@@ -51,7 +52,6 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
     setOpen(false);
     setSelectedFile(null);
     setError(null);
-    setSuccessMessage(null);
     setIsSubmitting(false);
     if (inputRef.current) {
       inputRef.current.value = '';
@@ -71,16 +71,17 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
 
     setIsSubmitting(true);
     setError(null);
-    setSuccessMessage(null);
     try {
       await uploadNormativeFile(selectedFile, 1);
-      setSuccessMessage('Нормативный документ загружен');
+      showSuccessToast('Нормативный документ загружен');
       setSelectedFile(null);
       if (inputRef.current) {
         inputRef.current.value = '';
       }
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Не удалось загрузить нормативный документ');
+      const message = uploadError instanceof Error ? uploadError.message : 'Не удалось загрузить нормативный документ';
+      setError(message);
+      showErrorToast(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -203,7 +204,6 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
             </Typography>
 
             {error ? <Alert severity="error">{error}</Alert> : null}
-            {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
 
             <Box
               sx={{
@@ -222,8 +222,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
                   onChange={(event) => {
                     setSelectedFile(event.target.files?.[0] ?? null);
                     setError(null);
-                    setSuccessMessage(null);
-                  }}
+                                  }}
                 />
                 <Button
                   variant="outlined"

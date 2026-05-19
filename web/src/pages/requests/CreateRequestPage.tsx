@@ -1,4 +1,4 @@
-import { zodResolver } from '@hookform/resolvers/zod';
+﻿import { zodResolver } from '@hookform/resolvers/zod';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -25,6 +25,7 @@ import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { DatePickerField } from '@shared/components/DatePickerField';
 import { ToggleSection } from '@shared/components/ToggleSection';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 const ALLOWED_FILE_EXTENSIONS = ['PDF', 'PNG', 'JPG', 'JPEG', 'TXT', 'MD', 'DOC', 'DOCX', 'DOCS', 'XLS', 'XLSX', 'EXL', 'CSV', 'ODS'];
 const MAX_FILE_SIZE_MB = 10;
@@ -87,6 +88,7 @@ export const CreateRequestPage = () => {
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [hideFromContractorsEnabled, setHideFromContractorsEnabled] = useState(false);
   const [additionalEmailsEnabled, setAdditionalEmailsEnabled] = useState(false);
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
 
   const {
     control,
@@ -182,9 +184,12 @@ export const CreateRequestPage = () => {
         additional_emails: additionalEmailsEnabled ? nextAdditionalEmails ?? values.additionalEmails : [],
         hidden_contractor_ids: hideFromContractorsEnabled ? values.hiddenContractorIds : [],
       });
+      showSuccessToast('Заявка создана');
       navigate('/requests');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Ошибка создания заявки');
+      const message = error instanceof Error ? error.message : 'Не удалось создать заявку';
+      setErrorMessage(message);
+      showErrorToast(message);
     } finally {
       setIsSubmittingRequest(false);
     }
@@ -534,3 +539,5 @@ export const CreateRequestPage = () => {
     </Dialog>
   );
 };
+
+

@@ -22,7 +22,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-          command_timeout: 20m
+          command_timeout: 35m
           script: |
             set -e
 
@@ -172,5 +172,18 @@ jobs:
               echo "=== keycloak user role sync logs are streamed above (one-off run) ==="
               echo "=== backend logs (tail) ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
+              exit 1
+            fi
+
+            # Post-deploy gate (docs/development/testing-strategy.md §3–4): infra smoke + Keycloak model.
+            # Uses backend image on project_net; fails deploy if [FAIL] in smoke or check-keycloak.
+            PUBLIC_BASE_URL="$(grep -E '^(WEB_BASE_URL|PUBLIC_BACKEND_BASE_URL)=' "$APP_ENV_FILE" | head -n 1 | cut -d= -f2- | tr -d '\r' | sed -e 's/^["'\'']//' -e 's/["'\'']$//')"
+            if [ -z "$PUBLIC_BASE_URL" ]; then
+              PUBLIC_BASE_URL="http://127.0.0.1:8080"
+            fi
+            chmod +x ./scripts/post-deploy-verify.sh
+            if ! POST_DEPLOY_BASE_URL="$PUBLIC_BASE_URL" ./scripts/post-deploy-verify.sh "$COMPOSE_ENV_FILE"; then
+              echo "=== post-deploy-verify failed (smoke-infra / check-keycloak) ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               exit 1
             fi

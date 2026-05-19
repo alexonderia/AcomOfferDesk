@@ -38,6 +38,7 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
     assert uow.profiles is not None
     assert uow.company_contacts is not None
     assert uow.users is not None
+    user_auth_accounts = getattr(uow, "user_auth_accounts", None)
     return OfferService(
         uow.requests,
         uow.offers,
@@ -47,7 +48,7 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
         uow.profiles,
         uow.company_contacts,
         uow.users,
-        uow.user_auth_accounts,
+        user_auth_accounts,
         file_service=file_service,
         keycloak_admin=KeycloakAdminService(),
     )

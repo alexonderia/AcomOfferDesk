@@ -30,7 +30,6 @@ run_backend_script() {
   local module="$1"
   shift
   docker compose --env-file "$COMPOSE_ENV_FILE" run --rm --no-deps \
-    --network project_net \
     -v "$ROOT_DIR/$ENV_FILE:$ENV_IN_CONTAINER:ro" \
     -e KEYCLOAK_INTERNAL_BASE_URL="${KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080/iam}" \
     backend \

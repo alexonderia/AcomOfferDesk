@@ -3,7 +3,7 @@ import base64
 import json
 
 from app.core.config import settings
-from app.scripts.sync_keycloak_user_app_roles import role_mapping_by_local_role_id
+from app.services.keycloak_app_roles import role_mapping_by_local_role_id
 from app.services.keycloak_admin import KeycloakAdminService
 
 

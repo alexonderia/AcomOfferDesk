@@ -25,6 +25,7 @@ from app.services.contractor_email_notifications import (
     notify_contractor_access_opened_email,
 )
 from app.services.keycloak_admin import KeycloakAdminService
+from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
@@ -221,6 +222,20 @@ async def _bind_keycloak_account(
     existing_binding.external_email = email
     existing_binding.is_active = True
 
+
+async def _sync_keycloak_role_after_bind(
+    keycloak_admin: KeycloakAdminService,
+    *,
+    keycloak_subject_id: str,
+    local_role_id: int,
+) -> None:
+    await sync_keycloak_app_role_for_user(
+        keycloak_admin,
+        keycloak_user_id=keycloak_subject_id,
+        local_role_id=local_role_id,
+    )
+
+
 class UserRegistrationService:
     def __init__(
         self,
@@ -352,6 +367,11 @@ class UserRegistrationService:
             keycloak_subject_id=keycloak_user.id,
             username=user_id,
             email=normalized_mail,
+        )
+        await _sync_keycloak_role_after_bind(
+            self._keycloak_admin,
+            keycloak_subject_id=keycloak_user.id,
+            local_role_id=role_id,
         )
         return user
     
@@ -1131,6 +1151,11 @@ class ManualContractorService:
             username=login,
             email=_normalize_keycloak_email_value(data.company_mail),
         )
+        await _sync_keycloak_role_after_bind(
+            self._keycloak_admin,
+            keycloak_subject_id=keycloak_user.id,
+            local_role_id=settings.contractor_role_id,
+        )
         return login
 
     async def create_manual_contractor(
@@ -1244,13 +1269,26 @@ class ManualContractorService:
             username=user.id,
             email=_normalize_keycloak_email_value(company_contact.mail),
         )
+        await _sync_keycloak_role_after_bind(
+            self._keycloak_admin,
+            keycloak_subject_id=keycloak_user.id,
+            local_role_id=user.id_role,
+        )
 
         return user.id
 
 
 class UserRoleService:
-    def __init__(self, users: UserRepository):
+    def __init__(
+        self,
+        users: UserRepository,
+        user_auth_accounts: UserAuthAccountRepository,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
+    ):
         self._users = users
+        self._user_auth_accounts = user_auth_accounts
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     async def update_role(
         self,
@@ -1290,6 +1328,19 @@ class UserRoleService:
                 raise Forbidden("Вы можете обновлять роль только своих подчиненных")
 
         await self._users.update_role(user, role_id)
+
+        account = await self._user_auth_accounts.get_by_user_provider(
+            user_id=user.id,
+            provider="keycloak",
+            include_inactive=False,
+        )
+        if account is not None and (account.external_subject_id or "").strip():
+            await _sync_keycloak_role_after_bind(
+                self._keycloak_admin,
+                keycloak_subject_id=account.external_subject_id,
+                local_role_id=role_id,
+            )
+
         return UserRoleUpdateResult(user_id=user.id, role_id=user.id_role)
 
 

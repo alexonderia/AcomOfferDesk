@@ -12,6 +12,7 @@ from app.infrastructure.db import SessionLocal, engine
 from app.models.auth_models import UserAuthAccount
 from app.models.orm_models import User
 from app.services.keycloak_admin import KeycloakAdminService
+from app.services.keycloak_app_roles import role_mapping_by_local_role_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,18 +27,6 @@ def _env_flag(name: str, *, default: bool) -> bool:
     if not raw_value:
         return default
     return raw_value in {"1", "true", "yes", "on"}
-
-
-def role_mapping_by_local_role_id() -> dict[int, str]:
-    return {
-        settings.superadmin_role_id: "app.superadmin",
-        settings.admin_role_id: "app.admin",
-        settings.project_manager_role_id: "app.project_manager",
-        settings.lead_economist_role_id: "app.lead_economist",
-        settings.economist_role_id: "app.economist",
-        settings.operator_role_id: "app.operator",
-        settings.contractor_role_id: "app.contractor",
-    }
 
 
 async def _load_users_for_sync() -> list[LocalUserRoleBinding]:

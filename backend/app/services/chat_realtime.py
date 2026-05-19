@@ -47,6 +47,7 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
         uow.profiles,
         uow.company_contacts,
         uow.users,
+        uow.user_auth_accounts,
         file_service=file_service,
         keycloak_admin=KeycloakAdminService(),
     )

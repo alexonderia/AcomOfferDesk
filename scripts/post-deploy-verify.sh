@@ -30,6 +30,7 @@ echo "=== post-deploy: smoke + Keycloak checks (single backend exec) ==="
 
 docker compose --env-file "$COMPOSE_ENV_FILE" exec -T \
   -e POST_DEPLOY_BASE_URL="$SMOKE_BASE_URL" \
+  -e KEYCLOAK_BOOTSTRAP_SH_PATH="${KEYCLOAK_BOOTSTRAP_SH_PATH:-/app/keycloak/bootstrap.sh}" \
   -e KEYCLOAK_INTERNAL_BASE_URL="${KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080/iam}" \
   -e SMOKE_HTTP_TIMEOUT_SECONDS=8 \
   -e SMOKE_HTTP_RETRIES=1 \

@@ -44,7 +44,9 @@ services:
 
   keycloak_user_role_sync:
     <<: *runtime-env
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: keycloak_user_role_sync
     command: ["python", "-m", "app.scripts.sync_keycloak_user_app_roles"]
     depends_on:

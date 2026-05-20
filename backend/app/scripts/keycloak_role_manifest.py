@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -17,7 +18,27 @@ _PERMISSION_BLOCK_PATTERN = re.compile(
 
 
 def _bootstrap_path() -> Path:
-    return Path(__file__).resolve().parents[3] / "infra" / "keycloak" / "bootstrap.sh"
+    """Resolve bootstrap.sh in dev checkout or inside backend image (/app/keycloak/)."""
+    override = os.environ.get("KEYCLOAK_BOOTSTRAP_SH_PATH", "").strip()
+    if override:
+        path = Path(override)
+        if path.is_file():
+            return path
+        raise FileNotFoundError(f"KEYCLOAK_BOOTSTRAP_SH_PATH not found: {override}")
+
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parents[2] / "keycloak" / "bootstrap.sh",
+        here.parents[3] / "infra" / "keycloak" / "bootstrap.sh",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    raise FileNotFoundError(
+        "infra/keycloak/bootstrap.sh not found (expected /app/keycloak/bootstrap.sh in backend image "
+        "or repo layout AcomOfferDesk/backend/app/scripts); rebuild backend or set KEYCLOAK_BOOTSTRAP_SH_PATH"
+    )
 
 
 def _parse_line_block(block: str) -> frozenset[str]:

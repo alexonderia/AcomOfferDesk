@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from app.core.datetime_utils import utc_now_naive
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,5 +80,5 @@ class UserAuthAccountRepository:
     ) -> None:
         account.external_username = username
         account.external_email = email
-        account.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        account.last_login_at = utc_now_naive()
         account.is_active = True

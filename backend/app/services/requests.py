@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from app.core.config import settings
+from app.core.datetime_utils import normalize_to_utc, utc_now, utc_now_naive
 from app.domain.authorization import require_any_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
 from app.domain.permissions import PermissionCodes
@@ -40,18 +41,15 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _utcnow_naive() -> datetime:
-    """Naive UTC for TIMESTAMP WITHOUT TIME ZONE columns (PostgreSQL/asyncpg)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return utc_now_naive()
 
 
 def _normalize_to_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+    return normalize_to_utc(value)
 
 def format_request_status(status: str | None) -> str:
     if not status:

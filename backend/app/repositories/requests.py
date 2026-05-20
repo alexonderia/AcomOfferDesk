@@ -8,6 +8,7 @@ from sqlalchemy import Select, bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.core.datetime_utils import utc_now_naive
 from app.models.orm_models import (
     Chat,
     CompanyContact,
@@ -662,7 +663,7 @@ class RequestRepository:
 
         if stats.count_deleted_alert > 0:
             stats.count_deleted_alert -= 1
-        stats.updated_at = datetime.now(timezone.utc)
+        stats.updated_at = utc_now_naive()
         await self._session.flush()
         return stats
 

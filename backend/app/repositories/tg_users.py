@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from app.core.datetime_utils import utc_now_naive
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,7 +84,7 @@ class TgUserRepository:
                 return
             raise Conflict("Telegram account is not linked")
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utc_now_naive()
         is_active = status != "disapproved"
         is_verified = status == "approved"
 

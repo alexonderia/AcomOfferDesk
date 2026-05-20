@@ -144,18 +144,20 @@ jobs:
               exit 1
             fi
 
-            # Staged recreate avoids Compose race: web depends_on backend healthy while
-            # --force-recreate removes backend container ID → "No such container" (GH #26144585924).
+            # Staged recreate avoids Compose race when --force-recreate drops container IDs
+            # while dependents still wait (backend/web: #26144585924; rabbitmq: #26146730081).
             compose_up() {
               docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build --force-recreate --remove-orphans "$@"
             }
-            if ! compose_up keycloak rabbitmq minio; then
-              echo "=== docker compose ps -a (infra) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
-              echo "=== keycloak logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
-              exit 1
-            fi
+            for infra_svc in rabbitmq minio keycloak; do
+              if ! compose_up "$infra_svc"; then
+                echo "=== docker compose ps -a (infra: $infra_svc) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+                echo "=== $infra_svc logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 "$infra_svc" || true
+                exit 1
+              fi
+            done
             if ! compose_up backend notifications_worker; then
               echo "=== docker compose ps -a (app) ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true

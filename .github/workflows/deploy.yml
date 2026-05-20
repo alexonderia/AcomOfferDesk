@@ -137,13 +137,6 @@ jobs:
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
-            docker rm -f keycloak_db_prepare keycloak_bootstrap keycloak_user_role_sync >/dev/null 2>&1 || true
-
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml run --rm --no-deps --name keycloak_db_prepare_run keycloak_db_prepare; then
-              echo "=== keycloak_db_prepare logs are streamed above (one-off run) ==="
-              exit 1
-            fi
-
             # Staged recreate avoids Compose race when --force-recreate drops container IDs
             # while dependents still wait (backend/web: #26144585924; rabbitmq: #26146730081).
             compose_up() {
@@ -181,28 +174,11 @@ jobs:
               fi
             fi
 
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml run --rm --no-deps --name keycloak_bootstrap_run keycloak_bootstrap; then
-              echo "=== keycloak logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
-              exit 1
-            fi
-
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml run --rm --no-deps --name keycloak_user_role_sync_run keycloak_user_role_sync; then
-              echo "=== keycloak user role sync logs are streamed above (one-off run) ==="
-              echo "=== backend logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
-              exit 1
-            fi
-
-            # Post-deploy gate (docs/development/testing-strategy.md §3–4): infra smoke + Keycloak model.
-            # Uses backend image on project_net; fails deploy if [FAIL] in smoke or check-keycloak.
-            PUBLIC_BASE_URL="$(grep -E '^(WEB_BASE_URL|PUBLIC_BACKEND_BASE_URL)=' "$APP_ENV_FILE" | head -n 1 | cut -d= -f2- | tr -d '\r' | sed -e 's/^["'\'']//' -e 's/["'\'']$//')"
-            if [ -z "$PUBLIC_BASE_URL" ]; then
-              PUBLIC_BASE_URL="http://127.0.0.1:8080"
-            fi
-            chmod +x ./scripts/post-deploy-verify.sh
-            if ! POST_DEPLOY_BASE_URL="$PUBLIC_BASE_URL" ./scripts/post-deploy-verify.sh "$COMPOSE_ENV_FILE"; then
-              echo "=== post-deploy-verify failed (smoke-infra / check-keycloak) ==="
+            # Keycloak: skip 20–30 min bootstrap when model OK + bootstrap.sh unchanged; repair on verify fail.
+            # Force full bootstrap: KEYCLOAK_BOOTSTRAP_FORCE=1 on VPS before deploy (workflow_dispatch).
+            chmod +x ./scripts/keycloak-init-deploy.sh ./scripts/run-keycloak-check-backend.sh ./scripts/post-deploy-verify.sh
+            if ! ./scripts/keycloak-init-deploy.sh "$COMPOSE_ENV_FILE"; then
+              echo "=== keycloak-init-deploy failed ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               exit 1
             fi

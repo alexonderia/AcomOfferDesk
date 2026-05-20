@@ -191,6 +191,8 @@ PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\check-prod-perimeter.ps1
 ```
 
+VPS deploy (`test` branch): `scripts/keycloak-init-deploy.sh` skips the long `keycloak_bootstrap` container when read-only `check_keycloak_permission_model` passes and `infra/keycloak/bootstrap.sh` is unchanged (state: `.deploy-state/keycloak-bootstrap.sha256`). On post-deploy failure it runs `run-keycloak-check-backend.sh --repair`. Force full bootstrap: `KEYCLOAK_BOOTSTRAP_FORCE=1` before deploy.
+
 Keycloak bootstrap validation:
 
 Linux/macOS:

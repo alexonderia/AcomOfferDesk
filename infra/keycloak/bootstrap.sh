@@ -361,10 +361,21 @@ if ! /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM" >/dev/null 2>&1; then
   exit 1
 fi
 
+_CACHED_API_CLIENT_UUID=""
+
 get_client_uuid() {
   client_id="$1"
   client_search=$(/opt/keycloak/bin/kcadm.sh get "clients?clientId=$client_id" -r "$APP_REALM")
   printf '%s' "$client_search" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+resolve_api_client_uuid() {
+  if [ -n "$_CACHED_API_CLIENT_UUID" ]; then
+    printf '%s' "$_CACHED_API_CLIENT_UUID"
+    return 0
+  fi
+  _CACHED_API_CLIENT_UUID="$(get_client_uuid "$API_CLIENT_ID")"
+  printf '%s' "$_CACHED_API_CLIENT_UUID"
 }
 
 get_client_role_id() {
@@ -426,24 +437,29 @@ clear_role_composites() {
   role_name="$2"
 
   current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+  if ! printf '%s' "$current_composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
+    return 0
+  fi
+
+  payload_file="$(mktemp)"
+  printf '%s' "$current_composites" >"$payload_file"
+  if /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1; then
+    rm -f "$payload_file"
+    return 0
+  fi
+  rm -f "$payload_file"
+
+  # Fallback: member-by-member delete when bulk payload is rejected.
   list_role_names_from_payload "$current_composites" | while IFS= read -r member_role; do
     if [ -z "$member_role" ]; then
       continue
     fi
     remove_composite_role_member "$client_uuid" "$role_name" "$member_role"
   done
-
-  # Bulk delete fallback when member list parsing misses nested payloads.
-  if printf '%s' "$current_composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
-    payload_file="$(mktemp)"
-    printf '%s' "$current_composites" >"$payload_file"
-    /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
-    rm -f "$payload_file"
-  fi
 }
 
 enforce_atomic_permission_roles() {
-  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  api_client_uuid="$(resolve_api_client_uuid)"
   if [ -z "$api_client_uuid" ]; then
     echo "Unable to resolve API client UUID for $API_CLIENT_ID"
     exit 1
@@ -601,7 +617,7 @@ ensure_client_role() {
 sync_composite_role() {
   role_name="$1"
   desired_members="$2"
-  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  api_client_uuid="$(resolve_api_client_uuid)"
 
   if [ -z "$api_client_uuid" ]; then
     echo "Unable to resolve API client UUID for $API_CLIENT_ID"
@@ -634,13 +650,8 @@ sync_composite_role() {
   rm -f "$desired_members_file"
 }
 
-verify_keycloak_permission_model() {
-  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
-  if [ -z "$api_client_uuid" ]; then
-    echo "VERIFY_FAIL: unable to resolve API client UUID for $API_CLIENT_ID"
-    exit 1
-  fi
-
+_verify_atomic_permission_roles() {
+  api_client_uuid="$1"
   verify_failed=0
 
   while IFS= read -r role_name; do
@@ -661,7 +672,25 @@ verify_keycloak_permission_model() {
 $PERMISSION_ROLE_NAMES
 EOF
 
-  if [ "$verify_failed" -ne 0 ]; then
+  return "$verify_failed"
+}
+
+verify_keycloak_permission_model_silent() {
+  api_client_uuid="$(resolve_api_client_uuid)"
+  if [ -z "$api_client_uuid" ]; then
+    return 1
+  fi
+  _verify_atomic_permission_roles "$api_client_uuid"
+}
+
+verify_keycloak_permission_model() {
+  api_client_uuid="$(resolve_api_client_uuid)"
+  if [ -z "$api_client_uuid" ]; then
+    echo "VERIFY_FAIL: unable to resolve API client UUID for $API_CLIENT_ID"
+    exit 1
+  fi
+
+  if _verify_atomic_permission_roles "$api_client_uuid"; then
     exit 1
   fi
 
@@ -669,7 +698,7 @@ EOF
 }
 
 ensure_api_roles_model() {
-  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  api_client_uuid="$(resolve_api_client_uuid)"
   if [ -z "$api_client_uuid" ]; then
     echo "Unable to resolve API client UUID for $API_CLIENT_ID"
     exit 1
@@ -697,8 +726,13 @@ ensure_api_roles_model() {
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
 
-  # Re-apply after app.* sync: Keycloak may leave stale composites on leaf roles.
-  enforce_atomic_permission_roles
+  # Re-apply only when app.* sync left stale composites on leaf roles.
+  if verify_keycloak_permission_model_silent; then
+    echo "KEYCLOAK_BOOTSTRAP: atomic roles OK after app.* sync (skipped second enforce_atomic)"
+  else
+    echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after app.* sync"
+    enforce_atomic_permission_roles
+  fi
 
   verify_keycloak_permission_model
 }

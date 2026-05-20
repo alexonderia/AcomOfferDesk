@@ -43,6 +43,11 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _utcnow_naive() -> datetime:
+    """Naive UTC for TIMESTAMP WITHOUT TIME ZONE columns (PostgreSQL/asyncpg)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _normalize_to_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -444,7 +449,7 @@ class RequestService:
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
             if data.status == "closed":
-                closed_at = _utcnow()
+                closed_at = _utcnow_naive()
                 chosen_offer_id = await self._requests.get_latest_accepted_offer_id(request_id=request.id)
                 accepted_offer = await self._offers.get_by_id(offer_id=chosen_offer_id) if chosen_offer_id is not None else None
                 self._validate_closed_request_amounts(

@@ -17,6 +17,8 @@ NOTIFICATION_TYPES = {
     "request.deadline_changed",
     "request.status_changed",
     "user.status_changed",
+    "plan.assigned",
+    "plan.updated",
     "system.warning",
 }
 

@@ -197,6 +197,13 @@ if ($apiClientUuid) {
     }
   }
 
+  Write-Host "Checking app.economist composites..."
+  $economistCompositesJson = Invoke-Kcadm -KcadmArgs @("get", "clients/$apiClientUuid/roles/app.economist/composites", "-r", $script:AppRealm)
+  $economistComposites = $economistCompositesJson | ConvertFrom-Json
+  if (-not (Assert-RoleInMappings -Mappings $economistComposites -RoleName "dashboard.plans.read" -ErrorPrefix "app.economist includes")) {
+    $fail = $true
+  }
+
   Write-Host "Checking optional delegation roles (non-blocking)..."
   foreach ($optionalRole in @("delegation.user-manager", "delegation.request-deleter")) {
     try {

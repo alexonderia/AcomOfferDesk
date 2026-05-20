@@ -146,6 +146,7 @@ def _build_service(uow: UnitOfWork) -> PlanService:
         plans=uow.economy_plans,
         users=uow.users,
         requests=uow.requests,
+        after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
     )
 
 

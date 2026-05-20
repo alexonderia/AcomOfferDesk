@@ -39,6 +39,9 @@ services:
     <<: *runtime-env
     build: ./backend
     container_name: backend
+    environment:
+      KEYCLOAK_ADMIN_USERNAME: ""
+      KEYCLOAK_ADMIN_PASSWORD: ""
     volumes:
       - ./shared:/app/shared:ro
     depends_on:

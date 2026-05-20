@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
+from shared.process_notifications import PROCESS_EVENT_TYPES, ProcessNotificationEvent, build_process_notification_event
 
 
 def test_process_notification_event_parse_valid_payload():
@@ -49,3 +49,8 @@ def test_build_process_notification_event_populates_defaults():
     assert event.event_id
     assert event.occurred_at.endswith("Z")
     assert event.payload == {"chat_id": 5}
+
+
+def test_process_notification_event_types_include_plan_events():
+    assert "plan.assigned" in PROCESS_EVENT_TYPES
+    assert "plan.updated" in PROCESS_EVENT_TYPES

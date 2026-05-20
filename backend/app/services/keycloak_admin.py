@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -342,21 +344,87 @@ class KeycloakAdminService:
             raise Forbidden("Keycloak admin integration is not configured")
 
     async def _get_admin_token(self) -> str:
-        token_endpoint = f"{self._base_url}/realms/{self._admin_realm}/protocol/openid-connect/token"
         if self._admin_client_secret:
-            form_data = {
-                "grant_type": "client_credentials",
-                "client_id": self._admin_client_id,
-                "client_secret": self._admin_client_secret,
-            }
-        else:
-            form_data = {
-                "grant_type": "password",
-                "client_id": self._admin_client_id,
-                "username": self._admin_username or "",
-                "password": self._admin_password or "",
-            }
+            # Service account permissions (realm-management roles) are usually granted in the app realm.
+            # Try app realm first, but keep a fallback token even when expected claims are not exposed.
+            weak_service_account_token: str | None = None
+            for realm in self._iter_realm_candidates(prefer_master=False):
+                token = await self._request_token(
+                    realm=realm,
+                    form_data={
+                        "grant_type": "client_credentials",
+                        "client_id": self._admin_client_id,
+                        "client_secret": self._admin_client_secret,
+                    },
+                )
+                if not token:
+                    continue
+                if self._token_has_realm_management_users_roles(token):
+                    return token
+                if weak_service_account_token is None:
+                    weak_service_account_token = token
 
+            if self._admin_username and self._admin_password:
+                password_token = await self._request_password_grant_token()
+                if password_token:
+                    return password_token
+
+            if weak_service_account_token:
+                return weak_service_account_token
+            raise Forbidden("Unable to authenticate in Keycloak admin API")
+
+        password_token = await self._request_password_grant_token()
+        if password_token:
+            return password_token
+        raise Forbidden("Unable to authenticate in Keycloak admin API")
+
+    async def _request_password_grant_token(self) -> str | None:
+        if not self._admin_username or not self._admin_password:
+            return None
+
+        candidate_clients: list[tuple[str, str | None]] = [("admin-cli", None)]
+        normalized_admin_client_id = self._admin_client_id.strip()
+        if (
+            normalized_admin_client_id
+            and normalized_admin_client_id != "admin-cli"
+            and self._admin_client_secret
+        ):
+            candidate_clients.append((normalized_admin_client_id, self._admin_client_secret))
+
+        for realm in self._iter_realm_candidates(prefer_master=True):
+            for client_id, client_secret in candidate_clients:
+                form_data = {
+                    "grant_type": "password",
+                    "client_id": client_id,
+                    "username": self._admin_username,
+                    "password": self._admin_password,
+                }
+                if client_secret:
+                    form_data["client_secret"] = client_secret
+                token = await self._request_token(
+                    realm=realm,
+                    form_data=form_data,
+                )
+                if token:
+                    return token
+        return None
+
+    def _iter_realm_candidates(self, *, prefer_master: bool) -> list[str]:
+        candidates: list[str] = []
+        if prefer_master:
+            candidates.extend([self._admin_realm, "master", self._realm])
+        else:
+            candidates.extend([self._realm, self._admin_realm, "master"])
+        unique_candidates: list[str] = []
+        for realm in candidates:
+            normalized = (realm or "").strip()
+            if not normalized or normalized in unique_candidates:
+                continue
+            unique_candidates.append(normalized)
+        return unique_candidates
+
+    async def _request_token(self, *, realm: str, form_data: dict[str, str]) -> str | None:
+        token_endpoint = f"{self._base_url}/realms/{realm}/protocol/openid-connect/token"
         async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
                 token_endpoint,
@@ -364,16 +432,43 @@ class KeycloakAdminService:
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
         if response.status_code >= 400:
-            raise Forbidden("Unable to authenticate in Keycloak admin API")
+            return None
 
         payload = response.json()
         if not isinstance(payload, dict):
-            raise Forbidden("Unable to authenticate in Keycloak admin API")
-
+            return None
         access_token = str(payload.get("access_token") or "").strip()
-        if not access_token:
-            raise Forbidden("Unable to authenticate in Keycloak admin API")
-        return access_token
+        return access_token or None
+
+    def _token_has_realm_management_users_roles(self, token: str) -> bool:
+        parts = token.split(".")
+        if len(parts) < 2:
+            return False
+        payload_segment = parts[1]
+        payload_segment += "=" * (-len(payload_segment) % 4)
+        try:
+            payload_raw = base64.urlsafe_b64decode(payload_segment.encode("utf-8")).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+
+        try:
+            payload = json.loads(payload_raw)
+        except ValueError:
+            return False
+        if not isinstance(payload, dict):
+            return False
+
+        resource_access = payload.get("resource_access")
+        if not isinstance(resource_access, dict):
+            return False
+        realm_management = resource_access.get("realm-management")
+        if not isinstance(realm_management, dict):
+            return False
+        roles = realm_management.get("roles")
+        if not isinstance(roles, list):
+            return False
+        roles_set = {str(role).strip() for role in roles}
+        return {"query-users", "view-users", "manage-users"}.issubset(roles_set)
 
     async def _find_user_by_username(self, admin_token: str, username: str) -> KeycloakAdminUser | None:
         payload = await self._get_users(
@@ -397,7 +492,7 @@ class KeycloakAdminService:
                 headers=self._headers(admin_token),
             )
         if response.status_code >= 400:
-            raise Conflict("Unable to query Keycloak users")
+            raise Conflict(f"Unable to query Keycloak users (status={response.status_code})")
 
         payload = response.json()
         if not isinstance(payload, list):

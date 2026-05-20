@@ -54,7 +54,7 @@ Legend: `Y` = granted, `N` = not granted.
 | `feedback.create` | Y | Y | Y | Y | Y | Y | Y |
 | `dashboard.process.read` | Y | N | Y | Y | N | N | N |
 | `dashboard.savings.read` | Y | N | Y | Y | N | N | N |
-| `dashboard.plans.read` | Y | N | Y | Y | N | N | N |
+| `dashboard.plans.read` | Y | N | Y | Y | Y | N | N |
 | `normative_files.read` | Y | N | Y | Y | Y | Y | N |
 | `normative_files.create` | Y | N | N | Y | N | N | N |
 | `normative_files.manage` | Y | N | N | Y | N | N | N |
@@ -73,7 +73,7 @@ Legend: `Y` = granted, `N` = not granted.
 | `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
 | `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Manage hierarchy assignments, change request owner, manage manual contractors, set subordinate unavailability, economy-role changes for subordinates |
 | `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Full request/offer workflow, create manual offers, manage normative files, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
-| `economist` | `/requests`, `/admin` | Request/offers processing in scope, manual offers, subordinate unavailability, manual contractors create/manage (no dashboard sections by permission) |
+| `economist` | `/pm-dashboard/plan`, `/requests`, `/admin` | Request/offers processing in scope, manual offers, subordinate unavailability, manual contractors create/manage, plan dashboard (only delegated branch and below) |
 | `operator` | `/requests` | Create/read/update requests (pricing/deadline/status), view normative files, no offer/chat/admin/dashboard features |
 | `contractor` | `/requests` (tabs: open/my), `/requests/:id/contractor`, `/offers/:id/workspace` | Create offers, work in workspace, manage own company contacts, chat and files within own offer scope |
 

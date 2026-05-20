@@ -121,6 +121,12 @@ class ProcessNotificationEventHandler:
         if event.event_type == "user.status_changed":
             await self._handle_user_status_changed(uow=uow, service=service, repo=repo, event=event)
             return
+        if event.event_type == "plan.assigned":
+            await self._handle_plan_assigned(service=service, repo=repo, event=event)
+            return
+        if event.event_type == "plan.updated":
+            await self._handle_plan_updated(service=service, repo=repo, event=event)
+            return
         if event.event_type == "system.warning":
             await self._handle_system_warning(service=service, repo=repo, event=event)
             return
@@ -659,6 +665,96 @@ class ProcessNotificationEventHandler:
                 **payload,
                 "event_id": event.event_id,
                 "dedupe_key": event.dedupe_key,
+            },
+        )
+
+    async def _handle_plan_assigned(
+        self,
+        *,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        payload = event.payload or {}
+        recipient_user_id = _normalize_optional_str(payload.get("responsible_user_id"))
+        if recipient_user_id is None:
+            logger.info("Skip plan.assigned event without responsible_user_id: event_id=%s", event.event_id)
+            return
+        if event.actor_user_id is not None and event.actor_user_id == recipient_user_id:
+            return
+        if await self._is_duplicate(repo=repo, user_id=recipient_user_id, notification_type=event.event_type, event=event):
+            return
+
+        plan_id_raw = payload.get("plan_id")
+        plan_id = int(plan_id_raw) if isinstance(plan_id_raw, int) or (isinstance(plan_id_raw, str) and plan_id_raw.isdigit()) else None
+        await service.create_for_user(
+            user_id=recipient_user_id,
+            notification_type="plan.assigned",
+            severity="info",
+            title="Назначен план",
+            body="Вам назначен план по экономии.",
+            entity_type="plan",
+            entity_id=plan_id,
+            link_url="/pm-dashboard/plan",
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "plan_id": plan_id,
+                "responsible_user_id": recipient_user_id,
+                "actor_user_id": event.actor_user_id,
+                "assigned_by_user_id": _normalize_optional_str(payload.get("assigned_by_user_id")),
+                "parent_plan_id": payload.get("parent_plan_id"),
+                "plan_sum": payload.get("plan_sum"),
+                "period": payload.get("period"),
+                "period_start": payload.get("period_start"),
+                "period_end": payload.get("period_end"),
+            },
+        )
+
+    async def _handle_plan_updated(
+        self,
+        *,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+    ) -> None:
+        payload = event.payload or {}
+        recipient_user_id = _normalize_optional_str(payload.get("responsible_user_id"))
+        if recipient_user_id is None:
+            logger.info("Skip plan.updated event without responsible_user_id: event_id=%s", event.event_id)
+            return
+        if event.actor_user_id is not None and event.actor_user_id == recipient_user_id:
+            return
+        if await self._is_duplicate(repo=repo, user_id=recipient_user_id, notification_type=event.event_type, event=event):
+            return
+
+        plan_id_raw = payload.get("plan_id")
+        plan_id = int(plan_id_raw) if isinstance(plan_id_raw, int) or (isinstance(plan_id_raw, str) and plan_id_raw.isdigit()) else None
+        await service.create_for_user(
+            user_id=recipient_user_id,
+            notification_type="plan.updated",
+            severity="info",
+            title="План изменен",
+            body="Ваш план по экономии был обновлен.",
+            entity_type="plan",
+            entity_id=plan_id,
+            link_url="/pm-dashboard/plan",
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "plan_id": plan_id,
+                "responsible_user_id": recipient_user_id,
+                "actor_user_id": event.actor_user_id,
+                "assigned_by_user_id": _normalize_optional_str(payload.get("assigned_by_user_id")),
+                "parent_plan_id": payload.get("parent_plan_id"),
+                "plan_sum": payload.get("plan_sum"),
+                "old_plan_sum": payload.get("old_plan_sum"),
+                "new_plan_sum": payload.get("new_plan_sum"),
+                "period": payload.get("period"),
+                "old_period_end": payload.get("old_period_end"),
+                "new_period_end": payload.get("new_period_end"),
+                "period_start": payload.get("period_start"),
+                "period_end": payload.get("period_end"),
             },
         )
 

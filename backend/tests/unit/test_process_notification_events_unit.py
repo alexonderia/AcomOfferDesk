@@ -357,3 +357,110 @@ async def test_handler_user_status_changed_notifies_admins_except_actor(monkeypa
     assert len(repo.created) == 1
     assert repo.created[0].user_id == "admin-2"
     assert repo.created[0].type == "user.status_changed"
+
+
+@pytest.mark.asyncio
+async def test_handler_plan_assigned_notifies_responsible(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="plan.assigned",
+        actor_user_id="manager-1",
+        dedupe_key="plan.assigned:101:employee-1",
+        payload={
+            "plan_id": 101,
+            "responsible_user_id": "employee-1",
+            "assigned_by_user_id": "manager-1",
+            "parent_plan_id": 55,
+            "plan_sum": "150000.00",
+            "period": "2026-05",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "employee-1"
+    assert repo.created[0].type == "plan.assigned"
+
+
+@pytest.mark.asyncio
+async def test_handler_plan_assigned_skips_self_notification(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="plan.assigned",
+        actor_user_id="employee-1",
+        dedupe_key="plan.assigned:101:employee-1",
+        payload={
+            "plan_id": 101,
+            "responsible_user_id": "employee-1",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert repo.created == []
+
+
+@pytest.mark.asyncio
+async def test_handler_plan_updated_notifies_responsible(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="plan.updated",
+        actor_user_id="manager-1",
+        dedupe_key="plan.updated:101:employee-1:2026-05-19T12:00:00Z",
+        payload={
+            "plan_id": 101,
+            "responsible_user_id": "employee-1",
+            "old_plan_sum": "120000.00",
+            "new_plan_sum": "150000.00",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "employee-1"
+    assert repo.created[0].type == "plan.updated"
+
+
+@pytest.mark.asyncio
+async def test_handler_plan_updated_skips_self_notification(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="plan.updated",
+        actor_user_id="employee-1",
+        dedupe_key="plan.updated:101:employee-1:2026-05-19T12:00:00Z",
+        payload={
+            "plan_id": 101,
+            "responsible_user_id": "employee-1",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert repo.created == []
+
+
+@pytest.mark.asyncio
+async def test_handler_plan_updated_skips_empty_recipients(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="plan.updated",
+        actor_user_id="manager-1",
+        dedupe_key="plan.updated:101:none:2026-05-19T12:00:00Z",
+        payload={"plan_id": 101},
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert repo.created == []

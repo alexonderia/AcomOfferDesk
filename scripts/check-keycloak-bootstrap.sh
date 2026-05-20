@@ -241,6 +241,15 @@ if [[ -n "$API_CLIENT_UUID" ]]; then
     fi
   done <<<"$ROLE_NAMES"
 
+  echo "Checking app.economist composites..."
+  economist_composites="$(docker_exec /opt/keycloak/bin/kcadm.sh get "clients/$API_CLIENT_UUID/roles/app.economist/composites" -r "$APP_REALM")"
+  if printf '%s' "$economist_composites" | contains_role_name "dashboard.plans.read"; then
+    echo "OK: app.economist includes dashboard.plans.read"
+  else
+    echo "FAIL: app.economist is missing dashboard.plans.read"
+    fail=1
+  fi
+
   echo "Checking optional delegation roles (non-blocking)..."
   for optional_role in delegation.user-manager delegation.request-deleter; do
     if docker_exec /opt/keycloak/bin/kcadm.sh get "clients/$API_CLIENT_UUID/roles/$optional_role" -r "$APP_REALM" >/dev/null 2>&1; then

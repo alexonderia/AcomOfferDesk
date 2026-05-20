@@ -208,3 +208,26 @@ async def test_plan_request_stats_aggregate_by_hierarchy_existing_logic():
     assert stats.request_fact_amount == Decimal("300.00")
     assert stats.unallocated_amount == Decimal("25.00")
     assert stats.completion_percent == Decimal("60.00")
+
+
+@pytest.mark.asyncio
+async def test_plan_dashboard_entry_for_economist_is_limited_to_own_delegated_branch(make_current_user):
+    service = PlanService(plans=SimpleNamespace(), users=SimpleNamespace(), requests=_PlanRequestsRepo())
+    current_user = make_current_user(
+        user_id="econ-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.DASHBOARD_PLANS_READ},
+    )
+    period_plans = [
+        SimpleNamespace(id=1, id_user="pm-1", id_parent_plan=None),
+        SimpleNamespace(id=2, id_user="econ-1", id_parent_plan=1),
+        SimpleNamespace(id=3, id_user="econ-1", id_parent_plan=2),
+        SimpleNamespace(id=4, id_user="econ-2", id_parent_plan=1),
+    ]
+
+    entry_plans = await service._resolve_dashboard_entry_plans(
+        period_plans=period_plans,
+        current_user=current_user,
+    )
+
+    assert [plan.id for plan in entry_plans] == [2]

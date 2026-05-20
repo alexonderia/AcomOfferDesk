@@ -41,12 +41,23 @@ def _bootstrap_path() -> Path:
     )
 
 
-def _parse_line_block(block: str) -> frozenset[str]:
+_PERMISSION_NAMES_PLACEHOLDER = "$PERMISSION_ROLE_NAMES"
+
+
+def _parse_line_block(block: str, *, permission_names: frozenset[str] | None = None) -> frozenset[str]:
     members: set[str] = set()
     for line in block.splitlines():
         normalized = line.strip()
-        if normalized:
-            members.add(normalized)
+        if not normalized:
+            continue
+        if normalized == _PERMISSION_NAMES_PLACEHOLDER:
+            if permission_names is None:
+                raise RuntimeError(
+                    f"{_PERMISSION_NAMES_PLACEHOLDER} placeholder requires expanded permission role names"
+                )
+            members.update(permission_names)
+            continue
+        members.add(normalized)
     return frozenset(members)
 
 
@@ -62,9 +73,10 @@ def load_permission_role_names() -> frozenset[str]:
 @lru_cache(maxsize=1)
 def load_app_role_members() -> dict[str, frozenset[str]]:
     text = _bootstrap_path().read_text(encoding="utf-8")
+    permission_names = load_permission_role_names()
     manifest: dict[str, frozenset[str]] = {}
     for match in _APP_ROLE_BLOCK_PATTERN.finditer(text):
         # APP_CONTRACTOR -> app.contractor, APP_PROJECT_MANAGER -> app.project_manager
         role_name = f"app.{match.group(1)[4:].lower()}"
-        manifest[role_name] = _parse_line_block(match.group(2))
+        manifest[role_name] = _parse_line_block(match.group(2), permission_names=permission_names)
     return manifest

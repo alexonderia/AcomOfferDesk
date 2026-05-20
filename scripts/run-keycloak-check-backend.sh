@@ -7,11 +7,16 @@ cd "$ROOT_DIR"
 
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-backend/.env}"
 REPAIR="${KEYCLOAK_PERMISSION_REPAIR:-false}"
+DEPLOY_GATE="${KEYCLOAK_DEPLOY_GATE:-false}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --repair)
       REPAIR=true
+      shift
+      ;;
+    --deploy-gate)
+      DEPLOY_GATE=true
       shift
       ;;
     --env-file)
@@ -31,8 +36,12 @@ if ! docker inspect --format '{{.State.Running}}' backend 2>/dev/null | grep -q 
 fi
 
 REPAIR_FLAG=""
+DEPLOY_GATE_FLAG=""
 if [ "$REPAIR" = "true" ] || [ "$REPAIR" = "1" ]; then
   REPAIR_FLAG="--repair"
+fi
+if [ "$DEPLOY_GATE" = "true" ] || [ "$DEPLOY_GATE" = "1" ]; then
+  DEPLOY_GATE_FLAG="--deploy-gate"
 fi
 
 docker compose --env-file "$COMPOSE_ENV_FILE" exec -T \
@@ -63,8 +72,11 @@ cmd = [
     env_path,
 ]
 repair = "${REPAIR_FLAG}"
+deploy_gate = "${DEPLOY_GATE_FLAG}"
 if repair:
     cmd.append(repair)
+if deploy_gate:
+    cmd.append(deploy_gate)
 
 result = subprocess.run(cmd, check=False)
 try:

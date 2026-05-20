@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keycloak init on VPS: skip long bootstrap when model is OK; repair on verify failure.
+# Keycloak init on VPS: skip long bootstrap when atomic model OK; repair via Python Admin API.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,17 +22,25 @@ run_compose_init() {
   fi
 }
 
-keycloak_model_ok() {
-  "$ROOT_DIR/scripts/run-keycloak-check-backend.sh" --env-file "$COMPOSE_ENV_FILE"
+keycloak_deploy_gate_ok() {
+  KEYCLOAK_DEPLOY_GATE=1 "$ROOT_DIR/scripts/run-keycloak-check-backend.sh" --env-file "$COMPOSE_ENV_FILE"
+}
+
+keycloak_repair() {
+  KEYCLOAK_PERMISSION_REPAIR=1 "$ROOT_DIR/scripts/run-keycloak-check-backend.sh" --repair --env-file "$COMPOSE_ENV_FILE"
 }
 
 current_bootstrap_sha() {
   sha256sum "$BOOTSTRAP_SCRIPT" | awk '{print $1}'
 }
 
+record_bootstrap_sha() {
+  current_bootstrap_sha >"$BOOTSTRAP_SHA_FILE"
+}
+
 should_skip_bootstrap() {
   if [ "${KEYCLOAK_BOOTSTRAP_FORCE:-0}" = "1" ] || [ "${KEYCLOAK_BOOTSTRAP_FORCE:-}" = "true" ]; then
-    echo "KEYCLOAK_BOOTSTRAP: force full run (KEYCLOAK_BOOTSTRAP_FORCE)"
+    echo "KEYCLOAK_BOOTSTRAP: force full container bootstrap (KEYCLOAK_BOOTSTRAP_FORCE)"
     return 1
   fi
 
@@ -43,29 +51,24 @@ should_skip_bootstrap() {
     stored_sha="$(tr -d '[:space:]' <"$BOOTSTRAP_SHA_FILE")"
   fi
 
-  if [ "$current_sha" != "$stored_sha" ]; then
-    if [ -z "$stored_sha" ]; then
-      echo "KEYCLOAK_BOOTSTRAP: no deploy state yet — checking if full bootstrap is needed..."
-      if keycloak_model_ok; then
-        printf '%s\n' "$current_sha" >"$BOOTSTRAP_SHA_FILE"
-        echo "KEYCLOAK_BOOTSTRAP: skip full bootstrap (model already OK, recorded sha)"
-        return 0
-      fi
-      echo "KEYCLOAK_BOOTSTRAP: model check failed — running full bootstrap"
-      return 1
-    fi
-    echo "KEYCLOAK_BOOTSTRAP: bootstrap.sh changed (stored=$stored_sha current=$current_sha)"
+  echo "KEYCLOAK_BOOTSTRAP: deploy gate (atomic permission roles only)..."
+  if ! keycloak_deploy_gate_ok; then
+    echo "KEYCLOAK_BOOTSTRAP: atomic roles not OK — will repair and/or run container bootstrap"
     return 1
   fi
 
-  echo "KEYCLOAK_BOOTSTRAP: checking permission model (read-only)..."
-  if keycloak_model_ok; then
-    echo "KEYCLOAK_BOOTSTRAP: skip full bootstrap (model OK, script unchanged)"
-    return 0
+  if [ "$current_sha" != "$stored_sha" ]; then
+    if [ -z "$stored_sha" ]; then
+      echo "KEYCLOAK_BOOTSTRAP: first deploy with OK atomic model — skip container bootstrap"
+      record_bootstrap_sha
+      return 0
+    fi
+    echo "KEYCLOAK_BOOTSTRAP: bootstrap.sh changed (stored=$stored_sha current=$current_sha) — run container bootstrap"
+    return 1
   fi
 
-  echo "KEYCLOAK_BOOTSTRAP: model check failed — running full bootstrap"
-  return 1
+  echo "KEYCLOAK_BOOTSTRAP: skip container bootstrap (atomic OK, bootstrap.sh unchanged)"
+  return 0
 }
 
 docker rm -f keycloak_db_prepare keycloak_bootstrap keycloak_user_role_sync >/dev/null 2>&1 || true
@@ -76,15 +79,24 @@ if ! run_compose_init keycloak_db_prepare keycloak_db_prepare_run; then
 fi
 
 if should_skip_bootstrap; then
-  :
+  echo "KEYCLOAK_BOOTSTRAP: reconciling app.* composites via Python repair (fast)"
+  keycloak_repair
 else
-  if ! run_compose_init keycloak_bootstrap keycloak_bootstrap_run; then
-    echo "=== keycloak_bootstrap failed ===" >&2
-    docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
-    exit 1
+  echo "KEYCLOAK_BOOTSTRAP: running Python repair before container bootstrap"
+  keycloak_repair || true
+  if keycloak_deploy_gate_ok; then
+    echo "KEYCLOAK_BOOTSTRAP: repair restored atomic model — skip container bootstrap"
+    record_bootstrap_sha
+  else
+    if ! run_compose_init keycloak_bootstrap keycloak_bootstrap_run; then
+      echo "=== keycloak_bootstrap failed ===" >&2
+      docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
+      exit 1
+    fi
+    record_bootstrap_sha
+    echo "KEYCLOAK_BOOTSTRAP: container bootstrap finished — running repair for app.* composites"
+    keycloak_repair
   fi
-  current_bootstrap_sha >"$BOOTSTRAP_SHA_FILE"
-  echo "KEYCLOAK_BOOTSTRAP: recorded sha in $BOOTSTRAP_SHA_FILE"
 fi
 
 if ! run_compose_init keycloak_user_role_sync keycloak_user_role_sync_run; then
@@ -105,12 +117,11 @@ if POST_DEPLOY_BASE_URL="$PUBLIC_BASE_URL" "$ROOT_DIR/scripts/post-deploy-verify
   exit 0
 fi
 
-echo "KEYCLOAK_INIT_DEPLOY: post-deploy failed — attempting Keycloak repair (Python Admin API)..." >&2
-if KEYCLOAK_PERMISSION_REPAIR=1 "$ROOT_DIR/scripts/run-keycloak-check-backend.sh" --repair --env-file "$COMPOSE_ENV_FILE"; then
-  if POST_DEPLOY_BASE_URL="$PUBLIC_BASE_URL" "$ROOT_DIR/scripts/post-deploy-verify.sh" "$COMPOSE_ENV_FILE"; then
-    echo "KEYCLOAK_INIT_DEPLOY: post-deploy verify passed after repair"
-    exit 0
-  fi
+echo "KEYCLOAK_INIT_DEPLOY: post-deploy failed — repair + re-verify" >&2
+keycloak_repair
+if POST_DEPLOY_BASE_URL="$PUBLIC_BASE_URL" "$ROOT_DIR/scripts/post-deploy-verify.sh" "$COMPOSE_ENV_FILE"; then
+  echo "KEYCLOAK_INIT_DEPLOY: post-deploy verify passed after repair"
+  exit 0
 fi
 
 echo "KEYCLOAK_INIT_DEPLOY: post-deploy verify still failing" >&2

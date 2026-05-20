@@ -782,6 +782,11 @@ def main() -> int:
         action="store_true",
         help="Enforce atomic permission roles and prune app.* composites before checks",
     )
+    parser.add_argument(
+        "--deploy-gate",
+        action="store_true",
+        help="Fast deploy gate: only atomic permission roles (skip app.* composite manifest drift)",
+    )
     args = parser.parse_args()
 
     env_map = _load_env_file(args.env_file)
@@ -875,6 +880,24 @@ def main() -> int:
         report.fail(f"Admin API authentication failed: {exc}")
         report.print()
         return 1
+
+    if args.deploy_gate:
+        api_client = admin_api.get_client(api_client_id)
+        if api_client is None:
+            report.fail(f"Client '{api_client_id}' is missing")
+        else:
+            report.ok(f"Client '{api_client_id}' exists")
+            client_uuid = str(api_client.get("id") or "").strip()
+            if not client_uuid:
+                report.fail(f"Client '{api_client_id}' uuid is empty")
+            else:
+                _run_check(
+                    report,
+                    "deploy gate: atomic permission roles",
+                    lambda: _check_strict_permission_model(report, admin_api, client_uuid),
+                )
+        report.print()
+        return 1 if report.has_failures() else 0
 
     _run_check(
         report,

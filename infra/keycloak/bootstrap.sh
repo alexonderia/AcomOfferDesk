@@ -426,14 +426,20 @@ clear_role_composites() {
   role_name="$2"
 
   current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
-  if ! printf '%s' "$current_composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
-    return 0
-  fi
+  list_role_names_from_payload "$current_composites" | while IFS= read -r member_role; do
+    if [ -z "$member_role" ]; then
+      continue
+    fi
+    remove_composite_role_member "$client_uuid" "$role_name" "$member_role"
+  done
 
-  payload_file="$(mktemp)"
-  printf '%s' "$current_composites" >"$payload_file"
-  /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
-  rm -f "$payload_file"
+  # Bulk delete fallback when member list parsing misses nested payloads.
+  if printf '%s' "$current_composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
+    payload_file="$(mktemp)"
+    printf '%s' "$current_composites" >"$payload_file"
+    /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
+    rm -f "$payload_file"
+  fi
 }
 
 enforce_atomic_permission_roles() {
@@ -443,7 +449,7 @@ enforce_atomic_permission_roles() {
     exit 1
   fi
 
-  printf '%s\n' "$PERMISSION_ROLE_NAMES" | while IFS= read -r role_name; do
+  while IFS= read -r role_name; do
     if [ -z "$role_name" ]; then
       continue
     fi
@@ -452,7 +458,9 @@ enforce_atomic_permission_roles() {
       -s "name=$role_name" \
       -s composite=false \
       -s clientRole=true >/dev/null
-  done
+  done <<EOF
+$PERMISSION_ROLE_NAMES
+EOF
 }
 
 ensure_composite_role_has_member() {
@@ -688,6 +696,9 @@ ensure_api_roles_model() {
   sync_composite_role "app.lead_economist" "$ROLE_APP_LEAD_ECONOMIST"
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
+
+  # Re-apply after app.* sync: Keycloak may leave stale composites on leaf roles.
+  enforce_atomic_permission_roles
 
   verify_keycloak_permission_model
 }

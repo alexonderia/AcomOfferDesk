@@ -410,6 +410,51 @@ ensure_user_has_client_role() {
   rm -f "$payload_file"
 }
 
+list_role_names_from_payload() {
+  payload="$1"
+  printf '%s' "$payload" | tr '{' '\n' | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+
+role_name_in_list() {
+  needle="$1"
+  haystack="$2"
+  printf '%s\n' "$haystack" | grep -Fxq "$needle"
+}
+
+clear_role_composites() {
+  client_uuid="$1"
+  role_name="$2"
+
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+  if ! printf '%s' "$current_composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
+    return 0
+  fi
+
+  payload_file="$(mktemp)"
+  printf '%s' "$current_composites" >"$payload_file"
+  /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
+  rm -f "$payload_file"
+}
+
+enforce_atomic_permission_roles() {
+  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  if [ -z "$api_client_uuid" ]; then
+    echo "Unable to resolve API client UUID for $API_CLIENT_ID"
+    exit 1
+  fi
+
+  printf '%s\n' "$PERMISSION_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -z "$role_name" ]; then
+      continue
+    fi
+    clear_role_composites "$api_client_uuid" "$role_name"
+    /opt/keycloak/bin/kcadm.sh update "clients/$api_client_uuid/roles/$role_name" -r "$APP_REALM" \
+      -s "name=$role_name" \
+      -s composite=false \
+      -s clientRole=true >/dev/null
+  done
+}
+
 ensure_composite_role_has_member() {
   client_uuid="$1"
   composite_role_name="$2"
@@ -422,6 +467,16 @@ ensure_composite_role_has_member() {
 
   payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
   /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null
+  rm -f "$payload_file"
+}
+
+remove_composite_role_member() {
+  client_uuid="$1"
+  composite_role_name="$2"
+  member_role_name="$3"
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
+  /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
   rm -f "$payload_file"
 }
 
@@ -557,7 +612,52 @@ sync_composite_role() {
       ensure_composite_role_has_member "$api_client_uuid" "$role_name" "$member_role"
     fi
   done <"$desired_members_file"
+
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+  for member_role in $(list_role_names_from_payload "$current_composites"); do
+    if [ -z "$member_role" ] || [ "$member_role" = "$role_name" ]; then
+      continue
+    fi
+    if ! role_name_in_list "$member_role" "$desired_members"; then
+      remove_composite_role_member "$api_client_uuid" "$role_name" "$member_role"
+    fi
+  done
+
   rm -f "$desired_members_file"
+}
+
+verify_keycloak_permission_model() {
+  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  if [ -z "$api_client_uuid" ]; then
+    echo "VERIFY_FAIL: unable to resolve API client UUID for $API_CLIENT_ID"
+    exit 1
+  fi
+
+  verify_failed=0
+
+  while IFS= read -r role_name; do
+    if [ -z "$role_name" ]; then
+      continue
+    fi
+    role_payload=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name" -r "$APP_REALM" 2>/dev/null || printf '{}')
+    if printf '%s' "$role_payload" | grep -Eq '"composite"[[:space:]]*:[[:space:]]*true'; then
+      echo "VERIFY_FAIL: permission role '$role_name' must be composite=false"
+      verify_failed=1
+    fi
+    composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+    if printf '%s' "$composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
+      echo "VERIFY_FAIL: permission role '$role_name' must not have composite members"
+      verify_failed=1
+    fi
+  done <<EOF
+$PERMISSION_ROLE_NAMES
+EOF
+
+  if [ "$verify_failed" -ne 0 ]; then
+    exit 1
+  fi
+
+  echo "VERIFY_OK: atomic permission roles have no nested composites"
 }
 
 ensure_api_roles_model() {
@@ -579,6 +679,8 @@ ensure_api_roles_model() {
     fi
   done
 
+  enforce_atomic_permission_roles
+
   sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
   sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
   sync_composite_role "app.contractor" "$ROLE_APP_CONTRACTOR"
@@ -587,6 +689,7 @@ ensure_api_roles_model() {
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
 
+  verify_keycloak_permission_model
 }
 
 ensure_admin_service_role_bindings() {

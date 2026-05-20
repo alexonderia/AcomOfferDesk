@@ -6,6 +6,7 @@ Focus:
 - unknown roles are ignored as atomic permissions.
 """
 
+from app.core.config import settings
 from app.domain.auth_context import build_current_user_from_keycloak
 from app.domain.permissions import PermissionCodes
 
@@ -66,6 +67,27 @@ def test_build_current_user_from_keycloak_app_superadmin_without_atomic_permissi
     assert current_user.permissions == frozenset()
     assert current_user.app_roles == frozenset({"app.superadmin"})
     assert "app.superadmin" not in current_user.permissions
+
+
+def test_build_current_user_from_keycloak_caps_jwt_permissions_to_local_role_ceiling():
+    current_user = build_current_user_from_keycloak(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        status="active",
+        api_roles=frozenset(
+            {
+                PermissionCodes.REQUESTS_OPEN_READ,
+                PermissionCodes.NORMATIVE_FILES_CREATE,
+                PermissionCodes.REQUESTS_CREATE,
+                PermissionCodes.USERS_READ,
+            }
+        ),
+    )
+
+    assert PermissionCodes.REQUESTS_OPEN_READ in current_user.permissions
+    assert PermissionCodes.NORMATIVE_FILES_CREATE not in current_user.permissions
+    assert PermissionCodes.REQUESTS_CREATE not in current_user.permissions
+    assert PermissionCodes.USERS_READ not in current_user.permissions
 
 
 def test_build_current_user_from_keycloak_delegation_roles_do_not_become_permissions():

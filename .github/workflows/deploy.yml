@@ -67,7 +67,10 @@ jobs:
               docker exec order-database-postgres pg_dump -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -F c > "$backup_path"
               sha256sum "$backup_path" > "$backup_path.sha256"
 
-              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm flyway migrate)
+              # order-database-postgres: avoid DNS alias "postgres" (acome-monitoring also registers postgres on project_net).
+              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm \
+                -e "FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${ORDER_DB_NAME}" \
+                flyway migrate)
             }
 
             cd /opt/acome-offer-desk

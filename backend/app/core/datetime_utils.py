@@ -17,3 +17,8 @@ def normalize_to_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def to_db_timestamp(value: datetime) -> datetime:
+    """Naive UTC for PostgreSQL TIMESTAMP WITHOUT TIME ZONE (asyncpg)."""
+    return normalize_to_utc(value).replace(tzinfo=None)

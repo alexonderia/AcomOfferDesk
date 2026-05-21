@@ -54,6 +54,10 @@ from app.services.tg_registration_links import (
     TgRegistrationLinkInvalidError,
     resolve_tg_registration_token,
 )
+from app.services.registration_admin_notify import (
+    RegistrationNotifyContext,
+    notify_new_user_registration,
+)
 from app.services.users import UserRegistrationService
 
 router = APIRouter()
@@ -476,6 +480,19 @@ async def keycloak_callback(
                 token_claims,
                 allow_user_creation=claims.flow == "register",
             )
+            if claims.flow == "register" and synced.created_local_user:
+                role = await uow.users.get_role_by_id(synced.user.id_role)
+                await notify_new_user_registration(
+                    RegistrationNotifyContext(
+                        source="oidc_invite",
+                        user_id=synced.user.id,
+                        role_id=synced.user.id_role,
+                        role_name=role.role if role else None,
+                        status=synced.user.status,
+                        email=token_claims.email,
+                        keycloak_subject=token_claims.subject,
+                    )
+                )
             if claims.tg_registration_id is not None:
                 if not settings.telegram_legacy_enabled:
                     raise Forbidden("Telegram legacy authentication is disabled")

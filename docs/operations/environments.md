@@ -4,6 +4,8 @@
 
 Этот документ — единый источник по режимам `dev/test/prod`, compose-слоям, сетевому периметру и admin-only доступу.
 
+**Слияние `dev` → `test` (деплой):** см. [`branch-merge-policy.md`](branch-merge-policy.md) — PR, CI gate `Promotion to test`, защита ветки `test` в GitHub.
+
 Смежные документы:
 - [Runtime-архитектура](../product/runtime-architecture.md)
 - [Production переменные/секреты](../release/production-env.md)

@@ -220,7 +220,7 @@ class Settings(BaseSettings):
         validation_alias="REGISTRATION_NOTIFY_SERVICE",
     )
     registration_notify_timeout_seconds: float = Field(
-        default=5.0,
+        default=20.0,
         validation_alias="REGISTRATION_NOTIFY_TIMEOUT_SECONDS",
     )
 

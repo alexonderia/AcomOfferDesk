@@ -204,6 +204,12 @@ Keycloak permission model on VPS (running `backend` container):
 
 Local/dev Keycloak model check (host Python, repo env file): `./scripts/check-keycloak.sh .env.dev` (see `docs/development/testing-strategy.md`).
 
+### Keycloak Admin API (backend: создание пользователей / контрагентов)
+
+- Учётные данные для Admin API задаются в **runtime env** (`backend/.env` на VPS): `KC_BOOTSTRAP_ADMIN_*` и/или `KEYCLOAK_ADMIN_*`, плюс `KEYCLOAK_ADMIN_CLIENT_ID` / `KEYCLOAK_ADMIN_CLIENT_SECRET` для `acom-admin-service`.
+- В **`docker-compose.yml` не задавать** `KEYCLOAK_ADMIN_USERNAME` / `KEYCLOAK_ADMIN_PASSWORD` пустыми строками в `environment:` — это перекрывает `env_file` и ломает fallback на bootstrap (ошибка UI: «Unable to authenticate in Keycloak admin API»).
+- Если service account без admin-ролей, backend использует password grant bootstrap-админа (`master` realm) — те же переменные, что для `check-keycloak-bootstrap.sh`.
+
 Keycloak bootstrap validation:
 
 Linux/macOS:

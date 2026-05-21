@@ -41,9 +41,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: backend
-    environment:
-      KEYCLOAK_ADMIN_USERNAME: ""
-      KEYCLOAK_ADMIN_PASSWORD: ""
+    # Keycloak admin credentials: only via env_file (KC_BOOTSTRAP_* / KEYCLOAK_ADMIN_*).
+    # Do not set KEYCLOAK_ADMIN_USERNAME/PASSWORD to "" here — empty compose overrides
+    # block bootstrap fallback and break manual user/contractor creation (regression dc660e0).
     volumes:
       - ./shared:/app/shared:ro
       - ./infra/keycloak/bootstrap.sh:/app/keycloak/bootstrap.sh:ro

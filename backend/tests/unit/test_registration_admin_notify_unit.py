@@ -26,10 +26,12 @@ def test_format_registration_message_russian_blocks():
             role_id=settings.contractor_role_id,
             role_name="Контрагент",
             status="review",
+            full_name="Иванов Иван",
             company_name="ООО Тест",
         )
     )
     assert "Регистрация AcomOfferDesk" in message
+    assert "Пользователь: Иванов Иван" in message
     assert "Суть" not in message  # Hermes-style blocks only in relay; here flat format
     assert "Контрагент" in message
     assert "app.contractor" in message

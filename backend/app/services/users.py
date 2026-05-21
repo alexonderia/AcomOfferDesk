@@ -385,6 +385,7 @@ class UserRegistrationService:
                 role_id=role_id,
                 role_name=target_role.role,
                 status=user.status,
+                full_name=normalized_full_name,
                 email=normalized_mail,
                 registered_by=current_user.user_id,
                 keycloak_subject=keycloak_user.id,
@@ -483,6 +484,7 @@ class ContractorRegistrationService:
                 role_id=settings.contractor_role_id,
                 role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
                 status=user.status,
+                full_name=full_name,
                 email=company_mail if company_mail != "Не указано" else None,
                 company_name=company_name,
             )
@@ -1205,6 +1207,7 @@ class ManualContractorService:
                 role_id=settings.contractor_role_id,
                 role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
                 status="active",
+                full_name=normalized_data.full_name,
                 email=normalized_data.company_mail,
                 registered_by=current_user.user_id,
                 company_name=normalized_data.company_name,

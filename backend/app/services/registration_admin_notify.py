@@ -28,6 +28,7 @@ class RegistrationNotifyContext:
     role_id: int
     role_name: str | None
     status: str
+    full_name: str | None = None
     email: str | None = None
     registered_by: str | None = None
     company_name: str | None = None
@@ -53,9 +54,11 @@ def format_registration_message(ctx: RegistrationNotifyContext) -> str:
     audit = build_permission_audit(ctx.role_id)
     source_label = _SOURCE_LABELS.get(ctx.source, ctx.source)
     role_line = f"{ctx.role_name or '—'} (id={ctx.role_id})"
+    display_name = (ctx.full_name or "").strip() or ctx.user_id
     lines = [
         "Регистрация AcomOfferDesk",
         f"Источник: {source_label}",
+        f"Пользователь: {display_name}",
         f"Логин: {ctx.user_id} | статус: {ctx.status}",
         f"Роль: {role_line} → Keycloak {audit['keycloak_app_role']}",
         f"Прав по матрице permissions.py: {audit['permissions_count']} "
@@ -84,6 +87,7 @@ async def notify_new_user_registration(ctx: RegistrationNotifyContext) -> None:
         return
 
     message = format_registration_message(ctx)
+    audit = build_permission_audit(ctx.role_id)
     payload: dict[str, object] = {
         "event": "user_registration",
         "service": settings.registration_notify_service,
@@ -94,7 +98,12 @@ async def notify_new_user_registration(ctx: RegistrationNotifyContext) -> None:
         "source": ctx.source,
         "message": message,
         "environment": "prod",
+        "permissions_count": audit["permissions_count"],
+        "keycloak_app_role": audit["keycloak_app_role"],
+        "matrix_ok": audit["matrix_ok"],
     }
+    if ctx.full_name:
+        payload["full_name"] = ctx.full_name.strip()
     if ctx.email:
         payload["email"] = ctx.email
     if ctx.company_name:

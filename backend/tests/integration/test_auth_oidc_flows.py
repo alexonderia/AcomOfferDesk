@@ -32,6 +32,9 @@ class _NoExistingEmailUsersRepo:
         _ = email
         return []
 
+    async def get_role_by_id(self, role_id: int):
+        return SimpleNamespace(role="Контрагент", id=role_id)
+
 
 class _ExistingEmailUow(_NoopUow):
     def __init__(self) -> None:

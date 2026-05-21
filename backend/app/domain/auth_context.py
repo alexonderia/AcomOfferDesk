@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from app.domain.permissions import get_known_permissions, get_permissions_for_role
+from app.services.keycloak_app_roles import role_mapping_by_local_role_id
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,10 @@ def build_current_user_from_keycloak(
     if role_ceiling:
         permissions = permissions & role_ceiling
     app_roles = frozenset(role for role in normalized_roles if role.startswith("app."))
+    if not permissions and role_ceiling:
+        expected_app_role = role_mapping_by_local_role_id().get(role_id)
+        if expected_app_role and expected_app_role in app_roles:
+            permissions = role_ceiling
     delegation_roles = frozenset(role for role in normalized_roles if role.startswith("delegation."))
     if (app_roles or delegation_roles) and not permissions:
         logger.warning(

@@ -56,17 +56,44 @@ def test_build_current_user_from_keycloak_empty_api_roles_produces_empty_sets():
     assert current_user.keycloak_roles == frozenset()
 
 
-def test_build_current_user_from_keycloak_app_superadmin_without_atomic_permissions_has_no_permissions():
+def test_build_current_user_from_keycloak_app_role_only_uses_local_role_ceiling():
+    """JWT may carry only app.* composite role without leaf permission codes."""
+    current_user = build_current_user_from_keycloak(
+        user_id="admin-vvv",
+        role_id=settings.admin_role_id,
+        status="active",
+        api_roles=frozenset({"app.admin"}),
+    )
+
+    assert PermissionCodes.USERS_READ in current_user.permissions
+    assert PermissionCodes.USERS_CREATE in current_user.permissions
+    assert PermissionCodes.REQUESTS_READ not in current_user.permissions
+    assert current_user.app_roles == frozenset({"app.admin"})
+
+
+def test_build_current_user_from_keycloak_app_superadmin_only_uses_local_role_ceiling():
     current_user = build_current_user_from_keycloak(
         user_id="u-3",
-        role_id=1,
+        role_id=settings.superadmin_role_id,
         status="active",
         api_roles=frozenset({"app.superadmin"}),
     )
 
-    assert current_user.permissions == frozenset()
+    assert PermissionCodes.USERS_READ in current_user.permissions
+    assert PermissionCodes.REQUESTS_CREATE in current_user.permissions
     assert current_user.app_roles == frozenset({"app.superadmin"})
-    assert "app.superadmin" not in current_user.permissions
+
+
+def test_build_current_user_from_keycloak_mismatched_app_role_does_not_use_ceiling_fallback():
+    current_user = build_current_user_from_keycloak(
+        user_id="u-mismatch",
+        role_id=settings.admin_role_id,
+        status="active",
+        api_roles=frozenset({"app.contractor"}),
+    )
+
+    assert current_user.permissions == frozenset()
+    assert current_user.app_roles == frozenset({"app.contractor"})
 
 
 def test_build_current_user_from_keycloak_caps_jwt_permissions_to_local_role_ceiling():

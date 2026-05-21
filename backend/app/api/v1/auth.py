@@ -480,7 +480,7 @@ async def keycloak_callback(
                 token_claims,
                 allow_user_creation=claims.flow == "register",
             )
-            if claims.flow == "register" and synced.created_local_user:
+            if claims.flow == "register" and getattr(synced, "created_local_user", False):
                 role = await uow.users.get_role_by_id(synced.user.id_role)
                 await notify_new_user_registration(
                     RegistrationNotifyContext(

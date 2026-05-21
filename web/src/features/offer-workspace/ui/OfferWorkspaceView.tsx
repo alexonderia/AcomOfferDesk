@@ -106,6 +106,7 @@ export const OfferWorkspaceView = () => {
     setSelectedOfferId,
     fileInputRef,
     isLoading,
+    isUploading,
     errorMessage,
     isChatOpen,
     setIsChatOpen,
@@ -129,6 +130,11 @@ export const OfferWorkspaceView = () => {
     offerAmountInput,
     setOfferAmountInput,
     baselineOfferAmount,
+    existingOfferFiles = [],
+    deletedOfferFileIds = [],
+    newOfferFile = null,
+    setNewOfferFile,
+    handleCancelOfferEditing,
     handleUpload,
     handleDeleteFile,
     handleStatusChange,
@@ -378,8 +384,11 @@ export const OfferWorkspaceView = () => {
           const isCurrent = offerItem.offer_id === selectedOffer.offer_id;
           const isCurrentInEditMode = isCurrent && isOfferEditMode;
           const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
+          const hasOfferFileChanges = deletedOfferFileIds.length > 0 || Boolean(newOfferFile);
+          const canSaveOfferChanges = hasOfferAmountChanges || hasOfferFileChanges;
           const itemBadgeStyle = getOfferStatusBadgeStyle(offerItem.status ?? null);
           const offerStatusLabel = getOfferStatusLabel(offerItem.status ?? null);
+          const filesToRender = isCurrent ? existingOfferFiles : offerItem.files;
           return (
             <Paper
               key={offerItem.offer_id}
@@ -551,10 +560,10 @@ export const OfferWorkspaceView = () => {
                 Файлы КП
               </Typography>
               <Stack direction="row" flexWrap="wrap" useFlexGap gap={1}>
-                {offerItem.files.length === 0 ? (
+                {filesToRender.length === 0 ? (
                   <Typography color="text.secondary">Файлы КП не прикреплены.</Typography>
                 ) : (
-                  offerItem.files.map((file) => (
+                  filesToRender.map((file) => (
                     <Chip
                       key={file.id}
                       label={file.name}
@@ -565,6 +574,14 @@ export const OfferWorkspaceView = () => {
                     />
                   ))
                 )}
+                {isCurrentInEditMode && newOfferFile ? (
+                  <Chip
+                    label={newOfferFile.name}
+                    color="primary"
+                    variant="outlined"
+                    onDelete={() => setNewOfferFile(null)}
+                  />
+                ) : null}
                 {canUpload && isCurrentInEditMode ? (
                   <IconButton
                     size="small"
@@ -603,7 +620,10 @@ export const OfferWorkspaceView = () => {
                   {isCurrentInEditMode ? (
                     <Button
                       variant="outlined"
-                      onClick={() => setIsOfferEditMode(false)}
+                      onClick={() => {
+                        handleCancelOfferEditing();
+                        setIsOfferEditMode(false);
+                      }}
                       disabled={isUpdatingOfferAmount}
                     >
                       Отмена
@@ -637,11 +657,11 @@ export const OfferWorkspaceView = () => {
                       </Button>
                     )
                   )}
-                  {isCurrentInEditMode && canEditOfferAmount ? (
+                  {isCurrentInEditMode && (canEditOfferAmount || canUpload || canDeleteFile) ? (
                     <Button
-                      variant={hasOfferAmountChanges ? 'contained' : 'outlined'}
+                      variant={canSaveOfferChanges ? 'contained' : 'outlined'}
                       onClick={() => void handleOfferAmountSave()}
-                      disabled={isUpdatingOfferAmount || !hasOfferAmountChanges}
+                      disabled={isUpdatingOfferAmount || isUploading || !canSaveOfferChanges}
                     >
                       {isUpdatingOfferAmount ? 'Сохранение...' : 'Сохранить'}
                     </Button>

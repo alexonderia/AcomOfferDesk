@@ -481,7 +481,7 @@ class KeycloakAdminService:
                 headers=self._headers(admin_token),
             )
         if response.status_code >= 400:
-            raise Conflict("Unable to query Keycloak users")
+            raise Conflict(f"Unable to query Keycloak users (status={response.status_code})")
 
         payload = response.json()
         if not isinstance(payload, list):

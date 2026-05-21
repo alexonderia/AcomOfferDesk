@@ -34,6 +34,7 @@ class DummyUow:
         self.tg_users = None
         self.user_auth_accounts = None
         self.user_contact_channels = None
+        self.notifications = None
         self.economy_plans = None
 
     async def __aenter__(self) -> "DummyUow":

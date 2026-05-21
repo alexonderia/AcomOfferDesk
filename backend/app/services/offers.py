@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
@@ -23,12 +24,15 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.users import UserRepository
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.files import FileService
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.users import _bind_keycloak_account
+from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 DEFAULT_PARTNER_CARD_PATH = (
     "uploads/"
@@ -252,6 +256,9 @@ class OfferService:
         user_auth_accounts: UserAuthAccountRepository | None = None,
         file_service: FileService | None = None,
         keycloak_admin: KeycloakAdminService | None = None,
+        notifications: NotificationService | None = None,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._requests = requests
         self._offers = offers
@@ -264,6 +271,17 @@ class OfferService:
         self._user_auth_accounts = user_auth_accounts
         self._file_service = file_service or FileService(files)
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
+        self._notifications = notifications
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     def _build_read_only_chat_state(self, *, chat_id: int, last_message_id: int | None, last_message_at) -> ChatState:
         return ChatState(
@@ -570,6 +588,24 @@ class OfferService:
             contractor_user_id=current_user.user_id,
             offer_amount=offer_amount,
         )
+        event = build_process_notification_event(
+            event_type="offer.created",
+            actor_user_id=current_user.user_id,
+            entity_type="offer",
+            entity_id=offer.id,
+            request_id=request.id,
+            offer_id=offer.id,
+            dedupe_key=f"offer.created:{offer.id}",
+            payload={"recipient_user_id": request.id_user},
+        )
+        is_scheduled = self._schedule_process_notification_event(event)
+        if not is_scheduled and self._notifications is not None:
+            await self._notifications.notify_offer_created(
+                actor_user_id=current_user.user_id,
+                recipient_user_id=request.id_user,
+                request_id=request.id,
+                offer_id=offer.id,
+            )
         return offer.id
 
     async def create_manual_offer(
@@ -809,6 +845,26 @@ class OfferService:
             upload=prepared,
         )
         await self._offers.attach_file(offer_id=offer.id, file_id=db_file.id)
+        original_name = getattr(db_file, "original_name", None) or upload.original_name
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="offer.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="offer",
+                entity_id=offer.id,
+                request_id=request.id,
+                offer_id=offer.id,
+                dedupe_key=f"offer.files_changed:{offer.id}:{db_file.id}",
+                payload={
+                    "request_id": request.id,
+                    "offer_id": offer.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [db_file.id],
+                    "changed_file_count": 1,
+                    "original_names": [original_name],
+                },
+            )
+        )
         return db_file.id
 
     async def remove_file(self, *, current_user: CurrentUser, offer_id: int, file_id: int) -> None:
@@ -850,6 +906,24 @@ class OfferService:
             raise NotFound("File is not attached to offer")
 
         await self._file_service.delete_file(file_id=file_id)
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="offer.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="offer",
+                entity_id=offer.id,
+                request_id=request.id,
+                offer_id=offer.id,
+                dedupe_key=f"offer.files_changed:{offer.id}:{file_id}:deleted",
+                payload={
+                    "request_id": request.id,
+                    "offer_id": offer.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [file_id],
+                    "changed_file_count": 1,
+                },
+            )
+        )
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         require_permission(
@@ -874,6 +948,7 @@ class OfferService:
                 raise Conflict("Cannot accept offer for closed or cancelled request")
 
         status_changed = offer.status != status
+        previous_status = offer.status
         await self._offers.update_status(offer=offer, status=status)
 
         if status_changed and status in {"accepted", "rejected"} and settings.telegram_legacy_enabled:
@@ -883,6 +958,23 @@ class OfferService:
             )
             if tg_id is not None:
                 await notify_offer_status_finalized(tg_id=tg_id)
+
+        if status_changed and status in {"accepted", "rejected", "deleted"}:
+            event = build_process_notification_event(
+                event_type=f"offer.{status}",
+                actor_user_id=current_user.user_id,
+                entity_type="offer",
+                entity_id=offer.id,
+                request_id=request.id,
+                offer_id=offer.id,
+                dedupe_key=f"offer.{status}:{offer.id}:{previous_status}->{status}",
+                payload={
+                    "recipient_user_ids": [offer.id_user, request.id_user],
+                    "old_status": previous_status,
+                    "new_status": status,
+                },
+            )
+            self._schedule_process_notification_event(event)
 
         return offer.status
 
@@ -990,6 +1082,42 @@ class OfferService:
         )
         return UploadedMessageAttachment(file_id=db_file.id, path=db_file.path, name=db_file.name)
 
+    async def _filter_message_notification_recipients(
+        self,
+        *,
+        chat_id: int,
+        participant_user_ids: Sequence[str],
+    ) -> list[str]:
+        unique_participants: list[str] = []
+        seen: set[str] = set()
+        for user_id in participant_user_ids:
+            normalized_user_id = user_id.strip()
+            if not normalized_user_id or normalized_user_id in seen:
+                continue
+            seen.add(normalized_user_id)
+            unique_participants.append(normalized_user_id)
+
+        try:
+            # Local import avoids circular dependency between realtime runtime and offer service modules.
+            from app.realtime.runtime import get_chat_runtime
+
+            runtime = get_chat_runtime()
+        except Exception:
+            return unique_participants
+
+        recipients: list[str] = []
+        for user_id in unique_participants:
+            try:
+                is_subscribed = await runtime.manager.is_user_subscribed(user_id=user_id, chat_id=chat_id)
+            except Exception:
+                recipients.append(user_id)
+                continue
+
+            if not is_subscribed:
+                recipients.append(user_id)
+
+        return recipients
+
     async def create_message(
         self,
         *,
@@ -1043,6 +1171,38 @@ class OfferService:
             if db_file is None:
                 raise NotFound("File not found")
             await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
+
+        participant_user_ids = await self._chats.list_active_participant_user_ids(chat_id=chat.id)
+        notification_recipients = await self._filter_message_notification_recipients(
+            chat_id=chat.id,
+            participant_user_ids=participant_user_ids,
+        )
+        event = build_process_notification_event(
+            event_type="message.created",
+            actor_user_id=current_user.user_id,
+            entity_type="message",
+            entity_id=message.id,
+            request_id=request.id,
+            offer_id=offer.id,
+            chat_id=chat.id,
+            message_id=message.id,
+            dedupe_key=f"message.created:{message.id}",
+            payload={
+                "recipient_user_ids": notification_recipients,
+                "has_files": bool(new_attachments or stored_file_refs),
+                "file_count": len(new_attachments) + len(stored_file_refs),
+            },
+        )
+        is_scheduled = self._schedule_process_notification_event(event)
+        if not is_scheduled and self._notifications is not None:
+            await self._notifications.notify_message_created(
+                author_user_id=current_user.user_id,
+                recipient_user_ids=notification_recipients,
+                request_id=request.id,
+                offer_id=offer.id,
+                chat_id=chat.id,
+                message_id=message.id,
+            )
 
         if current_user.user_id != offer.id_user and settings.telegram_legacy_enabled:
             tg_id = await self._users.get_active_approved_contractor_tg_id(

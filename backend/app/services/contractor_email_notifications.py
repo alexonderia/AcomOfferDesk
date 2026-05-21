@@ -1,5 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+from html import escape
 from urllib.parse import quote
 
 from app.core.config import settings
@@ -62,3 +63,35 @@ async def notify_contractor_access_closed_email(*, to_email: str) -> None:
         text_content=payload.text_content,
         html_content=payload.html_content,
     )
+
+
+async def notify_contractor_status_changed_email(
+    *,
+    to_email: str,
+    user_status: str,
+    recipient_user_id: str | None = None,
+    initiator_user_id: str | None = None,
+) -> bool:
+    normalized_status = (user_status or "").strip().lower()
+    if normalized_status == "active":
+        subject = "AcomOfferDesk — доступ одобрен"
+        text = "Ваш доступ к системе AcomOfferDesk одобрен. Вы можете войти в систему."
+    elif normalized_status in {"inactive", "review"}:
+        subject = "AcomOfferDesk — заявка на доступ отклонена"
+        text = "Ваша заявка на доступ к системе AcomOfferDesk отклонена."
+    elif normalized_status == "blacklist":
+        subject = "AcomOfferDesk — доступ ограничен"
+        text = "Ваш доступ к системе AcomOfferDesk ограничен."
+    else:
+        return False
+
+    await _build_email_service().send_email(
+        to_email=to_email,
+        subject=subject,
+        text_content=text,
+        html_content=f"<p>{escape(text)}</p>",
+        recipient_user_id=recipient_user_id,
+        initiator_user_id=initiator_user_id,
+        suppress_delivery_notification=True,
+    )
+    return True

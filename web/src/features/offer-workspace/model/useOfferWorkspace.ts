@@ -106,6 +106,9 @@ export const useOfferWorkspace = () => {
   const [isUpdatingOfferAmount, setIsUpdatingOfferAmount] = useState(false);
   const [offerAmountInput, setOfferAmountInput] = useState('');
   const [baselineOfferAmount, setBaselineOfferAmount] = useState('');
+  const [existingOfferFiles, setExistingOfferFiles] = useState<Array<{ id: number; name: string; download_url: string }>>([]);
+  const [deletedOfferFileIds, setDeletedOfferFileIds] = useState<number[]>([]);
+  const [newOfferFile, setNewOfferFile] = useState<File | null>(null);
 
   const sortedOffers = useMemo(
     () => [...(workspace?.offers ?? [])].sort((left, right) => new Date(right.created_at ?? 0).getTime() - new Date(left.created_at ?? 0).getTime()),
@@ -218,6 +221,9 @@ export const useOfferWorkspace = () => {
     const nextOfferAmount = toAmountInputValue(selectedOffer?.offer_amount ?? null);
     setOfferAmountInput(nextOfferAmount);
     setBaselineOfferAmount(nextOfferAmount);
+    setExistingOfferFiles(selectedOffer?.files ?? []);
+    setDeletedOfferFileIds([]);
+    setNewOfferFile(null);
   }, [selectedOffer?.offer_amount, selectedOffer?.offer_id]);
 
   useEffect(() => {
@@ -282,26 +288,23 @@ export const useOfferWorkspace = () => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !selectedOffer) return;
-    setIsUploading(true);
     setErrorMessage(null);
-    try {
-      await uploadOfferFile(selectedOffer.offer_id, file);
-      await refreshWorkspace(selectedOffer.offer_id);
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Не удалось загрузить файл'));
-    } finally {
-      setIsUploading(false);
-    }
+    setNewOfferFile(file);
   };
 
   const handleDeleteFile = async (fileId: number) => {
-    if (!selectedOffer) return;
-    try {
-      await deleteOfferFile(selectedOffer.offer_id, fileId);
-      await refreshWorkspace(selectedOffer.offer_id);
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Не удалось удалить файл'));
-    }
+    setExistingOfferFiles((prev) => prev.filter((file) => file.id !== fileId));
+    setDeletedOfferFileIds((prev) => (prev.includes(fileId) ? prev : [...prev, fileId]));
+  };
+
+  const handleCancelOfferEditing = () => {
+    const nextOfferAmount = toAmountInputValue(selectedOffer?.offer_amount ?? null);
+    setOfferAmountInput(nextOfferAmount);
+    setBaselineOfferAmount(nextOfferAmount);
+    setExistingOfferFiles(selectedOffer?.files ?? []);
+    setDeletedOfferFileIds([]);
+    setNewOfferFile(null);
+    setErrorMessage(null);
   };
 
   const handleStatusChange = async (nextStatus: 'accepted' | 'rejected' | '') => {
@@ -339,31 +342,48 @@ export const useOfferWorkspace = () => {
   };
 
   const handleOfferAmountSave = async () => {
-    if (!selectedOffer || !canEditOfferAmount) return;
+    if (!selectedOffer) return;
 
     const parsedOfferAmount = parseAmountInput(offerAmountInput);
-    if (parsedOfferAmount === null) {
-      setErrorMessage('Укажите сумму КП');
+    const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
+    const hasFileChanges = deletedOfferFileIds.length > 0 || Boolean(newOfferFile);
+    if (!hasOfferAmountChanges && !hasFileChanges) {
       return;
     }
-    if (Number.isNaN(parsedOfferAmount)) {
-      setErrorMessage('Укажите корректную сумму КП');
+    if (hasOfferAmountChanges && parsedOfferAmount === null) {
+      setErrorMessage('Enter offer amount');
       return;
     }
-    if (parsedOfferAmount < 0) {
-      setErrorMessage('Сумма КП не может быть отрицательной');
+    if (hasOfferAmountChanges && Number.isNaN(parsedOfferAmount)) {
+      setErrorMessage('Enter valid offer amount');
+      return;
+    }
+    if (hasOfferAmountChanges && parsedOfferAmount !== null && parsedOfferAmount < 0) {
+      setErrorMessage('Offer amount cannot be negative');
       return;
     }
 
     setIsUpdatingOfferAmount(true);
+    setIsUploading(true);
     setErrorMessage(null);
     try {
-      await updateOfferAmount(selectedOffer.offer_id, parsedOfferAmount);
+      if (hasOfferAmountChanges && canEditOfferAmount && parsedOfferAmount !== null) {
+        await updateOfferAmount(selectedOffer.offer_id, parsedOfferAmount);
+      }
+      if (deletedOfferFileIds.length > 0) {
+        await Promise.all(deletedOfferFileIds.map((fileId) => deleteOfferFile(selectedOffer.offer_id, fileId)));
+      }
+      if (newOfferFile) {
+        await uploadOfferFile(selectedOffer.offer_id, newOfferFile);
+      }
       await refreshWorkspace(selectedOffer.offer_id);
+      setDeletedOfferFileIds([]);
+      setNewOfferFile(null);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Не удалось сохранить сумму КП'));
+      setErrorMessage(getErrorMessage(error, 'Failed to save offer changes'));
     } finally {
       setIsUpdatingOfferAmount(false);
+      setIsUploading(false);
     }
   };
 
@@ -423,6 +443,11 @@ export const useOfferWorkspace = () => {
     offerAmountInput,
     setOfferAmountInput,
     baselineOfferAmount,
+    existingOfferFiles,
+    deletedOfferFileIds,
+    newOfferFile,
+    setNewOfferFile,
+    handleCancelOfferEditing,
     handleUpload,
     handleDeleteFile,
     handleStatusChange,

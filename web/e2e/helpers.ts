@@ -7,6 +7,62 @@ export type Credentials = {
   password: string;
 };
 
+const TRANSIENT_NAVIGATION_ERRORS = [
+  'ERR_CONNECTION_CLOSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_TUNNEL_CONNECTION_FAILED',
+  'ERR_NETWORK_CHANGED',
+  'ERR_TIMED_OUT',
+  'ERR_NGROK_3200',
+];
+
+const isTransientNavigationError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return TRANSIENT_NAVIGATION_ERRORS.some((fragment) => message.includes(fragment));
+};
+
+export const bypassNgrokInterstitialIfPresent = async (page: Page): Promise<void> => {
+  const visitSiteButton = page.getByRole('button', { name: /visit site/i });
+  if (await visitSiteButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await visitSiteButton.click();
+  }
+};
+
+const isNgrokEndpointOfflinePage = async (page: Page): Promise<boolean> => {
+  const offlineHeading = page.getByRole('heading', { name: /ERR_NGROK_3200/i });
+  return offlineHeading.isVisible({ timeout: 1_000 }).catch(() => false);
+};
+
+export const gotoWithRetry = async (
+  page: Page,
+  url: string,
+  options: { attempts?: number; timeoutMs?: number; waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' | 'commit' } = {}
+): Promise<void> => {
+  const attempts = options.attempts ?? 4;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const waitUntil = options.waitUntil ?? 'domcontentloaded';
+
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await page.goto(url, { timeout: timeoutMs, waitUntil });
+      await bypassNgrokInterstitialIfPresent(page);
+      if (await isNgrokEndpointOfflinePage(page)) {
+        throw new Error('ERR_NGROK_3200 endpoint offline');
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isTransientNavigationError(error)) {
+        throw error;
+      }
+      await page.waitForTimeout(600 * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Navigation failed for ${url}`);
+};
+
 export const getCredentialsOrSkip = (
   testInfo: TestInfo,
   prefix:
@@ -35,42 +91,55 @@ export const getCredentialsOrSkip = (
 };
 
 export const loginViaKeycloak = async (page: Page, credentials: Credentials): Promise<void> => {
-  await page.goto('/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1');
+  const loginUrl = '/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1';
 
-  const visitSiteButton = page.getByRole('button', { name: /visit site/i });
-  if (await visitSiteButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await visitSiteButton.click();
-  }
-
-  const usernameInput = page.locator('input[name="username"], input#username').first();
-  const passwordInput = page.locator('input[name="password"], input#password').first();
-  await usernameInput.waitFor({ state: 'visible', timeout: 30_000 });
-  await usernameInput.fill(credentials.username);
-  await passwordInput.fill(credentials.password);
-
-  const submitButton = page.locator('#kc-login, button[type="submit"], input[type="submit"]').first();
-  await submitButton.click();
-
-  try {
+  const waitForPostLoginUrl = async (): Promise<void> => {
     await page.waitForURL(
       (url) =>
         !url.pathname.startsWith('/iam') &&
         !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
-        !url.pathname.startsWith('/auth/callback'),
-      { timeout: 30_000 }
+        !url.pathname.startsWith('/auth/callback') &&
+        !url.pathname.startsWith('/api/v1/auth/callback'),
+      { timeout: 30_000, waitUntil: 'domcontentloaded' }
     );
-  } catch (error) {
-    if (new URL(page.url()).pathname.startsWith('/iam')) {
-      await submitButton.click();
-      await page.waitForURL(
-        (url) =>
-          !url.pathname.startsWith('/iam') &&
-          !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
-          !url.pathname.startsWith('/auth/callback'),
-        { timeout: 30_000 }
-      );
-    } else {
-      throw error;
+  };
+
+  const usernameInput = page.locator('input[name="username"], input#username').first();
+  const passwordInput = page.locator('input[name="password"], input#password').first();
+  const submitButton = page.locator('#kc-login, button[type="submit"], input[type="submit"]').first();
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await gotoWithRetry(page, loginUrl, {
+      attempts: 5,
+      waitUntil: 'domcontentloaded',
+    });
+
+    const loginFormVisible = await usernameInput
+      .waitFor({ state: 'visible', timeout: 30_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!loginFormVisible) {
+      if (attempt >= 3) {
+        throw new Error(`Keycloak login form is not visible after ${attempt} attempts (url: ${page.url()})`);
+      }
+      await page.waitForTimeout(1_000 * attempt);
+      continue;
+    }
+
+    await usernameInput.fill(credentials.username);
+    await passwordInput.fill(credentials.password);
+    await submitButton.click();
+
+    try {
+      await waitForPostLoginUrl();
+      break;
+    } catch (error) {
+      const currentPath = new URL(page.url()).pathname;
+      if (attempt >= 3 || !currentPath.startsWith('/iam')) {
+        throw error;
+      }
+      await page.waitForTimeout(1_000 * attempt);
     }
   }
 
@@ -109,6 +178,14 @@ export const assertNoSevereConsoleErrors = async (
   action: () => Promise<void>
 ): Promise<void> => {
   const severeErrors: string[] = [];
+  const isIgnorableTransientResourceError = (text: string): boolean =>
+    text.startsWith('Failed to load resource: net::') &&
+    (text.includes('ERR_CONNECTION_CLOSED') ||
+      text.includes('ERR_CONNECTION_RESET') ||
+      text.includes('ERR_TUNNEL_CONNECTION_FAILED') ||
+      text.includes('ERR_NETWORK_CHANGED') ||
+      text.includes('ERR_TIMED_OUT'));
+
   const listener = (msg: { type: () => string; text: () => string }) => {
     if (msg.type() !== 'error') {
       return;
@@ -116,6 +193,9 @@ export const assertNoSevereConsoleErrors = async (
 
     const text = msg.text();
     if (text.includes('the server responded with a status of 401')) {
+      return;
+    }
+    if (isIgnorableTransientResourceError(text)) {
       return;
     }
 

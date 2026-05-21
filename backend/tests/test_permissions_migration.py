@@ -118,6 +118,72 @@ def test_decode_keycloak_access_token_returns_empty_roles_when_api_client_mismat
     assert claims.api_roles == frozenset()
 
 
+def test_decode_keycloak_access_token_extracts_roles_from_authorization_permissions(monkeypatch):
+    monkeypatch.setattr(settings, "keycloak_api_client_id", "acom-api")
+    issuer = settings.resolved_keycloak_issuer_url
+
+    monkeypatch.setattr(keycloak_oidc.jwt, "get_unverified_header", lambda _: {"kid": "kid-1", "alg": "RS256"})
+    monkeypatch.setattr(keycloak_oidc.jwt, "get_unverified_claims", lambda _: {"iss": issuer})
+
+    async def fake_get_jwks():
+        return {"keys": [{"kid": "kid-1"}]}
+
+    monkeypatch.setattr(keycloak_oidc, "_get_jwks", fake_get_jwks)
+    monkeypatch.setattr(
+        keycloak_oidc.jwt,
+        "decode",
+        lambda *_args, **_kwargs: {
+            "iss": issuer,
+            "sub": "user-1",
+            "iat": 100,
+            "exp": 200,
+            "aud": [settings.keycloak_client_id],
+            "authorization": {
+                "permissions": [
+                    {"scopes": [PermissionCodes.CHAT_READ, " "]},
+                    {"permissions": [PermissionCodes.CHAT_MESSAGE_SEND]},
+                ]
+            },
+        },
+    )
+
+    claims = _run(keycloak_oidc.decode_keycloak_access_token("token"))
+
+    assert claims.api_roles == frozenset({PermissionCodes.CHAT_READ, PermissionCodes.CHAT_MESSAGE_SEND})
+
+
+def test_decode_keycloak_access_token_extracts_roles_from_top_level_permissions(monkeypatch):
+    monkeypatch.setattr(settings, "keycloak_api_client_id", "acom-api")
+    issuer = settings.resolved_keycloak_issuer_url
+
+    monkeypatch.setattr(keycloak_oidc.jwt, "get_unverified_header", lambda _: {"kid": "kid-1", "alg": "RS256"})
+    monkeypatch.setattr(keycloak_oidc.jwt, "get_unverified_claims", lambda _: {"iss": issuer})
+
+    async def fake_get_jwks():
+        return {"keys": [{"kid": "kid-1"}]}
+
+    monkeypatch.setattr(keycloak_oidc, "_get_jwks", fake_get_jwks)
+    monkeypatch.setattr(
+        keycloak_oidc.jwt,
+        "decode",
+        lambda *_args, **_kwargs: {
+            "iss": issuer,
+            "sub": "user-1",
+            "iat": 100,
+            "exp": 200,
+            "aud": [settings.keycloak_client_id],
+            "permissions": [
+                {"name": PermissionCodes.REQUESTS_READ},
+                {"permission": PermissionCodes.REQUESTS_UPDATE},
+            ],
+        },
+    )
+
+    claims = _run(keycloak_oidc.decode_keycloak_access_token("token"))
+
+    assert claims.api_roles == frozenset({PermissionCodes.REQUESTS_READ, PermissionCodes.REQUESTS_UPDATE})
+
+
 def test_build_current_user_from_keycloak_filters_known_permissions():
     current_user = build_current_user_from_keycloak(
         user_id="user-1",

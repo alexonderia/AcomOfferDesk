@@ -31,7 +31,8 @@
 
 Источник permissions:
 
-- backend читает permissions из `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`.
+- backend в первую очередь читает permissions из `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`;
+- если в токене используется новый permission-формат без client roles, backend дополнительно читает `authorization.permissions` и `permissions`.
 - legacy/local режим выбора источника permissions удален.
 
 Важно:
@@ -207,3 +208,10 @@ PowerShell:
 $env:ENV_FILE=".env.prod-like"
 powershell -ExecutionPolicy Bypass -File .\scripts\check-keycloak-bootstrap.ps1
 ```
+
+## WebSocket ticket env defaults
+
+- `WS_TICKET_TTL_SECONDS=30` (recommended range: 30-60).
+- `WS_LEGACY_QUERY_TOKEN_ENABLED=false` for prod-like/prod.
+- Legacy `?token=` websocket fallback is temporary dev compatibility only and should stay disabled by default.
+- `BACKEND_WORKERS=1` while ws-ticket storage is in-memory (without Redis/shared ticket store).

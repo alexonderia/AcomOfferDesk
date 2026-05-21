@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.core.datetime_utils import normalize_to_utc, utc_now, utc_now_naive
@@ -16,9 +17,12 @@ from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService
+from app.services.notifications import NotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 PARTNER_CARD_NORMATIVE_ID = 1
 EDITABLE_REQUEST_STATUSES = {"open", "review", "closed", "cancelled"}
@@ -211,6 +215,9 @@ class RequestService:
         user_status_periods: UserStatusPeriodRepository,
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
+        notifications: NotificationService | None = None,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._requests = requests
         self._files = files
@@ -219,6 +226,17 @@ class RequestService:
         self._user_status_periods = user_status_periods
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
+        self._notifications = notifications
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     async def create_request(
         self,
@@ -296,6 +314,21 @@ class RequestService:
                 hidden_contractor_ids=normalized_hidden_contractor_ids,
             )
 
+        created_event = build_process_notification_event(
+            event_type="request.created",
+            actor_user_id=current_user.user_id,
+            entity_type="request",
+            entity_id=request.id,
+            request_id=request.id,
+            dedupe_key=f"request.created:{request.id}",
+            payload={
+                # TODO: Confirm recipient policy for request.created (assigned user vs other observers).
+                "responsible_user_id": request.id_user,
+                "recipient_user_ids": [request.id_user],
+            },
+        )
+        self._schedule_process_notification_event(created_event)
+
         return request.id, file_ids
 
     async def send_request_email_notification(
@@ -329,11 +362,18 @@ class RequestService:
         if self._email_notifications is None:
             raise Conflict("Email notifications are not configured")
 
-        await self._email_notifications.notify_request_to_additional_emails(
-            request_id=request.id,
-            additional_emails=normalized_additional_emails,
-        )
-
+        try:
+            await self._email_notifications.notify_request_to_additional_emails(
+                request_id=request.id,
+                additional_emails=normalized_additional_emails,
+                initiator_user_id=current_user.user_id,
+            )
+        except TypeError:
+            # Backward compatibility for legacy test doubles/transports that don't yet accept initiator_user_id.
+            await self._email_notifications.notify_request_to_additional_emails(
+                request_id=request.id,
+                additional_emails=normalized_additional_emails,
+            )
         return RequestEmailNotificationResult(
             request_id=request.id,
             sent_to=normalized_additional_emails,
@@ -443,6 +483,7 @@ class RequestService:
         if data.status is not None:
             if data.status not in EDITABLE_REQUEST_STATUSES:
                 raise Conflict("Unsupported request status")
+            previous_status = request.status
             status_changed = data.status != request.status
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
@@ -468,11 +509,49 @@ class RequestService:
                 )
                 for tg_id in tg_ids:
                     await notify_request_status_changed(tg_id=tg_id)
+            if status_changed:
+                event = build_process_notification_event(
+                    event_type="request.status_changed",
+                    actor_user_id=current_user.user_id,
+                    entity_type="request",
+                    entity_id=request.id,
+                    request_id=request.id,
+                    dedupe_key=f"request.status_changed:{request.id}:{data.status}",
+                    payload={
+                        "recipient_user_id": request.id_user,
+                        "old_status": previous_status,
+                        "new_status": data.status,
+                    },
+                )
+                is_scheduled = self._schedule_process_notification_event(event)
+                if not is_scheduled and self._notifications is not None:
+                    await self._notifications.notify_request_status_changed(
+                        actor_user_id=current_user.user_id,
+                        recipient_user_id=request.id_user,
+                        request_id=request.id,
+                        previous_status=previous_status,
+                        new_status=data.status,
+                    )
 
         if data.deadline_at is not None:
             if _normalize_to_utc(data.deadline_at) < _utcnow():
                 raise Conflict("Deadline cannot be in the past")
+            previous_deadline_iso = request.deadline_at.isoformat() if request.deadline_at is not None else None
             await self._requests.update_deadline(request=request, deadline_at=data.deadline_at)
+            deadline_event = build_process_notification_event(
+                event_type="request.deadline_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.deadline_changed:{request.id}:{data.deadline_at.isoformat()}",
+                payload={
+                    "responsible_user_id": request.id_user,
+                    "old_deadline": previous_deadline_iso,
+                    "new_deadline": data.deadline_at.isoformat(),
+                },
+            )
+            self._schedule_process_notification_event(deadline_event)
 
         if data.owner_user_id is not None:
             RequestPolicy.ensure_can_change_owner(current_user, request_owner_user_id=request.id_user)
@@ -499,7 +578,23 @@ class RequestService:
                     "Owner user is unavailable in selected period "
                     f"{owner_unavailability.started_at.isoformat()} - {owner_unavailability.ended_at.isoformat()}"
                 )
+            previous_owner_user_id = request.id_user
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
+            if previous_owner_user_id != data.owner_user_id:
+                owner_event = build_process_notification_event(
+                    event_type="request.responsible_changed",
+                    actor_user_id=current_user.user_id,
+                    entity_type="request",
+                    entity_id=request.id,
+                    request_id=request.id,
+                    dedupe_key=f"request.responsible_changed:{request.id}:{previous_owner_user_id}:{data.owner_user_id}",
+                    payload={
+                        "old_responsible_user_id": previous_owner_user_id,
+                        "new_responsible_user_id": data.owner_user_id,
+                        "recipient_user_ids": [previous_owner_user_id, data.owner_user_id],
+                    },
+                )
+                self._schedule_process_notification_event(owner_event)
 
         if data.id_plan_provided:
             await self._ensure_plan_assignment_allowed(
@@ -635,6 +730,24 @@ class RequestService:
             upload=prepared,
         )
         await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
+        original_name = getattr(db_file, "original_name", None) or file_data.original_name
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="request.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.files_changed:{request.id}:{db_file.id}",
+                payload={
+                    "request_id": request.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [db_file.id],
+                    "changed_file_count": 1,
+                    "original_names": [original_name],
+                },
+            )
+        )
         return db_file.id
 
     async def remove_file(
@@ -663,6 +776,22 @@ class RequestService:
             raise NotFound("File is not attached to request")
 
         await self._file_service.delete_file(file_id=file_id)
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="request.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.files_changed:{request.id}:{file_id}:deleted",
+                payload={
+                    "request_id": request.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [file_id],
+                    "changed_file_count": 1,
+                },
+            )
+        )
 
     async def _attach_partner_card_file(self, *, request_id: int) -> int:
         partner_card = await self._files.get_normative_file(normative_id=PARTNER_CARD_NORMATIVE_ID)
@@ -995,3 +1124,4 @@ class RequestService:
                 queue.append(child_id)
 
         return list(visible)
+

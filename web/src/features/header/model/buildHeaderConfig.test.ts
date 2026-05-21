@@ -95,6 +95,20 @@ describe('buildHeaderConfig role navigation', () => {
     expect(mobileKeys(config)).not.toContain('dashboard');
   });
 
+  it('shows plan dashboard section for economist with plans permission', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ECONOMIST,
+      canOpenUsersPage: true,
+      canViewDashboardProcess: false,
+      canViewDashboardSavings: false,
+      canViewDashboardPlans: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['dashboard', 'plan', 'requests', 'economists']);
+    expect(mobileKeys(config)).toContain('dashboard');
+  });
+
   it('hides admin section when users permission is missing', () => {
     const config = buildHeaderConfig({
       ...baseArgs(),

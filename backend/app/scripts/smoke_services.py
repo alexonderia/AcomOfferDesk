@@ -244,12 +244,22 @@ async def _check_keycloak(reporter: Reporter, env_map: dict[str, str], timeout: 
         issuer_expected = f"{public_base.rstrip('/')}/realms/{realm}"
 
     well_known = f"{issuer_expected.rstrip('/')}/.well-known/openid-configuration"
-    try:
-        request = Request(url=well_known, method="GET")
-        with urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        reporter.fail("Keycloak issuer", f"{well_known} unavailable: {exc}")
+    retries = int(_coalesce(env_map, "SMOKE_HTTP_RETRIES", default="2") or "2")
+    payload: dict[str, Any] | None = None
+    last_error = ""
+    for attempt in range(max(0, retries) + 1):
+        try:
+            request = Request(url=well_known, method="GET")
+            with urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            if attempt < retries:
+                await asyncio.sleep(0.6 * (attempt + 1))
+
+    if payload is None:
+        reporter.fail("Keycloak issuer", f"{well_known} unavailable: {last_error}")
         return
 
     resolved_issuer = str(payload.get("issuer") or "").rstrip("/")

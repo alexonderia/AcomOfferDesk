@@ -487,7 +487,12 @@ async def update_user_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserStatusUpdateResponse:
     async with uow:
-        service = UserStatusService(uow.users, uow.tg_users, uow.profiles)
+        service = UserStatusService(
+            uow.users,
+            uow.tg_users,
+            uow.profiles,
+            after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
+        )
         result = await service.update_statuses(
             current_user=current_user,
             user_id=user_id,

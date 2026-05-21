@@ -26,7 +26,9 @@
 
 ## Источник истины по данным
 
-- Источник permissions: Keycloak access token (`resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`).
+- Источник permissions: Keycloak access token.
+  - primary: `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`;
+  - fallback для нового формата: `authorization.permissions` и `permissions`.
 - Источник локального бизнес-контекста: БД backend (`users`, `profiles`, `user_auth_accounts`, связи и статусы).
 - `users.id_role`:
   - остается бизнесовой ролью/типом пользователя;
@@ -139,7 +141,7 @@ Frontend не принимает security-решения по raw JWT claims.
 
 ## Извлечение и фильтрация ролей в backend
 
-- Источник: `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`.
+- Источник: `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles` (primary), плюс fallback на `authorization.permissions`/`permissions`.
 - Нормализация:
   - пустые/невалидные строки игнорируются;
   - неизвестные роли не становятся permissions.
@@ -153,7 +155,7 @@ Frontend не принимает security-решения по raw JWT claims.
 ## Режим permissions
 
 - Legacy/local режим выбора источника permissions удален.
-- Backend всегда использует роли из `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`.
+- Backend всегда использует token claims; primary source — `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`, fallback — `authorization.permissions`/`permissions`.
 - `users.id_role` остается бизнес-ролью и не используется как IAM-источник прав.
 
 ## Проверки статуса пользователя
@@ -239,7 +241,9 @@ ENV_FILE=.env.prod-like ./scripts/check-keycloak-bootstrap.sh
 ### 2) Частая причина «пустые app_roles»
 
 Проверьте:
-- токен действительно содержит `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`;
+- токен содержит permissions в одном из поддержанных источников:
+  - `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles` (preferred);
+  - `authorization.permissions` или `permissions` (fallback).
 - `KEYCLOAK_API_CLIENT_ID` совпадает в env backend и в token payload.
 
 ### 3) Проверка link между локальным пользователем и Keycloak

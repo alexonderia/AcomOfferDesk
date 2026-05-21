@@ -52,8 +52,6 @@ export const AdminPageView = () => {
     canViewRoleIds,
     isDialogOpen,
     setIsDialogOpen,
-    errorMessage,
-    successMessage,
     activeTab,
     handleTabChange,
     users,
@@ -269,9 +267,6 @@ export const AdminPageView = () => {
                   ) : null}
                 </>
               )}
-
-              {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-              {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
 
               <Button
                 type="submit"

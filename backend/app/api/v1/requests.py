@@ -42,9 +42,37 @@ from app.schemas.requests import (
 )
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService
+from app.services.notifications import NotificationService
 from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
 
 router = APIRouter()
+
+
+def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:
+    notifications_repo = getattr(uow, "notifications", None)
+    if notifications_repo is None:
+        return None
+    return NotificationService(notifications_repo)
+
+
+def _build_request_service(
+    uow: UnitOfWork,
+    *,
+    email_notifications: EmailNotificationService | None = None,
+    file_service: FileService | None = None,
+) -> RequestService:
+    after_commit_hook_registrar = getattr(uow, "add_after_commit_hook", None)
+    return RequestService(
+        uow.requests,
+        uow.files,
+        uow.users,
+        uow.offers,
+        uow.user_status_periods,
+        email_notifications=email_notifications,
+        file_service=file_service,
+        notifications=_build_notification_service(uow),
+        after_commit_hook_registrar=after_commit_hook_registrar,
+    )
 
 
 def _request_file_schema(file_item) -> RequestFileSchema:
@@ -144,7 +172,7 @@ async def list_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
+        service = _build_request_service(uow)
         items = await service.list_requests(current_user=current_user)
 
     return RequestListResponse(
@@ -161,7 +189,7 @@ async def list_open_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OpenRequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
+        service = _build_request_service(uow)
         if current_user.role_id == settings.contractor_role_id:
             items = await service.list_open_requests_for_contractor(current_user=current_user)
         else:
@@ -181,7 +209,7 @@ async def list_offered_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OpenRequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
+        service = _build_request_service(uow)
         items = await service.list_offered_requests_for_contractor(current_user=current_user)
 
     return OpenRequestListResponse(
@@ -199,7 +227,7 @@ async def get_request_details(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestDetailsResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
+        service = _build_request_service(uow)
         item = await service.get_request_details(current_user=current_user, request_id=request_id)
     request_actions = RequestActionBuilder.build(
         current_user,
@@ -303,12 +331,8 @@ async def create_request(
         async with uow:
             request_file_service = FileService(uow.files)
             email_notifications = EmailNotificationService(uow.profiles, uow.requests)
-            service = RequestService(
-                uow.requests,
-                uow.files,
-                uow.users,
-                uow.offers,
-                uow.user_status_periods,
+            service = _build_request_service(
+                uow,
                 email_notifications=email_notifications,
                 file_service=request_file_service,
             )
@@ -340,7 +364,7 @@ async def update_request(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestMutationResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
+        service = _build_request_service(uow)
         await service.update_request(
             current_user=current_user,
             request_id=request_id,
@@ -369,12 +393,8 @@ async def send_request_email_notifications(
 ) -> RequestEmailNotificationResponse:
     async with uow:
         email_notifications = EmailNotificationService(uow.profiles, uow.requests)
-        service = RequestService(
-            uow.requests,
-            uow.files,
-            uow.users,
-            uow.offers,
-            uow.user_status_periods,
+        service = _build_request_service(
+            uow,
             email_notifications=email_notifications,
         )
         result = await service.send_request_email_notification(
@@ -401,12 +421,8 @@ async def add_request_file(
     try:
         async with uow:
             request_file_service = FileService(uow.files)
-            service = RequestService(
-                uow.requests,
-                uow.files,
-                uow.users,
-                uow.offers,
-                uow.user_status_periods,
+            service = _build_request_service(
+                uow,
                 file_service=request_file_service,
             )
             file_id = await service.attach_file(
@@ -436,7 +452,7 @@ async def delete_request_file(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestFileMutationResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
+        service = _build_request_service(uow)
         await service.remove_file(
             current_user=current_user,
             request_id=request_id,
@@ -455,7 +471,7 @@ async def mark_deleted_alert_viewed(
     uow: UnitOfWork = Depends(get_uow),
 ) -> DeletedAlertViewedResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
+        service = _build_request_service(uow)
         updated_stats = await service.mark_deleted_alert_viewed(
             current_user=current_user,
             request_id=payload.request_id,

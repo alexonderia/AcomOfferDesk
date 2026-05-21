@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from fastapi import WebSocket
+
 from app.core.config import settings
 from app.realtime.contracts import OutboundEnvelope
 from app.realtime.manager import WebSocketConnectionManager
@@ -13,6 +15,7 @@ from app.services.chat_realtime import ChatRealtimeService
 logger = logging.getLogger(__name__)
 
 _runtime: "ChatRealtimeRuntime | None" = None
+_realtime_runtime: "UnifiedRealtimeRuntime | None" = None
 
 
 class ChatRealtimeRuntime:
@@ -106,6 +109,23 @@ class ChatRealtimeRuntime:
             await self.publish_chat_event(chat_id=chat_id, event=delivered_event, publish_remote=True)
 
 
+class UnifiedRealtimeRuntime:
+    def __init__(self) -> None:
+        self.manager = WebSocketConnectionManager()
+
+    async def connect(self, *, websocket: WebSocket, user_id: str) -> str:
+        return await self.manager.connect(websocket=websocket, user_id=user_id)
+
+    async def disconnect(self, *, connection_id: str) -> None:
+        await self.manager.disconnect(connection_id=connection_id)
+
+    async def send_to_user(self, *, user_id: str, event: OutboundEnvelope) -> bool:
+        return await self.manager.send_to_user(user_id=user_id, event=event)
+
+    async def broadcast_to_users(self, *, user_ids: set[str], event: OutboundEnvelope) -> set[str]:
+        return await self.manager.broadcast_to_users(user_ids=user_ids, event=event)
+
+
 def set_chat_runtime(runtime: ChatRealtimeRuntime) -> None:
     global _runtime
     _runtime = runtime
@@ -115,3 +135,16 @@ def get_chat_runtime() -> ChatRealtimeRuntime:
     if _runtime is None:
         raise RuntimeError("Chat realtime runtime is not initialized")
     return _runtime
+
+
+def set_unified_realtime_runtime(runtime: UnifiedRealtimeRuntime) -> None:
+    global _realtime_runtime
+    _realtime_runtime = runtime
+
+
+def get_unified_realtime_runtime() -> UnifiedRealtimeRuntime:
+    global _realtime_runtime
+    if _realtime_runtime is None:
+        # Fallback for test scenarios where app lifespan startup is bypassed.
+        _realtime_runtime = UnifiedRealtimeRuntime()
+    return _realtime_runtime

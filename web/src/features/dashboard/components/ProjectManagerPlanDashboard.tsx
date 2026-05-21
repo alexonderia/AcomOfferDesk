@@ -178,8 +178,6 @@ export const ProjectManagerPlanDashboard = () => {
     canCreateRootPlan,
     rootPlanExists,
     errorMessage,
-    successMessage,
-    setSuccessMessage,
     createRoot,
     createSubplanNodeWithStart,
     delegate,
@@ -628,11 +626,6 @@ export const ProjectManagerPlanDashboard = () => {
         onAddPlan={() => setIsRootDialogOpen(true)}
       />
       {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-      {successMessage ? (
-        <Alert severity="success" onClose={() => setSuccessMessage(null)}>
-          {successMessage}
-        </Alert>
-      ) : null}
       <PlanKpiRow
         totalPlanAmount={scopedSummary.total_plan_amount}
         totalFactAmount={scopedSummary.total_fact_amount}

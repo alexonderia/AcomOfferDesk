@@ -31,6 +31,7 @@ import { TableTemplate, type TableTemplateColumn } from '@shared/components/Tabl
 import { ROLE } from '@shared/constants/roles';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { StatusPill as BaseStatusPill } from '@shared/ui/StatusPill';
+import { useSystemToasts } from '@shared/ui/toasts';
 import {
   UserStatusPill,
   InfoRow,
@@ -766,7 +767,6 @@ export const UsersTable = ({
   const [expandedUserCardsById, setExpandedUserCardsById] = useState<Record<string, boolean>>({});
   const [expandedContractorCardsById, setExpandedContractorCardsById] = useState<Record<string, { contact: boolean; company: boolean }>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [inlineStatusError, setInlineStatusError] = useState<string | null>(null);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [inlineRoleError, setInlineRoleError] = useState<string | null>(null);
@@ -793,6 +793,7 @@ export const UsersTable = ({
   const [manualContractorError, setManualContractorError] = useState<string | null>(null);
   const [manualContractorSuccess, setManualContractorSuccess] = useState<string | null>(null);
   const [isUpdatingManualContractor, setIsUpdatingManualContractor] = useState(false);
+  const { showSystemToast } = useSystemToasts();
 
   const {
     register,
@@ -954,13 +955,15 @@ export const UsersTable = ({
   const handleStatusSubmit = async (values: StatusFormValues) => {
     if (!selectedUser) return;
     setSubmitError(null);
-    setSubmitSuccess(null);
 
     try {
       await updateUserStatus(selectedUser.user_id, {
         user_status: values.user_status
       });
-      setSubmitSuccess('Статус успешно обновлён.');
+      showSystemToast({
+        severity: 'success',
+        message: 'Статус успешно обновлён.'
+      });
       await onStatusUpdated();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Не удалось обновить статус');
@@ -974,6 +977,10 @@ export const UsersTable = ({
     try {
       await updateUserStatus(userId, {
         user_status: nextStatus
+      });
+      showSystemToast({
+        severity: 'success',
+        message: 'Статус успешно обновлён.'
       });
       await onStatusUpdated();
     } catch (error) {
@@ -1551,17 +1558,15 @@ export const UsersTable = ({
                 }
               }))
             }
-            onOpenDetails={(clickedRow) => {
-              setSelectedUser(clickedRow);
-              setSubmitError(null);
-              setSubmitSuccess(null);
-            }}
+              onOpenDetails={(clickedRow) => {
+                setSelectedUser(clickedRow);
+                setSubmitError(null);
+              }}
           />
         )}
         onRowClick={(row) => {
           setSelectedUser(row);
           setSubmitError(null);
-          setSubmitSuccess(null);
         }}
       />
 
@@ -1862,8 +1867,6 @@ export const UsersTable = ({
                   </Stack>
 
                   {submitError ? <Alert severity="error">{submitError}</Alert> : null}
-                  {submitSuccess ? <Alert severity="success">{submitSuccess}</Alert> : null}
-
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
                     <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 1, textTransform: 'none' }}>
                       Закрыть

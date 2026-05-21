@@ -52,7 +52,7 @@ export const ChatRealtimeProvider = ({ children }: { children: React.ReactNode }
     if (status === 'refreshing') {
       return;
     }
-    chatSocketClient.connect(session.token);
+    chatSocketClient.connect();
   }, [session?.token, status]);
 
   const value = useMemo<ChatRealtimeContextValue>(

@@ -180,6 +180,12 @@ const RequestMobileCard = ({
     const theme = useTheme();
     const descriptionText = row.description?.trim() ? row.description : '-';
     const ownerValue = row.owner_full_name ?? row.id_user;
+    const contractorUnreadMessagesCount = isContractor
+        ? (row.offers ?? []).reduce((acc, offer) => acc + (offer.unread_messages_count ?? 0), 0)
+        : 0;
+    const hasNotificationBadge = isContractor
+        ? contractorUnreadMessagesCount > 0
+        : row.__notificationLabel === 'Есть уведомление';
     const detailRows = [
         { key: 'deadline', label: 'Прием КП до', value: formatDate(row.deadline_at) },
         { key: 'created', label: 'Открыта', value: formatDate(row.created_at) },
@@ -356,7 +362,7 @@ const RequestMobileCard = ({
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.25}>
                     <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                        {row.__notificationLabel === 'Есть уведомление' ? (
+                        {hasNotificationBadge ? (
                             <StatusPill
                                 label=""
                                 tone="info"

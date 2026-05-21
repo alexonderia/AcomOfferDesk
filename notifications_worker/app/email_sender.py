@@ -8,6 +8,7 @@ import os
 import smtplib
 import ssl
 import time
+from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -17,6 +18,13 @@ _DEDUP_TTL_SECONDS = max(10, int(os.getenv("EMAIL_DEDUP_TTL_SECONDS", "120")))
 _SPAM_COOLDOWN_SECONDS = max(60, int(os.getenv("EMAIL_SPAM_COOLDOWN_SECONDS", "600")))
 _recent_payloads_until: dict[str, float] = {}
 _recipient_spam_block_until: dict[str, float] = {}
+
+
+@dataclass(frozen=True, slots=True)
+class EmailSendResult:
+    success: bool
+    safe_error_code: str | None = None
+    safe_error_message: str | None = None
 
 
 def _cleanup_runtime_state(now_mono: float) -> None:
@@ -101,7 +109,7 @@ def _resolve_smtp_security_mode(smtp_port: int) -> str:
     return mode
 
 
-async def send_email(payload: dict) -> None:
+async def send_email(payload: dict) -> EmailSendResult:
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     username = os.getenv("EMAIL_ADDRESS")
@@ -109,20 +117,36 @@ async def send_email(payload: dict) -> None:
 
     if not smtp_host or not username or not password:
         logger.warning("SMTP env vars are not configured. Skip email delivery")
-        return
+        return EmailSendResult(
+            success=False,
+            safe_error_code="SMTP_NOT_CONFIGURED",
+            safe_error_message="Не удалось отправить письмо. Проверьте настройки почты.",
+        )
 
     to_email = str(payload.get("to_email", "")).strip()
     if not to_email:
         logger.warning("Email payload has no recipient")
-        return
+        return EmailSendResult(
+            success=False,
+            safe_error_code="INVALID_PAYLOAD",
+            safe_error_message="Не удалось отправить письмо. Некорректный адрес получателя.",
+        )
     subject = str(payload.get("subject") or "").strip()
     if not subject:
         logger.warning("Email payload has no subject: recipient=%s", to_email)
-        return
+        return EmailSendResult(
+            success=False,
+            safe_error_code="INVALID_PAYLOAD",
+            safe_error_message="Не удалось отправить письмо. Некорректные параметры письма.",
+        )
     text_content = str(payload.get("text_content") or "")
     if not text_content.strip():
         logger.warning("Email payload has no text content: recipient=%s", to_email)
-        return
+        return EmailSendResult(
+            success=False,
+            safe_error_code="INVALID_PAYLOAD",
+            safe_error_message="Не удалось отправить письмо. Некорректные параметры письма.",
+        )
 
     normalized_to_email = to_email.lower()
     now_mono = time.monotonic()
@@ -136,13 +160,19 @@ async def send_email(payload: dict) -> None:
             normalized_to_email,
             remaining_seconds,
         )
-        return
+        return EmailSendResult(
+            success=False,
+            safe_error_code="SMTP_SPAM_COOLDOWN",
+            safe_error_message="Отправка временно ограничена провайдером почты. Попробуйте позже.",
+        )
 
     payload_fingerprint = _build_payload_fingerprint(payload)
     duplicate_until = _recent_payloads_until.get(payload_fingerprint)
     if duplicate_until is not None and duplicate_until > now_mono:
         logger.info("Duplicate email payload skipped for %s", _format_recipient_log(payload))
-        return
+        return EmailSendResult(
+            success=True,
+        )
     _recent_payloads_until[payload_fingerprint] = now_mono + _DEDUP_TTL_SECONDS
 
     from_address = str(payload.get("from_address") or username)
@@ -193,6 +223,7 @@ async def send_email(payload: dict) -> None:
             smtp.login(username, password)
             smtp.send_message(message, from_addr=from_address, to_addrs=[to_email])
         logger.info("Email sent to %s", _format_recipient_log(payload))
+        return EmailSendResult(success=True)
     except smtplib.SMTPDataError as exc:
         if _is_spam_rejection(exc):
             _recipient_spam_block_until[normalized_to_email] = time.monotonic() + _SPAM_COOLDOWN_SECONDS
@@ -201,9 +232,23 @@ async def send_email(payload: dict) -> None:
                 _format_recipient_log(payload),
                 _SPAM_COOLDOWN_SECONDS,
             )
-            return
+            return EmailSendResult(
+                success=False,
+                safe_error_code="SMTP_SPAM_REJECTED",
+                safe_error_message="Письмо отклонено почтовым сервером. Попробуйте позже.",
+            )
         _recent_payloads_until.pop(payload_fingerprint, None)
         logger.exception("Failed to send email to %s", _format_recipient_log(payload))
+        return EmailSendResult(
+            success=False,
+            safe_error_code="SMTP_DATA_ERROR",
+            safe_error_message="Не удалось отправить письмо. Проверьте настройки почты.",
+        )
     except (smtplib.SMTPException, ssl.SSLError, OSError):
         _recent_payloads_until.pop(payload_fingerprint, None)
         logger.exception("Failed to send email to %s", _format_recipient_log(payload))
+        return EmailSendResult(
+            success=False,
+            safe_error_code="SMTP_DELIVERY_ERROR",
+            safe_error_message="Не удалось отправить письмо. Проверьте настройки почты.",
+        )

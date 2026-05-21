@@ -5,14 +5,17 @@ from calendar import monthrange
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.policies import CurrentUser, UserPolicy
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.models.orm_models import EconomyPlan
 from app.repositories.economy_plans import EconomyPlanRepository, PlanDistributionRow
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 MONTH_PERIOD_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
@@ -154,10 +157,22 @@ class PlanService:
         plans: EconomyPlanRepository,
         users: UserRepository,
         requests: RequestRepository,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._plans = plans
         self._users = users
         self._requests = requests
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     async def create_root_plan(
         self,
@@ -254,7 +269,7 @@ class PlanService:
         if exists_identical:
             raise Conflict("Identical subplan already exists for selected period")
 
-        return await self._plans.create(
+        created_plan = await self._plans.create(
             name=normalized_name,
             user_id=target_user_id,
             parent_plan_id=parent_plan.id,
@@ -263,6 +278,26 @@ class PlanService:
             period_end=child_period_end,
             plan_amount=normalized_amount,
         )
+        if target_user_id != current_user.user_id:
+            assigned_event = build_process_notification_event(
+                event_type="plan.assigned",
+                actor_user_id=current_user.user_id,
+                entity_type="plan",
+                entity_id=created_plan.id,
+                dedupe_key=f"plan.assigned:{created_plan.id}:{target_user_id}",
+                payload={
+                    "plan_id": created_plan.id,
+                    "responsible_user_id": target_user_id,
+                    "assigned_by_user_id": current_user.user_id,
+                    "parent_plan_id": parent_plan.id,
+                    "period_start": created_plan.period_start.isoformat() if created_plan.period_start else None,
+                    "period_end": created_plan.period_end.isoformat() if created_plan.period_end else None,
+                    "period": format_month_period(created_plan.period_start) if created_plan.period_start else None,
+                    "plan_sum": str(normalized_amount),
+                },
+            )
+            self._schedule_process_notification_event(assigned_event)
+        return created_plan
 
     async def delegate_plan(
         self,
@@ -309,7 +344,7 @@ class PlanService:
         if exists_identical:
             raise Conflict("Identical delegated plan already exists for selected period")
 
-        return await self._plans.create(
+        created_plan = await self._plans.create(
             name=delegated_name,
             user_id=child_user_id,
             parent_plan_id=parent_plan.id,
@@ -318,6 +353,26 @@ class PlanService:
             period_end=delegated_period_end,
             plan_amount=normalized_amount,
         )
+        if child_user_id != current_user.user_id:
+            assigned_event = build_process_notification_event(
+                event_type="plan.assigned",
+                actor_user_id=current_user.user_id,
+                entity_type="plan",
+                entity_id=created_plan.id,
+                dedupe_key=f"plan.assigned:{created_plan.id}:{child_user_id}",
+                payload={
+                    "plan_id": created_plan.id,
+                    "responsible_user_id": child_user_id,
+                    "assigned_by_user_id": current_user.user_id,
+                    "parent_plan_id": parent_plan.id,
+                    "period_start": created_plan.period_start.isoformat() if created_plan.period_start else None,
+                    "period_end": created_plan.period_end.isoformat() if created_plan.period_end else None,
+                    "period": format_month_period(created_plan.period_start) if created_plan.period_start else None,
+                    "plan_sum": str(normalized_amount),
+                },
+            )
+            self._schedule_process_notification_event(assigned_event)
+        return created_plan
 
     async def update_plan(
         self,
@@ -350,12 +405,37 @@ class PlanService:
             if new_period_end < plan.period_start:
                 raise Conflict("Plan period end cannot be earlier than period start")
             normalized_period_end = new_period_end
+        old_plan_sum = str(normalize_amount(plan.plan_amount or 0))
+        old_period_end = plan.period_end
         await self._plans.update(
             plan=plan,
             name=normalized_name,
             plan_amount=normalized_amount,
             period_end=normalized_period_end,
         )
+        updated_plan_sum = str(normalize_amount(plan.plan_amount or 0))
+        updated_event = build_process_notification_event(
+            event_type="plan.updated",
+            actor_user_id=current_user.user_id,
+            entity_type="plan",
+            entity_id=plan.id,
+            dedupe_key=f"plan.updated:{plan.id}:{plan.id_user}:{plan.updated_at.isoformat() if getattr(plan, 'updated_at', None) else ''}",
+            payload={
+                "plan_id": plan.id,
+                "responsible_user_id": plan.id_user,
+                "assigned_by_user_id": plan.id_parent_user_snapshot,
+                "parent_plan_id": plan.id_parent_plan,
+                "period_start": plan.period_start.isoformat() if plan.period_start else None,
+                "period_end": plan.period_end.isoformat() if plan.period_end else None,
+                "period": format_month_period(plan.period_start) if plan.period_start else None,
+                "old_plan_sum": old_plan_sum,
+                "new_plan_sum": updated_plan_sum,
+                "plan_sum": updated_plan_sum,
+                "old_period_end": old_period_end.isoformat() if old_period_end else None,
+                "new_period_end": plan.period_end.isoformat() if plan.period_end else None,
+            },
+        )
+        self._schedule_process_notification_event(updated_event)
         return plan
 
     async def delete_child_plan(
@@ -1266,6 +1346,19 @@ class PlanService:
         if candidate_end > parent_plan.period_end:
             raise Conflict("Child plan period end cannot be later than parent plan period end")
         return child_start, candidate_end
+
+    def _resolve_child_period_start(
+        self,
+        *,
+        parent_plan: EconomyPlan,
+        candidate_start: date | None,
+    ) -> date:
+        child_start, _ = self._resolve_child_period_bounds(
+            parent_plan=parent_plan,
+            candidate_start=candidate_start,
+            candidate_end=None,
+        )
+        return child_start
 
     def _is_plan_closed(self, plan: EconomyPlan) -> bool:
         # Plan is considered closed only after explicit close action.

@@ -112,3 +112,9 @@ def test_inactive_and_blacklist_never_pass_protected_checks(make_current_user, s
 
     assert has_permission(blocked_user, PermissionCodes.REQUESTS_READ) is False
     assert has_permission(blocked_user, PermissionCodes.OFFERS_STATUS_UPDATE) is False
+
+
+def test_economist_role_includes_plan_dashboard_permission() -> None:
+    role_map = get_role_permissions_map()
+
+    assert PermissionCodes.DASHBOARD_PLANS_READ in role_map[settings.economist_role_id]

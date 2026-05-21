@@ -2,9 +2,12 @@ import asyncio
 import base64
 import json
 
+import httpx
+
 from app.core.config import settings
 from app.services.keycloak_app_roles import role_mapping_by_local_role_id
 from app.services.keycloak_admin import KeycloakAdminService
+from app.domain.exceptions import Forbidden
 
 
 def _run(coroutine):

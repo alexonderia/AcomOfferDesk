@@ -24,6 +24,7 @@ class ConnectionState:
 class WebSocketConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, ConnectionState] = {}
+        self._connection_ids_by_user: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, *, websocket: WebSocket, user_id: str) -> str:
@@ -35,11 +36,20 @@ class WebSocketConnectionManager:
                 websocket=websocket,
                 user_id=user_id,
             )
+            self._connection_ids_by_user.setdefault(user_id, set()).add(connection_id)
         return connection_id
 
     async def disconnect(self, connection_id: str) -> None:
         async with self._lock:
-            self._connections.pop(connection_id, None)
+            state = self._connections.pop(connection_id, None)
+            if state is None:
+                return
+            connection_ids = self._connection_ids_by_user.get(state.user_id)
+            if connection_ids is None:
+                return
+            connection_ids.discard(connection_id)
+            if not connection_ids:
+                self._connection_ids_by_user.pop(state.user_id, None)
 
     async def subscribe(self, *, connection_id: str, chat_id: int) -> None:
         state = await self._get_state(connection_id)
@@ -52,6 +62,44 @@ class WebSocketConnectionManager:
     async def send_to_connection(self, *, connection_id: str, event: OutboundEnvelope) -> bool:
         state = await self._get_state(connection_id)
         return await self._send(state=state, payload=event.model_dump(mode="json"))
+
+    async def send_to_user(self, *, user_id: str, event: OutboundEnvelope) -> bool:
+        async with self._lock:
+            connection_ids = list(self._connection_ids_by_user.get(user_id, set()))
+            targets = [
+                self._connections[connection_id]
+                for connection_id in connection_ids
+                if connection_id in self._connections
+            ]
+
+        if not targets:
+            return False
+
+        payload = event.model_dump(mode="json")
+        delivered = False
+        for state in targets:
+            if await self._send(state=state, payload=payload):
+                delivered = True
+        return delivered
+
+    async def broadcast_to_users(self, *, user_ids: set[str], event: OutboundEnvelope) -> set[str]:
+        if not user_ids:
+            return set()
+
+        async with self._lock:
+            targets: list[ConnectionState] = []
+            for user_id in user_ids:
+                for connection_id in self._connection_ids_by_user.get(user_id, set()):
+                    state = self._connections.get(connection_id)
+                    if state is not None:
+                        targets.append(state)
+
+        payload = event.model_dump(mode="json")
+        delivered_user_ids: set[str] = set()
+        for state in targets:
+            if await self._send(state=state, payload=payload):
+                delivered_user_ids.add(state.user_id)
+        return delivered_user_ids
 
     async def broadcast_to_chat(
         self,

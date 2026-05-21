@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
+from typing import Awaitable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,7 @@ from app.repositories.economy_plans import EconomyPlanRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.feedback import FeedBackRepository
+from app.repositories.notifications import NotificationRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
@@ -19,6 +22,8 @@ from app.repositories.users import UserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
+
+logger = logging.getLogger(__name__)
 
 
 class UnitOfWork:
@@ -35,10 +40,12 @@ class UnitOfWork:
         self.chats: ChatRepository | None = None
         self.messages: MessageRepository | None = None
         self.feedback: FeedBackRepository | None = None
+        self.notifications: NotificationRepository | None = None
         self.user_status_periods: UserStatusPeriodRepository | None = None
         self.user_auth_accounts: UserAuthAccountRepository | None = None
         self.user_contact_channels: UserContactChannelRepository | None = None
         self.economy_plans: EconomyPlanRepository | None = None
+        self._after_commit_hooks: list[Callable[[], Awaitable[None]]] = []
 
     async def __aenter__(self) -> "UnitOfWork":
         self.session = self._session_factory()
@@ -53,17 +60,30 @@ class UnitOfWork:
         self.chats = ChatRepository(self.session)
         self.messages = MessageRepository(self.session)
         self.feedback = FeedBackRepository(self.session)
+        self.notifications = NotificationRepository(self.session)
         self.user_status_periods = UserStatusPeriodRepository(self.session)
         self.user_auth_accounts = UserAuthAccountRepository(self.session)
         self.user_contact_channels = UserContactChannelRepository(self.session)
         self.economy_plans = EconomyPlanRepository(self.session)
+        self._after_commit_hooks = []
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         if not self.session:
             return
-        if exc:
-            await self.session.rollback()
-        else:
-            await self.session.commit()
-        await self.session.close()
+        try:
+            if exc:
+                await self.session.rollback()
+            else:
+                await self.session.commit()
+                for hook in self._after_commit_hooks:
+                    try:
+                        await hook()
+                    except Exception:
+                        logger.exception("After-commit hook failed")
+        finally:
+            await self.session.close()
+            self._after_commit_hooks = []
+
+    def add_after_commit_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
+        self._after_commit_hooks.append(hook)

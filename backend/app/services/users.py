@@ -4,6 +4,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
@@ -22,14 +23,16 @@ from app.repositories.telegram_compat import telegram_subject_value
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
-    notify_contractor_access_opened_email,
+    notify_contractor_status_changed_email,
 )
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
 )
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 ROLE_NAME_SUPERADMIN = "Суперадмин"
 ROLE_NAME_ADMIN = "Администратор"
@@ -1432,10 +1435,22 @@ class UserStatusService:
         users: UserRepository,
         tg_users: TgUserRepository,
         profiles: ProfileRepository,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._users = users
         self._tg_users = tg_users
         self._profiles = profiles
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     async def update_statuses(
         self,
@@ -1493,6 +1508,8 @@ class UserStatusService:
             elif user_status == "active":
                 await self._tg_users.update_status(tg_user, "approved")
 
+        old_status = user.status
+        status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
 
         notify_tg_id = tg_user.id if tg_user is not None else None
@@ -1505,6 +1522,8 @@ class UserStatusService:
         )
 
         notify_email: str | None = None
+        contractor_email_notification_queued = False
+        contractor_email_notification_reason: str | None = None
         if user.id_role == settings.contractor_role_id:
             profile = await self._profiles.get_by_id(user.id)
             notify_email = _normalize_notification_email(profile.mail if profile is not None else None)
@@ -1515,9 +1534,39 @@ class UserStatusService:
             else:
                 await notify_tg_access_closed(notify_tg_id)
 
-        if notify_email is not None and (notify_tg_id is None or not settings.telegram_legacy_enabled):
-            if user.status == "active":
-                await notify_contractor_access_opened_email(to_email=notify_email)
+        if status_changed and user.id_role == settings.contractor_role_id:
+            if notify_email is None:
+                contractor_email_notification_reason = "missing_email"
+            else:
+                contractor_email_notification_queued = await notify_contractor_status_changed_email(
+                    to_email=notify_email,
+                    user_status=user.status,
+                    recipient_user_id=user.id,
+                    initiator_user_id=current_user.user_id,
+                )
+                if not contractor_email_notification_queued:
+                    contractor_email_notification_reason = "status_not_supported_for_email"
+
+        if status_changed:
+            event = build_process_notification_event(
+                event_type="user.status_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="user",
+                entity_id=user.id,
+                dedupe_key=f"user.status_changed:{user.id}:{old_status}:{user.status}",
+                payload={
+                    "target_user_id": user.id,
+                    "old_status": old_status,
+                    "new_status": user.status,
+                    "target_role": user.id_role,
+                    "target_is_contractor": user.id_role == settings.contractor_role_id,
+                    "target_user_email": notify_email,
+                    "actor_user_id": current_user.user_id,
+                    "email_notification_queued": contractor_email_notification_queued,
+                    "email_notification_reason": contractor_email_notification_reason,
+                },
+            )
+            self._schedule_process_notification_event(event)
 
         return result
     

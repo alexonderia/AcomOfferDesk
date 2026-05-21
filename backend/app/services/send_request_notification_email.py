@@ -50,6 +50,7 @@ class SendRequestNotificationEmailUseCase:
         *,
         request_id: int,
         contractor_role_id: int,
+        initiator_user_id: str | None = None,
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
         include_verified_contractors: bool = True,
@@ -121,6 +122,9 @@ class SendRequestNotificationEmailUseCase:
                 )
 
             try:
+                # TODO(notification-center): worker-level SMTP delivery status is async.
+                # To emit precise `email.sent` / `email.failed` center notifications,
+                # add a feedback event from notifications_worker to backend service layer.
                 await self._email_service.send_email(
                     to_email=payload.to_email,
                     subject=payload.subject,
@@ -128,6 +132,11 @@ class SendRequestNotificationEmailUseCase:
                     html_content=payload.html_content,
                     attachments=attachments,
                     reply_token=payload.reply_token,
+                    correlation_id=None,
+                    recipient_user_id=initiator_user_id,
+                    request_id=request_id,
+                    offer_id=None,
+                    initiator_user_id=initiator_user_id,
                     recipient_context={
                         "user_login": recipient.user_login,
                         "tg_id": recipient.tg_id,

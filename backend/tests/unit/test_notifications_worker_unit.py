@@ -8,6 +8,7 @@ import pytest
 
 from notifications_worker.app import consumers as worker_consumers
 from notifications_worker.app import email_sender as worker_email_sender
+from notifications_worker.app.email_sender import EmailSendResult
 from shared.broker import RK_EMAIL
 
 
@@ -53,11 +54,17 @@ def _reset_worker_state(monkeypatch):
 @pytest.mark.asyncio
 async def test_consumer_handles_valid_email_payload_and_uses_no_requeue(monkeypatch):
     sent_payloads: list[dict] = []
+    published_events: list[object] = []
 
-    async def _fake_send_email(payload: dict) -> None:
+    async def _fake_send_email(payload: dict) -> EmailSendResult:
         sent_payloads.append(payload)
+        return EmailSendResult(success=True)
+
+    async def _fake_publish(event) -> None:
+        published_events.append(event)
 
     monkeypatch.setattr(worker_consumers, "send_email", _fake_send_email)
+    monkeypatch.setattr(worker_consumers, "publish_email_delivery_result", _fake_publish)
     message = _FakeIncomingMessage(
         body=json.dumps({"to_email": "a@example.com", "subject": "Hi", "text_content": "Body"}).encode("utf-8"),
         routing_key=RK_EMAIL,
@@ -66,6 +73,8 @@ async def test_consumer_handles_valid_email_payload_and_uses_no_requeue(monkeypa
     await worker_consumers.handle_message(message)
 
     assert sent_payloads == [{"to_email": "a@example.com", "subject": "Hi", "text_content": "Body"}]
+    assert len(published_events) == 1
+    assert published_events[0].event_type == "email.delivery.succeeded"
     assert message.process_requeue_args == [False]
     assert message.process_enter_count == 1
     assert message.process_exit_count == 1
@@ -95,6 +104,31 @@ async def test_consumer_ignores_non_dict_payload(monkeypatch):
     await worker_consumers.handle_message(message)
 
     assert message.process_requeue_args == [False]
+
+
+@pytest.mark.asyncio
+async def test_consumer_generates_fallback_correlation_id(monkeypatch):
+    published_events: list[object] = []
+
+    async def _fake_send_email(payload: dict) -> EmailSendResult:
+        _ = payload
+        return EmailSendResult(success=False, safe_error_code="SMTP_DELIVERY_ERROR", safe_error_message="safe")
+
+    async def _fake_publish(event) -> None:
+        published_events.append(event)
+
+    monkeypatch.setattr(worker_consumers, "send_email", _fake_send_email)
+    monkeypatch.setattr(worker_consumers, "publish_email_delivery_result", _fake_publish)
+    message = _FakeIncomingMessage(
+        body=json.dumps({"to_email": "a@example.com", "subject": "Hi", "text_content": "Body"}).encode("utf-8"),
+        routing_key=RK_EMAIL,
+    )
+
+    await worker_consumers.handle_message(message)
+
+    assert len(published_events) == 1
+    assert published_events[0].event_type == "email.delivery.failed"
+    assert published_events[0].correlation_id
 
 
 class _FakeSMTP:

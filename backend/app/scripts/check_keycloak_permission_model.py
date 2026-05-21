@@ -523,6 +523,17 @@ def _check_api_client_roles(report: Report, admin_api: KeycloakAdminApi, api_cli
         else:
             report.fail(f"Role '{app_role}' exists but is not composite")
 
+    economist_composites = admin_api.get_role_composites(client_uuid, "app.economist")
+    economist_composite_names = {
+        str(item.get("name") or "").strip()
+        for item in economist_composites
+        if isinstance(item, dict) and item.get("name")
+    }
+    if "dashboard.plans.read" in economist_composite_names:
+        report.ok("app.economist includes dashboard.plans.read")
+    else:
+        report.fail("app.economist is missing dashboard.plans.read")
+
     superadmin_composites = admin_api.get_role_composites(client_uuid, "app.superadmin")
     superadmin_names = {
         str(item.get("name") or "").strip()

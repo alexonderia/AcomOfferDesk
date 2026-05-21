@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Run check_keycloak_permission_model inside the running backend container (VPS/deploy).
+# Env: docker compose --env-file backend/.env on the HOST; inside the container there is no
+# /app/backend/.env. This script snapshots process env to /app/keycloak-check.env for --env-file.
+# Repair: KEYCLOAK_PERMISSION_REPAIR=1 ./scripts/run-keycloak-check-backend.sh --repair
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -194,6 +194,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-prod-perimeter.ps1
 
 VPS deploy (`test` branch): `scripts/keycloak-init-deploy.sh` skips the long `keycloak_bootstrap` container when read-only `check_keycloak_permission_model` passes and `infra/keycloak/bootstrap.sh` is unchanged (state: `.deploy-state/keycloak-bootstrap.sha256`). On post-deploy failure it runs `run-keycloak-check-backend.sh --repair`. Force full bootstrap: `KEYCLOAK_BOOTSTRAP_FORCE=1` before deploy.
 
+Keycloak permission model on VPS (running `backend` container):
+
+- **Do not** `docker exec backend python -m app.scripts.check_keycloak_permission_model --env-file /app/backend/.env` — that file is not baked into the image; env is injected by `docker compose --env-file backend/.env` on the host.
+- **Do** from `/opt/acome-offer-desk` on the host:
+  - `./scripts/post-deploy-verify.sh` — full post-deploy gate (smoke + Keycloak);
+  - `./scripts/run-keycloak-check-backend.sh` — Keycloak only (add `--repair` if deploy gate failed and repair is intended).
+- CI deploy runs the same pattern via `post-deploy-verify.sh` after `docker compose up`.
+
+Local/dev Keycloak model check (host Python, repo env file): `./scripts/check-keycloak.sh .env.dev` (see `docs/development/testing-strategy.md`).
+
 Keycloak bootstrap validation:
 
 Linux/macOS:

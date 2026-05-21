@@ -189,6 +189,8 @@ npm --prefix web exec -- playwright install
   `$env:KEYCLOAK_INTERNAL_BASE_URL='https://unflossy-noninheritable-aarav.ngrok-free.dev/iam'; ./scripts/check-keycloak.ps1 -EnvFile .env.prod-like -StrictUnknownAtomic; Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL`
 - Bash: `STRICT_UNKNOWN_ATOMIC=true ./scripts/check-keycloak.sh .env.dev`
 
+VPS (контейнер `backend` уже поднят compose): с хоста в каталоге деплоя — `./scripts/run-keycloak-check-backend.sh` или `./scripts/post-deploy-verify.sh`. Не запускать внутри контейнера `--env-file /app/backend/.env` (файла в образе нет). Подробнее: `docs/operations/environments.md`.
+
 Важно:
 - скрипт ничего не меняет в Keycloak;
 - пользователи и роли не создаются, не обновляются и не удаляются;

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Local/dev: run on the host with a repo env file (e.g. .env.dev).
+# VPS/prod (running backend container): do NOT docker exec with /app/backend/.env — that path
+# is not in the image. Use ./scripts/run-keycloak-check-backend.sh or ./scripts/post-deploy-verify.sh
+# from the host; they inject compose env and pass a temp snapshot to the checker.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

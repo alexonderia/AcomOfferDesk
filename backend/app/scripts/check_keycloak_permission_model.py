@@ -162,7 +162,14 @@ def _load_known_permissions_from_source() -> set[str]:
 
 def _load_env_file(path: str) -> dict[str, str]:
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Env file not found: {path}")
+        hint = ""
+        if path.startswith("/app/"):
+            hint = (
+                " Inside the backend container, env is injected by docker compose on the host; "
+                "run ./scripts/run-keycloak-check-backend.sh or ./scripts/post-deploy-verify.sh "
+                "from the host instead of pointing --env-file at /app/backend/.env."
+            )
+        raise FileNotFoundError(f"Env file not found: {path}.{hint}")
 
     result: dict[str, str] = {}
     with open(path, "r", encoding="utf-8") as handle:
@@ -786,7 +793,15 @@ def _run_check(report: Report, title: str, check_fn: Any) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Keycloak permission model checks and optional repair")
-    parser.add_argument("--env-file", required=True, help="Path to env file")
+    parser.add_argument(
+        "--env-file",
+        required=True,
+        help=(
+            "Path to env file. Local dev: repo file (e.g. .env.dev). "
+            "VPS/backend container: use host scripts run-keycloak-check-backend.sh or "
+            "post-deploy-verify.sh (temp snapshot from compose env), not /app/backend/.env."
+        ),
+    )
     parser.add_argument("--strict-unknown-atomic", action="store_true", help="Fail on unknown non-app/delegation roles")
     parser.add_argument(
         "--repair",

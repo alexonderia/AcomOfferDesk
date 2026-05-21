@@ -31,9 +31,27 @@ def test_format_registration_message_russian_blocks():
         )
     )
     assert "Регистрация AcomOfferDesk" in message
-    assert "Пользователь: Иванов Иван" in message
+    assert "Представитель: Иванов Иван" in message
     assert "Суть" not in message  # Hermes-style blocks only in relay; here flat format
     assert "Контрагент" in message
     assert "app.contractor" in message
     assert "permissions.py" in message
     assert "demo_user" in message
+
+
+def test_format_registration_message_manual_contractor_company_only():
+    message = format_registration_message(
+        RegistrationNotifyContext(
+            source="manual_contractor",
+            user_id="ooo-kubik-2365485695",
+            role_id=settings.contractor_role_id,
+            role_name="Контрагент",
+            status="active",
+            company_name='ООО "Кубик"',
+            email="kkybikkik@gmail.com",
+            registered_by="admin-1",
+        )
+    )
+    assert 'Контрагент (компания): ООО "Кубик"' in message
+    assert "Пользователь:" not in message
+    assert "Компания:" not in message  # already in subject line

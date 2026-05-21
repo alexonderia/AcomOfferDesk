@@ -54,11 +54,21 @@ def format_registration_message(ctx: RegistrationNotifyContext) -> str:
     audit = build_permission_audit(ctx.role_id)
     source_label = _SOURCE_LABELS.get(ctx.source, ctx.source)
     role_line = f"{ctx.role_name or '—'} (id={ctx.role_id})"
-    display_name = (ctx.full_name or "").strip() or ctx.user_id
+
+    if ctx.source == "manual_contractor":
+        subject_label = "Контрагент (компания)"
+        display_name = (ctx.company_name or "").strip() or ctx.user_id
+    elif ctx.source == "contractor_tg":
+        subject_label = "Представитель"
+        display_name = (ctx.full_name or "").strip() or ctx.user_id
+    else:
+        subject_label = "Пользователь"
+        display_name = (ctx.full_name or "").strip() or ctx.user_id
+
     lines = [
         "Регистрация AcomOfferDesk",
         f"Источник: {source_label}",
-        f"Пользователь: {display_name}",
+        f"{subject_label}: {display_name}",
         f"Логин: {ctx.user_id} | статус: {ctx.status}",
         f"Роль: {role_line} → Keycloak {audit['keycloak_app_role']}",
         f"Прав по матрице permissions.py: {audit['permissions_count']} "
@@ -66,7 +76,7 @@ def format_registration_message(ctx: RegistrationNotifyContext) -> str:
     ]
     if ctx.email:
         lines.append(f"Email: {ctx.email}")
-    if ctx.company_name:
+    if ctx.company_name and ctx.source != "manual_contractor":
         lines.append(f"Компания: {ctx.company_name}")
     if ctx.registered_by:
         lines.append(f"Создал: {ctx.registered_by}")

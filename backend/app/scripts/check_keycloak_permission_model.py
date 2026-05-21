@@ -816,7 +816,9 @@ def main() -> int:
     args = parser.parse_args()
 
     env_map = _load_env_file(args.env_file)
-    prefer_env_file = True
+    # Allow wrapper scripts (e.g. scripts/test-release.ps1) to override network/auth
+    # params via process environment for host-accessible checks.
+    prefer_env_file = False
     report = Report()
 
     timeout = float(

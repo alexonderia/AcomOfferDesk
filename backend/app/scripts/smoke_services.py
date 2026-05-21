@@ -284,12 +284,43 @@ async def _check_keycloak(reporter: Reporter, env_map: dict[str, str], timeout: 
     )
 
 
+def _minio_smoke_probe(
+    endpoint: str,
+    *,
+    access_key: str,
+    secret_key: str,
+    secure: bool,
+    bucket: str,
+) -> tuple[bool, str | None]:
+    """Sync MinIO probe: (bucket_exists, list_error_message or None if list OK)."""
+    from minio import Minio  # type: ignore
+
+    client = Minio(
+        endpoint,
+        access_key=access_key or None,
+        secret_key=secret_key or None,
+        secure=secure,
+    )
+    if not client.bucket_exists(bucket):
+        return False, None
+    try:
+        _ = next(client.list_objects(bucket, recursive=False), None)
+    except Exception as exc:  # noqa: BLE001
+        return True, str(exc)
+    return True, None
+
+
 async def _check_s3_minio(reporter: Reporter, env_map: dict[str, str]) -> None:
+    if _to_bool(_coalesce(env_map, "SMOKE_SKIP_MINIO", default="false")):
+        reporter.warn("S3/MinIO", "SMOKE_SKIP_MINIO=true, check skipped")
+        return
+
     endpoint_raw = _coalesce(env_map, "SMOKE_S3_ENDPOINT", "S3_PUBLIC_ENDPOINT", "S3_ENDPOINT")
     bucket = _coalesce(env_map, "S3_BUCKET")
     access_key = _coalesce(env_map, "SMOKE_S3_ACCESS_KEY", "S3_ACCESS_KEY")
     secret_key = _coalesce(env_map, "SMOKE_S3_SECRET_KEY", "S3_SECRET_KEY")
     secure = _to_bool(_coalesce(env_map, "SMOKE_S3_SECURE", "S3_SECURE", default="false"))
+    timeout = float(_coalesce(env_map, "SMOKE_MINIO_TIMEOUT_SECONDS", default="10") or "10")
 
     if not endpoint_raw or not bucket:
         reporter.warn("S3/MinIO", "S3_ENDPOINT or S3_BUCKET is missing, check skipped")
@@ -302,14 +333,30 @@ async def _check_s3_minio(reporter: Reporter, env_map: dict[str, str]) -> None:
         return
 
     try:
-        from minio import Minio  # type: ignore
+        from minio import Minio  # type: ignore  # noqa: F401
     except ImportError:
         reporter.warn("S3/MinIO", "minio package is not installed, check skipped")
         return
 
-    client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
     try:
-        exists = client.bucket_exists(bucket)
+        exists, list_error = await asyncio.wait_for(
+            asyncio.to_thread(
+                _minio_smoke_probe,
+                endpoint,
+                access_key=access_key,
+                secret_key=secret_key,
+                secure=secure,
+                bucket=bucket,
+            ),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        host_hint = _host_hint(endpoint, env_name="SMOKE_S3_ENDPOINT")
+        message = f"MinIO check timed out after {timeout:.0f}s (endpoint={endpoint})"
+        if host_hint:
+            message += host_hint
+        reporter.fail("S3/MinIO", message)
+        return
     except Exception as exc:  # noqa: BLE001
         host_hint = _host_hint(endpoint, env_name="SMOKE_S3_ENDPOINT")
         message = f"Bucket check failed: {exc}"
@@ -323,11 +370,10 @@ async def _check_s3_minio(reporter: Reporter, env_map: dict[str, str]) -> None:
         return
 
     reporter.ok("S3/MinIO", f"Bucket '{bucket}' exists")
-    try:
-        _ = next(client.list_objects(bucket, recursive=False), None)
+    if list_error:
+        reporter.warn("S3/MinIO", f"List objects failed: {list_error}")
+    else:
         reporter.ok("S3/MinIO", "List objects succeeded (non-destructive)")
-    except Exception as exc:  # noqa: BLE001
-        reporter.warn("S3/MinIO", f"List objects failed: {exc}")
 
 
 async def _check_rabbitmq(reporter: Reporter, env_map: dict[str, str]) -> None:
@@ -343,9 +389,15 @@ async def _check_rabbitmq(reporter: Reporter, env_map: dict[str, str]) -> None:
         return
 
     try:
-        connection = await aio_pika.connect_robust(rabbitmq_url, timeout=7)
-        await connection.close()
+
+        async def _connect_and_close() -> None:
+            connection = await aio_pika.connect_robust(rabbitmq_url, timeout=7)
+            await connection.close()
+
+        await asyncio.wait_for(_connect_and_close(), timeout=15.0)
         reporter.ok("RabbitMQ", "AMQP connection succeeded")
+    except TimeoutError:
+        reporter.fail("RabbitMQ", "AMQP connection timed out after 15s")
     except Exception as exc:  # noqa: BLE001
         host = ""
         try:
@@ -423,7 +475,10 @@ async def run_checks(
     await _check_postgres(reporter, env_map)
     await _check_keycloak(reporter, env_map, timeout, resolved_base_url)
     await _check_s3_minio(reporter, env_map)
-    await _check_rabbitmq(reporter, env_map)
+    if _to_bool(_coalesce(env_map, "SMOKE_SKIP_RABBITMQ", default="false")):
+        reporter.warn("RabbitMQ", "SMOKE_SKIP_RABBITMQ=true, check skipped")
+    else:
+        await _check_rabbitmq(reporter, env_map)
 
     reporter.print()
     return 1 if reporter.has_failures() else 0

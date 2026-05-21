@@ -39,6 +39,7 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
     assert uow.profiles is not None
     assert uow.company_contacts is not None
     assert uow.users is not None
+    user_auth_accounts = getattr(uow, "user_auth_accounts", None)
     notifications_repo = getattr(uow, "notifications", None)
     after_commit_hook_registrar = getattr(uow, "add_after_commit_hook", None)
     return OfferService(
@@ -50,6 +51,7 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
         uow.profiles,
         uow.company_contacts,
         uow.users,
+        user_auth_accounts,
         file_service=file_service,
         keycloak_admin=KeycloakAdminService(),
         notifications=(NotificationService(notifications_repo) if notifications_repo is not None else None),

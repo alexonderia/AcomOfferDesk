@@ -46,6 +46,9 @@ def build_current_user_from_keycloak(
     )
     known_permissions = get_known_permissions()
     permissions = frozenset(role for role in normalized_roles if role in known_permissions)
+    role_ceiling = get_permissions_for_role(role_id)
+    if role_ceiling:
+        permissions = permissions & role_ceiling
     app_roles = frozenset(role for role in normalized_roles if role.startswith("app."))
     delegation_roles = frozenset(role for role in normalized_roles if role.startswith("delegation."))
     if (app_roles or delegation_roles) and not permissions:

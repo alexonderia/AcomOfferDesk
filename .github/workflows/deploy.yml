@@ -22,7 +22,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-          command_timeout: 20m
+          command_timeout: 35m
           script: |
             set -e
 
@@ -67,11 +67,21 @@ jobs:
               docker exec order-database-postgres pg_dump -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -F c > "$backup_path"
               sha256sum "$backup_path" > "$backup_path.sha256"
 
-              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm flyway migrate)
+              # order-database-postgres: avoid DNS alias "postgres" (acome-monitoring also registers postgres on project_net).
+              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm \
+                -e "FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${ORDER_DB_NAME}" \
+                flyway migrate)
             }
 
             cd /opt/acome-offer-desk
-            git fetch upstream
+            # Concurrent fetch (CI + manual) can corrupt refs/remotes/upstream/*:
+            # "cannot lock ref ... is at <sha> but expected <old-sha>".
+            git remote prune upstream 2>/dev/null || true
+            if ! git fetch upstream test dev 2>/dev/null; then
+              git update-ref -d refs/remotes/upstream/test 2>/dev/null || true
+              git update-ref -d refs/remotes/upstream/dev 2>/dev/null || true
+              git fetch upstream refs/heads/test:refs/remotes/upstream/test refs/heads/dev:refs/remotes/upstream/dev
+            fi
             git checkout test
             # Совпадать с удалённой веткой целиком: иначе git pull падает, если на сервере
             # остались локальные правки отслеживаемых файлов (например ручной scp поверх checkout).
@@ -130,21 +140,48 @@ jobs:
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
-            docker compose --env-file "$COMPOSE_ENV_FILE" down --remove-orphans || true
-            docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_db_prepare
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build; then
-              echo "=== docker compose ps -a ==="
+            # Staged recreate avoids Compose race when --force-recreate drops container IDs
+            # while dependents still wait (backend/web: #26144585924; rabbitmq: #26146730081).
+            compose_up() {
+              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build --force-recreate --remove-orphans "$@"
+            }
+            for infra_svc in rabbitmq minio keycloak; do
+              if ! compose_up "$infra_svc"; then
+                echo "=== docker compose ps -a (infra: $infra_svc) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+                echo "=== $infra_svc logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 "$infra_svc" || true
+                exit 1
+              fi
+            done
+            if ! compose_up backend notifications_worker; then
+              echo "=== docker compose ps -a (app) ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
-              echo "=== keycloak logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
               echo "=== backend logs (tail) ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
               exit 1
             fi
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_bootstrap; then
-              echo "=== keycloak bootstrap logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
-              echo "=== keycloak logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
+            if ! compose_up web; then
+              echo "=== docker compose ps -a (web) ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+              echo "=== web logs (tail) ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 web || true
+              exit 1
+            fi
+
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" exec -T gateway nginx -s reload; then
+              if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --force-recreate gateway; then
+                echo "=== gateway logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 gateway || true
+                exit 1
+              fi
+            fi
+
+            # Keycloak: skip 20–30 min bootstrap when model OK + bootstrap.sh unchanged; repair on verify fail.
+            # Force full bootstrap: KEYCLOAK_BOOTSTRAP_FORCE=1 on VPS before deploy (workflow_dispatch).
+            chmod +x ./scripts/keycloak-init-deploy.sh ./scripts/run-keycloak-check-backend.sh ./scripts/post-deploy-verify.sh
+            if ! ./scripts/keycloak-init-deploy.sh "$COMPOSE_ENV_FILE"; then
+              echo "=== keycloak-init-deploy failed ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               exit 1
             fi

@@ -1,0 +1,22 @@
+[ {
+  "id" : "dc258724-34b8-4804-a513-50f2aa6ca988",
+  "name" : "offline_access",
+  "description" : "${role_offline-access}",
+  "composite" : false,
+  "clientRole" : false,
+  "containerId" : "6b03f9aa-9012-46b3-a691-480d464101db"
+}, {
+  "id" : "7e18b1d3-f219-4b2b-8afc-a3a7280fec54",
+  "name" : "uma_authorization",
+  "description" : "${role_uma_authorization}",
+  "composite" : false,
+  "clientRole" : false,
+  "containerId" : "6b03f9aa-9012-46b3-a691-480d464101db"
+}, {
+  "id" : "1a9bdb6b-ef2b-4661-8543-62561be47aff",
+  "name" : "default-roles-acom-offerdesk",
+  "description" : "${role_default-roles}",
+  "composite" : true,
+  "clientRole" : false,
+  "containerId" : "6b03f9aa-9012-46b3-a691-480d464101db"
+} ]

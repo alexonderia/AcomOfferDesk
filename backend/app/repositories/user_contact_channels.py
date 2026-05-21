@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from app.core.datetime_utils import utc_now_naive
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +58,7 @@ class UserContactChannelRepository:
             channel_type=channel_type,
             include_inactive=True,
         )
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utc_now_naive()
         if existing is None:
             channel = UserContactChannel(
                 id_user=user_id,

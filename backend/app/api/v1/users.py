@@ -518,7 +518,7 @@ async def update_user_role(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserRoleUpdateResponse:
     async with uow:
-        service = UserRoleService(uow.users)
+        service = UserRoleService(uow.users, uow.user_auth_accounts)
         result = await service.update_role(
             current_user=current_user,
             user_id=user_id,

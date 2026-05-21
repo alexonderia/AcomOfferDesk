@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
 import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
 import { hasPermission } from '@shared/auth/permissions';
+import { ROLE } from '@shared/constants/roles';
 import { ActionButton } from '@shared/components/ActionButton';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 import { useSystemToasts } from '@shared/ui/toasts';
@@ -44,7 +45,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (!hasPermission(session, 'normative_files.create')) {
+  if (session?.roleId === ROLE.CONTRACTOR || !hasPermission(session, 'normative_files.create')) {
     return null;
   }
 

@@ -328,11 +328,11 @@ class PlanService:
 
         await self._ensure_available_amount(parent_plan=parent_plan, requested_amount=normalized_amount)
 
-        delegated_period_start = self._resolve_child_period_start(
+        delegated_period_start, delegated_period_end = self._resolve_child_period_bounds(
             parent_plan=parent_plan,
             candidate_start=child_period_start,
+            candidate_end=None,
         )
-        delegated_period_end = parent_plan.period_end
         delegated_name = normalize_plan_name(parent_plan.name)
         exists_identical = await self._plans.exists_identical_plan(
             user_id=child_user_id,

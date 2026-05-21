@@ -37,13 +37,16 @@ services:
 
   backend:
     <<: *runtime-env
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: backend
     environment:
       KEYCLOAK_ADMIN_USERNAME: ""
       KEYCLOAK_ADMIN_PASSWORD: ""
     volumes:
       - ./shared:/app/shared:ro
+      - ./infra/keycloak/bootstrap.sh:/app/keycloak/bootstrap.sh:ro
     depends_on:
       keycloak:
         condition: service_healthy

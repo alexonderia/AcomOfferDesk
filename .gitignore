@@ -27,5 +27,6 @@ build/
 .trellis/
 artifacts/
 .tmp/
+.deploy-state/
 AGENTS.md
 scripts/local-smoke-infra.commands.ps1

@@ -123,3 +123,34 @@ docker compose exec -T postgres psql -U order_admin -d order_database -c '\dt us
 **Не использовать** полный **`install-order-database-vps.sh`**, если нужно **сохранить** существующий volume: скрипт по дизайну делает **`docker compose down -v`** и пересоздаёт данные.
 
 **После успешной миграции:** повторный вход через Keycloak должен проходить без **500** на callback (подтверждено на production, апрель 2026).
+
+---
+
+## Flyway: `password authentication failed for user "order_admin"` при деплое (май 2026)
+
+**Симптомы:** GitHub Actions **Deploy to VPS** падает на `flyway migrate` с `FATAL: password authentication failed for user "order_admin"`, хотя `docker exec order-database-postgres psql -U order_admin` работает.
+
+**Причина:** на общей сети **`project_net`** два контейнера с DNS-алиасом **`postgres`**:
+
+- `order-database-postgres` (БД приложения),
+- `acome-monitoring-postgres-1` (стек мониторинга).
+
+`FLYWAY_URL=jdbc:postgresql://postgres:5432/...` может подключиться к **чужому** Postgres → неверный пароль для `order_admin`.
+
+**Исправление:**
+
+1. В **`/opt/order_database/docker-compose.yml`** (сервис `flyway`):
+
+   `FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${POSTGRES_DB}`
+
+2. Проверка:
+
+   ```bash
+   cd /opt/order_database
+   docker compose --profile tools run --rm flyway info
+   docker compose --profile tools run --rm flyway migrate
+   ```
+
+3. В репозитории приложения: **`.github/workflows/deploy.yml`** передаёт `FLYWAY_URL` с хостом **`order-database-postgres`** при `flyway migrate` (защита даже со старым compose на диске).
+
+**Не путать** с рассинхроном пароля в `.env` и volume: если `psql` через `docker exec order-database-postgres` не логинится — сверить `/opt/order_database/.env` с `/root/.acom_order_db_postgres_password` или выполнить `ALTER USER` внутри БД.

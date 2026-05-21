@@ -8,6 +8,7 @@ from sqlalchemy import Select, bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.core.datetime_utils import to_db_timestamp, utc_now_naive
 from app.models.orm_models import (
     Chat,
     CompanyContact,
@@ -51,7 +52,7 @@ class RequestRepository:
     ) -> Request:
         request = Request(
             id_user=id_user,
-            deadline_at=deadline_at,
+            deadline_at=to_db_timestamp(deadline_at),
             description=description,
             initial_amount=initial_amount,
             id_plan=id_plan,
@@ -109,7 +110,7 @@ class RequestRepository:
         request.id_offer = chosen_offer_id
 
     async def update_deadline(self, *, request: Request, deadline_at: datetime) -> None:
-        request.deadline_at = deadline_at
+        request.deadline_at = to_db_timestamp(deadline_at)
 
     async def update_owner(self, *, request: Request, user_id: str) -> None:
         request.id_user = user_id
@@ -662,7 +663,7 @@ class RequestRepository:
 
         if stats.count_deleted_alert > 0:
             stats.count_deleted_alert -= 1
-        stats.updated_at = datetime.now(timezone.utc)
+        stats.updated_at = utc_now_naive()
         await self._session.flush()
         return stats
 

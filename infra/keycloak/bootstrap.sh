@@ -362,10 +362,21 @@ if ! /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM" >/dev/null 2>&1; then
   exit 1
 fi
 
+_CACHED_API_CLIENT_UUID=""
+
 get_client_uuid() {
   client_id="$1"
   client_search=$(/opt/keycloak/bin/kcadm.sh get "clients?clientId=$client_id" -r "$APP_REALM")
   printf '%s' "$client_search" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+resolve_api_client_uuid() {
+  if [ -n "$_CACHED_API_CLIENT_UUID" ]; then
+    printf '%s' "$_CACHED_API_CLIENT_UUID"
+    return 0
+  fi
+  _CACHED_API_CLIENT_UUID="$(get_client_uuid "$API_CLIENT_ID")"
+  printf '%s' "$_CACHED_API_CLIENT_UUID"
 }
 
 get_client_role_id() {
@@ -373,6 +384,125 @@ get_client_role_id() {
   role_name="$2"
   role_payload=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name" -r "$APP_REALM")
   printf '%s' "$role_payload" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+get_user_uuid() {
+  username="$1"
+  user_search=$(/opt/keycloak/bin/kcadm.sh get "users?username=$username&exact=true" -r "$APP_REALM")
+  printf '%s' "$user_search" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+payload_has_role_name() {
+  payload="$1"
+  role_name="$2"
+  printf '%s' "$payload" | grep -Eq "\"name\"[[:space:]]*:[[:space:]]*\"$role_name\""
+}
+
+create_single_role_payload_file() {
+  client_uuid="$1"
+  role_name="$2"
+  role_payload=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name" -r "$APP_REALM")
+  payload_file="$(mktemp)"
+  printf '[%s]\n' "$role_payload" >"$payload_file"
+  printf '%s\n' "$payload_file"
+}
+
+ensure_user_has_client_role() {
+  user_uuid="$1"
+  client_uuid="$2"
+  role_name="$3"
+
+  current_mappings=$(/opt/keycloak/bin/kcadm.sh get "users/$user_uuid/role-mappings/clients/$client_uuid" -r "$APP_REALM")
+  if payload_has_role_name "$current_mappings" "$role_name"; then
+    return 0
+  fi
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$role_name")"
+  /opt/keycloak/bin/kcadm.sh create "users/$user_uuid/role-mappings/clients/$client_uuid" -r "$APP_REALM" -f "$payload_file" >/dev/null
+  rm -f "$payload_file"
+}
+
+list_role_names_from_payload() {
+  payload="$1"
+  printf '%s' "$payload" | tr '{' '\n' | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+
+role_name_in_list() {
+  needle="$1"
+  haystack="$2"
+  printf '%s\n' "$haystack" | grep -Fxq "$needle"
+}
+
+clear_role_composites() {
+  client_uuid="$1"
+  role_name="$2"
+
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+  if ! printf '%s' "$current_composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
+    return 0
+  fi
+
+  payload_file="$(mktemp)"
+  printf '%s' "$current_composites" >"$payload_file"
+  if /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1; then
+    rm -f "$payload_file"
+    return 0
+  fi
+  rm -f "$payload_file"
+
+  # Fallback: member-by-member delete when bulk payload is rejected.
+  list_role_names_from_payload "$current_composites" | while IFS= read -r member_role; do
+    if [ -z "$member_role" ]; then
+      continue
+    fi
+    remove_composite_role_member "$client_uuid" "$role_name" "$member_role"
+  done
+}
+
+enforce_atomic_permission_roles() {
+  api_client_uuid="$(resolve_api_client_uuid)"
+  if [ -z "$api_client_uuid" ]; then
+    echo "Unable to resolve API client UUID for $API_CLIENT_ID"
+    exit 1
+  fi
+
+  while IFS= read -r role_name; do
+    if [ -z "$role_name" ]; then
+      continue
+    fi
+    clear_role_composites "$api_client_uuid" "$role_name"
+    /opt/keycloak/bin/kcadm.sh update "clients/$api_client_uuid/roles/$role_name" -r "$APP_REALM" \
+      -s "name=$role_name" \
+      -s composite=false \
+      -s clientRole=true >/dev/null
+  done <<EOF
+$PERMISSION_ROLE_NAMES
+EOF
+}
+
+ensure_composite_role_has_member() {
+  client_uuid="$1"
+  composite_role_name="$2"
+  member_role_name="$3"
+
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM")
+  if payload_has_role_name "$current_composites" "$member_role_name"; then
+    return 0
+  fi
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
+  /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null
+  rm -f "$payload_file"
+}
+
+remove_composite_role_member() {
+  client_uuid="$1"
+  composite_role_name="$2"
+  member_role_name="$3"
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
+  /opt/keycloak/bin/kcadm.sh delete "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
+  rm -f "$payload_file"
 }
 
 ensure_web_client() {
@@ -488,31 +618,88 @@ ensure_client_role() {
 sync_composite_role() {
   role_name="$1"
   desired_members="$2"
-  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  api_client_uuid="$(resolve_api_client_uuid)"
 
   if [ -z "$api_client_uuid" ]; then
     echo "Unable to resolve API client UUID for $API_CLIENT_ID"
     exit 1
   fi
 
-  target_role_id="$(get_client_role_id "$api_client_uuid" "$role_name")"
-  if [ -z "$target_role_id" ]; then
-    echo "Unable to resolve role id for composite role: $role_name"
+  /opt/keycloak/bin/kcadm.sh update "clients/$api_client_uuid/roles/$role_name" -r "$APP_REALM" \
+    -s "name=$role_name" \
+    -s composite=true \
+    -s clientRole=true >/dev/null
+
+  desired_members_file="$(mktemp)"
+  printf '%s\n' "$desired_members" >"$desired_members_file"
+  while IFS= read -r member_role; do
+    if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ]; then
+      ensure_composite_role_has_member "$api_client_uuid" "$role_name" "$member_role"
+    fi
+  done <"$desired_members_file"
+
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+  for member_role in $(list_role_names_from_payload "$current_composites"); do
+    if [ -z "$member_role" ] || [ "$member_role" = "$role_name" ]; then
+      continue
+    fi
+    if ! role_name_in_list "$member_role" "$desired_members"; then
+      remove_composite_role_member "$api_client_uuid" "$role_name" "$member_role"
+    fi
+  done
+
+  rm -f "$desired_members_file"
+}
+
+_verify_atomic_permission_roles() {
+  api_client_uuid="$1"
+  verify_failed=0
+
+  while IFS= read -r role_name; do
+    if [ -z "$role_name" ]; then
+      continue
+    fi
+    role_payload=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name" -r "$APP_REALM" 2>/dev/null || printf '{}')
+    if printf '%s' "$role_payload" | grep -Eq '"composite"[[:space:]]*:[[:space:]]*true'; then
+      echo "VERIFY_FAIL: permission role '$role_name' must be composite=false"
+      verify_failed=1
+    fi
+    composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+    if printf '%s' "$composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
+      echo "VERIFY_FAIL: permission role '$role_name' must not have composite members"
+      verify_failed=1
+    fi
+  done <<EOF
+$PERMISSION_ROLE_NAMES
+EOF
+
+  return "$verify_failed"
+}
+
+verify_keycloak_permission_model_silent() {
+  api_client_uuid="$(resolve_api_client_uuid)"
+  if [ -z "$api_client_uuid" ]; then
+    return 1
+  fi
+  _verify_atomic_permission_roles "$api_client_uuid"
+}
+
+verify_keycloak_permission_model() {
+  api_client_uuid="$(resolve_api_client_uuid)"
+  if [ -z "$api_client_uuid" ]; then
+    echo "VERIFY_FAIL: unable to resolve API client UUID for $API_CLIENT_ID"
     exit 1
   fi
 
-  printf '%s\n' "$desired_members" | while IFS= read -r member_role; do
-    if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ]; then
-      /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
-        --rid "$target_role_id" \
-        --cclientid "$API_CLIENT_ID" \
-        --rolename "$member_role" >/dev/null 2>&1 || true
-    fi
-  done
+  if _verify_atomic_permission_roles "$api_client_uuid"; then
+    exit 1
+  fi
+
+  echo "VERIFY_OK: atomic permission roles have no nested composites"
 }
 
 ensure_api_roles_model() {
-  api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+  api_client_uuid="$(resolve_api_client_uuid)"
   if [ -z "$api_client_uuid" ]; then
     echo "Unable to resolve API client UUID for $API_CLIENT_ID"
     exit 1
@@ -530,6 +717,8 @@ ensure_api_roles_model() {
     fi
   done
 
+  enforce_atomic_permission_roles
+
   sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
   sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
   sync_composite_role "app.contractor" "$ROLE_APP_CONTRACTOR"
@@ -538,17 +727,35 @@ ensure_api_roles_model() {
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
 
+  # Re-apply only when app.* sync left stale composites on leaf roles.
+  if verify_keycloak_permission_model_silent; then
+    echo "KEYCLOAK_BOOTSTRAP: atomic roles OK after app.* sync (skipped second enforce_atomic)"
+  else
+    echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after app.* sync"
+    enforce_atomic_permission_roles
+  fi
+
+  verify_keycloak_permission_model
 }
 
 ensure_admin_service_role_bindings() {
   # Required for backend KeycloakAdminService operations:
   # lookup users, create/update users, reset passwords, terminate sessions.
-  /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
-    --uusername "service-account-$ADMIN_SERVICE_CLIENT_ID" \
-    --cclientid realm-management \
-    --rolename query-users \
-    --rolename view-users \
-    --rolename manage-users >/dev/null 2>&1 || true
+  service_account_user_uuid="$(get_user_uuid "service-account-$ADMIN_SERVICE_CLIENT_ID")"
+  realm_management_uuid="$(get_client_uuid "realm-management")"
+
+  if [ -z "$service_account_user_uuid" ] || [ -z "$realm_management_uuid" ]; then
+    echo "Unable to resolve service account or realm-management client for $ADMIN_SERVICE_CLIENT_ID"
+    exit 1
+  fi
+
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "query-users"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "view-users"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "manage-users"
+  # Required for read-only permission-model checks (realm, clients, roles).
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "view-realm"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "query-clients"
+  ensure_user_has_client_role "$service_account_user_uuid" "$realm_management_uuid" "view-clients"
 }
 
 ensure_bootstrap_user() {
@@ -589,10 +796,13 @@ EOF
         --temporary
     fi
 
-    /opt/keycloak/bin/kcadm.sh add-roles -r "$APP_REALM" \
-      --uusername "$BOOTSTRAP_USERNAME" \
-      --cclientid "$API_CLIENT_ID" \
-      --rolename app.superadmin >/dev/null 2>&1 || true
+    api_client_uuid="$(get_client_uuid "$API_CLIENT_ID")"
+    if [ -z "$api_client_uuid" ]; then
+      echo "Unable to resolve API client UUID for $API_CLIENT_ID"
+      exit 1
+    fi
+
+    ensure_user_has_client_role "$USER_UUID" "$api_client_uuid" "app.superadmin"
   fi
 }
 

@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Awaitable, Callable
 
 from app.core.config import settings
+from app.core.datetime_utils import normalize_to_utc, utc_now, utc_now_naive
 from app.domain.authorization import require_any_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
 from app.domain.permissions import PermissionCodes
@@ -44,13 +45,15 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
+
+
+def _utcnow_naive() -> datetime:
+    return utc_now_naive()
 
 
 def _normalize_to_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+    return normalize_to_utc(value)
 
 def format_request_status(status: str | None) -> str:
     if not status:
@@ -270,8 +273,10 @@ class RequestService:
         )
 
         file_ids: list[int] = []
-        partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
-        file_ids.append(partner_card_file_id)
+        # TEMP: partner card is not auto-attached to requests.
+        # All request files must be attached by the user manually.
+        # partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
+        # file_ids.append(partner_card_file_id)
         for file_item in files:
             prepared = await self._file_service.prepare_bytes(
                 original_name=file_item.original_name,
@@ -483,7 +488,7 @@ class RequestService:
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
             if data.status == "closed":
-                closed_at = _utcnow()
+                closed_at = _utcnow_naive()
                 chosen_offer_id = await self._requests.get_latest_accepted_offer_id(request_id=request.id)
                 accepted_offer = await self._offers.get_by_id(offer_id=chosen_offer_id) if chosen_offer_id is not None else None
                 self._validate_closed_request_amounts(

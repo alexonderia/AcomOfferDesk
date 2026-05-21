@@ -22,10 +22,13 @@ from app.repositories.messages import MessageReceiptRow, MessageRepository, stri
 from app.repositories.offers import OfferRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
+from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.files import FileService
 from app.services.keycloak_admin import KeycloakAdminService
+from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
+from app.services.users import _bind_keycloak_account
 from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
@@ -250,6 +253,7 @@ class OfferService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         users: UserRepository,
+        user_auth_accounts: UserAuthAccountRepository | None = None,
         file_service: FileService | None = None,
         keycloak_admin: KeycloakAdminService | None = None,
         notifications: NotificationService | None = None,
@@ -264,6 +268,7 @@ class OfferService:
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._users = users
+        self._user_auth_accounts = user_auth_accounts
         self._file_service = file_service or FileService(files)
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
         self._notifications = notifications
@@ -490,11 +495,24 @@ class OfferService:
                 note=contractor_data.note or PLACEHOLDER_TEXT,
             )
         )
-        await self._keycloak_admin.ensure_user(
+        keycloak_user = await self._keycloak_admin.ensure_user(
             username=login,
             email=_normalize_keycloak_email_value(contractor_data.company_mail),
             email_verified=False,
         )
+        if self._user_auth_accounts is not None:
+            await _bind_keycloak_account(
+                user_auth_accounts=self._user_auth_accounts,
+                user_id=login,
+                keycloak_subject_id=keycloak_user.id,
+                username=login,
+                email=_normalize_keycloak_email_value(contractor_data.company_mail),
+            )
+            await sync_keycloak_app_role_for_user(
+                self._keycloak_admin,
+                keycloak_user_id=keycloak_user.id,
+                local_role_id=settings.contractor_role_id,
+            )
         return login
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:

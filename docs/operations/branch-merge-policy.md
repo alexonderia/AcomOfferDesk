@@ -53,7 +53,62 @@ git log --oneline upstream/test..upstream/dev   # что уедет на про�
 git diff upstream/test...upstream/dev -- docker-compose.yml .github/workflows/deploy.yml
 ```
 
-## GitHub: защита ветки `test` (настроить в UI репозитория)
+### Одна команда (рекомендуется)
+
+Скрипт **`scripts/promote-dev-to-test.sh`** выполняет весь фильтр: локальные проверки → зелёный CI на `dev` → PR `dev` → `test` → ожидание **CI** + **Promotion to test** → опционально merge.
+
+```bash
+# Проверки + PR + дождаться зелёных checks (merge вручную в UI или второй командой)
+./scripts/promote-dev-to-test.sh
+
+# То же + автоматический merge в test (запускает Deploy to VPS)
+./scripts/promote-dev-to-test.sh --merge
+
+# Только план, без создания PR
+./scripts/promote-dev-to-test.sh --dry-run
+```
+
+Требования: `gh auth login`, актуальный `upstream/dev` (сначала `git push upstream dev` после фич).
+
+**Push в `test` только у одного оператора** — branch protection на GitHub не обязателен, если релиз всегда идёт через этот скрипт (или тот же ритуал вручную), без прямого `git push upstream test`.
+
+## Фильтр dev → test (что не должно попасть в test)
+
+Цель: **ошибки и ловушки из `dev` не доезжают до VPS** вместе с merge в `test`.
+
+| Этап | Что отсекает |
+|------|----------------|
+| **CI на `dev`** (push) | Падающие unit/integration/frontend |
+| **`verify-promotion-to-test.sh`** | Пустые `KEYCLOAK_ADMIN_*`, Keycloak settings unit, `docker compose config` |
+| **PR checks** | То же + полный **CI** на снимке `dev` |
+| **Ручной diff** | Изменения в опасных файлах (ниже) |
+
+### Stop-list — не делать merge в `test`, если
+
+1. Последний workflow **CI** на ветке **`dev`** — не **success** (красный, жёлтый, в процессе).
+2. На PR в **`test`** не зелёные **CI** или **Promotion to test**.
+3. В diff есть **пустые** `KEYCLOAK_ADMIN_USERNAME` / `KEYCLOAK_ADMIN_PASSWORD: ""` в `docker-compose.yml` (регрессия 2026-05-21).
+4. Менялись **без ревью** пути:
+   - `docker-compose*.yml`, `.github/workflows/deploy.yml`, `infra/keycloak/*`
+   - `backend/app/core/config.py`, `backend/app/services/keycloak_admin.py`
+   - новые `deploy/order_database/flyway/sql/V*.sql` (нужен план миграции на VPS).
+5. Непонятный большой diff «вслепую» — сначала разобрать `git log upstream/test..upstream/dev`.
+6. Локально **`./scripts/verify-promotion-to-test.sh`** завершился с **FAIL**.
+
+После каждого инцидента merge — дописать проверку в **`verify-promotion-to-test.sh`** и при необходимости в **`.github/workflows/promotion-to-test.yml`**.
+
+### Опасные пути (обязательный просмотр diff)
+
+```bash
+git diff upstream/test...upstream/dev -- \
+  docker-compose.yml docker-compose.prod.yml docker-compose.test.yml \
+  .github/workflows/deploy.yml .github/workflows/promotion-to-test.yml \
+  infra/keycloak/ backend/app/core/config.py backend/app/services/keycloak_admin.py
+```
+
+Скрипт `promote-dev-to-test.sh` печатает сокращённый diff по этим путям перед созданием PR.
+
+## GitHub: защита ветки `test` (опционально, если появится Admin)
 
 В **Settings → Branches → Branch protection rules** для `test`:
 

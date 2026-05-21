@@ -1210,7 +1210,6 @@ class ManualContractorService:
                 role_id=settings.contractor_role_id,
                 role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
                 status="active",
-                full_name=normalized_data.full_name,
                 email=normalized_data.company_mail,
                 registered_by=current_user.user_id,
                 company_name=normalized_data.company_name,

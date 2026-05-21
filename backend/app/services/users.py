@@ -28,6 +28,10 @@ from app.services.contractor_email_notifications import (
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
+from app.services.registration_admin_notify import (
+    RegistrationNotifyContext,
+    notify_new_user_registration,
+)
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
@@ -40,6 +44,7 @@ ROLE_NAME_PROJECT_MANAGER = "Руководитель проекта"
 ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
 ROLE_NAME_ECONOMIST = "Экономист"
 ROLE_NAME_OPERATOR = "Оператор"
+ROLE_NAME_CONTRACTOR = "Контрагент"
 PLACEHOLDER_TEXT = "Не указано"
 SUBORDINATE_PROFILE_ROLE_IDS = {
     settings.lead_economist_role_id,
@@ -376,6 +381,19 @@ class UserRegistrationService:
             keycloak_subject_id=keycloak_user.id,
             local_role_id=role_id,
         )
+        await notify_new_user_registration(
+            RegistrationNotifyContext(
+                source="admin_register",
+                user_id=user.id,
+                role_id=role_id,
+                role_name=target_role.role,
+                status=user.status,
+                full_name=normalized_full_name,
+                email=normalized_mail,
+                registered_by=current_user.user_id,
+                keycloak_subject=keycloak_user.id,
+            )
+        )
         return user
     
 
@@ -459,6 +477,19 @@ class ContractorRegistrationService:
                 verified_at=None,
                 is_primary=True,
                 is_active=True,
+            )
+        )
+        contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
+        await notify_new_user_registration(
+            RegistrationNotifyContext(
+                source="contractor_tg",
+                user_id=user.id,
+                role_id=settings.contractor_role_id,
+                role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
+                status=user.status,
+                full_name=full_name,
+                email=company_mail if company_mail != "Не указано" else None,
+                company_name=company_name,
             )
         )
         return user
@@ -1170,7 +1201,22 @@ class ManualContractorService:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
-        return await self._create_manual_contractor(data=normalized_data)
+        login = await self._create_manual_contractor(data=normalized_data)
+        contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
+        await notify_new_user_registration(
+            RegistrationNotifyContext(
+                source="manual_contractor",
+                user_id=login,
+                role_id=settings.contractor_role_id,
+                role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
+                status="active",
+                full_name=normalized_data.full_name,
+                email=normalized_data.company_mail,
+                registered_by=current_user.user_id,
+                company_name=normalized_data.company_name,
+            )
+        )
+        return login
 
     def _normalize_value(self, value: str | None) -> str | None:
         if value is None:

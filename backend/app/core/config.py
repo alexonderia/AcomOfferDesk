@@ -205,6 +205,26 @@ class Settings(BaseSettings):
         default_factory=list,
         validation_alias="CORS_ALLOW_ORIGINS",
     )
+    registration_notify_enabled: bool = Field(
+        default=False,
+        validation_alias="REGISTRATION_NOTIFY_ENABLED",
+    )
+    registration_notify_url: str | None = Field(
+        default=None,
+        validation_alias="REGISTRATION_NOTIFY_URL",
+    )
+    registration_notify_token: str | None = Field(
+        default=None,
+        validation_alias="REGISTRATION_NOTIFY_TOKEN",
+    )
+    registration_notify_service: str = Field(
+        default="acom-registration",
+        validation_alias="REGISTRATION_NOTIFY_SERVICE",
+    )
+    registration_notify_timeout_seconds: float = Field(
+        default=20.0,
+        validation_alias="REGISTRATION_NOTIFY_TIMEOUT_SECONDS",
+    )
 
     @field_validator("allowed_creation_role_ids", mode="before")
     @classmethod

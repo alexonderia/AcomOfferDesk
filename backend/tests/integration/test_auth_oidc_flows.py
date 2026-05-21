@@ -32,6 +32,9 @@ class _NoExistingEmailUsersRepo:
         _ = email
         return []
 
+    async def get_role_by_id(self, role_id: int):
+        return SimpleNamespace(role="Контрагент", id=role_id)
+
 
 class _ExistingEmailUow(_NoopUow):
     def __init__(self) -> None:
@@ -342,7 +345,10 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
             observed["sync_subject"] = claims.subject
             observed["sync_email"] = claims.email
             observed["allow_user_creation"] = allow_user_creation
-            return SimpleNamespace(user=SimpleNamespace(id="new_contractor", id_role=settings.contractor_role_id, status="review"))
+            return SimpleNamespace(
+                user=SimpleNamespace(id="new_contractor", id_role=settings.contractor_role_id, status="review"),
+                created_local_user=True,
+            )
 
     monkeypatch.setattr(auth_api, "exchange_code_for_tokens", _fake_exchange_code_for_tokens)
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)

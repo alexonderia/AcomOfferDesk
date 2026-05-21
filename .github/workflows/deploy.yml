@@ -140,13 +140,32 @@ jobs:
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
-            # Staged recreate avoids Compose race when --force-recreate drops container IDs
-            # while dependents still wait (backend/web: #26144585924; rabbitmq: #26146730081).
-            compose_up() {
-              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build --force-recreate --remove-orphans "$@"
+            # Infra: no --force-recreate — Docker can return "No such container" mid-recreate
+            # when the old container ID is torn down while Compose still tracks it (#26146730081).
+            # App images: --force-recreate --no-deps per service + retries (no parallel infra churn).
+            compose_up_infra() {
+              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build "$@"
+              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --wait "$@" 2>/dev/null || true
             }
+
+            compose_up_app() {
+              local svc="$1"
+              local max="${COMPOSE_UP_RETRIES:-3}"
+              local delay="${COMPOSE_UP_RETRY_DELAY_SEC:-5}"
+              local attempt=1
+              while [ "$attempt" -le "$max" ]; do
+                if docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build --force-recreate --no-deps "$svc"; then
+                  return 0
+                fi
+                echo "COMPOSE_UP_RETRY: $svc attempt $attempt/$max"
+                sleep "$delay"
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
+
             for infra_svc in rabbitmq minio keycloak; do
-              if ! compose_up "$infra_svc"; then
+              if ! compose_up_infra "$infra_svc"; then
                 echo "=== docker compose ps -a (infra: $infra_svc) ==="
                 docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
                 echo "=== $infra_svc logs (tail) ==="
@@ -154,23 +173,18 @@ jobs:
                 exit 1
               fi
             done
-            if ! compose_up backend notifications_worker; then
-              echo "=== docker compose ps -a (app) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
-              echo "=== backend logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
-              exit 1
-            fi
-            if ! compose_up web; then
-              echo "=== docker compose ps -a (web) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
-              echo "=== web logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 web || true
-              exit 1
-            fi
+            for app_svc in backend notifications_worker web; do
+              if ! compose_up_app "$app_svc"; then
+                echo "=== docker compose ps -a (app: $app_svc) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+                echo "=== $app_svc logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 "$app_svc" || true
+                exit 1
+              fi
+            done
 
             if ! docker compose --env-file "$COMPOSE_ENV_FILE" exec -T gateway nginx -s reload; then
-              if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --force-recreate gateway; then
+              if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --no-deps --force-recreate gateway; then
                 echo "=== gateway logs (tail) ==="
                 docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 gateway || true
                 exit 1

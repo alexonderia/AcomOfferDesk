@@ -62,7 +62,7 @@ def test_role_map_contains_only_atomic_permissions() -> None:
     assert all(not permission.startswith("delegation.") for permission in flattened)
 
 
-def test_app_roles_do_not_grant_atomic_permissions_by_themselves() -> None:
+def test_matching_app_role_grants_role_ceiling_when_jwt_has_no_leaf_permissions() -> None:
     current_user = build_current_user_from_keycloak(
         user_id="user-app-only",
         role_id=settings.superadmin_role_id,
@@ -70,7 +70,7 @@ def test_app_roles_do_not_grant_atomic_permissions_by_themselves() -> None:
         api_roles=frozenset({"app.superadmin", "app.admin"}),
     )
 
-    assert current_user.permissions == frozenset()
+    assert current_user.permissions == get_known_permissions()
     assert current_user.app_roles == frozenset({"app.superadmin", "app.admin"})
 
 

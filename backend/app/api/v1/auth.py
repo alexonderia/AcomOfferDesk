@@ -482,8 +482,11 @@ async def keycloak_callback(
             )
             if claims.flow == "register" and getattr(synced, "created_local_user", False):
                 role = await uow.users.get_role_by_id(synced.user.id_role)
-                profile = await uow.profiles.get_by_id(synced.user.id)
-                full_name = profile.full_name if profile else None
+                full_name: str | None = token_claims.full_name
+                if uow.profiles is not None:
+                    profile = await uow.profiles.get_by_id(synced.user.id)
+                    if profile is not None and (profile.full_name or "").strip():
+                        full_name = profile.full_name
                 await notify_new_user_registration(
                     RegistrationNotifyContext(
                         source="oidc_invite",

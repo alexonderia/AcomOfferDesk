@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.config import settings
+from app.domain.auth_context import CurrentUser
 from app.services import users as users_module
 from app.services.users import ManualContractorCreateInput, ManualContractorService
 
@@ -78,8 +79,10 @@ async def test_create_manual_contractor_notify_does_not_use_missing_full_name(mo
 
     company = 'ООО "Кубик"'
     await service.create_manual_contractor(
-        current_user=SimpleNamespace(
+        current_user=CurrentUser(
             user_id="admin-1",
+            role_id=settings.admin_role_id,
+            status="active",
             permissions=frozenset({"contractors.manual.create"}),
         ),
         data=ManualContractorCreateInput(

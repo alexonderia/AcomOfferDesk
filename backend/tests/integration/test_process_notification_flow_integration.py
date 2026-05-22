@@ -42,6 +42,11 @@ class _FakeProcessUow:
         self.notifications = repo
         self.requests = SimpleNamespace(get_by_id=self._get_request_by_id)
         self.chats = SimpleNamespace(list_active_participant_user_ids=self._list_chat_participants)
+        self.users = SimpleNamespace(
+            list_by_ids_with_profiles_and_roles=self._list_users_by_ids_with_roles,
+            get_by_id=self._get_user_by_id,
+        )
+        self.user_auth_accounts = SimpleNamespace(get_by_user_provider=self._get_auth_by_user_provider)
 
     async def _get_request_by_id(self, *, request_id: int):
         return SimpleNamespace(id=request_id, id_user="owner-1")
@@ -49,6 +54,43 @@ class _FakeProcessUow:
     async def _list_chat_participants(self, *, chat_id: int):
         _ = chat_id
         return ["owner-1", "contractor-2"]
+
+    async def _list_users_by_ids_with_roles(self, *, user_ids: list[str]):
+        role_by_user_id = {
+            "owner-1": process_events_module.settings.project_manager_role_id,
+            "contractor-2": process_events_module.settings.contractor_role_id,
+        }
+        rows = []
+        for user_id in user_ids:
+            role_id = role_by_user_id.get(user_id)
+            if role_id is None:
+                continue
+            rows.append((SimpleNamespace(id=user_id, id_role=role_id), None, None))
+        return rows
+
+    async def _get_user_by_id(self, user_id: str):
+        role_by_user_id = {
+            "owner-1": process_events_module.settings.project_manager_role_id,
+            "contractor-2": process_events_module.settings.contractor_role_id,
+        }
+        role_id = role_by_user_id.get(user_id)
+        if role_id is None:
+            return None
+        return SimpleNamespace(id=user_id, id_role=role_id)
+
+    async def _get_auth_by_user_provider(
+        self,
+        *,
+        user_id: str,
+        provider: str,
+        include_inactive: bool = False,
+    ):
+        _ = include_inactive
+        if provider != "keycloak":
+            return None
+        if user_id != "contractor-2":
+            return None
+        return SimpleNamespace(id_user=user_id, provider=provider, is_active=True)
 
     async def __aenter__(self):
         return self

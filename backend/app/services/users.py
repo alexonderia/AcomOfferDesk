@@ -405,12 +405,24 @@ class ContractorRegistrationService:
         company_contacts: CompanyContactRepository,
         user_auth_accounts: UserAuthAccountRepository,
         user_contact_channels: UserContactChannelRepository,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_auth_accounts = user_auth_accounts
         self._user_contact_channels = user_contact_channels
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     async def register_contractor(
         self,
@@ -490,6 +502,20 @@ class ContractorRegistrationService:
                 full_name=full_name,
                 email=company_mail if company_mail != "Не указано" else None,
                 company_name=company_name,
+            )
+        )
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="user.review_required",
+                actor_user_id=user.id,
+                entity_type="user",
+                entity_id=user.id,
+                dedupe_key=f"user.review_required:{user.id}:contractor_tg",
+                payload={
+                    "target_user_id": user.id,
+                    "target_role": settings.contractor_role_id,
+                    "source": "contractor_tg_registration",
+                },
             )
         )
         return user
@@ -1612,6 +1638,21 @@ class UserStatusService:
                 },
             )
             self._schedule_process_notification_event(event)
+            if user.status == "review":
+                self._schedule_process_notification_event(
+                    build_process_notification_event(
+                        event_type="user.review_required",
+                        actor_user_id=current_user.user_id,
+                        entity_type="user",
+                        entity_id=user.id,
+                        dedupe_key=f"user.review_required:{user.id}:{old_status}->review",
+                        payload={
+                            "target_user_id": user.id,
+                            "target_role": user.id_role,
+                            "source": "user_status_service",
+                        },
+                    )
+                )
 
         return result
     

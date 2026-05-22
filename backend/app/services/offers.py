@@ -848,16 +848,17 @@ class OfferService:
         original_name = getattr(db_file, "original_name", None) or upload.original_name
         self._schedule_process_notification_event(
             build_process_notification_event(
-                event_type="offer.files_changed",
+                event_type="offer.updated",
                 actor_user_id=current_user.user_id,
                 entity_type="offer",
                 entity_id=offer.id,
                 request_id=request.id,
                 offer_id=offer.id,
-                dedupe_key=f"offer.files_changed:{offer.id}:{db_file.id}",
+                dedupe_key=f"offer.updated:{offer.id}:{db_file.id}",
                 payload={
                     "request_id": request.id,
                     "offer_id": offer.id,
+                    "offer_author_user_id": offer.id_user,
                     "actor_user_id": current_user.user_id,
                     "file_ids": [db_file.id],
                     "changed_file_count": 1,
@@ -908,16 +909,17 @@ class OfferService:
         await self._file_service.delete_file(file_id=file_id)
         self._schedule_process_notification_event(
             build_process_notification_event(
-                event_type="offer.files_changed",
+                event_type="offer.updated",
                 actor_user_id=current_user.user_id,
                 entity_type="offer",
                 entity_id=offer.id,
                 request_id=request.id,
                 offer_id=offer.id,
-                dedupe_key=f"offer.files_changed:{offer.id}:{file_id}:deleted",
+                dedupe_key=f"offer.updated:{offer.id}:{file_id}:deleted",
                 payload={
                     "request_id": request.id,
                     "offer_id": offer.id,
+                    "offer_author_user_id": offer.id_user,
                     "actor_user_id": current_user.user_id,
                     "file_ids": [file_id],
                     "changed_file_count": 1,
@@ -961,13 +963,13 @@ class OfferService:
 
         if status_changed and status in {"accepted", "rejected", "deleted"}:
             event = build_process_notification_event(
-                event_type=f"offer.{status}",
+                event_type="offer.status_changed",
                 actor_user_id=current_user.user_id,
                 entity_type="offer",
                 entity_id=offer.id,
                 request_id=request.id,
                 offer_id=offer.id,
-                dedupe_key=f"offer.{status}:{offer.id}:{previous_status}->{status}",
+                dedupe_key=f"offer.status_changed:{offer.id}:{previous_status}->{status}",
                 payload={
                     "recipient_user_ids": [offer.id_user, request.id_user],
                     "old_status": previous_status,
@@ -999,7 +1001,28 @@ class OfferService:
         ):
             raise Conflict("Cannot edit amount for finalized offer")
 
+        old_offer_amount = offer.offer_amount
         await self._offers.update_amount(offer=offer, offer_amount=offer_amount)
+        if old_offer_amount != offer.offer_amount:
+            self._schedule_process_notification_event(
+                build_process_notification_event(
+                    event_type="offer.updated",
+                    actor_user_id=current_user.user_id,
+                    entity_type="offer",
+                    entity_id=offer.id,
+                    request_id=request.id,
+                    offer_id=offer.id,
+                    dedupe_key=f"offer.updated:{offer.id}:amount:{old_offer_amount}->{offer.offer_amount}",
+                    payload={
+                        "request_id": request.id,
+                        "offer_id": offer.id,
+                        "offer_author_user_id": offer.id_user,
+                        "actor_user_id": current_user.user_id,
+                        "old_offer_amount": str(old_offer_amount) if old_offer_amount is not None else None,
+                        "new_offer_amount": str(offer.offer_amount) if offer.offer_amount is not None else None,
+                    },
+                )
+            )
         return float(Decimal(str(offer.offer_amount)))
 
     async def list_messages(self, *, current_user: CurrentUser, offer_id: int) -> list[OfferMessageItem]:

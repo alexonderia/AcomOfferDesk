@@ -322,9 +322,7 @@ class RequestService:
             request_id=request.id,
             dedupe_key=f"request.created:{request.id}",
             payload={
-                # TODO: Confirm recipient policy for request.created (assigned user vs other observers).
                 "responsible_user_id": request.id_user,
-                "recipient_user_ids": [request.id_user],
             },
         )
         self._schedule_process_notification_event(created_event)
@@ -518,7 +516,7 @@ class RequestService:
                     request_id=request.id,
                     dedupe_key=f"request.status_changed:{request.id}:{data.status}",
                     payload={
-                        "recipient_user_id": request.id_user,
+                        "responsible_user_id": request.id_user,
                         "old_status": previous_status,
                         "new_status": data.status,
                     },
@@ -591,7 +589,6 @@ class RequestService:
                     payload={
                         "old_responsible_user_id": previous_owner_user_id,
                         "new_responsible_user_id": data.owner_user_id,
-                        "recipient_user_ids": [previous_owner_user_id, data.owner_user_id],
                     },
                 )
                 self._schedule_process_notification_event(owner_event)

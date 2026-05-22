@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import Select, bindparam, delete, func, select, text
+from sqlalchemy import Select, and_, bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -24,6 +24,7 @@ from app.models.orm_models import (
     RequestOfferStats,
     User,
 )
+from app.models.auth_models import UserAuthAccount
 
 @dataclass(frozen=True)
 class PlanRequestStatsRow:
@@ -250,6 +251,37 @@ class RequestRepository:
             )
             .where(Request.status == "open", RequestHiddenContractor.request_id.is_(None))
             .order_by(Request.created_at.desc(), Request.id.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_active_keycloak_visible_contractor_user_ids(
+        self,
+        *,
+        request_id: int,
+        contractor_role_id: int,
+    ) -> list[str]:
+        stmt = (
+            select(User.id)
+            .join(
+                UserAuthAccount,
+                and_(
+                    UserAuthAccount.id_user == User.id,
+                    UserAuthAccount.provider == "keycloak",
+                    UserAuthAccount.is_active.is_(True),
+                ),
+            )
+            .outerjoin(
+                RequestHiddenContractor,
+                and_(
+                    RequestHiddenContractor.request_id == request_id,
+                    RequestHiddenContractor.contractor_user_id == User.id,
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(RequestHiddenContractor.request_id.is_(None))
+            .order_by(User.id.asc())
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

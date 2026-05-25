@@ -15,6 +15,6 @@ export const createWsTicket = async (purpose: WsTicketPurpose) => {
       method: 'POST',
       body: JSON.stringify({ purpose })
     },
-    'Не удалось получить websocket ticket'
+    'Не удалось получить билет websocket-подключения.'
   );
 };

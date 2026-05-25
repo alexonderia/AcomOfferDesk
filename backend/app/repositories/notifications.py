@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import Select, String, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,13 @@ class NotificationRepository:
         self._session.add(notification)
         await self._session.flush()
         return notification
+
+    async def create_many(self, notifications: Sequence[UserNotification]) -> list[UserNotification]:
+        if not notifications:
+            return []
+        self._session.add_all(notifications)
+        await self._session.flush()
+        return list(notifications)
 
     async def list_for_user(self, *, user_id: str, limit: int, offset: int) -> list[UserNotification]:
         stmt: Select[tuple[UserNotification]] = (

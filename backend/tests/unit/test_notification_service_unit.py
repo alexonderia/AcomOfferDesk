@@ -12,13 +12,27 @@ class _Repo:
     def __init__(self) -> None:
         self.items = []
         self._seq = 0
+        self.create_calls = 0
+        self.create_many_calls = 0
 
     async def create(self, notification):
+        self.create_calls += 1
         self._seq += 1
         notification.id = self._seq
         notification.created_at = datetime.now(timezone.utc)
         self.items.append(notification)
         return notification
+
+    async def create_many(self, notifications):
+        self.create_many_calls += 1
+        created = []
+        for notification in notifications:
+            self._seq += 1
+            notification.id = self._seq
+            notification.created_at = datetime.now(timezone.utc)
+            self.items.append(notification)
+            created.append(notification)
+        return created
 
 
 class _RealtimeSender:
@@ -111,6 +125,26 @@ async def test_notify_message_created_excludes_author():
     assert created[0].payload["author_user_id"] == "user-1"
     assert len(sender.calls) == 1
     assert sender.calls[0][0] == "user-2"
+
+
+@pytest.mark.asyncio
+async def test_create_many_for_users_uses_bulk_create_and_sends_events():
+    repo = _Repo()
+    sender = _RealtimeSender()
+    service = NotificationService(repo, realtime_sender=sender)
+
+    created = await service.create_many_for_users(
+        user_ids=["user-1", "user-2", "user-2", " "],
+        notification_type="system.warning",
+        severity="warning",
+        title="Проверка bulk",
+        body="Bulk path",
+    )
+
+    assert [item.user_id for item in created] == ["user-1", "user-2"]
+    assert repo.create_many_calls == 1
+    assert repo.create_calls == 0
+    assert len(sender.calls) == 2
 
 
 @pytest.mark.asyncio

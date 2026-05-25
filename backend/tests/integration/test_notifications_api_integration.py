@@ -174,5 +174,5 @@ def test_mark_notification_from_another_user_returns_not_found(
     response = test_client.patch("/api/v1/notifications/55/read")
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Notification not found"
+    assert response.json()["detail"] == "Уведомление не найдено."
 

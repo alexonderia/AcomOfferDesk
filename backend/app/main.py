@@ -5,6 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 import fcntl
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +26,81 @@ from app.realtime.runtime import (
 from app.services.files import FileService
 
 logger = logging.getLogger(__name__)
+
+_GENERIC_PUBLIC_ERROR = "Произошла ошибка. Попробуйте повторить действие."
+_DEFAULT_PUBLIC_ERROR_BY_STATUS = {
+    401: "Сессия истекла. Войдите в систему заново.",
+    403: "Недостаточно прав для выполнения действия.",
+    404: "Данные не найдены или были удалены.",
+    409: "Конфликт данных. Обновите страницу и попробуйте снова.",
+}
+_DIRECT_PUBLIC_DETAIL_TRANSLATIONS = {
+    "Missing credentials": "Необходимо войти в систему.",
+    "Invalid credentials": "Неверный логин или пароль.",
+    "Invalid token": "Сессия истекла. Войдите в систему заново.",
+    "Token expired": "Сессия истекла. Войдите в систему заново.",
+    "Invalid token payload": "Сессия истекла. Войдите в систему заново.",
+    "Invalid refresh": "Сессия истекла. Войдите в систему заново.",
+    "Stale refresh token": "Сессия истекла. Войдите в систему заново.",
+    "Broken bearer": "Сессия истекла. Войдите в систему заново.",
+    "Authentication required": "Необходимо войти в систему.",
+    "Unauthorized": "Сессия истекла. Войдите в систему заново.",
+    "Forbidden": "Недостаточно прав для выполнения действия.",
+    "Not found": "Данные не найдены или были удалены.",
+    "Request not found": "Заявка не найдена.",
+    "Offer not found": "Коммерческое предложение не найдено.",
+    "Notification not found": "Уведомление не найдено.",
+    "Message not found": "Сообщение не найдено.",
+    "File not found": "Файл не найден.",
+    "Insufficient permissions": "Недостаточно прав для выполнения действия.",
+    "Insufficient permissions to view chat": "Недостаточно прав для просмотра чата.",
+    "Insufficient permissions to send chat message": "Недостаточно прав для отправки сообщения в чат.",
+    "Insufficient permissions to view workspace": "Недостаточно прав для просмотра рабочего пространства.",
+    "Password is managed by the identity provider": "Пароль управляется провайдером аутентификации.",
+    "Keycloak authentication is disabled": "Вход временно недоступен.",
+    "Keycloak email is already used by another account": "Почта уже используется другим аккаунтом.",
+}
+_CONTAINS_PUBLIC_DETAIL_TRANSLATIONS: tuple[tuple[str, str], ...] = (
+    ("missing credentials", "Необходимо войти в систему."),
+    ("invalid token", "Сессия истекла. Войдите в систему заново."),
+    ("token expired", "Сессия истекла. Войдите в систему заново."),
+    ("unauthorized", "Сессия истекла. Войдите в систему заново."),
+    ("forbidden", "Недостаточно прав для выполнения действия."),
+    ("insufficient permissions", "Недостаточно прав для выполнения действия."),
+    ("not found", "Данные не найдены или были удалены."),
+    ("email is already used by another account", "Почта уже используется другим аккаунтом."),
+)
+_TECHNICAL_DETAIL_PATTERN = re.compile(
+    r"traceback|stack\s*trace|sql|rabbitmq|smtp|psycopg|exception|validationerror|internal server error",
+    re.IGNORECASE,
+)
+
+
+def _normalize_public_error_detail(*, status_code: int, detail: str | None) -> str:
+    default_message = _DEFAULT_PUBLIC_ERROR_BY_STATUS.get(status_code, _GENERIC_PUBLIC_ERROR)
+    normalized = (detail or "").strip()
+    if not normalized:
+        return default_message
+
+    direct_match = _DIRECT_PUBLIC_DETAIL_TRANSLATIONS.get(normalized)
+    if direct_match is not None:
+        return direct_match
+
+    lowered = normalized.lower()
+    for fragment, translated in _CONTAINS_PUBLIC_DETAIL_TRANSLATIONS:
+        if fragment in lowered:
+            return translated
+
+    if _TECHNICAL_DETAIL_PATTERN.search(normalized):
+        return default_message
+
+    has_cyrillic = bool(re.search(r"[А-Яа-яЁё]", normalized))
+    has_latin = bool(re.search(r"[A-Za-z]", normalized))
+    if has_cyrillic:
+        return normalized
+    if has_latin:
+        return default_message
+    return normalized
 
 class _PollingLeaderLock:
     def __init__(self, lock_path: Path) -> None:
@@ -86,7 +162,7 @@ async def lifespan(_: FastAPI):
     is_leader = leader_lock.try_acquire()
     await FileService().ensure_bucket_exists()
     realtime_runtime = ChatRealtimeRuntime()
-    unified_realtime_runtime = UnifiedRealtimeRuntime()
+    unified_realtime_runtime = UnifiedRealtimeRuntime(manager=realtime_runtime.manager)
     set_chat_runtime(realtime_runtime)
     set_unified_realtime_runtime(unified_realtime_runtime)
     await realtime_runtime.start()
@@ -141,22 +217,34 @@ async def health() -> dict[str, str]:
 @app.exception_handler(NotFound)
 async def not_found_handler(request: Request, exc: NotFound) -> JSONResponse:
     _ = request
-    return JSONResponse(status_code=404, content={"detail": str(exc) or "Not found"})
+    return JSONResponse(
+        status_code=404,
+        content={"detail": _normalize_public_error_detail(status_code=404, detail=str(exc))},
+    )
 
 
 @app.exception_handler(Forbidden)
 async def forbidden_handler(request: Request, exc: Forbidden) -> JSONResponse:
     _ = request
-    return JSONResponse(status_code=403, content={"detail": str(exc) or "Forbidden"})
+    return JSONResponse(
+        status_code=403,
+        content={"detail": _normalize_public_error_detail(status_code=403, detail=str(exc))},
+    )
 
 
 @app.exception_handler(Unauthorized)
 async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONResponse:
     _ = request
-    return JSONResponse(status_code=401, content={"detail": str(exc) or "Unauthorized"})
+    return JSONResponse(
+        status_code=401,
+        content={"detail": _normalize_public_error_detail(status_code=401, detail=str(exc))},
+    )
 
 
 @app.exception_handler(Conflict)
 async def conflict_handler(request: Request, exc: Conflict) -> JSONResponse:
     _ = request
-    return JSONResponse(status_code=409, content={"detail": str(exc) or "Conflict"})
+    return JSONResponse(
+        status_code=409,
+        content={"detail": _normalize_public_error_detail(status_code=409, detail=str(exc))},
+    )

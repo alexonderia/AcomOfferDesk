@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import {
   realtimeSocketClient,
@@ -24,6 +24,26 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
   );
   const refreshAttemptInFlightRef = useRef(false);
   const previousConnectionStateRef = useRef<RealtimeConnectionState>(realtimeSocketClient.getState());
+  const syncInFlightRef = useRef<Promise<void> | null>(null);
+  const lastSyncAtRef = useRef(0);
+
+  const runNotificationsSync = useCallback(async () => {
+      const now = Date.now();
+      if (syncInFlightRef.current) {
+        return await syncInFlightRef.current;
+      }
+      if (now - lastSyncAtRef.current < 1500) {
+        return;
+      }
+      const task = syncNotifications()
+        .catch(() => undefined)
+        .finally(() => {
+          lastSyncAtRef.current = Date.now();
+          syncInFlightRef.current = null;
+        });
+      syncInFlightRef.current = task;
+      await task;
+    }, [syncNotifications]);
 
   useEffect(() => {
     const unsubscribe = realtimeSocketClient.onStateChange((nextState) => {
@@ -31,16 +51,16 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
       previousConnectionStateRef.current = nextState;
       setConnectionState(nextState);
       if (previousState === 'reconnecting' && nextState === 'connected') {
-        void syncNotifications().catch(() => undefined);
+        void runNotificationsSync();
       }
     });
     return unsubscribe;
-  }, [syncNotifications]);
+  }, [runNotificationsSync]);
 
   useEffect(() => {
     const unsubscribe = realtimeSocketClient.onEvent((event) => {
       if (event.type === 'connection.ready') {
-        void syncNotifications().catch(() => undefined);
+        void runNotificationsSync();
         return;
       }
 
@@ -72,7 +92,7 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
       applyRealtimeNotificationCreated(createdEvent.notification, createdEvent.hasUnread);
     });
     return unsubscribe;
-  }, [applyRealtimeNotificationCreated, logout, refresh, syncNotifications]);
+  }, [applyRealtimeNotificationCreated, logout, refresh, runNotificationsSync]);
 
   useEffect(() => {
     if (status === 'anonymous' || !session?.token || !session.businessAccess) {

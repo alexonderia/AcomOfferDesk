@@ -351,15 +351,15 @@ export const useOfferWorkspace = () => {
       return;
     }
     if (hasOfferAmountChanges && parsedOfferAmount === null) {
-      setErrorMessage('Enter offer amount');
+      setErrorMessage('Укажите сумму коммерческого предложения.');
       return;
     }
     if (hasOfferAmountChanges && Number.isNaN(parsedOfferAmount)) {
-      setErrorMessage('Enter valid offer amount');
+      setErrorMessage('Укажите корректную сумму коммерческого предложения.');
       return;
     }
     if (hasOfferAmountChanges && parsedOfferAmount !== null && parsedOfferAmount < 0) {
-      setErrorMessage('Offer amount cannot be negative');
+      setErrorMessage('Сумма коммерческого предложения не может быть отрицательной.');
       return;
     }
 
@@ -380,7 +380,7 @@ export const useOfferWorkspace = () => {
       setDeletedOfferFileIds([]);
       setNewOfferFile(null);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Failed to save offer changes'));
+      setErrorMessage(getErrorMessage(error, 'Не удалось сохранить изменения.'));
     } finally {
       setIsUpdatingOfferAmount(false);
       setIsUploading(false);

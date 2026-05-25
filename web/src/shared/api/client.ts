@@ -1,3 +1,11 @@
+import {
+  GENERIC_ERROR_MESSAGE,
+  NETWORK_ERROR_MESSAGE,
+  fallbackByActionHint,
+  fallbackByHttpStatus,
+  normalizeUserFacingText,
+} from '@shared/lib/errors/userFacing';
+
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
 type AuthRuntime = {
   refresh: (reason: RefreshReason) => Promise<boolean>;
@@ -52,21 +60,6 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   Forbidden: 'Доступ запрещен'
 };
 
-const STATUS_FALLBACK_TRANSLATIONS: Record<number, string> = {
-  400: 'Некорректный запрос',
-  401: 'Требуется авторизация',
-  403: 'Доступ запрещен',
-  404: 'Ресурс не найден',
-  409: 'Конфликт данных',
-  413: 'Файл слишком большой. Уменьшите размер и повторите попытку',
-  422: 'Ошибка валидации данных',
-  429: 'Слишком много запросов. Попробуйте позже',
-  500: 'Внутренняя ошибка сервера',
-  502: 'Сервер временно недоступен. Попробуйте позже',
-  503: 'Сервис временно недоступен. Попробуйте позже',
-  504: 'Сервер не ответил вовремя. Попробуйте позже'
-};
-
 const VALIDATION_TRANSLATIONS: Record<string, string> = {
   'Field required': 'Поле обязательно для заполнения',
   'Input should be a valid string': 'Значение должно быть строкой',
@@ -86,7 +79,8 @@ const translateText = (message: string | null | undefined): string | null => {
   if (!normalized) {
     return null;
   }
-  return ERROR_TRANSLATIONS[normalized] ?? VALIDATION_TRANSLATIONS[normalized] ?? normalized;
+  const translated = ERROR_TRANSLATIONS[normalized] ?? VALIDATION_TRANSLATIONS[normalized] ?? null;
+  return normalizeUserFacingText(translated ?? normalized, GENERIC_ERROR_MESSAGE);
 };
 
 const humanizeLoc = (loc: unknown): string => {
@@ -150,12 +144,12 @@ const getErrorMessage = async (response: Response, fallback: string) => {
     }
   }
 
-  const statusFallback = STATUS_FALLBACK_TRANSLATIONS[response.status];
+  const statusFallback = fallbackByHttpStatus(response.status);
   if (statusFallback) {
     return statusFallback;
   }
 
-  return fallback;
+  return normalizeUserFacingText(fallback, fallbackByActionHint(fallback));
 };
 
 const skipAutoRefresh = (url: string) => (
@@ -192,7 +186,7 @@ export const apiFetch = async (
   try {
     response = await performFetch(url, init, headers);
   } catch {
-    throw new Error('Сервер временно недоступен. Попробуйте позже');
+    throw new Error(NETWORK_ERROR_MESSAGE);
   }
 
   if (
@@ -232,15 +226,15 @@ export const fetchJson = async <T>(
     const raw = await response.text().catch(() => '');
     const trimmed = raw.trim().toLowerCase();
     if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
-      throw new Error('Сервер вернул HTML вместо JSON. Проверьте доступность API (/api/*).');
+      throw new Error(GENERIC_ERROR_MESSAGE);
     }
-    throw new Error(fallbackError);
+    throw new Error(normalizeUserFacingText(fallbackError, fallbackByActionHint(fallbackError)));
   }
 
   try {
     return await response.json() as T;
   } catch {
-    throw new Error(fallbackError);
+    throw new Error(normalizeUserFacingText(fallbackError, fallbackByActionHint(fallbackError)));
   }
 };
 

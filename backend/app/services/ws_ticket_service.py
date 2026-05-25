@@ -10,7 +10,7 @@ from typing import Literal
 from app.core.config import settings
 from app.domain.exceptions import Unauthorized
 
-WsTicketPurpose = Literal["chat_ws", "realtime_ws", "notifications_ws"]
+WsTicketPurpose = Literal["realtime_ws", "notifications_ws"]
 
 
 @dataclass(slots=True)

@@ -75,6 +75,7 @@ type StateListener = (state: RealtimeConnectionState) => void;
 const mapRealtimeEventToChatEnvelope = (
   event: RealtimeEnvelope
 ): ChatRealtimeEnvelope | null => {
+  // TODO(realtime-compat): remove legacy envelope mapping after UI chat consumers switch to canonical chat.* event names.
   if (event.type === 'connection.ready' || event.type === 'chat.sync' || event.type === 'chat.unsubscribed' || event.type === 'ack' || event.type === 'error') {
     return event as ChatRealtimeEnvelope;
   }

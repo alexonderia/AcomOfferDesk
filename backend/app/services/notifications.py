@@ -114,7 +114,7 @@ class NotificationService:
 
         await asyncio.gather(
             *(self._send_created_event_best_effort(notification) for notification in created),
-            return_exceptions=False,
+            return_exceptions=True,
         )
         return created
 

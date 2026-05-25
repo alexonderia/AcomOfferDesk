@@ -410,11 +410,14 @@ class KeycloakAdminService:
         if not isinstance(payload, dict):
             return True
 
-        realm_roles = payload.get("realm_access", {}).get("roles", [])
+        realm_access = payload.get("realm_access")
+        if not isinstance(realm_access, dict):
+            realm_access = {}
+        realm_roles = realm_access.get("roles", [])
         if isinstance(realm_roles, list) and any(str(role).strip() for role in realm_roles):
             return True
 
-        resource_access = payload.get("resource_access", {})
+        resource_access = payload.get("resource_access")
         if isinstance(resource_access, dict):
             for resource_payload in resource_access.values():
                 if not isinstance(resource_payload, dict):

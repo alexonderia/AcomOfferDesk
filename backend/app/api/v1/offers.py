@@ -477,7 +477,7 @@ async def create_offer_message(
     await get_chat_runtime().publish_chat_event(
         chat_id=result.chat_id,
         event=OutboundEnvelope(
-            type="message.created",
+            type="chat.message.created",
             data=message_payload,
         ),
     )
@@ -560,7 +560,7 @@ async def create_offer_message_with_attachments(
     await get_chat_runtime().publish_chat_event(
         chat_id=result.chat_id,
         event=OutboundEnvelope(
-            type="message.created",
+            type="chat.message.created",
             data=message_payload,
         ),
     )
@@ -590,7 +590,7 @@ async def mark_offer_messages_received(
         await get_chat_runtime().publish_chat_event(
             chat_id=ack.chat_id,
             event=OutboundEnvelope(
-                type="message.delivered",
+                type="chat.message.delivered",
                 data={
                     "chat_id": ack.chat_id,
                     "user_id": current_user.user_id,
@@ -628,7 +628,7 @@ async def mark_offer_messages_read(
         await get_chat_runtime().publish_chat_event(
             chat_id=ack.chat_id,
             event=OutboundEnvelope(
-                type="message.read",
+                type="chat.message.read",
                 data={
                     "chat_id": ack.chat_id,
                     "user_id": current_user.user_id,

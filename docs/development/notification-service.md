@@ -41,9 +41,16 @@ Backend поддерживает два независимых RabbitMQ-пото
 - Основной канал realtime: `/api/v1/ws/realtime?ticket=...`.
 - Через `/ws/realtime` работают и чат, и центр уведомлений.
 - Для `/ws/realtime` используется ws-ticket с `purpose = realtime_ws`.
-- Frontend больше не использует `purpose = chat_ws`.
+- `purpose = chat_ws` удален из backend/frontend контрактов.
 - `notification.created` отправляется после успешного создания записи в `user_notifications` (best-effort: offline user не ошибка, ошибка отправки только логируется).
-- `/api/v1/ws/chat?ticket=...` сохранен как **deprecated compatibility route** для обратной совместимости и тестов; плановое удаление — отдельной задачей после подтверждения отсутствия потребителей.
+- `/api/v1/ws/chat` удален. Единый websocket transport в браузере: только `/api/v1/ws/realtime`.
+- Backend wire-протокол чата использует только canonical event types `chat.*`:
+  - `chat.message.created`
+  - `chat.message.delivered`
+  - `chat.message.read`
+  - `chat.typing.started`
+  - `chat.typing.stopped`
+- Inbound client request types остаются без изменений: `message.send`, `message.read`, `typing.start`, `typing.stop`, `chat.sync`.
 
 ## Контракт Realtime Envelope
 
@@ -202,6 +209,7 @@ Dedupe реализован best-effort через JSON-ключи в payload:
 
 Известное ограничение:
 - проверки по JSON-ключам могут стать дорогими на высокой нагрузке без выделенных индексируемых колонок.
+- future improvement: выделенная колонка `dedupe_key` + индекс.
 
 ## Поток Email Delivery Не Менялся
 
@@ -245,6 +253,8 @@ Dedupe реализован best-effort через JSON-ключи в payload:
 
 Так как outbox нет:
 - если commit в БД успешен и все retry публикации исчерпаны, событие может быть потеряно.
+- Redis для межинстансовой координации в текущей реализации не используется.
+- multi-instance/high-load улучшения (outbox/Redis) вынесены в future backlog и не входят в текущую поставку.
 
 Этот случай логируется в `notification_publisher` с идентификаторами события.
 
@@ -252,3 +262,11 @@ Dedupe реализован best-effort через JSON-ключи в payload:
 
 - Добавить выделенную колонку/индекс `dedupe_key` при росте нагрузки.
 - Добавить backend-фильтры уведомлений и cursor-pagination.
+
+## Чек-Лист Русификации
+
+Ручная проверка (в дополнение к `python scripts/check_mojibake.py`):
+
+- API/WS ошибки, попадающие в UI, показываются понятными русскими текстами без `Unauthorized/Forbidden/ValidationError/Internal Server Error`.
+- Toast/Alert не показывают технические детали (`traceback`, `sql`, `rabbitmq`, `smtp`, `jwt`).
+- Email subject/body и `notification.title/body` остаются человекочитаемыми на русском.

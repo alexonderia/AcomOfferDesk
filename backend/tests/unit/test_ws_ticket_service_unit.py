@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import UTC, datetime
 
@@ -17,7 +17,7 @@ async def test_issue_ticket_creates_hash_only_store_record() -> None:
         role_id=3,
         status="active",
         keycloak_api_roles=frozenset({"chat.read"}),
-        purpose="chat_ws",
+        purpose="realtime_ws",
     )
 
     assert raw_ticket
@@ -33,17 +33,17 @@ async def test_consume_valid_ticket_returns_user_once() -> None:
         role_id=3,
         status="active",
         keycloak_api_roles=frozenset({"chat.read"}),
-        purpose="chat_ws",
+        purpose="realtime_ws",
     )
 
-    access = await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="chat_ws")
+    access = await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="realtime_ws")
 
     assert access.user_id == "user-1"
     assert access.role_id == 3
     assert access.status == "active"
     assert access.keycloak_api_roles == frozenset({"chat.read"})
     with pytest.raises(Unauthorized):
-        await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="chat_ws")
+        await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="notifications_ws")
 
 
 @pytest.mark.asyncio
@@ -54,14 +54,14 @@ async def test_consume_rejects_expired_ticket() -> None:
         role_id=3,
         status="active",
         keycloak_api_roles=frozenset({"chat.read"}),
-        purpose="chat_ws",
+        purpose="realtime_ws",
     )
     await service.cleanup_expired()
     ticket_hash = service._hash_ticket(raw_ticket)  # noqa: SLF001
     service._store[ticket_hash].access.expires_at = datetime.now(UTC)  # noqa: SLF001
 
     with pytest.raises(Unauthorized):
-        await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="chat_ws")
+        await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="notifications_ws")
 
 
 @pytest.mark.asyncio
@@ -72,8 +72,8 @@ async def test_consume_rejects_wrong_purpose() -> None:
         role_id=3,
         status="active",
         keycloak_api_roles=frozenset({"chat.read"}),
-        purpose="chat_ws",
+        purpose="realtime_ws",
     )
 
     with pytest.raises(Unauthorized):
-        await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="realtime_ws")
+        await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="notifications_ws")

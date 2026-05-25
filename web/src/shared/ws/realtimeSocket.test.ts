@@ -65,6 +65,7 @@ describe('realtimeSocketClient', () => {
     const ws = (realtimeSocketClient as any).socket as FakeWebSocket;
     expect(createWsTicketMock).toHaveBeenCalledWith('realtime_ws');
     expect(ws.url).toContain('/api/v1/ws/realtime');
+    expect(ws.url).not.toContain('/api/v1/ws/chat');
     expect(ws.url).toContain('ticket=rt-ticket-1');
     expect(ws.url).not.toContain('token=');
     expect(ws.url).not.toContain('access_token');
@@ -88,5 +89,30 @@ describe('realtimeSocketClient', () => {
     const second = (realtimeSocketClient as any).socket as FakeWebSocket;
     expect(createWsTicketMock).toHaveBeenCalledTimes(2);
     expect(second.url).toContain('ticket=rt-ticket-2');
+  });
+
+  it('deduplicates connect calls and opens only one websocket', async () => {
+    createWsTicketMock.mockResolvedValueOnce({ ticket: 'rt-ticket-1', expires_in: 30, expires_at: '2026-01-01T00:00:00Z' });
+    const { realtimeSocketClient } = await import('./realtimeSocket');
+
+    realtimeSocketClient.connect();
+    realtimeSocketClient.connect();
+    realtimeSocketClient.connect();
+    await vi.runAllTimersAsync();
+
+    expect(createWsTicketMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects pending websocket requests on disconnect', async () => {
+    createWsTicketMock.mockResolvedValueOnce({ ticket: 'rt-ticket-1', expires_in: 30, expires_at: '2026-01-01T00:00:00Z' });
+    const { realtimeSocketClient } = await import('./realtimeSocket');
+
+    realtimeSocketClient.connect();
+    await vi.runAllTimersAsync();
+
+    const pendingRequest = realtimeSocketClient.markChatRead(10, { messageIds: [1] });
+    realtimeSocketClient.disconnect();
+
+    await expect(pendingRequest).rejects.toThrow('Соединение с сервером уведомлений закрыто.');
   });
 });

@@ -148,6 +148,31 @@ async def test_create_many_for_users_uses_bulk_create_and_sends_events():
 
 
 @pytest.mark.asyncio
+async def test_create_many_for_users_keeps_persistence_when_realtime_dispatch_future_fails(monkeypatch):
+    repo = _Repo()
+    sender = _RealtimeSender()
+    service = NotificationService(repo, realtime_sender=sender)
+
+    async def _failing_send_created_event_best_effort(_notification):
+        raise RuntimeError("unexpected future failure")
+
+    monkeypatch.setattr(service, "_send_created_event_best_effort", _failing_send_created_event_best_effort)
+
+    created = await service.create_many_for_users(
+        user_ids=["user-1", "user-2"],
+        notification_type="system.warning",
+        severity="warning",
+        title="Проверка устойчивости",
+        body="Сохранение должно завершиться",
+    )
+
+    assert [item.user_id for item in created] == ["user-1", "user-2"]
+    assert repo.create_many_calls == 1
+    assert repo.create_calls == 0
+    assert sender.calls == []
+
+
+@pytest.mark.asyncio
 async def test_notify_request_status_changed_uses_info_severity():
     repo = _Repo()
     sender = _RealtimeSender()

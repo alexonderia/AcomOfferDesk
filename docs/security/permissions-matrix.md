@@ -97,3 +97,51 @@ Legend: `Y` = granted, `N` = not granted.
 - Browser role matrix: `web/e2e/roles.access.spec.ts` (`@roles`, manual extended e2e).
 - Dashboard permission/calculation coverage: `backend/tests/unit/test_dashboard_calculations_unit.py`, `web/e2e/dashboard.extended.spec.ts` (`@dashboard`).
 - При изменении этой матрицы обновлять `backend/app/domain/permissions.py`, Keycloak bootstrap docs/scripts при необходимости, backend/frontend tests и `docs/development/test-coverage-map.md`.
+
+## Department Delegation Model (2026-05)
+
+`department.*` permissions are separate atomic access codes used only for department-scope expansion. They are not aliases of regular `requests.*`, `offers.*`, `chat.*`, `files.*`, `dashboard.*`, `plans.*` permissions.
+
+Atomic `department.*` permissions:
+
+- `department.requests.read`
+- `department.requests.update`
+- `department.requests.status_update`
+- `department.requests.assign`
+- `department.offers.read`
+- `department.offers.accept`
+- `department.offers.reject`
+- `department.chats.read`
+- `department.chats.send_message`
+- `department.files.read`
+- `department.files.upload`
+- `department.files.delete`
+- `department.dashboard.read`
+- `department.plans.read`
+- `department.plans.manage`
+
+Keycloak composite delegation roles in client `acom-api`:
+
+- `delegation.department.requests.read` -> `department.requests.read`
+- `delegation.department.requests.update` -> `department.requests.update`
+- `delegation.department.requests.status_update` -> `department.requests.status_update`
+- `delegation.department.requests.assign` -> `department.requests.assign`
+- `delegation.department.offers.read` -> `department.offers.read`
+- `delegation.department.offers.accept` -> `department.offers.accept`
+- `delegation.department.offers.reject` -> `department.offers.reject`
+- `delegation.department.chats.read` -> `department.chats.read`
+- `delegation.department.chats.send_message` -> `department.chats.send_message`
+- `delegation.department.files.read` -> `department.files.read`
+- `delegation.department.files.upload` -> `department.files.upload`
+- `delegation.department.files.delete` -> `department.files.delete`
+- `delegation.department.dashboard.read` -> `department.dashboard.read`
+- `delegation.department.plans.read` -> `department.plans.read`
+- `delegation.department.plans.manage` -> `department.plans.manage`
+
+Rules:
+
+1. `delegation.department.*` are not included in any `app.*` role by default.
+2. `keycloak_user_role_sync` updates only `app.*` alignment by `users.id_role` and must not remove manually assigned `delegation.department.*`.
+3. No new business role is introduced (`lead_economist + delegation.department.*` is not a new role).
+4. No DB table is used as source of truth for delegation checklist state; source of truth is Keycloak client role mappings for `acom-api`.
+5. Frontend remains UX-only and uses backend-provided `permissions`/`actions`; backend remains enforcement layer.

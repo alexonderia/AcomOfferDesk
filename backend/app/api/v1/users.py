@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
 from app.schemas.users import (
+    DepartmentDelegationAccessSchema,
     EconomistListData,
     EconomistListItemSchema,
     EconomistListResponse,
@@ -46,6 +47,9 @@ from app.schemas.users import (
     UserStatusUpdateData,
     UserStatusUpdateRequest,
     UserStatusUpdateResponse,
+    UserDepartmentDelegationsResponse,
+    UserDepartmentDelegationsData,
+    UserDepartmentDelegationsUpdateRequest,
 )
 from app.services.users import (
     ManualContractorCreateInput,
@@ -57,6 +61,7 @@ from app.services.users import (
     UserSelfService,
     UserStatusService,
 )
+from app.services.user_department_delegations import UserDepartmentDelegationsService
 
 router = APIRouter()
 
@@ -117,6 +122,27 @@ def _subordinate_profile_data(current_user: CurrentUser, item) -> SubordinatePro
         target_role_id=item.role_id,
     )
     return SubordinateProfileData(**data)
+
+
+def _department_delegations_data(item) -> UserDepartmentDelegationsData:
+    return UserDepartmentDelegationsData(
+        user_id=item.user_id,
+        role_id=item.role_id,
+        full_name=item.full_name,
+        can_manage=item.can_manage,
+        accesses=[
+            DepartmentDelegationAccessSchema(
+                code=access.code,
+                permission_code=access.permission_code,
+                group=access.group,
+                label=access.label,
+                enabled=access.enabled,
+            )
+            for access in item.accesses
+        ],
+        token_refresh_required=item.token_refresh_required,
+        warning=item.warning,
+    )
 
 
 @router.get("/users", response_model=UserListResponse)
@@ -348,6 +374,52 @@ async def get_subordinate_profile(
 
     return SubordinateProfileResponse(
         data=_subordinate_profile_data(current_user, profile),
+    )
+
+
+@router.get("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)
+async def get_user_department_delegations(
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserDepartmentDelegationsResponse:
+    async with uow:
+        service = UserDepartmentDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.get_state(
+            current_user=current_user,
+            target_user_id=user_id,
+        )
+
+    return UserDepartmentDelegationsResponse(
+        data=_department_delegations_data(state),
+    )
+
+
+@router.put("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)
+async def update_user_department_delegations(
+    payload: UserDepartmentDelegationsUpdateRequest,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserDepartmentDelegationsResponse:
+    async with uow:
+        service = UserDepartmentDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.update_state(
+            current_user=current_user,
+            target_user_id=user_id,
+            requested_access_codes=payload.access_codes,
+        )
+
+    return UserDepartmentDelegationsResponse(
+        data=_department_delegations_data(state),
     )
 
 

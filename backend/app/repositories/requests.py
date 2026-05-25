@@ -236,6 +236,16 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def get_request_owner_id_by_request_file_id(self, *, file_id: int) -> str | None:
+        stmt = (
+            select(Request.id_user)
+            .join(RequestFile, RequestFile.id_request == Request.id)
+            .where(RequestFile.id == file_id)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_open(self) -> list[Request]:
         stmt = select(Request).where(Request.status == "open").order_by(Request.created_at.desc(), Request.id.desc())
         result = await self._session.execute(stmt)

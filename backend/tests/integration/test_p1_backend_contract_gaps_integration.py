@@ -190,8 +190,9 @@ class _RequestFilesUow:
 
 
 class _DownloadFilesRepo:
-    def __init__(self, *, exists: bool = True) -> None:
+    def __init__(self, *, exists: bool = True, normative: bool = False) -> None:
         self.exists = exists
+        self.normative = normative
 
     async def get_by_id(self, file_id: int):
         if not self.exists:
@@ -204,20 +205,38 @@ class _DownloadFilesRepo:
             storage_object=SimpleNamespace(id=99, storage_bucket="bucket", storage_key="key"),
         )
 
+    async def is_normative_file(self, *, file_id: int) -> bool:
+        _ = file_id
+        return self.normative
+
 
 class _DownloadRequestsRepo:
-    def __init__(self, *, linked: bool = False) -> None:
+    def __init__(self, *, linked: bool = False, owner_user_id: str | None = None) -> None:
         self.linked = linked
+        self.owner_user_id = owner_user_id
 
     async def is_file_linked_to_visible_open_request(self, *, contractor_user_id: str, file_id: int) -> bool:
         _ = (contractor_user_id, file_id)
         return self.linked
 
+    async def get_request_owner_id_by_request_file_id(self, *, file_id: int) -> str | None:
+        _ = file_id
+        return self.owner_user_id
+
 
 class _DownloadOffersRepo:
-    def __init__(self, *, linked_offer: bool = False, linked_message: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        linked_offer: bool = False,
+        linked_message: bool = False,
+        owner_from_offer_file: str | None = None,
+        owner_from_message_file: str | None = None,
+    ) -> None:
         self.linked_offer = linked_offer
         self.linked_message = linked_message
+        self.owner_from_offer_file = owner_from_offer_file
+        self.owner_from_message_file = owner_from_message_file
 
     async def is_file_linked_to_contractor(self, *, contractor_user_id: str, file_id: int) -> bool:
         _ = (contractor_user_id, file_id)
@@ -227,6 +246,14 @@ class _DownloadOffersRepo:
         _ = (contractor_user_id, file_id)
         return self.linked_message
 
+    async def get_request_owner_id_by_offer_file_id(self, *, file_id: int) -> str | None:
+        _ = file_id
+        return self.owner_from_offer_file
+
+    async def get_request_owner_id_by_message_file_id(self, *, file_id: int) -> str | None:
+        _ = file_id
+        return self.owner_from_message_file
+
 
 class _DownloadUow:
     def __init__(
@@ -235,16 +262,30 @@ class _DownloadUow:
         files_repo: _DownloadFilesRepo | None = None,
         requests_repo: _DownloadRequestsRepo | None = None,
         offers_repo: _DownloadOffersRepo | None = None,
+        users_repo=None,
     ) -> None:
         self.files = files_repo or _DownloadFilesRepo()
         self.requests = requests_repo or _DownloadRequestsRepo()
         self.offers = offers_repo or _DownloadOffersRepo()
+        self.users = users_repo or _DownloadUsersRepo()
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         _ = (exc_type, exc, tb)
+
+
+class _DownloadUsersRepo:
+    def __init__(self, *, users=None, parent_pairs=None) -> None:
+        self._users = users or {}
+        self._parent_pairs = parent_pairs or []
+
+    async def get_by_id(self, user_id: str):
+        return self._users.get(user_id)
+
+    async def list_active_user_parent_pairs(self):
+        return self._parent_pairs
 
 
 class _OfferFilesOffersRepo:
@@ -273,20 +314,26 @@ class _OfferFilesRequestsRepo:
 
 
 class _OfferFilesUsersRepo:
+    def __init__(self, *, users=None) -> None:
+        self._users = users or {}
+
     async def get_by_id(self, user_id: str | None = None, **kwargs):
         resolved_user_id = user_id or kwargs["user_id"]
+        if resolved_user_id in self._users:
+            return self._users[resolved_user_id]
         return SimpleNamespace(
             id=resolved_user_id,
             id_role=settings.contractor_role_id,
             tg_user_id=None,
+            id_parent=None,
         )
 
 
 class _OfferFilesUow:
-    def __init__(self, *, offers_repo=None) -> None:
+    def __init__(self, *, offers_repo=None, users_repo=None) -> None:
         self.offers = offers_repo or _OfferFilesOffersRepo()
         self.requests = _OfferFilesRequestsRepo()
-        self.users = _OfferFilesUsersRepo()
+        self.users = users_repo or _OfferFilesUsersRepo()
         self.files = object()
         self.chats = object()
         self.messages = object()
@@ -1130,6 +1177,80 @@ def test_offer_file_delete_denies_non_owner_contractor(
     assert response.status_code == 403
 
 
+def test_offer_file_delete_denies_internal_user_without_file_permissions(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(offers_api, "FileService", _PreparedFileService)
+    monkeypatch.setattr(offers_service_module, "FileService", _PreparedFileService)
+    set_uow(_OfferFilesUow())
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={
+                PermissionCodes.REQUESTS_UPDATE,
+                PermissionCodes.OFFERS_MANUAL_CREATE,
+            },
+        )
+    )
+
+    response = test_client.delete("/api/v1/offers/20/files/601")
+
+    assert response.status_code == 403
+
+
+def test_offer_file_delete_denies_internal_user_outside_hierarchy_scope(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(offers_api, "FileService", _PreparedFileService)
+    monkeypatch.setattr(offers_service_module, "FileService", _PreparedFileService)
+    users_repo = _OfferFilesUsersRepo(
+        users={
+            "owner-1": SimpleNamespace(
+                id="owner-1",
+                id_role=settings.economist_role_id,
+                id_parent="lead-2",
+                tg_user_id=None,
+            ),
+            "lead-2": SimpleNamespace(
+                id="lead-2",
+                id_role=settings.lead_economist_role_id,
+                id_parent="pm-1",
+                tg_user_id=None,
+            ),
+            "pm-1": SimpleNamespace(
+                id="pm-1",
+                id_role=settings.project_manager_role_id,
+                id_parent=None,
+                tg_user_id=None,
+            ),
+        }
+    )
+    set_uow(_OfferFilesUow(users_repo=users_repo))
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={
+                PermissionCodes.OFFERS_FILES_DELETE,
+                PermissionCodes.REQUESTS_UPDATE,
+            },
+        )
+    )
+
+    response = test_client.delete("/api/v1/offers/20/files/601")
+
+    assert response.status_code == 403
+
+
 def test_offer_file_upload_denies_anonymous_user(api_app, test_client, monkeypatch, set_uow):
     _clear_current_user_override(api_app)
     monkeypatch.setattr(offers_api, "FileService", _PreparedFileService)
@@ -1214,6 +1335,100 @@ def test_file_download_returns_not_found_for_missing_file(
     response = test_client.get("/api/v1/files/404/download")
 
     assert response.status_code == 404
+
+
+def test_file_download_denies_internal_user_outside_standard_scope(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"must-not-be-used"
+
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    users_repo = _DownloadUsersRepo(
+        users={
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+            "outside-1": SimpleNamespace(id="outside-1", id_role=settings.economist_role_id, id_parent="other-lead"),
+            "other-lead": SimpleNamespace(id="other-lead", id_role=settings.lead_economist_role_id, id_parent="pm-2"),
+            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent=None),
+        },
+        parent_pairs=[
+            ("lead-1", "pm-1"),
+            ("owner-1", "lead-1"),
+            ("outside-1", "other-lead"),
+            ("other-lead", "pm-2"),
+        ],
+    )
+    set_uow(
+        _DownloadUow(
+            requests_repo=_DownloadRequestsRepo(owner_user_id="outside-1"),
+            users_repo=users_repo,
+        )
+    )
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.REQUESTS_READ},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 403
+
+
+def test_file_download_allows_department_files_read_for_department_scope(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"department-linked"
+
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    users_repo = _DownloadUsersRepo(
+        users={
+            "econ-1": SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
+            "owner-2": SimpleNamespace(id="owner-2", id_role=settings.economist_role_id, id_parent="lead-2"),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+        },
+        parent_pairs=[
+            ("econ-1", "lead-1"),
+            ("lead-1", "pm-1"),
+            ("owner-2", "lead-2"),
+            ("lead-2", "pm-1"),
+        ],
+    )
+    set_uow(
+        _DownloadUow(
+            requests_repo=_DownloadRequestsRepo(owner_user_id="owner-2"),
+            users_repo=users_repo,
+        )
+    )
+    set_current_user(
+        make_current_user(
+            user_id="econ-1",
+            role_id=settings.economist_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.DEPARTMENT_FILES_READ},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 200
+    assert response.content == b"department-linked"
 
 
 def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_transport(

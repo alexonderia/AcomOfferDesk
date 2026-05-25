@@ -233,3 +233,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-keycloak-bootstrap.ps1
 - `WS_LEGACY_QUERY_TOKEN_ENABLED=false` for prod-like/prod.
 - Legacy `?token=` websocket fallback is temporary dev compatibility only and should stay disabled by default.
 - `BACKEND_WORKERS=1` while ws-ticket storage is in-memory (without Redis/shared ticket store).
+
+### Department delegation bootstrap note (2026-05)
+
+`infra/keycloak/bootstrap.sh` now creates department delegation roles in `acom-api`:
+
+- atomic `department.*` roles;
+- composite `delegation.department.*` roles;
+- one-to-one composite mapping `delegation.department.X -> department.X`.
+
+Operational invariants:
+
+- `delegation.department.*` are not auto-assigned to all users;
+- `delegation.department.*` are not included in default `app.*` composites;
+- `keycloak_user_role_sync` reconciles only `app.*` by `users.id_role` and should not wipe manually assigned delegation roles.

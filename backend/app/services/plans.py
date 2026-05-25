@@ -8,6 +8,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Awaitable, Callable
 
 from app.core.config import settings
+from app.domain.authorization import has_permission
+from app.domain.permissions import PermissionCodes
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.policies import CurrentUser, UserPolicy
 from app.infrastructure.notification_publisher import publish_process_notification_event
@@ -15,6 +17,7 @@ from app.models.orm_models import EconomyPlan
 from app.repositories.economy_plans import EconomyPlanRepository, PlanDistributionRow
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
+from app.services.department_scope import DepartmentScopeService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 MONTH_PERIOD_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -165,6 +168,7 @@ class PlanService:
         self._requests = requests
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
+        self._department_scope = DepartmentScopeService(users)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -184,7 +188,7 @@ class PlanService:
         plan_amount: Decimal | float | int | str,
         current_user: CurrentUser,
     ) -> EconomyPlan:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         if current_user.role_id not in {settings.superadmin_role_id, settings.project_manager_role_id}:
             raise Forbidden("Only superadmin and project manager can create root plan")
 
@@ -230,7 +234,7 @@ class PlanService:
         child_user_id: str | None,
         current_user: CurrentUser,
     ) -> EconomyPlan:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         normalized_amount = normalize_amount(plan_amount)
         if normalized_amount <= Decimal("0.00"):
             raise Conflict("Subplan amount must be greater than zero")
@@ -308,7 +312,7 @@ class PlanService:
         child_period_start: date | None,
         current_user: CurrentUser,
     ) -> EconomyPlan:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         normalized_amount = normalize_amount(child_plan_amount)
         if normalized_amount <= Decimal("0.00"):
             raise Conflict("Delegated plan amount must be greater than zero")
@@ -383,7 +387,7 @@ class PlanService:
         new_period_end: date | None,
         current_user: CurrentUser,
     ) -> EconomyPlan:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         if new_amount is None and new_name is None and new_period_end is None:
             raise Conflict("Nothing to update")
 
@@ -444,7 +448,7 @@ class PlanService:
         plan_id: int,
         current_user: CurrentUser,
     ) -> None:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         plan = await self._plans.get_by_id_for_update(plan_id=plan_id)
         if plan is None:
             raise NotFound("Plan not found")
@@ -470,7 +474,7 @@ class PlanService:
         plan_id: int,
         current_user: CurrentUser,
     ) -> EconomyPlan:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         plan = await self._plans.get_by_id_for_update(plan_id=plan_id)
         if plan is None:
             raise NotFound("Plan not found")
@@ -495,7 +499,7 @@ class PlanService:
         root_user_id: str,
         current_user: CurrentUser,
     ) -> PlanTreeNode:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         month_start, month_end = parse_month_period(period)
         period_plans = await self._plans.list_by_month_bucket(month_start=month_start, month_end=month_end)
         if not period_plans:
@@ -523,7 +527,7 @@ class PlanService:
         period: str,
         current_user: CurrentUser,
     ) -> PlanDashboardSummary:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         dashboard = await self.get_dashboard_plan_tab(period=period, current_user=current_user)
         return dashboard.summary
 
@@ -535,7 +539,7 @@ class PlanService:
         current_user: CurrentUser,
         plan_id: int | None = None,
     ) -> PlanRequestStats:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         if period_start > period_end:
             raise Conflict("date_from must be less than or equal to date_to")
 
@@ -607,7 +611,7 @@ class PlanService:
         period: str,
         current_user: CurrentUser,
     ) -> PlanDashboardData:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         month_start, month_end = parse_month_period(period)
         period_plans = await self._load_relevant_period_plans(
             period_start=month_start,
@@ -679,7 +683,7 @@ class PlanService:
         date_to: date,
         current_user: CurrentUser,
     ) -> PlanDashboardData:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         if date_from > date_to:
             raise Conflict("date_from must be less than or equal to date_to")
 
@@ -843,7 +847,7 @@ class PlanService:
         owner_user_id: str | None,
         current_user: CurrentUser,
     ) -> list[PlanOption]:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         _ = period
         target_user_id = owner_user_id or current_user.user_id
         user_plans = await self._plans.list_by_user(user_id=target_user_id)
@@ -860,6 +864,7 @@ class PlanService:
             user.id: {
                 "full_name": (profile.full_name if profile else None),
                 "role_name": role.role,
+                "role_id": user.id_role,
                 "id_parent": user.id_parent,
             }
             for user, profile, role in users_rows
@@ -870,6 +875,7 @@ class PlanService:
                 user_meta_by_id[user_id] = {
                     "full_name": None,
                     "role_name": None,
+                    "role_id": None,
                     "id_parent": parent_id,
                 }
         options: list[PlanOption] = []
@@ -902,7 +908,7 @@ class PlanService:
         parent_plan_id: int,
         current_user: CurrentUser,
     ) -> list[PlanDelegateCandidate]:
-        UserPolicy.ensure_can_view_plan(current_user)
+        self._ensure_can_access_plans(current_user)
         parent_plan = await self._plans.get_by_id(plan_id=parent_plan_id)
         if parent_plan is None:
             raise NotFound("Parent plan not found")
@@ -1069,6 +1075,7 @@ class PlanService:
             user.id: {
                 "full_name": (profile.full_name if profile else None),
                 "role_name": role.role,
+                "role_id": user.id_role,
                 "id_parent": user.id_parent,
             }
             for user, profile, role in users_rows
@@ -1079,6 +1086,7 @@ class PlanService:
                 user_meta_by_id[user_id] = {
                     "full_name": None,
                     "role_name": None,
+                    "role_id": None,
                     "id_parent": parent_id,
                 }
         managers_with_subordinates = {parent_id for _, parent_id in parent_pairs if parent_id}
@@ -1121,7 +1129,7 @@ class PlanService:
         self_fact_by_plan_id: dict[int, Decimal],
         in_progress_count_by_user_id: dict[str, int],
         period_fact_by_plan_id: dict[int, Decimal],
-        user_meta_by_id: dict[str, dict[str, str | None]],
+        user_meta_by_id: dict[str, dict[str, str | int | None]],
         managers_with_subordinates: set[str],
         current_user: CurrentUser,
     ) -> PlanTreeNode:
@@ -1389,6 +1397,11 @@ class PlanService:
             raise Conflict("Requested amount exceeds parent available amount")
 
     async def _ensure_can_view_root(self, *, current_user: CurrentUser, requested_root_user_id: str) -> None:
+        if await self._can_use_department_plan_read_scope(
+            current_user=current_user,
+            target_user_id=requested_root_user_id,
+        ):
+            return
         if current_user.role_id == settings.superadmin_role_id:
             return
         if await self._is_ancestor_or_self(
@@ -1399,6 +1412,11 @@ class PlanService:
         raise Forbidden("Requested plan branch is outside your management scope")
 
     async def _ensure_can_manage_node(self, *, current_user: CurrentUser, plan_owner_user_id: str) -> None:
+        if await self._can_use_department_plan_manage_scope(
+            current_user=current_user,
+            target_user_id=plan_owner_user_id,
+        ):
+            return
         if current_user.role_id == settings.superadmin_role_id:
             return
         allowed = await self._is_ancestor_or_self(
@@ -1426,8 +1444,15 @@ class PlanService:
         *,
         current_user: CurrentUser,
         plan_owner_user_id: str,
-        user_meta_by_id: dict[str, dict[str, str | None]],
+        user_meta_by_id: dict[str, dict[str, str | int | None]],
     ) -> bool:
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_MANAGE):
+            if self._is_user_inside_department_scope_sync(
+                current_user=current_user,
+                target_user_id=plan_owner_user_id,
+                user_meta_by_id=user_meta_by_id,
+            ):
+                return True
         if current_user.role_id == settings.superadmin_role_id:
             return True
         cursor_id: str | None = plan_owner_user_id
@@ -1439,3 +1464,95 @@ class PlanService:
             user_meta = user_meta_by_id.get(cursor_id)
             cursor_id = user_meta.get("id_parent") if user_meta else None
         return False
+
+    def _ensure_can_access_plans(self, current_user: CurrentUser) -> None:
+        if has_permission(current_user, PermissionCodes.DASHBOARD_PLANS_READ):
+            return
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_READ):
+            return
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_MANAGE):
+            return
+        UserPolicy.ensure_can_view_plan(current_user)
+
+    async def _can_use_department_plan_read_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+    ) -> bool:
+        if not (
+            has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_READ)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_MANAGE)
+        ):
+            return False
+        return await self._is_user_inside_department_scope(
+            current_user=current_user,
+            target_user_id=target_user_id,
+        )
+
+    async def _can_use_department_plan_manage_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+    ) -> bool:
+        if not has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_MANAGE):
+            return False
+        return await self._is_user_inside_department_scope(
+            current_user=current_user,
+            target_user_id=target_user_id,
+        )
+
+    async def _is_user_inside_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+    ) -> bool:
+        owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
+            current_user=current_user,
+        )
+        return target_user_id in set(owner_ids)
+
+    def _is_user_inside_department_scope_sync(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+        user_meta_by_id: dict[str, dict[str, str | int | None]],
+    ) -> bool:
+        department_root = self._resolve_department_root_user_id_sync(
+            current_user=current_user,
+            user_meta_by_id=user_meta_by_id,
+        )
+        if department_root is None:
+            return False
+        cursor_id: str | None = target_user_id
+        visited: set[str] = set()
+        while cursor_id is not None and cursor_id not in visited:
+            if cursor_id == department_root:
+                return True
+            visited.add(cursor_id)
+            user_meta = user_meta_by_id.get(cursor_id)
+            cursor_id = user_meta.get("id_parent") if user_meta else None
+        return False
+
+    def _resolve_department_root_user_id_sync(
+        self,
+        *,
+        current_user: CurrentUser,
+        user_meta_by_id: dict[str, dict[str, str | int | None]],
+    ) -> str | None:
+        if current_user.role_id == settings.project_manager_role_id:
+            return current_user.user_id
+        cursor_id: str | None = current_user.user_id
+        visited: set[str] = set()
+        while cursor_id is not None and cursor_id not in visited:
+            visited.add(cursor_id)
+            user_meta = user_meta_by_id.get(cursor_id)
+            if user_meta is None:
+                return None
+            if user_meta.get("role_id") == settings.project_manager_role_id:
+                return cursor_id
+            cursor_id = user_meta.get("id_parent")
+        return None

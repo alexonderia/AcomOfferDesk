@@ -102,6 +102,30 @@ def test_chat_action_builder_reflects_chat_permissions(make_current_user):
     assert actions.can_mark_messages_read is True
 
 
+def test_offer_action_builder_manual_offer_permission_does_not_grant_file_actions(make_current_user):
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.OFFERS_WORKSPACE_READ,
+            PermissionCodes.OFFERS_CONTRACTOR_INFO_READ,
+            PermissionCodes.OFFERS_MANUAL_CREATE,
+            PermissionCodes.REQUESTS_UPDATE,
+        },
+    )
+
+    actions = OfferActionBuilder.build(
+        user,
+        offer_owner_user_id="contractor-1",
+        request_owner_user_id="owner-1",
+        contractor_user_id="contractor-1",
+        offer_status="submitted",
+        offer_is_manual=True,
+    )
+
+    assert actions.can_upload_files is False
+    assert actions.can_delete_files is False
+
+
 def test_user_action_builder_contractor_not_given_internal_controls(make_current_user):
     contractor = make_current_user(
         user_id="c-1",

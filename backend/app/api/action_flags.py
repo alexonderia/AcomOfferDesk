@@ -118,14 +118,6 @@ class OfferActionBuilder:
             request_owner_user_id=request_owner_user_id,
         )
         is_contractor = current_user.role_id == settings.contractor_role_id
-        can_manage_manual_offer_files = (
-            not is_contractor
-            and OfferPolicy.can_manage_manual_offer_files(
-                current_user,
-                request_owner_user_id=request_owner_user_id,
-                offer_is_manual=offer_is_manual,
-            )
-        )
         can_upload_files_by_permission = (
             not is_contractor
             and has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
@@ -168,7 +160,7 @@ class OfferActionBuilder:
                     and offer_status not in {"accepted", "rejected"}
                 )
                 if is_contractor
-                else (can_upload_files_by_permission or can_manage_manual_offer_files)
+                else can_upload_files_by_permission
             ),
             can_delete_files=(
                 (
@@ -176,7 +168,7 @@ class OfferActionBuilder:
                     and can_manage_offer
                 )
                 if is_contractor
-                else (can_delete_files_by_permission or can_manage_manual_offer_files)
+                else can_delete_files_by_permission
             ),
         )
 

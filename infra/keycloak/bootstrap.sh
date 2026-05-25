@@ -132,6 +132,21 @@ unavailability.manage_own
 unavailability.manage_subordinate
 contractors.manual.create
 contractors.manual.manage
+department.requests.read
+department.requests.update
+department.requests.status_update
+department.requests.assign
+department.offers.read
+department.offers.accept
+department.offers.reject
+department.chats.read
+department.chats.send_message
+department.files.read
+department.files.upload
+department.files.delete
+department.dashboard.read
+department.plans.read
+department.plans.manage
 EOF
 )
 
@@ -146,9 +161,29 @@ app.contractor
 EOF
 )
 
+DEPARTMENT_DELEGATION_ROLE_NAMES=$(cat <<'EOF'
+delegation.department.requests.read
+delegation.department.requests.update
+delegation.department.requests.status_update
+delegation.department.requests.assign
+delegation.department.offers.read
+delegation.department.offers.accept
+delegation.department.offers.reject
+delegation.department.chats.read
+delegation.department.chats.send_message
+delegation.department.files.read
+delegation.department.files.upload
+delegation.department.files.delete
+delegation.department.dashboard.read
+delegation.department.plans.read
+delegation.department.plans.manage
+EOF
+)
+
 ALL_ROLE_NAMES=$(cat <<EOF
 $PERMISSION_ROLE_NAMES
 $APP_ROLE_NAMES
+$DEPARTMENT_DELEGATION_ROLE_NAMES
 EOF
 )
 
@@ -321,6 +356,66 @@ requests.deadline.update
 requests.status.update
 requests.amounts.read
 normative_files.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ=$(cat <<'EOF'
+department.requests.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE=$(cat <<'EOF'
+department.requests.update
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE=$(cat <<'EOF'
+department.requests.status_update
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN=$(cat <<'EOF'
+department.requests.assign
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_OFFERS_READ=$(cat <<'EOF'
+department.offers.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT=$(cat <<'EOF'
+department.offers.accept
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_OFFERS_REJECT=$(cat <<'EOF'
+department.offers.reject
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_CHATS_READ=$(cat <<'EOF'
+department.chats.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_CHATS_SEND_MESSAGE=$(cat <<'EOF'
+department.chats.send_message
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_FILES_READ=$(cat <<'EOF'
+department.files.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_FILES_UPLOAD=$(cat <<'EOF'
+department.files.upload
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_FILES_DELETE=$(cat <<'EOF'
+department.files.delete
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_DASHBOARD_READ=$(cat <<'EOF'
+department.dashboard.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_PLANS_READ=$(cat <<'EOF'
+department.plans.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_PLANS_MANAGE=$(cat <<'EOF'
+department.plans.manage
 EOF
 )
 if [ -z "$KEYCLOAK_VERIFY_EMAIL" ]; then
@@ -603,10 +698,10 @@ ensure_client_role() {
   composite_flag="$3"
 
   if /opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name" -r "$APP_REALM" >/dev/null 2>&1; then
-    /opt/keycloak/bin/kcadm.sh update "clients/$client_uuid/roles/$role_name" -r "$APP_REALM" \
-      -s "name=$role_name" \
-      -s "composite=$composite_flag" \
-      -s clientRole=true >/dev/null
+    # Role exists. Final role shape is enforced later by:
+    # - enforce_atomic_permission_roles (atomic permissions),
+    # - sync_composite_role (app.* and delegation.department.*).
+    return 0
   else
     /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles" -r "$APP_REALM" \
       -s "name=$role_name" \
@@ -630,10 +725,13 @@ sync_composite_role() {
     -s composite=true \
     -s clientRole=true >/dev/null
 
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+  current_member_names="$(list_role_names_from_payload "$current_composites")"
+
   desired_members_file="$(mktemp)"
   printf '%s\n' "$desired_members" >"$desired_members_file"
   while IFS= read -r member_role; do
-    if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ]; then
+    if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ] && ! role_name_in_list "$member_role" "$current_member_names"; then
       ensure_composite_role_has_member "$api_client_uuid" "$role_name" "$member_role"
     fi
   done <"$desired_members_file"
@@ -691,7 +789,7 @@ verify_keycloak_permission_model() {
     exit 1
   fi
 
-  if _verify_atomic_permission_roles "$api_client_uuid"; then
+  if ! _verify_atomic_permission_roles "$api_client_uuid"; then
     exit 1
   fi
 
@@ -705,20 +803,31 @@ ensure_api_roles_model() {
     exit 1
   fi
 
+  echo "[1/6] Ensuring atomic permission roles exist in $API_CLIENT_ID"
   printf '%s\n' "$PERMISSION_ROLE_NAMES" | while IFS= read -r role_name; do
     if [ -n "$role_name" ]; then
       ensure_client_role "$api_client_uuid" "$role_name" "false"
     fi
   done
 
+  echo "[2/6] Ensuring app.* composite roles exist"
   printf '%s\n' "$APP_ROLE_NAMES" | while IFS= read -r role_name; do
     if [ -n "$role_name" ]; then
       ensure_client_role "$api_client_uuid" "$role_name" "true"
     fi
   done
 
+  echo "[3/6] Ensuring delegation.department.* composite roles exist"
+  printf '%s\n' "$DEPARTMENT_DELEGATION_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -n "$role_name" ]; then
+      ensure_client_role "$api_client_uuid" "$role_name" "true"
+    fi
+  done
+
+  echo "[4/6] Enforcing atomic permission roles (no nested composites)"
   enforce_atomic_permission_roles
 
+  echo "[5/6] Syncing composite membership for app.* and delegation.department.*"
   sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
   sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
   sync_composite_role "app.contractor" "$ROLE_APP_CONTRACTOR"
@@ -726,15 +835,28 @@ ensure_api_roles_model() {
   sync_composite_role "app.lead_economist" "$ROLE_APP_LEAD_ECONOMIST"
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
+  sync_composite_role "delegation.department.requests.read" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ"
+  sync_composite_role "delegation.department.requests.update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE"
+  sync_composite_role "delegation.department.requests.status_update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE"
+  sync_composite_role "delegation.department.requests.assign" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN"
+  sync_composite_role "delegation.department.offers.read" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_READ"
+  sync_composite_role "delegation.department.offers.accept" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT"
+  sync_composite_role "delegation.department.offers.reject" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_REJECT"
+  sync_composite_role "delegation.department.chats.read" "$ROLE_DELEGATION_DEPARTMENT_CHATS_READ"
+  sync_composite_role "delegation.department.chats.send_message" "$ROLE_DELEGATION_DEPARTMENT_CHATS_SEND_MESSAGE"
+  sync_composite_role "delegation.department.files.read" "$ROLE_DELEGATION_DEPARTMENT_FILES_READ"
+  sync_composite_role "delegation.department.files.upload" "$ROLE_DELEGATION_DEPARTMENT_FILES_UPLOAD"
+  sync_composite_role "delegation.department.files.delete" "$ROLE_DELEGATION_DEPARTMENT_FILES_DELETE"
+  sync_composite_role "delegation.department.dashboard.read" "$ROLE_DELEGATION_DEPARTMENT_DASHBOARD_READ"
+  sync_composite_role "delegation.department.plans.read" "$ROLE_DELEGATION_DEPARTMENT_PLANS_READ"
+  sync_composite_role "delegation.department.plans.manage" "$ROLE_DELEGATION_DEPARTMENT_PLANS_MANAGE"
 
-  # Re-apply only when app.* sync left stale composites on leaf roles.
-  if verify_keycloak_permission_model_silent; then
-    echo "KEYCLOAK_BOOTSTRAP: atomic roles OK after app.* sync (skipped second enforce_atomic)"
-  else
-    echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after app.* sync"
-    enforce_atomic_permission_roles
-  fi
+  # Always re-apply after composite sync:
+  # this keeps department.* and all other atomic permission roles strictly leaf.
+  echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after composite sync"
+  enforce_atomic_permission_roles
 
+  echo "[6/6] Verifying final Keycloak permission model"
   verify_keycloak_permission_model
 }
 

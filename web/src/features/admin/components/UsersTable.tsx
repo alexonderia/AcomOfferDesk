@@ -4,10 +4,13 @@ import {
   Box,
   Button,
   ButtonBase,
+  Checkbox,
   Collapse,
   Dialog,
   DialogContent,
   Divider,
+  FormControlLabel,
+  FormGroup,
   MenuItem,
   Paper,
   Stack,
@@ -46,6 +49,11 @@ import {
   setSubordinateUnavailabilityPeriod,
   type SubordinateProfile
 } from '@shared/api/users/getSubordinateProfile';
+import {
+  getDepartmentDelegations,
+  updateDepartmentDelegations,
+  type UserDepartmentDelegations,
+} from '@shared/api/users/getDepartmentDelegations';
 
 const statusSchema = z.object({
   user_status: z.enum(['review', 'active', 'inactive', 'blacklist'])
@@ -749,6 +757,15 @@ const statusMemoText = `Статусы users:
 4) blacklist
    Пользователь в чёрном списке, доступ запрещён.`;
 
+const delegationGroupTitles: Record<string, string> = {
+  requests: 'Заявки',
+  offers: 'КП / офферы',
+  chats: 'Чаты',
+  files: 'Файлы',
+  dashboard: 'Аналитика',
+  plans: 'Планы',
+};
+
 
 export const UsersTable = ({
   users,
@@ -793,6 +810,10 @@ export const UsersTable = ({
   const [manualContractorError, setManualContractorError] = useState<string | null>(null);
   const [manualContractorSuccess, setManualContractorSuccess] = useState<string | null>(null);
   const [isUpdatingManualContractor, setIsUpdatingManualContractor] = useState(false);
+  const [departmentDelegations, setDepartmentDelegations] = useState<UserDepartmentDelegations | null>(null);
+  const [departmentDelegationsError, setDepartmentDelegationsError] = useState<string | null>(null);
+  const [isLoadingDepartmentDelegations, setIsLoadingDepartmentDelegations] = useState(false);
+  const [isSavingDepartmentDelegations, setIsSavingDepartmentDelegations] = useState(false);
   const { showSystemToast } = useSystemToasts();
 
   const {
@@ -930,6 +951,45 @@ export const UsersTable = ({
     };
   }, [selectedUser?.actions.update_manager, selectedUser?.role_id, selectedUser?.user_id]);
 
+  useEffect(() => {
+    if (!selectedUser || isContractorsTab) {
+      setDepartmentDelegations(null);
+      setDepartmentDelegationsError(null);
+      setIsLoadingDepartmentDelegations(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsLoadingDepartmentDelegations(true);
+    setDepartmentDelegationsError(null);
+    void getDepartmentDelegations(selectedUser.user_id)
+      .then((result) => {
+        if (!isCancelled) {
+          setDepartmentDelegations(result);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          const message = error instanceof Error ? error.message : '';
+          setDepartmentDelegations(null);
+          if (message.includes('403') || message.toLowerCase().includes('forbidden')) {
+            setDepartmentDelegationsError(null);
+            return;
+          }
+          setDepartmentDelegationsError(error instanceof Error ? error.message : 'Не удалось загрузить доступы');
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingDepartmentDelegations(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isContractorsTab, selectedUser?.user_id]);
+
   const rows: UserRow[] = useMemo(
     () =>
       users.map((user) => ({
@@ -943,6 +1003,23 @@ export const UsersTable = ({
       })),
     [getRoleLabel, users]
   );
+
+  const delegationAccessGroups = useMemo(() => {
+    if (!departmentDelegations) {
+      return [];
+    }
+    const grouped = new Map<string, typeof departmentDelegations.accesses>();
+    for (const item of departmentDelegations.accesses) {
+      const list = grouped.get(item.group) ?? [];
+      list.push(item);
+      grouped.set(item.group, list);
+    }
+    return Array.from(grouped.entries()).map(([group, items]) => ({
+      group,
+      title: delegationGroupTitles[group] ?? group,
+      items,
+    }));
+  }, [departmentDelegations]);
 
   const canEditUserStatus = (userId: string) => {
     const user = users.find((item) => item.user_id === userId);
@@ -1063,6 +1140,51 @@ export const UsersTable = ({
       setManualContractorError(error instanceof Error ? error.message : 'Не удалось обновить данные контрагента');
     } finally {
       setIsUpdatingManualContractor(false);
+    }
+  };
+
+  const handleDelegationToggle = (code: string, enabled: boolean) => {
+    setDepartmentDelegations((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return {
+        ...prev,
+        accesses: prev.accesses.map((item) =>
+          item.code === code
+            ? { ...item, enabled }
+            : item
+        ),
+      };
+    });
+  };
+
+  const handleSaveDepartmentDelegations = async () => {
+    if (!selectedUser || !departmentDelegations) {
+      return;
+    }
+    if (!departmentDelegations.canManage) {
+      return;
+    }
+
+    setIsSavingDepartmentDelegations(true);
+    setDepartmentDelegationsError(null);
+    try {
+      const nextState = await updateDepartmentDelegations(
+        selectedUser.user_id,
+        departmentDelegations.accesses
+          .filter((item) => item.enabled)
+          .map((item) => item.code)
+      );
+      setDepartmentDelegations(nextState);
+      showSystemToast({
+        severity: 'success',
+        message: 'Дополнительные доступы обновлены.',
+      });
+    } catch (error) {
+      setDepartmentDelegationsError(error instanceof Error ? error.message : 'Не удалось сохранить доступы');
+    } finally {
+      setIsSavingDepartmentDelegations(false);
     }
   };
 
@@ -1474,6 +1596,68 @@ export const UsersTable = ({
                         {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
                       </Button>
                     </Stack>
+                  </Stack>
+                ) : null}
+
+                {isLoadingDepartmentDelegations ? (
+                  <Alert severity="info">Загрузка дополнительных доступов...</Alert>
+                ) : null}
+                {departmentDelegationsError ? (
+                  <Alert severity="warning">{departmentDelegationsError}</Alert>
+                ) : null}
+                {departmentDelegations ? (
+                  <Stack
+                    spacing={1.2}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: { xs: 1.4, sm: 1.8 },
+                      backgroundColor: 'background.paper'
+                    }}
+                  >
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                      Дополнительные доступы к подразделению
+                    </Typography>
+                    {departmentDelegations.warning ? <Alert severity="warning">{departmentDelegations.warning}</Alert> : null}
+                    <Stack spacing={1.2}>
+                      {delegationAccessGroups.map((group) => (
+                        <Box key={group.group}>
+                          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.4 }}>
+                            {group.title}
+                          </Typography>
+                          <FormGroup>
+                            {group.items.map((item) => (
+                              <FormControlLabel
+                                key={item.code}
+                                control={(
+                                  <Checkbox
+                                    checked={item.enabled}
+                                    onChange={(event) => handleDelegationToggle(item.code, event.target.checked)}
+                                    disabled={!departmentDelegations.canManage || isSavingDepartmentDelegations}
+                                  />
+                                )}
+                                label={item.label}
+                              />
+                            ))}
+                          </FormGroup>
+                        </Box>
+                      ))}
+                    </Stack>
+                    {departmentDelegations.canManage ? (
+                      <Stack direction="row" justifyContent="flex-end">
+                        <Button
+                          variant="outlined"
+                          onClick={() => void handleSaveDepartmentDelegations()}
+                          disabled={isSavingDepartmentDelegations}
+                          sx={{ borderRadius: 1, textTransform: 'none' }}
+                        >
+                          {isSavingDepartmentDelegations ? 'Сохранение...' : 'Сохранить доступы'}
+                        </Button>
+                      </Stack>
+                    ) : (
+                      <Alert severity="info">У вас нет прав на изменение этих доступов.</Alert>
+                    )}
                   </Stack>
                 ) : null}
 

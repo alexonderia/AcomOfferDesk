@@ -15,7 +15,7 @@ from app.core.uow import UnitOfWork
 from app.domain.authorization import has_permission
 from app.domain.exceptions import Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
-from app.domain.policies import CurrentUser, RequestPolicy
+from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
 from app.schemas.requests import (
     DeletedAlertViewed,
     DeletedAlertViewedResponse,
@@ -504,14 +504,15 @@ async def download_file(
     if not has_permission(current_user, PermissionCodes.FILES_DOWNLOAD):
         raise Forbidden("Insufficient permissions for file download")
 
-    can_download_without_scope_check = has_permission(current_user, PermissionCodes.REQUESTS_READ)
-
     async with uow:
         db_file = await uow.files.get_by_id(file_id)
         if db_file is None:
             raise NotFound("File not found")
 
-        if not can_download_without_scope_check:
+        is_normative_file = await uow.files.is_normative_file(file_id=file_id)
+        if is_normative_file:
+            UserPolicy.ensure_can_view_normative_files(current_user)
+        elif current_user.role_id == settings.contractor_role_id:
             linked_to_open_request = await uow.requests.is_file_linked_to_visible_open_request(
                 contractor_user_id=current_user.user_id,
                 file_id=file_id,
@@ -526,6 +527,34 @@ async def download_file(
             )
             if not linked_to_open_request and not linked_to_own_offer and not linked_to_own_message:
                 raise Forbidden("Insufficient permissions for file download")
+        else:
+            owner_user_ids = await _resolve_file_owner_user_ids(uow=uow, file_id=file_id)
+            if not owner_user_ids:
+                raise Forbidden("Insufficient permissions for file download")
+
+            is_allowed = False
+            if has_permission(current_user, PermissionCodes.REQUESTS_READ):
+                standard_scope_owner_ids = await _resolve_standard_owner_scope_ids_for_current_user(
+                    uow=uow,
+                    current_user=current_user,
+                )
+                if standard_scope_owner_ids is None:
+                    is_allowed = True
+                else:
+                    is_allowed = bool(owner_user_ids & standard_scope_owner_ids)
+
+            if (
+                not is_allowed
+                and has_permission(current_user, PermissionCodes.DEPARTMENT_FILES_READ)
+            ):
+                department_scope_owner_ids = await _resolve_department_owner_scope_ids_for_current_user(
+                    uow=uow,
+                    current_user=current_user,
+                )
+                is_allowed = bool(owner_user_ids & department_scope_owner_ids)
+
+            if not is_allowed:
+                raise Forbidden("Insufficient permissions for file download")
 
     file_service = FileService()
     content = await file_service.read_bytes(db_file=db_file)
@@ -539,3 +568,110 @@ async def download_file(
         media_type=media_type,
         headers=headers,
     )
+
+
+async def _resolve_file_owner_user_ids(*, uow: UnitOfWork, file_id: int) -> set[str]:
+    owners = {
+        await uow.requests.get_request_owner_id_by_request_file_id(file_id=file_id),
+        await uow.offers.get_request_owner_id_by_offer_file_id(file_id=file_id),
+        await uow.offers.get_request_owner_id_by_message_file_id(file_id=file_id),
+    }
+    return {owner_id for owner_id in owners if owner_id}
+
+
+async def _resolve_department_owner_scope_ids_for_current_user(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+) -> set[str]:
+    if current_user.role_id not in {
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+        settings.economist_role_id,
+    }:
+        return set()
+    root_user_id = await _resolve_department_root_user_id(
+        uow=uow,
+        current_user=current_user,
+    )
+    if root_user_id is None:
+        return set()
+    return await _collect_hierarchy_user_ids(uow=uow, root_user_id=root_user_id)
+
+
+async def _resolve_standard_owner_scope_ids_for_current_user(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+) -> set[str] | None:
+    if current_user.role_id in {
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+    }:
+        return await _collect_hierarchy_user_ids(uow=uow, root_user_id=current_user.user_id)
+    if current_user.role_id == settings.economist_role_id:
+        lead_root_user_id = await _resolve_lead_economist_scope_root_user_id(
+            uow=uow,
+            current_user_id=current_user.user_id,
+        )
+        visible = await _collect_hierarchy_user_ids(uow=uow, root_user_id=lead_root_user_id)
+        return visible | {current_user.user_id}
+    return None
+
+
+async def _resolve_lead_economist_scope_root_user_id(
+    *,
+    uow: UnitOfWork,
+    current_user_id: str,
+) -> str:
+    cursor_id: str | None = current_user_id
+    visited: set[str] = set()
+    while cursor_id is not None and cursor_id not in visited:
+        visited.add(cursor_id)
+        cursor_user = await uow.users.get_by_id(cursor_id)
+        if cursor_user is None:
+            break
+        if cursor_user.id_role == settings.lead_economist_role_id:
+            return cursor_user.id
+        cursor_id = cursor_user.id_parent
+    return current_user_id
+
+
+async def _resolve_department_root_user_id(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+) -> str | None:
+    if current_user.role_id == settings.project_manager_role_id:
+        return current_user.user_id
+    cursor_id: str | None = current_user.user_id
+    visited: set[str] = set()
+    while cursor_id is not None and cursor_id not in visited:
+        visited.add(cursor_id)
+        cursor_user = await uow.users.get_by_id(cursor_id)
+        if cursor_user is None:
+            return None
+        if cursor_user.id_role == settings.project_manager_role_id:
+            return cursor_user.id
+        cursor_id = cursor_user.id_parent
+    return None
+
+
+async def _collect_hierarchy_user_ids(*, uow: UnitOfWork, root_user_id: str) -> set[str]:
+    rows = await uow.users.list_active_user_parent_pairs()
+    children_by_parent: dict[str, list[str]] = {}
+    for user_id, parent_id in rows:
+        if parent_id is None:
+            continue
+        children_by_parent.setdefault(parent_id, []).append(user_id)
+
+    visible: set[str] = {root_user_id}
+    queue: list[str] = [root_user_id]
+    while queue:
+        manager_id = queue.pop()
+        for child_id in children_by_parent.get(manager_id, []):
+            if child_id in visible:
+                continue
+            visible.add(child_id)
+            queue.append(child_id)
+    return visible

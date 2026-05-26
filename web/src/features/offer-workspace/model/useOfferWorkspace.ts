@@ -275,6 +275,7 @@ export const useOfferWorkspace = () => {
   const canUpload = Boolean(selectedOffer?.actions.upload_file) && (!isContractor || isSelectedOfferSubmitted);
   const canDeleteFile = Boolean(selectedOffer?.actions.delete_file) && (!isContractor || isSelectedOfferSubmitted);
   const canSendMessage = chatActions.send_message;
+  const canViewMessages = chatActions.view_messages;
   const canSendMessageWithAttachments = chatActions.attach_file || canSendMessage;
   const canSetReadMessages = chatActions.mark_messages_read;
   const canSetReceivedMessages = chatActions.mark_messages_received;
@@ -431,6 +432,7 @@ export const useOfferWorkspace = () => {
     canUpload,
     canDeleteFile,
     canSendMessage,
+    canViewMessages,
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,

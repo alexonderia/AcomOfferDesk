@@ -14,7 +14,8 @@ param(
   [switch]$IncludeE2E,
   [switch]$StrictE2E,
   [switch]$ProvisionE2EUsers,
-  [switch]$KeepProvisionedE2EUsers
+  [switch]$KeepProvisionedE2EUsers,
+  [switch]$RepairKeycloak
 )
 
 $ErrorActionPreference = "Stop"
@@ -125,7 +126,13 @@ if ($effectiveKeycloakInternalBaseUrl) {
   Write-Host "Using KEYCLOAK_INTERNAL_BASE_URL=$effectiveKeycloakInternalBaseUrl for keycloak permission model checks"
 }
 try {
-  & "$RootDir/scripts/check-keycloak.ps1" -EnvFile $EnvFile
+  $keycloakCheckParams = @{
+    EnvFile = $EnvFile
+  }
+  if ($RepairKeycloak) {
+    $keycloakCheckParams.Repair = $true
+  }
+  & "$RootDir/scripts/check-keycloak.ps1" @keycloakCheckParams
   Assert-StepSucceeded -StepName "keycloak permission model checks"
 } finally {
   if ($effectiveKeycloakInternalBaseUrl) {

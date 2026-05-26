@@ -337,6 +337,8 @@ users.read
 users.status.update
 users.manager.update
 normative_files.read
+dashboard.process.read
+dashboard.savings.read
 dashboard.plans.read
 unavailability.manage_own
 unavailability.manage_subordinate

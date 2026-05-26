@@ -33,6 +33,7 @@ def test_request_action_builder_reflects_permissions_and_status(make_current_use
         current_user,
         owner_user_id="owner-1",
         status="open",
+        can_manage_in_scope=True,
         can_create_offer=False,
         deleted_alert_count=2,
     )
@@ -44,6 +45,28 @@ def test_request_action_builder_reflects_permissions_and_status(make_current_use
     assert actions.can_delete_files is True
     assert actions.can_send_email_notifications is True
     assert actions.can_mark_deleted_alert_viewed is True
+
+
+def test_request_action_builder_hides_edit_actions_outside_management_scope(make_current_user):
+    current_user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_READ,
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.REQUESTS_STATUS_UPDATE,
+            PermissionCodes.REQUESTS_FILES_UPLOAD,
+        },
+    )
+
+    actions = RequestActionBuilder.build(
+        current_user,
+        owner_user_id="peer-owner",
+        status="open",
+        can_manage_in_scope=False,
+    )
+
+    assert actions.can_edit is False
+    assert actions.can_upload_files is False
 
 
 def test_offer_action_builder_contractor_does_not_get_internal_accept_reject(make_current_user):
@@ -66,6 +89,7 @@ def test_offer_action_builder_contractor_does_not_get_internal_accept_reject(mak
         request_owner_user_id="owner-1",
         contractor_user_id="c-1",
         offer_status="submitted",
+        can_manage_in_scope=True,
     )
 
     assert actions.can_open_workspace is True
@@ -93,6 +117,8 @@ def test_chat_action_builder_reflects_chat_permissions(make_current_user):
         offer_owner_user_id="contractor-1",
         request_owner_user_id=user.user_id,
         can_acknowledge_messages=True,
+        can_view_in_scope=True,
+        can_send_in_scope=True,
     )
 
     assert actions.can_view_messages is True
@@ -119,6 +145,7 @@ def test_offer_action_builder_manual_offer_permission_does_not_grant_file_action
         request_owner_user_id="owner-1",
         contractor_user_id="contractor-1",
         offer_status="submitted",
+        can_manage_in_scope=True,
         offer_is_manual=True,
     )
 
@@ -144,6 +171,27 @@ def test_user_action_builder_contractor_not_given_internal_controls(make_current
     assert actions.can_update_role is False
     assert actions.can_update_manager is False
     assert actions.can_manage_manual_contractor is False
+
+
+def test_request_action_builder_project_manager_never_gets_edit_even_in_scope(make_current_user):
+    current_user = make_current_user(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_READ,
+            PermissionCodes.REQUESTS_OWNER_CHANGE,
+        },
+    )
+
+    actions = RequestActionBuilder.build(
+        current_user,
+        owner_user_id="eco-1",
+        status="open",
+        can_manage_in_scope=True,
+    )
+
+    assert actions.can_edit is False
+    assert actions.can_change_owner is True
 
 
 def test_user_action_builder_internal_manager_can_manage_subordinate(make_current_user):

@@ -37,6 +37,12 @@ class _DashboardUsersRepo:
         self._rows = rows or []
         self._parent_pairs = parent_pairs or []
 
+    async def get_by_id(self, user_id: str):
+        for user, _profile, _role in self._rows:
+            if user.id == user_id:
+                return user
+        return None
+
     async def list_staff_with_profiles_and_roles_for_dashboard(self, *, role_ids):
         return [row for row in self._rows if row[0].id_role in role_ids]
 
@@ -1429,6 +1435,93 @@ def test_file_download_allows_department_files_read_for_department_scope(
 
     assert response.status_code == 200
     assert response.content == b"department-linked"
+
+
+def test_file_download_denies_offer_file_without_offer_workspace_permission(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"must-not-be-used"
+
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    users_repo = _DownloadUsersRepo(
+        users={
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+        },
+        parent_pairs=[
+            ("lead-1", "pm-1"),
+            ("owner-1", "lead-1"),
+        ],
+    )
+    set_uow(
+        _DownloadUow(
+            requests_repo=_DownloadRequestsRepo(owner_user_id=None),
+            offers_repo=_DownloadOffersRepo(owner_from_offer_file="owner-1"),
+            users_repo=users_repo,
+        )
+    )
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.REQUESTS_READ},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 403
+
+
+def test_file_download_allows_offer_file_with_offer_workspace_permission(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"offer-file"
+
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    users_repo = _DownloadUsersRepo(
+        users={
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+        },
+        parent_pairs=[
+            ("lead-1", "pm-1"),
+            ("owner-1", "lead-1"),
+        ],
+    )
+    set_uow(
+        _DownloadUow(
+            requests_repo=_DownloadRequestsRepo(owner_user_id=None),
+            offers_repo=_DownloadOffersRepo(owner_from_offer_file="owner-1"),
+            users_repo=users_repo,
+        )
+    )
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.OFFERS_WORKSPACE_READ},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 200
+    assert response.content == b"offer-file"
 
 
 def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_transport(

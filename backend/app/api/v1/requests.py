@@ -43,7 +43,9 @@ from app.schemas.requests import (
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService
 from app.services.notifications import NotificationService
+from app.services.department_scope import DepartmentScopeService
 from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
+from app.services.staff_access_scope import StaffAccessScopeService
 
 router = APIRouter()
 
@@ -93,7 +95,12 @@ def _request_stats_schema(item) -> RequestStatsSchema:
     )
 
 
-def _request_item_schema(current_user: CurrentUser, item) -> RequestItemSchema:
+def _request_item_schema(
+    current_user: CurrentUser,
+    item,
+    *,
+    can_manage_in_scope: bool,
+) -> RequestItemSchema:
     return RequestItemSchema(
         request_id=item.request_id,
         description=item.description,
@@ -116,12 +123,18 @@ def _request_item_schema(current_user: CurrentUser, item) -> RequestItemSchema:
             current_user,
             owner_user_id=item.owner_user_id,
             status=item.status,
+            can_manage_in_scope=can_manage_in_scope,
             deleted_alert_count=item.count_deleted_alert,
         ),
     )
 
 
-def _open_request_item_schema(current_user: CurrentUser, item) -> OpenRequestItemSchema:
+def _open_request_item_schema(
+    current_user: CurrentUser,
+    item,
+    *,
+    can_manage_in_scope: bool,
+) -> OpenRequestItemSchema:
     can_create_offer = (
         current_user.role_id == settings.contractor_role_id
         and item.status == "open"
@@ -152,6 +165,7 @@ def _open_request_item_schema(current_user: CurrentUser, item) -> OpenRequestIte
                     request_owner_user_id=item.owner_user_id,
                     contractor_user_id=current_user.user_id,
                     offer_status=offer.status,
+                    can_manage_in_scope=True,
                 ),
             )
             for offer in item.offers
@@ -160,8 +174,42 @@ def _open_request_item_schema(current_user: CurrentUser, item) -> OpenRequestIte
             current_user,
             owner_user_id=item.owner_user_id,
             status=item.status,
+            can_manage_in_scope=can_manage_in_scope,
             can_create_offer=can_create_offer,
         ),
+    )
+
+
+async def _can_manage_request_in_scope(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+    request_owner_user_id: str,
+) -> bool:
+    manageable_owner_ids = await _resolve_manageable_owner_ids_in_scope(
+        uow=uow,
+        current_user=current_user,
+        owner_user_ids={request_owner_user_id},
+    )
+    return request_owner_user_id in manageable_owner_ids
+
+
+async def _resolve_manageable_owner_ids_in_scope(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+    owner_user_ids: set[str],
+) -> set[str]:
+    if current_user.role_id == settings.contractor_role_id:
+        return set()
+    if not owner_user_ids:
+        return set()
+    users = getattr(uow, "users", None)
+    if users is None or not callable(getattr(users, "get_by_id", None)):
+        return set()
+    return await StaffAccessScopeService(users).resolve_manageable_owner_ids(
+        current_user=current_user,
+        candidate_owner_ids=owner_user_ids,
     )
 
 
@@ -174,10 +222,24 @@ async def list_requests(
     async with uow:
         service = _build_request_service(uow)
         items = await service.list_requests(current_user=current_user)
+        manageable_owner_ids = await _resolve_manageable_owner_ids_in_scope(
+            uow=uow,
+            current_user=current_user,
+            owner_user_ids={item.owner_user_id for item in items},
+        )
+        schema_items = []
+        for item in items:
+            schema_items.append(
+                _request_item_schema(
+                    current_user,
+                    item,
+                    can_manage_in_scope=item.owner_user_id in manageable_owner_ids,
+                )
+            )
 
     return RequestListResponse(
         data=RequestListData(
-            items=[_request_item_schema(current_user, item) for item in items],
+            items=schema_items,
         ),
     )
 
@@ -192,12 +254,30 @@ async def list_open_requests(
         service = _build_request_service(uow)
         if current_user.role_id == settings.contractor_role_id:
             items = await service.list_open_requests_for_contractor(current_user=current_user)
+            schema_items = [
+                _open_request_item_schema(current_user, item, can_manage_in_scope=False)
+                for item in items
+            ]
         else:
             items = await service.list_open_requests(current_user=current_user)
+            manageable_owner_ids = await _resolve_manageable_owner_ids_in_scope(
+                uow=uow,
+                current_user=current_user,
+                owner_user_ids={item.owner_user_id for item in items},
+            )
+            schema_items = []
+            for item in items:
+                schema_items.append(
+                    _open_request_item_schema(
+                        current_user,
+                        item,
+                        can_manage_in_scope=item.owner_user_id in manageable_owner_ids,
+                    )
+                )
 
     return OpenRequestListResponse(
         data=OpenRequestListData(
-            items=[_open_request_item_schema(current_user, item) for item in items],
+            items=schema_items,
         ),
     )
 
@@ -214,7 +294,10 @@ async def list_offered_requests(
 
     return OpenRequestListResponse(
         data=OpenRequestListData(
-            items=[_open_request_item_schema(current_user, item) for item in items],
+            items=[
+                _open_request_item_schema(current_user, item, can_manage_in_scope=False)
+                for item in items
+            ],
         ),
     )
 
@@ -229,16 +312,23 @@ async def get_request_details(
     async with uow:
         service = _build_request_service(uow)
         item = await service.get_request_details(current_user=current_user, request_id=request_id)
+        can_manage = await _can_manage_request_in_scope(
+            uow=uow,
+            current_user=current_user,
+            request_owner_user_id=item.owner_user_id,
+        )
     request_actions = RequestActionBuilder.build(
         current_user,
         owner_user_id=item.owner_user_id,
         status=item.status,
+        can_manage_in_scope=can_manage,
         can_create_offer=(
             item.status == "open"
             and RequestPolicy.can_create_manual_offer(
                 current_user,
                 request_owner_user_id=item.owner_user_id,
             )
+            and can_manage
         ),
         deleted_alert_count=item.count_deleted_alert,
     )
@@ -293,6 +383,7 @@ async def get_request_details(
                             request_owner_user_id=item.owner_user_id,
                             contractor_user_id=offer.contractor_user_id,
                             offer_status=offer.status,
+                            can_manage_in_scope=can_manage,
                         ),
                     )
                     for offer in item.offers
@@ -528,20 +619,58 @@ async def download_file(
             if not linked_to_open_request and not linked_to_own_offer and not linked_to_own_message:
                 raise Forbidden("Insufficient permissions for file download")
         else:
-            owner_user_ids = await _resolve_file_owner_user_ids(uow=uow, file_id=file_id)
+            request_owner_user_id = await uow.requests.get_request_owner_id_by_request_file_id(file_id=file_id)
+            offer_owner_user_id = await uow.offers.get_request_owner_id_by_offer_file_id(file_id=file_id)
+            message_owner_user_id = await uow.offers.get_request_owner_id_by_message_file_id(file_id=file_id)
+            owner_user_ids = {
+                owner_id
+                for owner_id in (
+                    request_owner_user_id,
+                    offer_owner_user_id,
+                    message_owner_user_id,
+                )
+                if owner_id
+            }
             if not owner_user_ids:
                 raise Forbidden("Insufficient permissions for file download")
 
             is_allowed = False
-            if has_permission(current_user, PermissionCodes.REQUESTS_READ):
+            standard_scope_owner_ids: set[str] | None = None
+            if (
+                has_permission(current_user, PermissionCodes.REQUESTS_READ)
+                or has_permission(current_user, PermissionCodes.OFFERS_WORKSPACE_READ)
+                or has_permission(current_user, PermissionCodes.CHAT_READ)
+            ):
                 standard_scope_owner_ids = await _resolve_standard_owner_scope_ids_for_current_user(
                     uow=uow,
                     current_user=current_user,
                 )
+
+            def _owner_in_standard_scope(owner_user_id: str) -> bool:
                 if standard_scope_owner_ids is None:
-                    is_allowed = True
-                else:
-                    is_allowed = bool(owner_user_ids & standard_scope_owner_ids)
+                    return True
+                return owner_user_id in standard_scope_owner_ids
+
+            if (
+                request_owner_user_id is not None
+                and has_permission(current_user, PermissionCodes.REQUESTS_READ)
+                and _owner_in_standard_scope(request_owner_user_id)
+            ):
+                is_allowed = True
+            if (
+                not is_allowed
+                and offer_owner_user_id is not None
+                and has_permission(current_user, PermissionCodes.OFFERS_WORKSPACE_READ)
+                and _owner_in_standard_scope(offer_owner_user_id)
+            ):
+                is_allowed = True
+            if (
+                not is_allowed
+                and message_owner_user_id is not None
+                and has_permission(current_user, PermissionCodes.CHAT_READ)
+                and _owner_in_standard_scope(message_owner_user_id)
+            ):
+                is_allowed = True
 
             if (
                 not is_allowed
@@ -570,15 +699,6 @@ async def download_file(
     )
 
 
-async def _resolve_file_owner_user_ids(*, uow: UnitOfWork, file_id: int) -> set[str]:
-    owners = {
-        await uow.requests.get_request_owner_id_by_request_file_id(file_id=file_id),
-        await uow.offers.get_request_owner_id_by_offer_file_id(file_id=file_id),
-        await uow.offers.get_request_owner_id_by_message_file_id(file_id=file_id),
-    }
-    return {owner_id for owner_id in owners if owner_id}
-
-
 async def _resolve_department_owner_scope_ids_for_current_user(
     *,
     uow: UnitOfWork,
@@ -604,19 +724,33 @@ async def _resolve_standard_owner_scope_ids_for_current_user(
     uow: UnitOfWork,
     current_user: CurrentUser,
 ) -> set[str] | None:
+    if current_user.role_id == settings.superadmin_role_id:
+        return None
     if current_user.role_id in {
         settings.project_manager_role_id,
         settings.lead_economist_role_id,
+        settings.economist_role_id,
     }:
-        return await _collect_hierarchy_user_ids(uow=uow, root_user_id=current_user.user_id)
-    if current_user.role_id == settings.economist_role_id:
+        users = getattr(uow, "users", None)
+        if users is not None and callable(getattr(users, "get_by_id", None)):
+            department_owner_ids = await DepartmentScopeService(users).resolve_department_owner_ids_for_current_user(
+                current_user=current_user,
+            )
+            if department_owner_ids:
+                return set(department_owner_ids)
+
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+        }:
+            return await _collect_hierarchy_user_ids(uow=uow, root_user_id=current_user.user_id)
         lead_root_user_id = await _resolve_lead_economist_scope_root_user_id(
             uow=uow,
             current_user_id=current_user.user_id,
         )
         visible = await _collect_hierarchy_user_ids(uow=uow, root_user_id=lead_root_user_id)
         return visible | {current_user.user_id}
-    return None
+    return set()
 
 
 async def _resolve_lead_economist_scope_root_user_id(

@@ -131,7 +131,7 @@ def test_build_current_user_from_keycloak_delegation_roles_do_not_become_permiss
     )
 
 
-def test_build_current_user_from_keycloak_keeps_known_department_permission_from_token():
+def test_build_current_user_from_keycloak_grants_department_permission_via_delegation_role():
     current_user = build_current_user_from_keycloak(
         user_id="u-dept-1",
         role_id=settings.economist_role_id,
@@ -139,7 +139,6 @@ def test_build_current_user_from_keycloak_keeps_known_department_permission_from
         api_roles=frozenset(
             {
                 PermissionCodes.REQUESTS_READ,
-                PermissionCodes.DEPARTMENT_REQUESTS_READ,
                 "delegation.department.requests.read",
             }
         ),
@@ -148,6 +147,23 @@ def test_build_current_user_from_keycloak_keeps_known_department_permission_from
     assert PermissionCodes.REQUESTS_READ in current_user.permissions
     assert PermissionCodes.DEPARTMENT_REQUESTS_READ in current_user.permissions
     assert "delegation.department.requests.read" in current_user.delegation_roles
+
+
+def test_build_current_user_from_keycloak_ignores_department_permission_without_delegation_role():
+    current_user = build_current_user_from_keycloak(
+        user_id="u-dept-raw-atomic",
+        role_id=settings.economist_role_id,
+        status="active",
+        api_roles=frozenset(
+            {
+                PermissionCodes.REQUESTS_READ,
+                PermissionCodes.DEPARTMENT_REQUESTS_READ,
+            }
+        ),
+    )
+
+    assert PermissionCodes.REQUESTS_READ in current_user.permissions
+    assert PermissionCodes.DEPARTMENT_REQUESTS_READ not in current_user.permissions
 
 
 def test_build_current_user_from_keycloak_does_not_infer_department_permission_from_regular_permission():

@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload
 from app.core.datetime_utils import to_db_timestamp, utc_now_naive
 from app.models.orm_models import (
     Chat,
+    ChatParticipant,
     CompanyContact,
     File,
     Message,
@@ -307,6 +308,12 @@ class RequestRepository:
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
             .join(Offer, Offer.id == Chat.id)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == current_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)
@@ -360,6 +367,12 @@ class RequestRepository:
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == contractor_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)
@@ -743,6 +756,12 @@ class RequestRepository:
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == current_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)

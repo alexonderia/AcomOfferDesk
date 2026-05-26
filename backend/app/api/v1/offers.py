@@ -121,6 +121,7 @@ async def get_contractor_request_view(
                         request_owner_user_id=item.owner_user_id,
                         contractor_user_id=current_user.user_id,
                         offer_status=item.existing_offer.status,
+                        can_manage_in_scope=True,
                     ),
                 }
                 if item.existing_offer is not None
@@ -130,6 +131,7 @@ async def get_contractor_request_view(
                 current_user,
                 owner_user_id=item.owner_user_id,
                 status=item.status,
+                can_manage_in_scope=False,
                 can_create_offer=can_create_offer,
             ),
         },
@@ -263,7 +265,9 @@ async def get_offer_workspace(
         current_user,
         owner_user_id=item.request.owner_user_id,
         status=item.request.status,
-        can_create_offer=resolved.can_create_new_offer,
+        can_manage_in_scope=getattr(resolved, "can_manage_request_in_scope", False),
+        can_create_offer=resolved.can_create_new_offer
+        and getattr(resolved, "can_manage_request_in_scope", False),
     )
 
     return OfferWorkspaceResponse(
@@ -309,6 +313,7 @@ async def get_offer_workspace(
                         request_owner_user_id=item.request.owner_user_id,
                         contractor_user_id=item.contractor.user_id,
                         offer_status=request_offer.status,
+                        can_manage_in_scope=getattr(resolved, "can_manage_request_in_scope", False),
                         offer_is_manual=resolved.offer_is_manual,
                     ),
                 }

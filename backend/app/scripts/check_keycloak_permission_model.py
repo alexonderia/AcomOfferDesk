@@ -12,6 +12,10 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.request import build_opener, ProxyHandler
 
+from app.domain.department_delegations import (
+    DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION,
+    get_department_permission_codes,
+)
 from app.scripts.keycloak_role_manifest import load_app_role_members, load_permission_role_names
 
 REQUIRED_APP_ROLES = (
@@ -24,6 +28,18 @@ REQUIRED_APP_ROLES = (
     "app.contractor",
 )
 REQUIRED_SERVICE_ROLES = ("query-users", "view-users", "manage-users")
+OPTIONAL_COMPOSITE_MEMBERS_BY_APP_ROLE: dict[str, set[str]] = {
+    "app.superadmin": {
+        "department.chats.read",
+        "department.chats.send_message",
+        "department.dashboard.read",
+        "department.files.delete",
+        "department.files.read",
+        "department.files.upload",
+        "department.plans.manage",
+        "department.plans.read",
+    }
+}
 _WEAK_SECRET_MARKERS = {
     "change-me",
     "changeme",
@@ -501,6 +517,7 @@ def _check_api_client_roles(report: Report, admin_api: KeycloakAdminApi, api_cli
     roles = admin_api.get_client_roles(client_uuid)
     role_names = {str(role.get("name") or "").strip() for role in roles if role.get("name")}
     known_permissions = _load_known_permissions_from_source()
+    department_permissions = get_department_permission_codes()
 
     missing_permissions = sorted(permission for permission in known_permissions if permission not in role_names)
     if missing_permissions:
@@ -529,6 +546,19 @@ def _check_api_client_roles(report: Report, admin_api: KeycloakAdminApi, api_cli
             report.ok(f"Role '{app_role}' exists and composite")
         else:
             report.fail(f"Role '{app_role}' exists but is not composite")
+        app_role_composites = admin_api.get_role_composites(client_uuid, app_role)
+        app_role_composite_names = {
+            str(item.get("name") or "").strip()
+            for item in app_role_composites
+            if isinstance(item, dict) and item.get("name")
+        }
+        if app_role != "app.superadmin":
+            direct_department_members = sorted(app_role_composite_names & department_permissions)
+            if direct_department_members:
+                report.fail(
+                    f"{app_role}: direct department.* members are forbidden; use delegation.* roles only: "
+                    f"{', '.join(direct_department_members)}"
+                )
 
     economist_composites = admin_api.get_role_composites(client_uuid, "app.economist")
     economist_composite_names = {
@@ -536,10 +566,15 @@ def _check_api_client_roles(report: Report, admin_api: KeycloakAdminApi, api_cli
         for item in economist_composites
         if isinstance(item, dict) and item.get("name")
     }
-    if "dashboard.plans.read" in economist_composite_names:
-        report.ok("app.economist includes dashboard.plans.read")
-    else:
-        report.fail("app.economist is missing dashboard.plans.read")
+    for dashboard_permission in (
+        "dashboard.process.read",
+        "dashboard.savings.read",
+        "dashboard.plans.read",
+    ):
+        if dashboard_permission in economist_composite_names:
+            report.ok(f"app.economist includes {dashboard_permission}")
+        else:
+            report.fail(f"app.economist is missing {dashboard_permission}")
 
     superadmin_composites = admin_api.get_role_composites(client_uuid, "app.superadmin")
     superadmin_names = {
@@ -547,7 +582,12 @@ def _check_api_client_roles(report: Report, admin_api: KeycloakAdminApi, api_cli
         for item in superadmin_composites
         if isinstance(item, dict) and item.get("name")
     }
-    missing_from_superadmin = sorted(permission for permission in known_permissions if permission not in superadmin_names)
+    optional_superadmin_members = OPTIONAL_COMPOSITE_MEMBERS_BY_APP_ROLE.get("app.superadmin", set())
+    missing_from_superadmin = sorted(
+        permission
+        for permission in known_permissions
+        if permission not in superadmin_names and permission not in optional_superadmin_members
+    )
     if missing_from_superadmin:
         report.fail("app.superadmin does not include all PermissionCodes")
     else:
@@ -566,6 +606,27 @@ def _check_api_client_roles(report: Report, admin_api: KeycloakAdminApi, api_cli
             if bool(role_payload.get("composite")):
                 composites = admin_api.get_role_composites(client_uuid, delegation_role)
                 report.ok(f"{delegation_role}: composite, nested roles={len(composites)}")
+                composite_names = {
+                    str(item.get("name") or "").strip()
+                    for item in composites
+                    if isinstance(item, dict) and item.get("name")
+                }
+                expected_permission = DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION.get(delegation_role)
+                if expected_permission is not None:
+                    if expected_permission in composite_names:
+                        report.ok(f"{delegation_role}: grants expected permission '{expected_permission}'")
+                    else:
+                        report.fail(
+                            f"{delegation_role}: missing mapped permission '{expected_permission}'"
+                        )
+                    unexpected_department_permissions = sorted(
+                        (composite_names & department_permissions) - {expected_permission}
+                    )
+                    if unexpected_department_permissions:
+                        report.fail(
+                            f"{delegation_role}: unexpected department.* members: "
+                            f"{', '.join(unexpected_department_permissions)}"
+                        )
             else:
                 report.warn(f"{delegation_role}: non-composite delegation role")
 
@@ -704,11 +765,15 @@ def _check_strict_permission_model(
             for item in admin_api.get_role_composites(api_client_uuid, app_role)
             if isinstance(item, dict) and item.get("name")
         }
-        missing = sorted(expected_members - actual_members)
+        optional_members = OPTIONAL_COMPOSITE_MEMBERS_BY_APP_ROLE.get(app_role, set())
+        missing = sorted((expected_members - actual_members) - optional_members)
         extra = sorted(actual_members - expected_members)
         if missing or extra:
             if missing:
-                report.fail(f"{app_role}: missing composite members: {', '.join(missing)}")
+                report.fail(
+                    f"{app_role}: missing composite members: {', '.join(missing)} "
+                    "(run check-keycloak with --repair / KEYCLOAK_PERMISSION_REPAIR=1)"
+                )
             if extra:
                 report.fail(f"{app_role}: unexpected composite members: {', '.join(extra)}")
         else:

@@ -27,6 +27,7 @@ from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.files import FileService
 from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.users import _bind_keycloak_account
@@ -276,6 +277,7 @@ class OfferService:
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
+        self._staff_scope = StaffAccessScopeService(users)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -825,7 +827,7 @@ class OfferService:
             )
         elif has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD):
             await self._ensure_can_manage_offer_for_internal_user(
-                current_user,
+                current_user=current_user,
                 request_owner_user_id=request.id_user,
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
@@ -902,7 +904,7 @@ class OfferService:
             )
         elif has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE):
             await self._ensure_can_manage_offer_for_internal_user(
-                current_user,
+                current_user=current_user,
                 request_owner_user_id=request.id_user,
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
@@ -1364,7 +1366,7 @@ class OfferService:
             )
             if (
                 current_user.role_id != settings.contractor_role_id
-                and not await self._is_inside_hierarchy_management_scope(
+                and not await self._staff_scope.can_view_request_owner(
                     current_user=current_user,
                     request_owner_user_id=request_owner_user_id,
                 )
@@ -1395,7 +1397,7 @@ class OfferService:
             )
             if (
                 current_user.role_id != settings.contractor_role_id
-                and not await self._is_inside_hierarchy_management_scope(
+                and not await self._staff_scope.can_view_chat_for_request(
                     current_user=current_user,
                     request_owner_user_id=request_owner_user_id,
                 )
@@ -1427,7 +1429,7 @@ class OfferService:
             )
             if (
                 current_user.role_id != settings.contractor_role_id
-                and not await self._is_inside_hierarchy_management_scope(
+                and not await self._staff_scope.can_send_chat_for_request(
                     current_user=current_user,
                     request_owner_user_id=request_owner_user_id,
                 )
@@ -1498,7 +1500,7 @@ class OfferService:
                 settings.lead_economist_role_id,
                 settings.economist_role_id,
             }
-            and not await self._is_inside_hierarchy_management_scope(
+            and not await self._staff_scope.can_manage_request_owner(
                 current_user=current_user,
                 request_owner_user_id=request_owner_user_id,
             )
@@ -1563,17 +1565,9 @@ class OfferService:
         current_user: CurrentUser,
         request_owner_user_id: str,
     ) -> bool:
-        if request_owner_user_id == current_user.user_id:
-            return True
-        if current_user.role_id not in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
-            return True
-        return await self._is_descendant(
-            ancestor_user_id=current_user.user_id,
-            target_user_id=request_owner_user_id,
+        return await self._staff_scope.is_hierarchy_manager_of(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
         )
 
     async def _is_descendant(

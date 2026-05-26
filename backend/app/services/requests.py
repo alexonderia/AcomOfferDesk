@@ -20,6 +20,7 @@ from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.email_notifications import EmailNotificationService
 from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.files import FileService
 from app.services.notifications import NotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
@@ -231,6 +232,7 @@ class RequestService:
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
+        self._staff_scope = StaffAccessScopeService(users)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -968,7 +970,6 @@ class RequestService:
                 request_id=request_id,
                 current_user_id=current_user.user_id,
             )
-
         offers_by_id: dict[int, OfferItem] = {}
         for offer, offer_file, profile, company_contact, unread_messages_count in offer_rows:
             offer_item = offers_by_id.get(offer.id)
@@ -1026,6 +1027,8 @@ class RequestService:
         )
 
     async def _resolve_visible_owner_ids_for_staff_scope(self, *, current_user: CurrentUser) -> list[str] | None:
+        if current_user.role_id == settings.superadmin_role_id:
+            return None
         if current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
@@ -1044,7 +1047,8 @@ class RequestService:
                 current_user_id=current_user.user_id,
             )
             return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=lead_root_user_id)
-        return None
+        # Non-hierarchy roles must not receive implicit global request visibility.
+        return []
 
     async def _ensure_can_manage_request_files(
         self,
@@ -1188,15 +1192,9 @@ class RequestService:
     ) -> bool:
         if request_owner_user_id == current_user.user_id:
             return True
-        if current_user.role_id not in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
-            return True
-        return await self._is_descendant(
-            ancestor_user_id=current_user.user_id,
-            target_user_id=request_owner_user_id,
+        return await self._staff_scope.is_hierarchy_manager_of(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
         )
 
     async def _ensure_can_status_update_request(

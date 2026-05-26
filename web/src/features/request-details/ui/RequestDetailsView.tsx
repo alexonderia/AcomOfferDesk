@@ -113,7 +113,7 @@ export const RequestDetailsView = () => {
         () => Boolean(requestDetails?.actions.view_amounts),
         [requestDetails?.actions.view_amounts]
     );
-    const effectiveDeadlineForChange = status === 'review' ? todayDate : deadline;
+    const effectiveDeadlineForChange = deadline;
     const hasRequestFieldChanges =
         status !== baselineStatus ||
         effectiveDeadlineForChange !== baselineDeadline ||

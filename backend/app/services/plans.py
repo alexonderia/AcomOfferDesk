@@ -18,6 +18,7 @@ from app.repositories.economy_plans import EconomyPlanRepository, PlanDistributi
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 MONTH_PERIOD_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -169,6 +170,7 @@ class PlanService:
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
+        self._staff_scope = StaffAccessScopeService(users)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -758,6 +760,18 @@ class PlanService:
         period_plans: list[EconomyPlan],
         current_user: CurrentUser,
     ) -> list[EconomyPlan]:
+        if current_user.role_id == settings.economist_role_id:
+            module_lead_user_id = await self._staff_scope.resolve_module_root_user_id(
+                user_id=current_user.user_id,
+                role_id=current_user.role_id,
+            )
+            module_entry_plans = self._find_entry_plans_for_user(
+                period_plans=period_plans,
+                user_id=module_lead_user_id,
+            )
+            if module_entry_plans:
+                return module_entry_plans
+
         if current_user.role_id != settings.superadmin_role_id:
             return self._find_entry_plans_for_user(
                 period_plans=period_plans,
@@ -1409,6 +1423,10 @@ class PlanService:
             target_user_id=requested_root_user_id,
         ):
             return
+        if current_user.role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
+            module_owner_ids = await self._staff_scope.resolve_module_owner_ids(current_user=current_user)
+            if requested_root_user_id in set(module_owner_ids):
+                return
         raise Forbidden("Requested plan branch is outside your management scope")
 
     async def _ensure_can_manage_node(self, *, current_user: CurrentUser, plan_owner_user_id: str) -> None:

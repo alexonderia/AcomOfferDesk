@@ -52,8 +52,8 @@ Legend: `Y` = granted, `N` = not granted.
 | `chat.receipts.mark_read` | Y | N | N | Y | Y | N | Y |
 | `feedback.read` | Y | N | N | N | N | N | N |
 | `feedback.create` | Y | Y | Y | Y | Y | Y | Y |
-| `dashboard.process.read` | Y | N | Y | Y | N | N | N |
-| `dashboard.savings.read` | Y | N | Y | Y | N | N | N |
+| `dashboard.process.read` | Y | N | Y | Y | Y | N | N |
+| `dashboard.savings.read` | Y | N | Y | Y | Y | N | N |
 | `dashboard.plans.read` | Y | N | Y | Y | Y | N | N |
 | `normative_files.read` | Y | N | Y | Y | Y | Y | N |
 | `normative_files.create` | Y | N | N | Y | N | N | N |
@@ -71,7 +71,7 @@ Legend: `Y` = granted, `N` = not granted.
 |---|---|---|
 | `superadmin` | `/admin`, `/requests`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/feedback` | Full management across users, requests, offers, contractors, dashboards, normative files and statuses |
 | `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
-| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Manage hierarchy assignments, change request owner, manage manual contractors, set subordinate unavailability, economy-role changes for subordinates |
+| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Read requests/offers/chats across department; change request owner; manage users hierarchy, manual contractors, subordinate unavailability, economy-role changes for subordinates |
 | `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Full request/offer workflow, create manual offers, manage normative files, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
 | `economist` | `/pm-dashboard/plan`, `/requests`, `/admin` | Request/offers processing in scope, manual offers, subordinate unavailability, manual contractors create/manage, plan dashboard (only delegated branch and below) |
 | `operator` | `/requests` | Create/read/update requests (pricing/deadline/status), view normative files, no offer/chat/admin/dashboard features |
@@ -145,3 +145,9 @@ Rules:
 3. No new business role is introduced (`lead_economist + delegation.department.*` is not a new role).
 4. No DB table is used as source of truth for delegation checklist state; source of truth is Keycloak client role mappings for `acom-api`.
 5. Frontend remains UX-only and uses backend-provided `permissions`/`actions`; backend remains enforcement layer.
+
+## Business Scope Rules (2026-05)
+
+1. Department visibility: PM/LE/EC users in the same PM subtree can read requests, offers, and chats for each other; edit/chat-send remains limited to hierarchy chain or `department.*` delegation.
+2. Module statistics: LE and EC dashboard scope is the LE module subtree; PM dashboard scope is the whole department.
+3. Plan dashboard: EC sees the module plan tree via their LE root; plan edit/delegate remains hierarchy-only (subordinates required for delegation).

@@ -43,6 +43,7 @@ const buildWorkspaceHookState = (overrides?:
     canUpload: boolean;
     canDeleteFile: boolean;
     canSendMessage: boolean;
+    canViewMessages: boolean;
     canSendMessageWithAttachments: boolean;
     canEditOfferStatus: boolean;
     canEditOfferAmount: boolean;
@@ -142,6 +143,7 @@ const buildWorkspaceHookState = (overrides?:
     canUpload: overrides?.canUpload ?? true,
     canDeleteFile: overrides?.canDeleteFile ?? true,
     canSendMessage: overrides?.canSendMessage ?? true,
+    canViewMessages: overrides?.canViewMessages ?? true,
     canSendMessageWithAttachments: overrides?.canSendMessageWithAttachments ?? true,
     canSetReadMessages: true,
     canSetReceivedMessages: true,
@@ -234,5 +236,17 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     renderWithTheme();
 
     expect(screen.getByText("Выберите статус")).toBeInTheDocument();
+  });
+
+  it("does not render chat when view_messages is denied", () => {
+    useOfferWorkspaceMock.mockReturnValue(
+      buildWorkspaceHookState({
+        canViewMessages: false,
+      })
+    );
+
+    renderWithTheme();
+
+    expect(screen.queryByTestId("workspace-chat-panel")).not.toBeInTheDocument();
   });
 });

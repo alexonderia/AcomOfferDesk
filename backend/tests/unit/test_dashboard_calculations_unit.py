@@ -210,9 +210,49 @@ async def test_plan_request_stats_aggregate_by_hierarchy_existing_logic():
     assert stats.completion_percent == Decimal("60.00")
 
 
+class _PlanUsersRepo:
+    def __init__(self) -> None:
+        self._users = {
+            "pm-1": SimpleNamespace(
+                id="pm-1",
+                id_role=settings.project_manager_role_id,
+                id_parent=None,
+            ),
+            "lead-1": SimpleNamespace(
+                id="lead-1",
+                id_role=settings.lead_economist_role_id,
+                id_parent="pm-1",
+            ),
+            "econ-1": SimpleNamespace(
+                id="econ-1",
+                id_role=settings.economist_role_id,
+                id_parent="lead-1",
+            ),
+            "econ-2": SimpleNamespace(
+                id="econ-2",
+                id_role=settings.economist_role_id,
+                id_parent="lead-1",
+            ),
+        }
+
+    async def get_by_id(self, user_id: str):
+        return self._users.get(user_id)
+
+    async def list_active_user_parent_pairs(self):
+        return [
+            ("lead-1", "pm-1"),
+            ("econ-1", "lead-1"),
+            ("econ-2", "lead-1"),
+        ]
+
+
 @pytest.mark.asyncio
 async def test_plan_dashboard_entry_for_economist_is_limited_to_own_delegated_branch(make_current_user):
-    service = PlanService(plans=SimpleNamespace(), users=SimpleNamespace(), requests=_PlanRequestsRepo())
+    service = PlanService(
+        plans=SimpleNamespace(),
+        users=_PlanUsersRepo(),
+        requests=_PlanRequestsRepo(),
+    )
     current_user = make_current_user(
         user_id="econ-1",
         role_id=settings.economist_role_id,
@@ -231,3 +271,30 @@ async def test_plan_dashboard_entry_for_economist_is_limited_to_own_delegated_br
     )
 
     assert [plan.id for plan in entry_plans] == [2]
+
+
+@pytest.mark.asyncio
+async def test_plan_dashboard_entry_for_economist_uses_module_lead_root_when_present(make_current_user):
+    service = PlanService(
+        plans=SimpleNamespace(),
+        users=_PlanUsersRepo(),
+        requests=_PlanRequestsRepo(),
+    )
+    current_user = make_current_user(
+        user_id="econ-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.DASHBOARD_PLANS_READ},
+    )
+    period_plans = [
+        SimpleNamespace(id=1, id_user="pm-1", id_parent_plan=None),
+        SimpleNamespace(id=10, id_user="lead-1", id_parent_plan=1),
+        SimpleNamespace(id=11, id_user="econ-1", id_parent_plan=10),
+        SimpleNamespace(id=12, id_user="econ-2", id_parent_plan=10),
+    ]
+
+    entry_plans = await service._resolve_dashboard_entry_plans(
+        period_plans=period_plans,
+        current_user=current_user,
+    )
+
+    assert [plan.id for plan in entry_plans] == [10]

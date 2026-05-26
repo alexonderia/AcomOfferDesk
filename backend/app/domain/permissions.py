@@ -224,6 +224,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_MANAGER_UPDATE,
                 PermissionCodes.NORMATIVE_FILES_READ,
+                PermissionCodes.DASHBOARD_PROCESS_READ,
+                PermissionCodes.DASHBOARD_SAVINGS_READ,
                 PermissionCodes.DASHBOARD_PLANS_READ,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,

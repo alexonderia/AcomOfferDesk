@@ -16,7 +16,7 @@ from app.api.v1 import auth as auth_api
 from app.api.v1 import requests as requests_api
 from app.core.config import settings
 from app.core.email_token import EmailVerificationTokenCodec
-from app.domain.auth_context import CurrentUser
+from app.domain.auth_context import CurrentUser, build_current_user_from_keycloak
 from app.domain.exceptions import Unauthorized
 from app.domain.permissions import PermissionCodes
 from app.services import email_verification as email_verification_service
@@ -35,6 +35,7 @@ class _FileDownloadUow(_NoopUow):
         self.files = _FilesRepo()
         self.requests = _RequestsRepo()
         self.offers = _OffersRepo()
+        self.users = _UsersRepo()
 
 
 class _EmailVerificationUow(_NoopUow):
@@ -83,11 +84,19 @@ class _FilesRepo:
             mime_type="application/pdf",
         )
 
+    async def is_normative_file(self, *, file_id: int) -> bool:
+        _ = file_id
+        return False
+
 
 class _RequestsRepo:
     async def is_file_linked_to_visible_open_request(self, *, contractor_user_id: str, file_id: int) -> bool:
         _ = (contractor_user_id, file_id)
         return False
+
+    async def get_request_owner_id_by_request_file_id(self, *, file_id: int) -> str | None:
+        _ = file_id
+        return "owner-1"
 
 
 class _OffersRepo:
@@ -98,6 +107,26 @@ class _OffersRepo:
     async def is_message_file_linked_to_contractor(self, *, contractor_user_id: str, file_id: int) -> bool:
         _ = (contractor_user_id, file_id)
         return False
+
+    async def get_request_owner_id_by_offer_file_id(self, *, file_id: int) -> str | None:
+        _ = file_id
+        return None
+
+    async def get_request_owner_id_by_message_file_id(self, *, file_id: int) -> str | None:
+        _ = file_id
+        return None
+
+
+class _UsersRepo:
+    async def get_by_id(self, user_id: str):
+        users = {
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent=None),
+        }
+        return users.get(user_id)
+
+    async def list_active_user_parent_pairs(self):
+        return [("owner-1", "lead-1")]
 
 
 def _build_guard_app() -> FastAPI:
@@ -152,6 +181,7 @@ def test_active_user_with_required_permission_gets_success_on_protected_endpoint
     make_current_user,
 ):
     user = make_current_user(
+        user_id="lead-1",
         role_id=settings.lead_economist_role_id,
         status="active",
         permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.REQUESTS_READ},
@@ -169,6 +199,53 @@ def test_active_user_with_required_permission_gets_success_on_protected_endpoint
 
     assert response.status_code == 200
     assert response.content == b"fake-pdf"
+
+
+def test_non_hierarchy_role_with_atomic_file_and_request_read_cannot_download_scoped_file(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    set_current_user(
+        make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            status="active",
+            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.REQUESTS_READ},
+        )
+    )
+    set_uow(_FileDownloadUow())
+
+    response = test_client.get("/api/v1/files/1/download")
+
+    assert response.status_code == 403
+
+
+def test_department_atomic_permission_without_delegation_role_is_ignored(
+    test_client,
+    set_current_user,
+    set_uow,
+):
+    user = build_current_user_from_keycloak(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        status="active",
+        api_roles=frozenset(
+            {
+                "app.lead_economist",
+                PermissionCodes.FILES_DOWNLOAD,
+                PermissionCodes.DEPARTMENT_FILES_READ,
+            }
+        ),
+    )
+    set_current_user(user)
+    set_uow(_FileDownloadUow())
+
+    response = test_client.get("/api/v1/files/1/download")
+
+    assert PermissionCodes.DEPARTMENT_FILES_READ not in user.permissions
+    assert response.status_code == 403
 
 
 @pytest.mark.parametrize("status", ["review", "inactive", "blacklist"])

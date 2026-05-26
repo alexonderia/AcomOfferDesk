@@ -119,6 +119,7 @@ export const OfferWorkspaceView = () => {
     canUpload,
     canDeleteFile,
     canSendMessage,
+    canViewMessages,
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,
@@ -148,6 +149,9 @@ export const OfferWorkspaceView = () => {
 
   const canViewRequestAmounts = Boolean(workspace?.request.actions.view_amounts);
   const canViewContractorInfo = Boolean(selectedOffer?.actions.view_contractor_info);
+  const normalizedErrorMessage = (errorMessage ?? '').toLowerCase();
+  const isChatAccessError = normalizedErrorMessage.includes('просмотра чата') || normalizedErrorMessage.includes('доступ') && normalizedErrorMessage.includes('чат');
+  const visibleErrorMessage = !canViewMessages && isChatAccessError ? null : errorMessage;
 
   const canCreateNewOffer = Boolean(workspace?.request.actions.create_offer);
 
@@ -175,6 +179,12 @@ export const OfferWorkspaceView = () => {
   useEffect(() => {
     setIsOfferEditMode(false);
   }, [selectedOffer?.offer_id]);
+
+  useEffect(() => {
+    if (!canViewMessages && isChatOpen) {
+      setIsChatOpen(false);
+    }
+  }, [canViewMessages, isChatOpen, setIsChatOpen]);
 
   if (isLoading) {
     return <Typography>Загрузка...</Typography>;
@@ -671,9 +681,9 @@ export const OfferWorkspaceView = () => {
 
               {isCurrent ? <input ref={fileInputRef} type="file" hidden onChange={(event) => void handleUpload(event)} /> : null}
 
-              {isCurrent && errorMessage ? (
+              {isCurrent && visibleErrorMessage ? (
                 <Typography role="alert" color="error" sx={{ mt: 1 }}>
-                  {errorMessage}
+                  {visibleErrorMessage}
                 </Typography>
               ) : null}
               
@@ -682,27 +692,29 @@ export const OfferWorkspaceView = () => {
         })}
       </Box>
 
-      <OfferWorkspaceChatDock isOpen={isChatOpen} onOpen={() => setIsChatOpen(true)}>
-        <OfferWorkspaceChatPanel
-          offerId={selectedOffer.offer_id}
-          readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? 'Для вас чат доступен только для просмотра.' : null}
-          isOpen
-          onToggleOpen={setIsChatOpen}
-          messages={messages}
-          typingUserIds={typingUserIds}
-          sessionLogin={session?.login}
-          canSendMessage={canSendMessage}
-          canSendMessageWithAttachments={canSendMessageWithAttachments}
-          isSending={isSending}
-          onSendMessage={onSendMessage}
-          onMessageInputClick={onMessageInputClick}
-          onMessageDraftChange={onMessageDraftChange}
-          onDownloadAttachment={(downloadUrl, name) => {
-            void downloadFile(downloadUrl, name);
-          }}
-          contractorUserId={selectedOffer.contractor_user_id}
-        />
-      </OfferWorkspaceChatDock>
+      {canViewMessages ? (
+        <OfferWorkspaceChatDock isOpen={isChatOpen} onOpen={() => setIsChatOpen(true)}>
+          <OfferWorkspaceChatPanel
+            offerId={selectedOffer.offer_id}
+            readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? '\u0414\u043b\u044f \u0432\u0430\u0441 \u0447\u0430\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u043b\u044f \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430.' : null}
+            isOpen
+            onToggleOpen={setIsChatOpen}
+            messages={messages}
+            typingUserIds={typingUserIds}
+            sessionLogin={session?.login}
+            canSendMessage={canSendMessage}
+            canSendMessageWithAttachments={canSendMessageWithAttachments}
+            isSending={isSending}
+            onSendMessage={onSendMessage}
+            onMessageInputClick={onMessageInputClick}
+            onMessageDraftChange={onMessageDraftChange}
+            onDownloadAttachment={(downloadUrl, name) => {
+              void downloadFile(downloadUrl, name);
+            }}
+            contractorUserId={selectedOffer.contractor_user_id}
+          />
+        </OfferWorkspaceChatDock>
+      ) : null}
     </Stack>
   );
 };

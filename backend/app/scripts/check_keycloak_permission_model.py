@@ -31,7 +31,6 @@ REQUIRED_SERVICE_ROLES = ("query-users", "view-users", "manage-users")
 OPTIONAL_COMPOSITE_MEMBERS_BY_APP_ROLE: dict[str, set[str]] = {
     "app.superadmin": {
         "department.chats.read",
-        "department.chats.send_message",
         "department.dashboard.read",
         "department.files.delete",
         "department.files.read",

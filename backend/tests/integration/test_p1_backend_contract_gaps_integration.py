@@ -1390,7 +1390,7 @@ def test_file_download_denies_internal_user_outside_standard_scope(
     assert response.status_code == 403
 
 
-def test_file_download_allows_department_files_read_for_department_scope(
+def test_file_download_allows_department_request_read_for_department_scope(
     test_client,
     monkeypatch,
     set_current_user,
@@ -1427,7 +1427,7 @@ def test_file_download_allows_department_files_read_for_department_scope(
         make_current_user(
             user_id="econ-1",
             role_id=settings.economist_role_id,
-            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.DEPARTMENT_FILES_READ},
+            permissions={PermissionCodes.FILES_DOWNLOAD, PermissionCodes.DEPARTMENT_REQUESTS_READ},
         )
     )
 

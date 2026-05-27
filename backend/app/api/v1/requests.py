@@ -867,16 +867,7 @@ async def download_file(
             request_owner_user_id = await uow.requests.get_request_owner_id_by_request_file_id(file_id=file_id)
             offer_owner_user_id = await uow.offers.get_request_owner_id_by_offer_file_id(file_id=file_id)
             message_owner_user_id = await uow.offers.get_request_owner_id_by_message_file_id(file_id=file_id)
-            owner_user_ids = {
-                owner_id
-                for owner_id in (
-                    request_owner_user_id,
-                    offer_owner_user_id,
-                    message_owner_user_id,
-                )
-                if owner_id
-            }
-            if not owner_user_ids:
+            if all(owner_id is None for owner_id in (request_owner_user_id, offer_owner_user_id, message_owner_user_id)):
                 raise Forbidden("Insufficient permissions for file download")
 
             is_allowed = False
@@ -917,15 +908,22 @@ async def download_file(
             ):
                 is_allowed = True
 
-            if (
-                not is_allowed
-                and has_permission(current_user, PermissionCodes.DEPARTMENT_FILES_READ)
-            ):
+            if not is_allowed:
                 department_scope_owner_ids = await _resolve_department_owner_scope_ids_for_current_user(
                     uow=uow,
                     current_user=current_user,
                 )
-                is_allowed = bool(owner_user_ids & department_scope_owner_ids)
+                if request_owner_user_id is not None and has_permission(
+                    current_user,
+                    PermissionCodes.DEPARTMENT_REQUESTS_READ,
+                ):
+                    is_allowed = request_owner_user_id in department_scope_owner_ids
+                if (
+                    not is_allowed
+                    and message_owner_user_id is not None
+                    and has_permission(current_user, PermissionCodes.DEPARTMENT_CHATS_READ)
+                ):
+                    is_allowed = message_owner_user_id in department_scope_owner_ids
 
             if not is_allowed:
                 raise Forbidden("Insufficient permissions for file download")

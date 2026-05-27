@@ -1057,29 +1057,19 @@ class RequestService:
         request_owner_user_id: str,
         upload: bool,
     ) -> None:
+        if await self._can_edit_department_requests(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        ):
+            return
+
         if upload:
-            if (
-                has_permission(current_user, PermissionCodes.DEPARTMENT_FILES_UPLOAD)
-                and await self._is_user_inside_current_department_scope(
-                    current_user=current_user,
-                    target_user_id=request_owner_user_id,
-                )
-            ):
-                return
             require_permission(
                 current_user,
                 PermissionCodes.REQUESTS_FILES_UPLOAD,
                 message="Insufficient permissions to upload request files",
             )
         else:
-            if (
-                has_permission(current_user, PermissionCodes.DEPARTMENT_FILES_DELETE)
-                and await self._is_user_inside_current_department_scope(
-                    current_user=current_user,
-                    target_user_id=request_owner_user_id,
-                )
-            ):
-                return
             require_permission(
                 current_user,
                 PermissionCodes.REQUESTS_FILES_DELETE,

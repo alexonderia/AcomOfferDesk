@@ -998,12 +998,12 @@ export const PlanAnalyticsCards = ({
         <CardContent
           sx={{
             p: 1.05,
-            height: { xs: "auto", xl: 204 },
+            minHeight: { xs: "auto", xl: 204 },
             "&:last-child": { pb: 1.05 },
           }}
         >
           
-          <Stack spacing={1.1} sx={{ height: "100%" }}>
+          <Stack spacing={1.1} sx={{ minHeight: 0 }}>
             
             <Typography variant="subtitle1" fontWeight={800}>
               Заявки, формирующие экономию
@@ -1035,6 +1035,7 @@ export const PlanAnalyticsCards = ({
                 display: "grid",
                 gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                 gap: 1,
+                overflowX: "auto",
               }}
             >
               <Stack spacing={0.95}>

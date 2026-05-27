@@ -156,12 +156,6 @@ class StaffAccessScopeService:
         current_user: CurrentUser,
         request_owner_user_id: str,
     ) -> bool:
-        if has_permission(current_user, PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE):
-            if await self._department_scope.is_user_in_current_user_department(
-                current_user=current_user,
-                target_user_id=request_owner_user_id,
-            ):
-                return True
         return await self._is_inside_hierarchy_management_scope(
             current_user=current_user,
             request_owner_user_id=request_owner_user_id,

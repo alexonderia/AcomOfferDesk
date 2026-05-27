@@ -133,6 +133,28 @@ def test_chat_action_builder_reflects_chat_permissions(make_current_user):
     assert actions.can_mark_messages_read is True
 
 
+def test_chat_action_builder_department_view_scope_does_not_grant_send_or_attachments(make_current_user):
+    user = make_current_user(
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_CHATS_READ},
+    )
+
+    actions = ChatActionBuilder.build(
+        user,
+        offer_owner_user_id="contractor-1",
+        request_owner_user_id="owner-1",
+        can_acknowledge_messages=False,
+        can_view_in_scope=False,
+        can_send_in_scope=False,
+        has_department_chat_view_scope=True,
+        has_department_chat_send_scope=False,
+    )
+
+    assert actions.can_view_messages is True
+    assert actions.can_send_message is False
+    assert actions.can_attach_files is False
+
+
 def test_offer_action_builder_manual_offer_permission_does_not_grant_file_actions(make_current_user):
     user = make_current_user(
         role_id=settings.lead_economist_role_id,

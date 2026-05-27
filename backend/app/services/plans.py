@@ -540,6 +540,7 @@ class PlanService:
         period_end: date,
         current_user: CurrentUser,
         plan_id: int | None = None,
+        root_user_id: str | None = None,
     ) -> PlanRequestStats:
         self._ensure_can_access_plans(current_user)
         if period_start > period_end:
@@ -564,13 +565,53 @@ class PlanService:
             selected_plan = plan_by_id.get(plan_id)
             if selected_plan is None:
                 raise NotFound("Plan not found for selected period")
-            await self._ensure_can_manage_node(
+            await self._ensure_can_view_root(
                 current_user=current_user,
-                plan_owner_user_id=selected_plan.id_user,
+                requested_root_user_id=selected_plan.id_user,
             )
             trees = await self._build_trees_for_roots(
                 period_plans=period_plans,
                 root_plans=[selected_plan],
+                period_start=period_start,
+                period_end=period_end,
+                current_user=current_user,
+            )
+            total_plan_ids = self._collect_tree_plan_ids(trees)
+            distributed_plan_ids = self._collect_tree_plan_ids(trees[0].children) if trees else []
+            total_owner_ids = self._collect_tree_owner_ids(trees)
+            distributed_owner_ids = self._collect_tree_owner_ids(trees[0].children) if trees else []
+            return await self._request_stats_from_trees(
+                trees=trees,
+                period_start=period_start,
+                period_end=period_end,
+                total_scope_to_tree_plan_ids=True,
+                total_plan_ids=total_plan_ids,
+                distributed_plan_ids=distributed_plan_ids,
+                total_owner_ids=total_owner_ids,
+                distributed_owner_ids=distributed_owner_ids,
+            )
+
+        if root_user_id is not None:
+            await self._ensure_can_view_root(
+                current_user=current_user,
+                requested_root_user_id=root_user_id,
+            )
+            root_plans = self._find_entry_plans_for_user(
+                period_plans=period_plans,
+                user_id=root_user_id,
+            )
+            if not root_plans:
+                return PlanRequestStats(
+                    total_requests=0,
+                    distributed_requests=0,
+                    unallocated_requests=0,
+                    request_fact_amount=Decimal("0.00"),
+                    unallocated_amount=Decimal("0.00"),
+                    completion_percent=Decimal("0.00"),
+                )
+            trees = await self._build_trees_for_roots(
+                period_plans=period_plans,
+                root_plans=root_plans,
                 period_start=period_start,
                 period_end=period_end,
                 current_user=current_user,
@@ -760,6 +801,22 @@ class PlanService:
         period_plans: list[EconomyPlan],
         current_user: CurrentUser,
     ) -> list[EconomyPlan]:
+        if (
+            has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_READ)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_MANAGE)
+        ):
+            department_root_user_id = await self._department_scope.resolve_department_root_user_id_for_user(
+                user_id=current_user.user_id,
+                role_id=current_user.role_id,
+            )
+            if department_root_user_id is not None:
+                department_entry_plans = self._find_entry_plans_for_user(
+                    period_plans=period_plans,
+                    user_id=department_root_user_id,
+                )
+                if department_entry_plans:
+                    return department_entry_plans
+
         if current_user.role_id == settings.economist_role_id:
             module_lead_user_id = await self._staff_scope.resolve_module_root_user_id(
                 user_id=current_user.user_id,
@@ -1019,12 +1076,26 @@ class PlanService:
             stack.extend(node.children)
         return list(plan_ids)
 
+    def _collect_tree_owner_ids(self, trees: list[PlanTreeNode]) -> list[str]:
+        owner_ids: set[str] = set()
+        stack = list(trees)
+        while stack:
+            node = stack.pop()
+            owner_ids.add(node.user_id)
+            stack.extend(node.children)
+        return list(owner_ids)
+
     async def _request_stats_from_trees(
         self,
         *,
         trees: list[PlanTreeNode],
         period_start: date,
         period_end: date,
+        total_scope_to_tree_plan_ids: bool = False,
+        total_plan_ids: list[int] | None = None,
+        distributed_plan_ids: list[int] | None = None,
+        total_owner_ids: list[str] | None = None,
+        distributed_owner_ids: list[str] | None = None,
     ) -> PlanRequestStats:
         if not trees:
             return PlanRequestStats(
@@ -1035,7 +1106,8 @@ class PlanService:
                 unallocated_amount=Decimal("0.00"),
                 completion_percent=Decimal("0.00"),
             )
-        plan_ids = self._collect_tree_plan_ids(trees)
+        plan_ids = total_plan_ids or self._collect_tree_plan_ids(trees)
+        effective_distributed_plan_ids = distributed_plan_ids if distributed_plan_ids is not None else plan_ids
         owner_ids: set[str] = set()
         stack = list(trees)
         while stack:
@@ -1044,7 +1116,11 @@ class PlanService:
             stack.extend(node.children)
         aggregated = await self._requests.aggregate_plan_request_stats(
             owner_ids=list(owner_ids),
-            plan_ids=plan_ids,
+            total_plan_ids=plan_ids,
+            distributed_plan_ids=effective_distributed_plan_ids,
+            total_scope_to_plan_ids=total_scope_to_tree_plan_ids,
+            total_owner_ids=total_owner_ids,
+            distributed_owner_ids=distributed_owner_ids,
             period_start=period_start,
             period_end=period_end,
         )

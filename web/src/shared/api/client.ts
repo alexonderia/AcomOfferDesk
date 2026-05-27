@@ -59,6 +59,9 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
     'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Рё РґРѕСЃС‚СѓРї Рє Р·Р°СЏРІРєРµ',
   'Insufficient permissions to send request email notifications':
     'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РѕС‚РїСЂР°РІРєРё РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№ РїРѕ Р·Р°СЏРІРєРµ',
+  'Insufficient permissions to view chat': 'Недостаточно прав для просмотра чата',
+  'Insufficient permissions to send chat message': 'Недостаточно прав для отправки сообщения в чат',
+  'Insufficient permissions to view workspace': 'Недостаточно прав для просмотра рабочего пространства',
   'Operator can update status only for own requests':
     'РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР° РѕРїРµСЂР°С‚РѕСЂРѕРј РґРѕСЃС‚СѓРїРЅРѕ С‚РѕР»СЊРєРѕ РґР»СЏ СЃРѕР±СЃС‚РІРµРЅРЅС‹С… Р·Р°СЏРІРѕРє',
   'Request is outside your management scope':
@@ -77,7 +80,7 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Subordinate profile is available only for permitted subordinate roles': 'РџСЂРѕС„РёР»СЊ РїРѕРґС‡РёРЅС‘РЅРЅРѕРіРѕ РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ РґР»СЏ СЂР°Р·СЂРµС€С‘РЅРЅС‹С… СЂРѕР»РµР№ РїРѕРґС‡РёРЅС‘РЅРЅС‹С…',
   'Subordinate data can be managed only for permitted subordinate roles': 'Р”Р°РЅРЅС‹Рµ РїРѕРґС‡РёРЅС‘РЅРЅРѕРіРѕ РјРѕР¶РЅРѕ РёР·РјРµРЅСЏС‚СЊ С‚РѕР»СЊРєРѕ РґР»СЏ СЂР°Р·СЂРµС€С‘РЅРЅС‹С… СЂРѕР»РµР№ РїРѕРґС‡РёРЅС‘РЅРЅС‹С…',
   'You can manage subordinate data only for your subordinates': 'Р’С‹ РјРѕР¶РµС‚Рµ СѓРїСЂР°РІР»СЏС‚СЊ РґР°РЅРЅС‹РјРё С‚РѕР»СЊРєРѕ СЃРІРѕРёС… РїРѕРґС‡РёРЅС‘РЅРЅС‹С…',
-  Forbidden: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ'
+  Forbidden: 'Недостаточно прав для выполнения действия'
 };
 
 const VALIDATION_TRANSLATIONS: Record<string, string> = {

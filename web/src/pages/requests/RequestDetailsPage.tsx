@@ -5,7 +5,7 @@ import { hasPermission } from '@shared/auth/permissions';
 
 export const RequestDetailsPage = () => {
   const { session } = useAuth();
-  if (!hasPermission(session, 'requests.read')) {
+  if (!hasPermission(session, 'requests.read') && !hasPermission(session, 'department.requests.read')) {
     return <Navigate to="/requests" replace />;
   }
   return <RequestDetailsView />;

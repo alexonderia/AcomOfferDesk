@@ -12,10 +12,6 @@ DEPARTMENT_PERMISSION_TO_DELEGATION_ROLE: dict[str, str] = {
     "department.offers.accept": "delegation.department.offers.accept",
     "department.offers.reject": "delegation.department.offers.reject",
     "department.chats.read": "delegation.department.chats.read",
-    "department.chats.send_message": "delegation.department.chats.send_message",
-    "department.files.read": "delegation.department.files.read",
-    "department.files.upload": "delegation.department.files.upload",
-    "department.files.delete": "delegation.department.files.delete",
     "department.dashboard.read": "delegation.department.dashboard.read",
     "department.plans.read": "delegation.department.plans.read",
     "department.plans.manage": "delegation.department.plans.manage",
@@ -85,30 +81,6 @@ DEPARTMENT_DELEGATIONS: tuple[DepartmentDelegationDefinition, ...] = (
         group="chats",
     ),
     DepartmentDelegationDefinition(
-        role_code="delegation.department.chats.send_message",
-        permission_code="department.chats.send_message",
-        label="Отправка сообщений в чатах подразделения",
-        group="chats",
-    ),
-    DepartmentDelegationDefinition(
-        role_code="delegation.department.files.read",
-        permission_code="department.files.read",
-        label="Просмотр файлов подразделения",
-        group="files",
-    ),
-    DepartmentDelegationDefinition(
-        role_code="delegation.department.files.upload",
-        permission_code="department.files.upload",
-        label="Загрузка файлов подразделения",
-        group="files",
-    ),
-    DepartmentDelegationDefinition(
-        role_code="delegation.department.files.delete",
-        permission_code="department.files.delete",
-        label="Удаление файлов подразделения",
-        group="files",
-    ),
-    DepartmentDelegationDefinition(
         role_code="delegation.department.dashboard.read",
         permission_code="department.dashboard.read",
         label="Просмотр статистики подразделения",
@@ -135,3 +107,5 @@ def get_department_delegation_role_codes() -> frozenset[str]:
 
 def get_department_permission_codes() -> frozenset[str]:
     return frozenset(DEPARTMENT_PERMISSION_TO_DELEGATION_ROLE.keys())
+
+

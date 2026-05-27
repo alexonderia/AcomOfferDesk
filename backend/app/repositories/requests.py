@@ -637,7 +637,11 @@ class RequestRepository:
         self,
         *,
         owner_ids: list[str],
-        plan_ids: list[int],
+        total_plan_ids: list[int],
+        distributed_plan_ids: list[int] | None,
+        total_scope_to_plan_ids: bool = False,
+        total_owner_ids: list[str] | None = None,
+        distributed_owner_ids: list[str] | None = None,
         period_start: date,
         period_end: date,
     ) -> PlanRequestStatsRow:
@@ -652,50 +656,47 @@ class RequestRepository:
 
         start_dt = datetime.combine(period_start, time.min)
         end_dt = datetime.combine(period_end + timedelta(days=1), time.min)
-        if not plan_ids:
-            plan_ids = [-1]
+        if not total_plan_ids:
+            total_plan_ids = [-1]
+        if not distributed_plan_ids:
+            distributed_plan_ids = [-1]
 
-        stmt = (
-            text(
-                """
-                SELECT
-                  COUNT(*) AS total_requests,
-                  COUNT(*) FILTER (WHERE r.id_plan IN :plan_ids) AS distributed_requests,
-                  COUNT(*) FILTER (WHERE r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids) AS unallocated_requests,
-                  COALESCE(SUM(
-                    CASE WHEN r.id_plan IN :plan_ids
-                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
-                      ELSE 0
-                    END
-                  ), 0) AS request_fact_amount,
-                  COALESCE(SUM(
-                    CASE WHEN r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids
-                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
-                      ELSE 0
-                    END
-                  ), 0) AS unallocated_amount
-                FROM requests r
-                WHERE r.status = 'closed'
-                  AND r.id_user IN :owner_ids
-                  AND r.closed_at IS NOT NULL
-                  AND r.closed_at >= :start_dt
-                  AND r.closed_at < :end_dt
-                """
-            )
-            .bindparams(
-                bindparam("owner_ids", expanding=True),
-                bindparam("plan_ids", expanding=True),
-            )
+        if total_owner_ids:
+            total_scope_condition = Request.id_user.in_(total_owner_ids)
+        elif total_scope_to_plan_ids:
+            total_scope_condition = Request.id_plan.in_(total_plan_ids)
+        else:
+            total_scope_condition = text("TRUE")
+
+        distributed_source_condition = (
+            Request.id_user.in_(distributed_owner_ids)
+            if distributed_owner_ids
+            else Request.id_plan.in_(distributed_plan_ids)
         )
-        result = await self._session.execute(
-            stmt,
-            {
-                "owner_ids": owner_ids,
-                "plan_ids": plan_ids,
-                "start_dt": start_dt,
-                "end_dt": end_dt,
-            },
+        distributed_condition = and_(total_scope_condition, distributed_source_condition)
+        unallocated_condition = and_(total_scope_condition, ~distributed_source_condition)
+        savings_expr = func.coalesce(Request.initial_amount, 0) - func.coalesce(Request.final_amount, 0)
+
+        stmt = select(
+            func.count().filter(total_scope_condition).label("total_requests"),
+            func.count().filter(distributed_condition).label("distributed_requests"),
+            func.count().filter(unallocated_condition).label("unallocated_requests"),
+            func.coalesce(
+                func.sum(savings_expr).filter(distributed_condition),
+                0,
+            ).label("request_fact_amount"),
+            func.coalesce(
+                func.sum(savings_expr).filter(unallocated_condition),
+                0,
+            ).label("unallocated_amount"),
+        ).where(
+            Request.status == "closed",
+            Request.id_user.in_(owner_ids),
+            Request.closed_at.is_not(None),
+            Request.closed_at >= start_dt,
+            Request.closed_at < end_dt,
         )
+        result = await self._session.execute(stmt)
         row = result.one()
         return PlanRequestStatsRow(
             total_requests=int(row.total_requests or 0),

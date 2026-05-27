@@ -761,7 +761,6 @@ const delegationGroupTitles: Record<string, string> = {
   requests: 'Заявки',
   offers: 'КП / офферы',
   chats: 'Чаты',
-  files: 'Файлы',
   dashboard: 'Аналитика',
   plans: 'Планы',
 };

@@ -358,7 +358,11 @@ class OfferService:
 
         chat_state = await self._chats.get_chat_state_for_user(chat_id=chat.id, user_id=current_user.user_id)
         if chat_state is None:
-            if not require_send and current_user.role_id == settings.project_manager_role_id:
+            if await self._can_access_chat_without_participation(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+                require_send=require_send,
+            ):
                 chat_state = self._build_read_only_chat_state(
                     chat_id=chat.id,
                     last_message_id=chat.last_message_id,
@@ -368,6 +372,28 @@ class OfferService:
                 raise Forbidden("Insufficient permissions to view chat")
 
         return offer, request, chat, chat_state
+
+    async def _can_access_chat_without_participation(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        require_send: bool,
+    ) -> bool:
+        if current_user.role_id == settings.project_manager_role_id:
+            return not require_send
+        if require_send:
+            return False
+        has_department_chat_permission = has_permission(
+            current_user,
+            PermissionCodes.DEPARTMENT_CHATS_READ,
+        )
+        if not has_department_chat_permission:
+            return False
+        return await self._is_user_inside_current_department_scope(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
 
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
         normalized = (value or "").strip()
@@ -821,12 +847,6 @@ class OfferService:
             current_user=current_user,
             request_owner_user_id=request.id_user,
         )
-        if not has_department_offer_update_scope:
-            require_permission(
-                current_user,
-                PermissionCodes.OFFERS_UPDATE,
-                message="Insufficient permissions to edit offer",
-            )
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
                 current_user,
@@ -837,6 +857,12 @@ class OfferService:
                 current_user,
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
+            )
+        elif not has_department_offer_update_scope:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
             )
         elif has_department_offer_update_scope:
             pass
@@ -904,12 +930,6 @@ class OfferService:
             current_user=current_user,
             request_owner_user_id=request.id_user,
         )
-        if not has_department_offer_update_scope:
-            require_permission(
-                current_user,
-                PermissionCodes.OFFERS_UPDATE,
-                message="Insufficient permissions to edit offer",
-            )
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
                 current_user,
@@ -920,6 +940,12 @@ class OfferService:
                 current_user,
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
+            )
+        elif not has_department_offer_update_scope:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
             )
         elif has_department_offer_update_scope:
             pass
@@ -1024,12 +1050,6 @@ class OfferService:
             current_user=current_user,
             request_owner_user_id=request.id_user,
         )
-        if not has_department_offer_update_scope:
-            require_permission(
-                current_user,
-                PermissionCodes.OFFERS_UPDATE,
-                message="Insufficient permissions to edit offer",
-            )
 
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
@@ -1041,6 +1061,12 @@ class OfferService:
                 current_user,
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
+            )
+        elif not has_department_offer_update_scope:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
             )
         elif has_department_offer_update_scope:
             pass
@@ -1147,19 +1173,23 @@ class OfferService:
         offer_id: int,
         upload: AttachmentFileInput,
     ) -> UploadedMessageAttachment:
-        require_permission(
-            current_user,
-            PermissionCodes.CHAT_MESSAGE_ATTACH,
-            message="Insufficient permissions to attach files to chat messages",
+        offer, request, _chat, _ = await self._require_chat_context(
+            current_user=current_user,
+            offer_id=offer_id,
+            require_send=True,
         )
-        await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=True)
+        if not await self._can_attach_chat_files(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        ):
+            raise Forbidden("Insufficient permissions to attach files to chat messages")
         prepared = await self._file_service.prepare_bytes(
             original_name=upload.original_name,
             content_bytes=upload.content_bytes,
             mime_type=upload.mime_type,
         )
         db_file = await self._file_service.create_chat_temp_file(
-            offer_id=offer_id,
+            offer_id=offer.id,
             upload=prepared,
         )
         return UploadedMessageAttachment(file_id=db_file.id, path=db_file.path, name=db_file.name)
@@ -1218,12 +1248,12 @@ class OfferService:
         normalized_text = text.strip()
         new_attachments = attachments or []
         stored_file_refs = existing_file_refs or []
-        if new_attachments or stored_file_refs:
-            require_permission(
-                current_user,
-                PermissionCodes.CHAT_MESSAGE_ATTACH,
-                message="Insufficient permissions to attach files to chat messages",
-            )
+        has_file_payload = bool(new_attachments or stored_file_refs)
+        if has_file_payload and not await self._can_attach_chat_files(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        ):
+            raise Forbidden("Insufficient permissions to attach files to chat messages")
         if not normalized_text and not new_attachments and not stored_file_refs:
             raise Conflict("Message text cannot be empty")
 
@@ -1408,12 +1438,14 @@ class OfferService:
             ):
                 raise Forbidden("Insufficient permissions to view offer workspace")
             return
-        if (
-            has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_READ)
-            and await self._is_user_inside_current_department_scope(
-                current_user=current_user,
-                target_user_id=request_owner_user_id,
-            )
+        has_department_offer_scope = (
+            has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_UPDATE)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_ACCEPT)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_REJECT)
+        )
+        if has_department_offer_scope and await self._is_user_inside_current_department_scope(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
         ):
             return
         raise Forbidden("Insufficient permissions to view offer workspace")
@@ -1471,15 +1503,17 @@ class OfferService:
             ):
                 raise Forbidden("Insufficient permissions to send chat message")
             return
-        if (
-            has_permission(current_user, PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE)
-            and await self._is_user_inside_current_department_scope(
-                current_user=current_user,
-                target_user_id=request_owner_user_id,
-            )
-        ):
-            return
         raise Forbidden("Insufficient permissions to send chat message")
+
+    async def _can_attach_chat_files(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if has_permission(current_user, PermissionCodes.CHAT_MESSAGE_ATTACH):
+            return True
+        return False
 
     async def _has_department_offer_update_scope(
         self,

@@ -89,7 +89,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/pm-dashboard"
                 element={
-                  <RoleRoute allowedPermissions={['dashboard.process.read']}>
+                  <RoleRoute allowedPermissions={['dashboard.process.read', 'department.dashboard.read']}>
                     <ProjectManagerDashboardPage />
                   </RoleRoute>
                 }
@@ -97,7 +97,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/pm-dashboard/savings"
                 element={
-                  <RoleRoute allowedPermissions={['dashboard.savings.read']}>
+                  <RoleRoute allowedPermissions={['dashboard.savings.read', 'department.dashboard.read']}>
                     <ProjectManagerSavingsPage />
                   </RoleRoute>
                 }
@@ -105,7 +105,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
               <Route
                 path="/pm-dashboard/plan"
                 element={
-                  <RoleRoute allowedPermissions={['dashboard.plans.read']}>
+                  <RoleRoute allowedPermissions={['dashboard.plans.read', 'department.plans.read', 'department.plans.manage']}>
                     <ProjectManagerPlanPage />
                   </RoleRoute>
                 }

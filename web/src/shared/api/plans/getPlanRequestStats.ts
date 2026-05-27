@@ -12,6 +12,7 @@ type GetPlanRequestStatsParams = {
   dateFrom?: string;
   dateTo?: string;
   planId?: number | null;
+  rootUserId?: string | null;
 };
 
 export const getPlanRequestStats = async ({
@@ -19,6 +20,7 @@ export const getPlanRequestStats = async ({
   dateFrom,
   dateTo,
   planId,
+  rootUserId,
 }: GetPlanRequestStatsParams): Promise<PlanRequestStats> => {
   const queryParts: string[] = [];
   if (dateFrom && dateTo) {
@@ -29,6 +31,9 @@ export const getPlanRequestStats = async ({
   }
   if (typeof planId === "number") {
     queryParts.push(`plan_id=${planId}`);
+  }
+  if (typeof rootUserId === "string" && rootUserId.trim().length > 0) {
+    queryParts.push(`root_user_id=${encodeURIComponent(rootUserId.trim())}`);
   }
   const response = await fetchJson<PlanRequestStatsResponse>(
     `/api/v1/plans/request-stats?${queryParts.join("&")}`,

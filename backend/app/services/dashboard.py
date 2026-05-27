@@ -123,7 +123,7 @@ class DashboardService:
         self._staff_scope = StaffAccessScopeService(users)
 
     async def get_responsibility_dashboard(self, *, current_user: CurrentUser) -> ResponsibilityDashboard:
-        UserPolicy.ensure_can_view_responsibility_dashboard(current_user)
+        self._ensure_can_view_responsibility_dashboard(current_user)
 
         dashboard_role_ids = [settings.lead_economist_role_id, settings.economist_role_id]
         if current_user.role_id == settings.superadmin_role_id:
@@ -393,6 +393,11 @@ class DashboardService:
                 items=savings_items,
             ),
         )
+
+    def _ensure_can_view_responsibility_dashboard(self, current_user: CurrentUser) -> None:
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_DASHBOARD_READ):
+            return
+        UserPolicy.ensure_can_view_responsibility_dashboard(current_user)
 
     async def _resolve_hierarchy_scope_owner_ids(self, *, current_user_id: str) -> list[str]:
         pairs = await self._users.list_active_user_parent_pairs()

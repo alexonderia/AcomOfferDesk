@@ -500,6 +500,7 @@ def test_department_request_update_without_department_offer_update_cannot_update
         user_id="lead-1",
         role_id=settings.lead_economist_role_id,
         permissions={
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
             PermissionCodes.REQUESTS_UPDATE,
             PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
         },

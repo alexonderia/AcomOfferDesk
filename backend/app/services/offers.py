@@ -1506,12 +1506,22 @@ class OfferService:
                 settings.lead_economist_role_id,
                 settings.economist_role_id,
             }
-            and not await self._staff_scope.can_manage_request_owner(
-                current_user=current_user,
-                request_owner_user_id=request_owner_user_id,
-            )
         ):
-            raise Forbidden("Insufficient permissions to manage offer")
+            # When department-request delegation should not apply, use strict
+            # hierarchy scope to avoid implicit escalation from
+            # `department.requests.update` to offer-level edits.
+            if allow_department_request_update:
+                can_manage_scope = await self._staff_scope.can_manage_request_owner(
+                    current_user=current_user,
+                    request_owner_user_id=request_owner_user_id,
+                )
+            else:
+                can_manage_scope = await self._is_inside_hierarchy_management_scope(
+                    current_user=current_user,
+                    request_owner_user_id=request_owner_user_id,
+                )
+            if not can_manage_scope:
+                raise Forbidden("Insufficient permissions to manage offer")
 
         if offer_owner_user_id is None:
             offer_owner_user_id = current_user.user_id

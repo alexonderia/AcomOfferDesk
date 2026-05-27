@@ -169,6 +169,7 @@ class OfferWorkspaceRequest:
 @dataclass(frozen=True)
 class OfferWorkspaceOffer:
     offer_id: int
+    owner_user_id: str
     status: str
     status_label: str
     offer_amount: float | None
@@ -746,6 +747,7 @@ class OfferService:
             ),
             offer=OfferWorkspaceOffer(
                 offer_id=offer.id,
+                owner_user_id=offer.id_user,
                 status=offer.status,
                 status_label=format_offer_status(offer.status),
                 offer_amount=offer.offer_amount,
@@ -756,6 +758,7 @@ class OfferService:
             offers=[
                 OfferWorkspaceOffer(
                     offer_id=request_offer.id,
+                    owner_user_id=request_offer.id_user,
                     status=request_offer.status,
                     status_label=format_offer_status(request_offer.status),
                     offer_amount=request_offer.offer_amount,
@@ -814,6 +817,16 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
+        if not has_department_offer_update_scope:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
+            )
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
                 current_user,
@@ -825,18 +838,15 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
             )
-        elif has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD):
+        elif has_department_offer_update_scope:
+            pass
+        elif has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE):
             await self._ensure_can_manage_offer_for_internal_user(
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
             )
-        elif await self._has_department_offer_update_scope(
-            current_user=current_user,
-            request_owner_user_id=request.id_user,
-        ):
-            pass
         else:
             raise Forbidden(
                 "Insufficient permissions to upload offer files",
@@ -890,6 +900,16 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
+        if not has_department_offer_update_scope:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
+            )
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
                 current_user,
@@ -901,18 +921,15 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
             )
-        elif has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE):
+        elif has_department_offer_update_scope:
+            pass
+        elif has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE):
             await self._ensure_can_manage_offer_for_internal_user(
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
             )
-        elif await self._has_department_offer_update_scope(
-            current_user=current_user,
-            request_owner_user_id=request.id_user,
-        ):
-            pass
         else:
             raise Forbidden(
                 "Insufficient permissions to delete offer files",
@@ -948,6 +965,8 @@ class OfferService:
 
         if status not in EDITABLE_OFFER_STATUSES:
             raise Conflict("Unsupported offer status")
+        if request.status in {"closed", "cancelled"}:
+            raise Conflict("КП нельзя изменить, если заявка уже закрыта или отклонена")
         has_department_status_scope = await self._ensure_can_update_offer_status(
             current_user=current_user,
             request_owner_user_id=request.id_user,
@@ -967,9 +986,6 @@ class OfferService:
                     request_owner_user_id=request.id_user,
                     offer_owner_user_id=offer.id_user,
                 )
-            if status == "accepted" and request.status in {"closed", "cancelled"}:
-                raise Conflict("Cannot accept offer for closed or cancelled request")
-
         status_changed = offer.status != status
         previous_status = offer.status
         await self._offers.update_status(offer=offer, status=status)
@@ -1004,6 +1020,16 @@ class OfferService:
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         self._validate_offer_amount(offer_amount)
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
+        if not has_department_offer_update_scope:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
+            )
 
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
@@ -1016,6 +1042,8 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
             )
+        elif has_department_offer_update_scope:
+            pass
         elif has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE):
             await self._ensure_can_manage_offer_for_internal_user(
                 current_user=current_user,
@@ -1023,11 +1051,6 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
             )
-        elif await self._has_department_offer_update_scope(
-            current_user=current_user,
-            request_owner_user_id=request.id_user,
-        ):
-            pass
         else:
             raise Forbidden("Insufficient permissions to update offer amount")
         if (

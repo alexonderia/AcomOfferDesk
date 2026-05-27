@@ -99,6 +99,7 @@ export const RequestDetailsView = () => {
     const [offersStatusMap, setOffersStatusMap] = useState<Record<number, OfferDecisionStatus>>({});
     const [offersLoading, setOffersLoading] = useState(false);
     const [offersError, setOffersError] = useState<string | null>(null);
+    const lastOffersErrorToastRef = useRef<string | null>(null);
     const [isManualOfferDialogOpen, setIsManualOfferDialogOpen] = useState(false);
     const pollIntervalMs = 10000;
 
@@ -126,6 +127,18 @@ export const RequestDetailsView = () => {
     useEffect(() => {
         hasPendingChangesRef.current = hasPendingChanges;
     }, [hasPendingChanges]);
+
+    useEffect(() => {
+        if (!offersError) {
+            lastOffersErrorToastRef.current = null;
+            return;
+        }
+        if (lastOffersErrorToastRef.current === offersError) {
+            return;
+        }
+        showErrorToast(offersError);
+        lastOffersErrorToastRef.current = offersError;
+    }, [offersError, showErrorToast]);
 
     useEffect(() => {
         if (suppressPendingChangesToastRef.current && !hasPendingChanges) {
@@ -910,7 +923,7 @@ export const RequestDetailsView = () => {
                     statusMap={offersStatusMap}
                     acceptedOfferId={acceptedOfferId}
                     isLoading={offersLoading}
-                    errorMessage={offersError}
+                    errorMessage={null}
                     statusOptions={offerStatusOptions}
                     onStatusChange={(offerId, value) => void handleOfferStatusChange(offerId, value)}
                     onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace?requestId=${requestDetails.id}`)}
@@ -932,4 +945,3 @@ export const RequestDetailsView = () => {
         </Box>
     );
 };
-

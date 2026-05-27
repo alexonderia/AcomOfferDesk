@@ -137,6 +137,7 @@ department.requests.update
 department.requests.status_update
 department.requests.assign
 department.offers.read
+department.offers.update
 department.offers.accept
 department.offers.reject
 department.chats.read
@@ -167,6 +168,7 @@ delegation.department.requests.update
 delegation.department.requests.status_update
 delegation.department.requests.assign
 delegation.department.offers.read
+delegation.department.offers.update
 delegation.department.offers.accept
 delegation.department.offers.reject
 delegation.department.chats.read
@@ -378,6 +380,10 @@ EOF
 )
 ROLE_DELEGATION_DEPARTMENT_OFFERS_READ=$(cat <<'EOF'
 department.offers.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE=$(cat <<'EOF'
+department.offers.update
 EOF
 )
 ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT=$(cat <<'EOF'
@@ -842,6 +848,7 @@ ensure_api_roles_model() {
   sync_composite_role "delegation.department.requests.status_update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE"
   sync_composite_role "delegation.department.requests.assign" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN"
   sync_composite_role "delegation.department.offers.read" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_READ"
+  sync_composite_role "delegation.department.offers.update" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE"
   sync_composite_role "delegation.department.offers.accept" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT"
   sync_composite_role "delegation.department.offers.reject" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_REJECT"
   sync_composite_role "delegation.department.chats.read" "$ROLE_DELEGATION_DEPARTMENT_CHATS_READ"

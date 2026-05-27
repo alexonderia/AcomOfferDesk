@@ -24,6 +24,7 @@ import { useMediaQuery } from '@mui/material';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { downloadFile } from '@shared/api/fileDownload';
+import { useSystemToasts } from '@shared/ui/toasts';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
 import { OFFER_WORKSPACE_CHAT_WIDTH_PX, OfferWorkspaceChatDock } from './OfferWorkspaceChatDock';
 import { useOfferWorkspace } from '../model/useOfferWorkspace';
@@ -95,7 +96,10 @@ export const OfferWorkspaceView = () => {
   const theme = useTheme();
   const isDesktopWithSidebar = useMediaQuery(theme.breakpoints.up('lg'));
   const isMobileViewport = useIsMobileViewport();
+  const { showErrorToast, showSystemToast } = useSystemToasts();
   const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
+  const lastShownErrorRef = useRef<string | null>(null);
+  const lastShownSaveSuccessRef = useRef<number | null>(null);
   const [isOfferEditMode, setIsOfferEditMode] = useState(false);
   const {
     session,
@@ -113,6 +117,7 @@ export const OfferWorkspaceView = () => {
     offerDecisionStatus,
     isUpdatingOfferStatus,
     isUpdatingOfferAmount,
+    lastOfferSaveSuccessAt,
     messages,
     typingUserIds,
     isSending,
@@ -149,6 +154,17 @@ export const OfferWorkspaceView = () => {
 
   const canViewRequestAmounts = Boolean(workspace?.request.actions.view_amounts);
   const canViewContractorInfo = Boolean(selectedOffer?.actions.view_contractor_info);
+  const hasOfferUpdatePermission = Boolean(session?.permissions.includes('offers.update'));
+  const hasDepartmentOfferUpdateDelegation = Boolean(session?.permissions.includes('department.offers.update'));
+  const canEnterOfferEditMode = (
+    hasDepartmentOfferUpdateDelegation
+    || hasOfferUpdatePermission
+  ) && (
+    canEditOfferAmount
+    || canUpload
+    || canDeleteFile
+    || canDeleteOwnOffer
+  );
   const normalizedErrorMessage = (errorMessage ?? '').toLowerCase();
   const isChatAccessError = normalizedErrorMessage.includes('просмотра чата') || normalizedErrorMessage.includes('доступ') && normalizedErrorMessage.includes('чат');
   const visibleErrorMessage = !canViewMessages && isChatAccessError ? null : errorMessage;
@@ -185,6 +201,41 @@ export const OfferWorkspaceView = () => {
       setIsChatOpen(false);
     }
   }, [canViewMessages, isChatOpen, setIsChatOpen]);
+
+  useEffect(() => {
+    if (isOfferEditMode && !canEnterOfferEditMode) {
+      setIsOfferEditMode(false);
+    }
+  }, [canEnterOfferEditMode, isOfferEditMode]);
+
+  useEffect(() => {
+    if (!visibleErrorMessage) {
+      lastShownErrorRef.current = null;
+      return;
+    }
+
+    if (lastShownErrorRef.current === visibleErrorMessage) {
+      return;
+    }
+
+    showErrorToast(visibleErrorMessage);
+    lastShownErrorRef.current = visibleErrorMessage;
+  }, [showErrorToast, visibleErrorMessage]);
+
+  useEffect(() => {
+    if (!lastOfferSaveSuccessAt) {
+      return;
+    }
+    if (lastShownSaveSuccessRef.current === lastOfferSaveSuccessAt) {
+      return;
+    }
+
+    showSystemToast({
+      severity: 'success',
+      message: 'Изменения КП успешно сохранены.',
+    });
+    lastShownSaveSuccessRef.current = lastOfferSaveSuccessAt;
+  }, [lastOfferSaveSuccessAt, showSystemToast]);
 
   if (isLoading) {
     return <Typography>Загрузка...</Typography>;
@@ -392,7 +443,7 @@ export const OfferWorkspaceView = () => {
 
         {sortedOffers.map((offerItem) => {
           const isCurrent = offerItem.offer_id === selectedOffer.offer_id;
-          const isCurrentInEditMode = isCurrent && isOfferEditMode;
+          const isCurrentInEditMode = isCurrent && isOfferEditMode && canEnterOfferEditMode;
           const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
           const hasOfferFileChanges = deletedOfferFileIds.length > 0 || Boolean(newOfferFile);
           const canSaveOfferChanges = hasOfferAmountChanges || hasOfferFileChanges;
@@ -640,21 +691,23 @@ export const OfferWorkspaceView = () => {
                     </Button>
                   ) : (
                     isCurrent ? (
-                      <Button
-                        variant="outlined"
-                        startIcon={isMobileViewport ? undefined : <EditOutlinedIcon fontSize="small" />}
-                        onClick={() => setIsOfferEditMode(true)}
-                        disabled={isUpdatingOfferAmount}
-                        aria-label="Изменить"
-                        sx={{
-                          minWidth: isMobileViewport ? 40 : undefined,
-                          width: isMobileViewport ? 40 : 'auto',
-                          height: 36,
-                          px: isMobileViewport ? 0 : undefined
-                        }}
-                      >
-                        {isMobileViewport ? <EditOutlinedIcon fontSize="small" /> : 'Изменить'}
-                      </Button>
+                      canEnterOfferEditMode ? (
+                        <Button
+                          variant="outlined"
+                          startIcon={isMobileViewport ? undefined : <EditOutlinedIcon fontSize="small" />}
+                          onClick={() => setIsOfferEditMode(true)}
+                          disabled={isUpdatingOfferAmount}
+                          aria-label="Изменить"
+                          sx={{
+                            minWidth: isMobileViewport ? 40 : undefined,
+                            width: isMobileViewport ? 40 : 'auto',
+                            height: 36,
+                            px: isMobileViewport ? 0 : undefined
+                          }}
+                        >
+                          {isMobileViewport ? <EditOutlinedIcon fontSize="small" /> : 'Изменить'}
+                        </Button>
+                      ) : null
                     ) : (
                       <Button
                         variant="outlined"
@@ -681,12 +734,6 @@ export const OfferWorkspaceView = () => {
 
               {isCurrent ? <input ref={fileInputRef} type="file" hidden onChange={(event) => void handleUpload(event)} /> : null}
 
-              {isCurrent && visibleErrorMessage ? (
-                <Typography role="alert" color="error" sx={{ mt: 1 }}>
-                  {visibleErrorMessage}
-                </Typography>
-              ) : null}
-              
             </Paper>
           );
         })}

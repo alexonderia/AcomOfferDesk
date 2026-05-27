@@ -237,7 +237,7 @@ def test_contractor_can_edit_only_own_offer_amount(
     contractor = make_current_user(
         user_id="contractor-1",
         role_id=settings.contractor_role_id,
-        permissions={PermissionCodes.OFFERS_AMOUNT_UPDATE},
+        permissions={PermissionCodes.OFFERS_UPDATE, PermissionCodes.OFFERS_AMOUNT_UPDATE},
     )
     set_current_user(contractor)
 
@@ -555,6 +555,53 @@ def test_department_offer_update_allows_updating_offer_amount_inside_department_
 
     assert response.status_code == 200
     assert uow.offers._offers[214].offer_amount == 87.0
+
+
+def test_hierarchy_offer_update_requires_offers_update_without_department_delegation(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="owner-1",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[215] = SimpleNamespace(
+        id=215,
+        id_request=10,
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/215", json={"offer_amount": 87.0})
+
+    assert response.status_code == 403
+    assert uow.offers._offers[215].offer_amount == 100.0
 
 
 def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app):

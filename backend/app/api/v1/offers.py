@@ -309,11 +309,11 @@ async def get_offer_workspace(
                     "files": [_request_file_schema(file_item) for file_item in request_offer.files],
                     "actions": OfferActionBuilder.build(
                         current_user,
-                        offer_owner_user_id=item.contractor.user_id,
+                        offer_owner_user_id=request_offer.owner_user_id,
                         request_owner_user_id=item.request.owner_user_id,
-                        contractor_user_id=item.contractor.user_id,
+                        contractor_user_id=request_offer.owner_user_id,
                         offer_status=request_offer.status,
-                        can_manage_in_scope=getattr(resolved, "can_manage_request_in_scope", False),
+                        can_manage_in_scope=getattr(resolved, "can_manage_offer_in_scope", False),
                         has_department_offer_update_scope=getattr(
                             resolved,
                             "has_department_offer_update_scope",

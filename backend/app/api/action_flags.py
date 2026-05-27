@@ -136,16 +136,20 @@ class OfferActionBuilder:
             offer_owner_user_id=offer_owner_user_id,
             request_owner_user_id=request_owner_user_id,
         )
+        has_offer_update_permission = has_permission(current_user, PermissionCodes.OFFERS_UPDATE)
         is_contractor = current_user.role_id == settings.contractor_role_id
+        can_manage_offer_in_effective_scope = can_manage_offer and (can_manage_in_scope or is_contractor)
         can_upload_files_by_permission = (
             not is_contractor
-            and has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
-            and can_manage_offer
+            and has_offer_update_permission
+            and has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE)
+            and can_manage_offer_in_effective_scope
         )
         can_delete_files_by_permission = (
             not is_contractor
-            and has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
-            and can_manage_offer
+            and has_offer_update_permission
+            and has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE)
+            and can_manage_offer_in_effective_scope
         )
         can_update_status = has_permission(current_user, PermissionCodes.OFFERS_STATUS_UPDATE)
         has_custom_accept_scope = can_accept_in_scope is not None
@@ -165,8 +169,10 @@ class OfferActionBuilder:
             ),
             can_edit_amount=(
                 (
+                    has_offer_update_permission
+                    and
                     has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE)
-                    and can_manage_offer
+                    and can_manage_offer_in_effective_scope
                 )
                 or (
                     current_user.role_id != settings.contractor_role_id
@@ -195,8 +201,10 @@ class OfferActionBuilder:
             can_upload_files=(
                 (
                     (
-                        has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
-                        and can_manage_offer
+                        has_offer_update_permission
+                        and
+                        has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE)
+                        and can_manage_offer_in_effective_scope
                     )
                     or (
                         current_user.role_id != settings.contractor_role_id
@@ -210,8 +218,10 @@ class OfferActionBuilder:
             can_delete_files=(
                 (
                     (
-                        has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
-                        and can_manage_offer
+                        has_offer_update_permission
+                        and
+                        has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE)
+                        and can_manage_offer_in_effective_scope
                     )
                     or (
                         current_user.role_id != settings.contractor_role_id
@@ -367,6 +377,7 @@ class ResolvedOfferActionContext:
     can_create_new_offer: bool
     can_acknowledge_messages: bool
     can_manage_request_in_scope: bool
+    can_manage_offer_in_scope: bool
     has_department_offer_update_scope: bool
     can_accept_in_scope: bool
     can_reject_in_scope: bool
@@ -484,10 +495,15 @@ class OfferActionResolver:
         staff_scope = StaffAccessScopeService(self._users)
         if current_user.role_id == settings.contractor_role_id:
             can_manage_in_scope = current_user.user_id == offer.id_user
+            can_manage_offer_in_scope = can_manage_in_scope
             can_view_in_scope = can_manage_in_scope
             can_send_in_scope = can_manage_in_scope
         else:
             can_manage_in_scope = await staff_scope.can_manage_request_owner(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+            )
+            can_manage_offer_in_scope = await staff_scope.is_hierarchy_manager_of(
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
             )
@@ -523,7 +539,7 @@ class OfferActionResolver:
             request_owner_user_id=request.id_user,
             contractor_user_id=offer.id_user,
             offer_status=offer.status,
-            can_manage_in_scope=can_manage_in_scope,
+            can_manage_in_scope=can_manage_offer_in_scope,
             has_department_offer_update_scope=has_department_offer_update_scope,
             can_accept_in_scope=can_accept_in_scope,
             can_reject_in_scope=can_reject_in_scope,
@@ -545,6 +561,7 @@ class OfferActionResolver:
             can_create_new_offer=can_create_new_offer,
             can_acknowledge_messages=can_acknowledge_messages,
             can_manage_request_in_scope=can_manage_in_scope,
+            can_manage_offer_in_scope=can_manage_offer_in_scope,
             has_department_offer_update_scope=has_department_offer_update_scope,
             can_accept_in_scope=can_accept_in_scope,
             can_reject_in_scope=can_reject_in_scope,

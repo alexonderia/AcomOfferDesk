@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
-import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react';
+import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
@@ -814,7 +814,8 @@ export const UsersTable = ({
   const [departmentDelegationsError, setDepartmentDelegationsError] = useState<string | null>(null);
   const [isLoadingDepartmentDelegations, setIsLoadingDepartmentDelegations] = useState(false);
   const [isSavingDepartmentDelegations, setIsSavingDepartmentDelegations] = useState(false);
-  const { showSystemToast } = useSystemToasts();
+  const { showSystemToast, showErrorToast } = useSystemToasts();
+  const lastDelegationToastRef = useRef<string | null>(null);
 
   const {
     register,
@@ -1021,6 +1022,30 @@ export const UsersTable = ({
     }));
   }, [departmentDelegations]);
 
+  useEffect(() => {
+    const warningMessage = departmentDelegations?.warning ?? null;
+    const errorMessage = departmentDelegationsError;
+    const nextMessage = errorMessage || warningMessage;
+
+    if (!nextMessage) {
+      lastDelegationToastRef.current = null;
+      return;
+    }
+    if (lastDelegationToastRef.current === nextMessage) {
+      return;
+    }
+
+    if (errorMessage) {
+      showErrorToast(errorMessage);
+    } else if (warningMessage) {
+      showSystemToast({
+        severity: 'warning',
+        message: warningMessage,
+      });
+    }
+    lastDelegationToastRef.current = nextMessage;
+  }, [departmentDelegations?.warning, departmentDelegationsError, showErrorToast, showSystemToast]);
+
   const canEditUserStatus = (userId: string) => {
     const user = users.find((item) => item.user_id === userId);
     if (!canUpdateStatus || !user || !user.actions.update_status) {
@@ -1182,7 +1207,13 @@ export const UsersTable = ({
         message: 'Дополнительные доступы обновлены.',
       });
     } catch (error) {
-      setDepartmentDelegationsError(error instanceof Error ? error.message : 'Не удалось сохранить доступы');
+      const message = error instanceof Error ? error.message : 'Не удалось сохранить доступы';
+      setDepartmentDelegationsError(message);
+      if (selectedUser) {
+        void getDepartmentDelegations(selectedUser.user_id)
+          .then((state) => setDepartmentDelegations(state))
+          .catch(() => undefined);
+      }
     } finally {
       setIsSavingDepartmentDelegations(false);
     }
@@ -1602,9 +1633,6 @@ export const UsersTable = ({
                 {isLoadingDepartmentDelegations ? (
                   <Alert severity="info">Загрузка дополнительных доступов...</Alert>
                 ) : null}
-                {departmentDelegationsError ? (
-                  <Alert severity="warning">{departmentDelegationsError}</Alert>
-                ) : null}
                 {departmentDelegations ? (
                   <Stack
                     spacing={1.2}
@@ -1619,7 +1647,6 @@ export const UsersTable = ({
                     <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                       Дополнительные доступы к подразделению
                     </Typography>
-                    {departmentDelegations.warning ? <Alert severity="warning">{departmentDelegations.warning}</Alert> : null}
                     <Stack spacing={1.2}>
                       {delegationAccessGroups.map((group) => (
                         <Box key={group.group}>

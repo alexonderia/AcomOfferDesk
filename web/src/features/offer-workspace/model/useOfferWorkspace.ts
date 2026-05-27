@@ -104,6 +104,7 @@ export const useOfferWorkspace = () => {
   const [isUpdatingOfferStatus, setIsUpdatingOfferStatus] = useState(false);
   const [offerDecisionStatus, setOfferDecisionStatus] = useState<'accepted' | 'rejected' | ''>('');
   const [isUpdatingOfferAmount, setIsUpdatingOfferAmount] = useState(false);
+  const [lastOfferSaveSuccessAt, setLastOfferSaveSuccessAt] = useState<number | null>(null);
   const [offerAmountInput, setOfferAmountInput] = useState('');
   const [baselineOfferAmount, setBaselineOfferAmount] = useState('');
   const [existingOfferFiles, setExistingOfferFiles] = useState<Array<{ id: number; name: string; download_url: string }>>([]);
@@ -380,6 +381,7 @@ export const useOfferWorkspace = () => {
       await refreshWorkspace(selectedOffer.offer_id);
       setDeletedOfferFileIds([]);
       setNewOfferFile(null);
+      setLastOfferSaveSuccessAt(Date.now());
     } catch (error) {
       setErrorMessage(getErrorMessage(error, 'Не удалось сохранить изменения.'));
     } finally {
@@ -425,6 +427,7 @@ export const useOfferWorkspace = () => {
     offerDecisionStatus,
     isUpdatingOfferStatus,
     isUpdatingOfferAmount,
+    lastOfferSaveSuccessAt,
     messages,
     typingUserIds,
     connectionState,

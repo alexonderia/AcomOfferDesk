@@ -1,15 +1,24 @@
 ﻿import type { ReactNode } from "react";
 import { ThemeProvider } from "@mui/material/styles";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OfferWorkspaceView } from "@features/offer-workspace/ui/OfferWorkspaceView";
 import { appTheme } from "@shared/theme/appTheme";
 
 const useOfferWorkspaceMock = vi.fn();
+const showErrorToastMock = vi.fn();
 
 vi.mock("@features/offer-workspace/model/useOfferWorkspace", () => ({
   useOfferWorkspace: () => useOfferWorkspaceMock(),
+}));
+
+vi.mock("@shared/ui/toasts", () => ({
+  useSystemToasts: () => ({
+    showErrorToast: showErrorToastMock,
+    showSuccessToast: vi.fn(),
+    showSystemToast: vi.fn(),
+  }),
 }));
 
 vi.mock("@shared/api/fileDownload", () => ({
@@ -55,6 +64,8 @@ const buildWorkspaceHookState = (overrides?:
     offerUploadFile: boolean;
     offerDeleteFile: boolean;
     offerDelete: boolean;
+    errorMessage: string | null;
+    permissions: string[];
   }>) => {
   const selectedOffer = {
     offer_id: 101,
@@ -85,7 +96,7 @@ const buildWorkspaceHookState = (overrides?:
   };
 
   return {
-    session: { login: "u-1" },
+    session: { login: "u-1", permissions: overrides?.permissions ?? ["offers.update"] },
     workspace: {
       request: {
         request_id: 17,
@@ -132,7 +143,7 @@ const buildWorkspaceHookState = (overrides?:
     setSelectedOfferId: vi.fn(),
     fileInputRef: { current: null },
     isLoading: false,
-    errorMessage: null,
+    errorMessage: overrides?.errorMessage ?? null,
     isChatOpen: true,
     setIsChatOpen: vi.fn(),
     offerDecisionStatus: "" as const,
@@ -178,6 +189,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
 
   beforeEach(() => {
     useOfferWorkspaceMock.mockReset();
+    showErrorToastMock.mockReset();
   });
 
   it("shows contractor workspace CTAs when backend action flags allow them", () => {
@@ -217,9 +229,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     expect(screen.queryByRole("button", { name: "Новый отклик" })).not.toBeInTheDocument();
     expect(screen.getByTestId("chat-can-send-message")).toHaveTextContent("false");
     expect(screen.getByTestId("chat-can-attach")).toHaveTextContent("false");
-
-    fireEvent.click(screen.getByRole("button", { name: "Изменить" }));
-
+    expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Удалить отклик" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Добавить файл")).not.toBeInTheDocument();
   });
@@ -249,5 +259,95 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     renderWithTheme();
 
     expect(screen.queryByTestId("workspace-chat-panel")).not.toBeInTheDocument();
+  });
+
+  it("hides edit action for internal users without department offer update delegation", () => {
+    useOfferWorkspaceMock.mockReturnValue(
+      buildWorkspaceHookState({
+        isContractor: false,
+        canEditOfferAmount: true,
+        permissions: ["offers.amount.update"],
+      })
+    );
+
+    renderWithTheme();
+
+    expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
+  });
+
+  it("shows edit action for internal users with offers.update in hierarchy scope", () => {
+    useOfferWorkspaceMock.mockReturnValue(
+      buildWorkspaceHookState({
+        isContractor: false,
+        canEditOfferAmount: true,
+        permissions: ["offers.update", "offers.amount.update"],
+      })
+    );
+
+    renderWithTheme();
+
+    expect(screen.getByRole("button", { name: "Изменить" })).toBeInTheDocument();
+  });
+
+  it("shows edit action for internal users with department.offers.update delegation", () => {
+    useOfferWorkspaceMock.mockReturnValue(
+      buildWorkspaceHookState({
+        isContractor: false,
+        canEditOfferAmount: true,
+        permissions: ["department.offers.update"],
+      })
+    );
+
+    renderWithTheme();
+
+    expect(screen.getByRole("button", { name: "Изменить" })).toBeInTheDocument();
+  });
+
+  it("exits edit mode when current offer becomes non-editable", async () => {
+    let currentState = buildWorkspaceHookState({
+      isContractor: false,
+      canEditOfferAmount: true,
+      permissions: ["offers.update", "offers.amount.update"],
+    });
+    useOfferWorkspaceMock.mockImplementation(() => currentState);
+
+    const { rerender } = render(
+      <ThemeProvider theme={appTheme}>
+        <OfferWorkspaceView />
+      </ThemeProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Изменить" }));
+    expect(screen.getByRole("button", { name: "Отмена" })).toBeInTheDocument();
+
+    currentState = buildWorkspaceHookState({
+      isContractor: false,
+      canEditOfferAmount: true,
+      permissions: ["offers.amount.update"],
+    });
+    rerender(
+      <ThemeProvider theme={appTheme}>
+        <OfferWorkspaceView />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Отмена" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Сохранить" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows permission errors via system toast instead of inline text", () => {
+    useOfferWorkspaceMock.mockReturnValue(
+      buildWorkspaceHookState({
+        errorMessage: "Недостаточно прав для выполнения действия",
+      })
+    );
+
+    renderWithTheme();
+
+    expect(showErrorToastMock).toHaveBeenCalledWith("Недостаточно прав для выполнения действия");
+    expect(screen.queryByText("Недостаточно прав для выполнения действия")).not.toBeInTheDocument();
   });
 });

@@ -202,6 +202,27 @@ async def _can_manage_request_in_scope(
     return request_owner_user_id in manageable_owner_ids
 
 
+async def _can_manage_offer_in_scope(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+    request_owner_user_id: str,
+) -> bool:
+    if current_user.role_id == settings.contractor_role_id:
+        return current_user.user_id == request_owner_user_id
+    if current_user.role_id == settings.superadmin_role_id:
+        return True
+
+    users = getattr(uow, "users", None)
+    if users is None or not callable(getattr(users, "get_by_id", None)):
+        return False
+
+    return await StaffAccessScopeService(users).is_hierarchy_manager_of(
+        current_user=current_user,
+        request_owner_user_id=request_owner_user_id,
+    )
+
+
 async def _can_update_request_status_in_scope(
     *,
     uow: UnitOfWork,
@@ -500,6 +521,11 @@ async def get_request_details(
             current_user=current_user,
             request_owner_user_id=item.owner_user_id,
         )
+        can_manage_offer = await _can_manage_offer_in_scope(
+            uow=uow,
+            current_user=current_user,
+            request_owner_user_id=item.owner_user_id,
+        )
         can_update_status = await _can_update_request_status_in_scope(
             uow=uow,
             current_user=current_user,
@@ -577,7 +603,7 @@ async def get_request_details(
                     request_owner_user_id=item.owner_user_id,
                     contractor_user_id=offer.contractor_user_id,
                     offer_status=offer.status,
-                    can_manage_in_scope=can_manage,
+                    can_manage_in_scope=can_manage_offer,
                     has_department_offer_update_scope=has_department_offer_update_scope,
                     can_accept_in_scope=can_accept_in_scope,
                     can_reject_in_scope=can_reject_in_scope,

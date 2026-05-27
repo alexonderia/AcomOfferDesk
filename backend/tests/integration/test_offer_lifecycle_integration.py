@@ -465,6 +465,97 @@ def test_department_offer_accept_allows_accept_inside_department_scope(
     assert uow.offers._offers[212].status == "accepted"
 
 
+def test_department_request_update_without_department_offer_update_cannot_update_offer_amount_in_parallel_branch(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[213] = SimpleNamespace(
+        id=213,
+        id_request=10,
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/213", json={"offer_amount": 87.0})
+
+    assert response.status_code == 403
+    assert uow.offers._offers[213].offer_amount == 100.0
+
+
+def test_department_offer_update_allows_updating_offer_amount_inside_department_scope(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[214] = SimpleNamespace(
+        id=214,
+        id_request=10,
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_OFFERS_UPDATE},
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/214", json={"offer_amount": 87.0})
+
+    assert response.status_code == 200
+    assert uow.offers._offers[214].offer_amount == 87.0
+
+
 def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app):
     async def _anonymous():
         raise Unauthorized("Missing credentials")

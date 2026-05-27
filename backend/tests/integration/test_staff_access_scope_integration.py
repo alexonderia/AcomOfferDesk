@@ -487,3 +487,78 @@ def test_department_offer_accept_reject_delegations_grant_offer_actions_inside_d
     actions = response.json()["data"]["item"]["offers"][0]["actions"]
     assert actions["can_accept"] is True
     assert actions["can_reject"] is True
+
+
+def test_department_requests_update_does_not_grant_offer_edit_actions_without_offer_update_delegation(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={
+                PermissionCodes.REQUESTS_READ,
+                PermissionCodes.REQUESTS_AMOUNTS_READ,
+                PermissionCodes.REQUESTS_UPDATE,
+                PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
+            },
+        )
+    )
+    uow = DummyUow()
+    uow.users = HierarchyUsersRepo()
+    set_uow(uow)
+
+    async def _fake_get_request_details(self, *, current_user, request_id):
+        _ = (current_user, request_id)
+        return _request_detail_item(request_id=33, owner_user_id="eco-3")
+
+    monkeypatch.setattr(requests_api.RequestService, "get_request_details", _fake_get_request_details)
+
+    response = test_client.get("/api/v1/requests/33")
+
+    assert response.status_code == 200
+    actions = response.json()["data"]["item"]["offers"][0]["actions"]
+    assert actions["can_edit_amount"] is False
+    assert actions["can_upload_files"] is False
+    assert actions["can_delete_files"] is False
+
+
+def test_department_offer_update_delegation_grants_offer_edit_actions_inside_department_scope(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={
+                PermissionCodes.REQUESTS_READ,
+                PermissionCodes.REQUESTS_AMOUNTS_READ,
+                PermissionCodes.DEPARTMENT_OFFERS_UPDATE,
+            },
+        )
+    )
+    uow = DummyUow()
+    uow.users = HierarchyUsersRepo()
+    set_uow(uow)
+
+    async def _fake_get_request_details(self, *, current_user, request_id):
+        _ = (current_user, request_id)
+        return _request_detail_item(request_id=34, owner_user_id="eco-3")
+
+    monkeypatch.setattr(requests_api.RequestService, "get_request_details", _fake_get_request_details)
+
+    response = test_client.get("/api/v1/requests/34")
+
+    assert response.status_code == 200
+    actions = response.json()["data"]["item"]["offers"][0]["actions"]
+    assert actions["can_edit_amount"] is True
+    assert actions["can_upload_files"] is True
+    assert actions["can_delete_files"] is True

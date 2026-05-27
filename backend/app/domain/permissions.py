@@ -67,6 +67,7 @@ class PermissionCodes:
     DEPARTMENT_REQUESTS_STATUS_UPDATE = "department.requests.status_update"
     DEPARTMENT_REQUESTS_ASSIGN = "department.requests.assign"
     DEPARTMENT_OFFERS_READ = "department.offers.read"
+    DEPARTMENT_OFFERS_UPDATE = "department.offers.update"
     DEPARTMENT_OFFERS_ACCEPT = "department.offers.accept"
     DEPARTMENT_OFFERS_REJECT = "department.offers.reject"
     DEPARTMENT_CHATS_READ = "department.chats.read"

@@ -341,6 +341,23 @@ async def _can_update_offer_status_in_scope(
     )
 
 
+async def _has_department_offer_update_scope(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+    request_owner_user_id: str,
+) -> bool:
+    users = getattr(uow, "users", None)
+    if users is None or not callable(getattr(users, "get_by_id", None)):
+        return False
+    if not has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_UPDATE):
+        return False
+    return await DepartmentScopeService(users).is_user_in_current_user_department(
+        current_user=current_user,
+        target_user_id=request_owner_user_id,
+    )
+
+
 @router.get("/requests", response_model=RequestListResponse)
 @router.get("/requests/", response_model=RequestListResponse, include_in_schema=False)
 async def list_requests(
@@ -511,6 +528,11 @@ async def get_request_details(
         deleted_alert_count=item.count_deleted_alert,
     )
     offer_schemas: list[OfferItemSchema] = []
+    has_department_offer_update_scope = await _has_department_offer_update_scope(
+        uow=uow,
+        current_user=current_user,
+        request_owner_user_id=item.owner_user_id,
+    )
     for offer in item.offers:
         can_accept_in_scope = await _can_update_offer_status_in_scope(
             uow=uow,
@@ -556,6 +578,7 @@ async def get_request_details(
                     contractor_user_id=offer.contractor_user_id,
                     offer_status=offer.status,
                     can_manage_in_scope=can_manage,
+                    has_department_offer_update_scope=has_department_offer_update_scope,
                     can_accept_in_scope=can_accept_in_scope,
                     can_reject_in_scope=can_reject_in_scope,
                 ),

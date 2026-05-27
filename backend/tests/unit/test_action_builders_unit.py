@@ -157,6 +157,32 @@ def test_offer_action_builder_manual_offer_permission_does_not_grant_file_action
     assert actions.can_delete_files is False
 
 
+def test_offer_action_builder_department_offer_update_scope_grants_edit_actions(make_current_user):
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.OFFERS_WORKSPACE_READ,
+            PermissionCodes.OFFERS_CONTRACTOR_INFO_READ,
+        },
+    )
+
+    actions = OfferActionBuilder.build(
+        user,
+        offer_owner_user_id="contractor-1",
+        request_owner_user_id="owner-1",
+        contractor_user_id="contractor-1",
+        offer_status="submitted",
+        can_manage_in_scope=False,
+        has_department_offer_update_scope=True,
+    )
+
+    assert actions.can_edit_amount is True
+    assert actions.can_upload_files is True
+    assert actions.can_delete_files is True
+    assert actions.can_accept is False
+    assert actions.can_reject is False
+
+
 def test_user_action_builder_contractor_not_given_internal_controls(make_current_user):
     contractor = make_current_user(
         user_id="c-1",

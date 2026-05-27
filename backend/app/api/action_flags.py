@@ -115,6 +115,7 @@ class OfferActionBuilder:
         contractor_user_id: str,
         offer_status: str,
         can_manage_in_scope: bool,
+        has_department_offer_update_scope: bool = False,
         can_accept_in_scope: bool | None = None,
         can_reject_in_scope: bool | None = None,
         offer_is_manual: bool = False,
@@ -163,12 +164,18 @@ class OfferActionBuilder:
                 contractor_user_id=contractor_user_id,
             ),
             can_edit_amount=(
-                has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE)
-                and can_manage_offer
-                and (
-                    current_user.role_id != settings.contractor_role_id
-                    or offer_status not in {"accepted", "rejected"}
+                (
+                    has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE)
+                    and can_manage_offer
                 )
+                or (
+                    current_user.role_id != settings.contractor_role_id
+                    and has_department_offer_update_scope
+                )
+            )
+            and (
+                current_user.role_id != settings.contractor_role_id
+                or offer_status not in {"accepted", "rejected"}
             ),
             can_accept=(
                 can_accept_in_scope
@@ -187,20 +194,32 @@ class OfferActionBuilder:
             ),
             can_upload_files=(
                 (
-                    has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
-                    and can_manage_offer
-                    and offer_status not in {"accepted", "rejected"}
+                    (
+                        has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
+                        and can_manage_offer
+                    )
+                    or (
+                        current_user.role_id != settings.contractor_role_id
+                        and has_department_offer_update_scope
+                    )
                 )
+                and offer_status not in {"accepted", "rejected"}
                 if is_contractor
-                else can_upload_files_by_permission
+                else (can_upload_files_by_permission or has_department_offer_update_scope)
             ),
             can_delete_files=(
                 (
-                    has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
-                    and can_manage_offer
+                    (
+                        has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
+                        and can_manage_offer
+                    )
+                    or (
+                        current_user.role_id != settings.contractor_role_id
+                        and has_department_offer_update_scope
+                    )
                 )
                 if is_contractor
-                else can_delete_files_by_permission
+                else (can_delete_files_by_permission or has_department_offer_update_scope)
             ),
         )
 
@@ -348,6 +367,7 @@ class ResolvedOfferActionContext:
     can_create_new_offer: bool
     can_acknowledge_messages: bool
     can_manage_request_in_scope: bool
+    has_department_offer_update_scope: bool
     can_accept_in_scope: bool
     can_reject_in_scope: bool
     offer_actions: OfferActionsSchema
@@ -408,6 +428,19 @@ class OfferActionResolver:
             current_user,
             offer_owner_user_id=offer_owner_user_id,
             request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _has_department_offer_update_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if not has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_UPDATE):
+            return False
+        return await DepartmentScopeService(self._users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
         )
 
     async def resolve_workspace_context(
@@ -479,6 +512,10 @@ class OfferActionResolver:
             offer_owner_user_id=offer.id_user,
             status="rejected",
         )
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
 
         offer_actions = OfferActionBuilder.build(
             current_user,
@@ -487,6 +524,7 @@ class OfferActionResolver:
             contractor_user_id=offer.id_user,
             offer_status=offer.status,
             can_manage_in_scope=can_manage_in_scope,
+            has_department_offer_update_scope=has_department_offer_update_scope,
             can_accept_in_scope=can_accept_in_scope,
             can_reject_in_scope=can_reject_in_scope,
             offer_is_manual=offer_is_manual,
@@ -507,6 +545,7 @@ class OfferActionResolver:
             can_create_new_offer=can_create_new_offer,
             can_acknowledge_messages=can_acknowledge_messages,
             can_manage_request_in_scope=can_manage_in_scope,
+            has_department_offer_update_scope=has_department_offer_update_scope,
             can_accept_in_scope=can_accept_in_scope,
             can_reject_in_scope=can_reject_in_scope,
             offer_actions=offer_actions,

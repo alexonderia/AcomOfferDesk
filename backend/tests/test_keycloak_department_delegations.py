@@ -57,16 +57,26 @@ def test_sync_department_roles_adds_and_removes_only_department_roles(monkeypatc
     result = _run(
         service.sync_user_department_role_codes(
             keycloak_user_id="kc-user",
-            requested_role_codes={"delegation.department.offers.accept"},
+            requested_role_codes={
+                "delegation.department.offers.update",
+                "delegation.department.offers.accept",
+            },
         )
     )
 
-    assert result.added_role_codes == frozenset({"delegation.department.offers.accept"})
+    assert result.added_role_codes == frozenset(
+        {
+            "delegation.department.offers.update",
+            "delegation.department.offers.accept",
+        }
+    )
     assert result.removed_role_codes == frozenset({"delegation.department.requests.read"})
     flattened_removed = [item["name"] for batch in removed_calls for item in batch]
     flattened_added = [item["name"] for batch in added_calls for item in batch]
     assert "delegation.department.requests.read" in flattened_removed
+    assert "delegation.department.offers.update" in flattened_added
     assert "delegation.department.offers.accept" in flattened_added
+    assert "department.offers.update" in flattened_added
     assert "department.offers.accept" in flattened_added
 
 

@@ -832,10 +832,9 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
             )
-        elif await self._can_manage_department_files(
+        elif await self._has_department_offer_update_scope(
             current_user=current_user,
             request_owner_user_id=request.id_user,
-            upload=True,
         ):
             pass
         else:
@@ -909,10 +908,9 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
             )
-        elif await self._can_manage_department_files(
+        elif await self._has_department_offer_update_scope(
             current_user=current_user,
             request_owner_user_id=request.id_user,
-            upload=False,
         ):
             pass
         else:
@@ -1004,20 +1002,34 @@ class OfferService:
         return offer.status
 
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
-        require_permission(
-            current_user,
-            PermissionCodes.OFFERS_AMOUNT_UPDATE,
-            message="Insufficient permissions to update offer",
-        )
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         self._validate_offer_amount(offer_amount)
 
-        await self._ensure_can_manage_offer_for_internal_user(
+        if current_user.role_id == settings.contractor_role_id:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_AMOUNT_UPDATE,
+                message="Insufficient permissions to update offer amount",
+            )
+            OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
+        elif has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE):
+            await self._ensure_can_manage_offer_for_internal_user(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+                offer_owner_user_id=offer.id_user,
+                allow_department_request_update=False,
+            )
+        elif await self._has_department_offer_update_scope(
             current_user=current_user,
             request_owner_user_id=request.id_user,
-            offer_owner_user_id=offer.id_user,
-            allow_department_request_update=False,
-        )
+        ):
+            pass
+        else:
+            raise Forbidden("Insufficient permissions to update offer amount")
         if (
             current_user.role_id == settings.contractor_role_id
             and current_user.user_id == offer.id_user
@@ -1446,19 +1458,13 @@ class OfferService:
             return
         raise Forbidden("Insufficient permissions to send chat message")
 
-    async def _can_manage_department_files(
+    async def _has_department_offer_update_scope(
         self,
         *,
         current_user: CurrentUser,
         request_owner_user_id: str,
-        upload: bool,
     ) -> bool:
-        permission = (
-            PermissionCodes.DEPARTMENT_FILES_UPLOAD
-            if upload
-            else PermissionCodes.DEPARTMENT_FILES_DELETE
-        )
-        if not has_permission(current_user, permission):
+        if not has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_UPDATE):
             return False
         return await self._is_user_inside_current_department_scope(
             current_user=current_user,

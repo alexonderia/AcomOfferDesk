@@ -6,6 +6,7 @@ type BackendRequestActionFlags = {
   can_view_amounts?: boolean;
   can_open_contractor_view?: boolean;
   can_edit?: boolean;
+  can_update_status?: boolean;
   can_change_owner?: boolean;
   can_upload_files?: boolean;
   can_delete_files?: boolean;
@@ -51,6 +52,7 @@ export type RequestActions = {
   view_amounts: boolean;
   open_contractor_view: boolean;
   edit: boolean;
+  update_status: boolean;
   change_owner: boolean;
   upload_file: boolean;
   delete_file: boolean;
@@ -96,6 +98,7 @@ export const normalizeRequestActions = (actions?: BackendRequestActionFlags): Re
   view_amounts: Boolean(actions?.can_view_amounts),
   open_contractor_view: Boolean(actions?.can_open_contractor_view),
   edit: Boolean(actions?.can_edit),
+  update_status: Boolean(actions?.can_update_status),
   change_owner: Boolean(actions?.can_change_owner),
   upload_file: Boolean(actions?.can_upload_files),
   delete_file: Boolean(actions?.can_delete_files),

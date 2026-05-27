@@ -43,6 +43,24 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Normative file can be uploaded only once': 'Нормативный документ можно загрузить только один раз',
   'Partner card file is not configured': 'Не загружен нормативный документ для карты партнера',
   'Insufficient permissions to create manual offers': 'Недостаточно прав для ручного создания КП',
+  'Insufficient permissions to edit request':
+    'Недостаточно прав для редактирования заявки: доступ ограничен иерархией/подразделением',
+  'Insufficient permissions to update request status':
+    'Недостаточно прав для изменения статуса заявки: требуется право изменения статуса в вашем контуре доступа',
+  'Insufficient permissions to update request amounts':
+    'Недостаточно прав для изменения сумм заявки: требуется право на редактирование цен в вашем контуре доступа',
+  'Insufficient permissions to update request deadline':
+    'Недостаточно прав для изменения дедлайна заявки: требуется право редактирования дедлайна в вашем контуре доступа',
+  'Insufficient permissions to upload request files':
+    'Недостаточно прав для загрузки файлов в заявку: требуется право загрузки файлов и доступ к заявке',
+  'Insufficient permissions to delete request files':
+    'Недостаточно прав для удаления файлов заявки: требуется право удаления файлов и доступ к заявке',
+  'Insufficient permissions to send request email notifications':
+    'Недостаточно прав для отправки дополнительных уведомлений по заявке',
+  'Operator can update status only for own requests':
+    'Изменение статуса оператором доступно только для собственных заявок',
+  'Request is outside your management scope':
+    'Действие недоступно: заявка вне вашего контура управления',
   'Economist can create manual offers only for own requests': 'Экономист может создавать КП вручную только для своих заявок',
   'Manual offer can be created only for open request': 'Ручное КП можно создать только для открытой заявки',
   'Accepted offer amount is required when request is closed with accepted offer': 'У принятого КП должна быть указана сумма',

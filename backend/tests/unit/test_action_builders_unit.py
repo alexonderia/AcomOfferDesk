@@ -34,6 +34,7 @@ def test_request_action_builder_reflects_permissions_and_status(make_current_use
         owner_user_id="owner-1",
         status="open",
         can_manage_in_scope=True,
+        can_update_status_in_scope=True,
         can_create_offer=False,
         deleted_alert_count=2,
     )
@@ -41,6 +42,7 @@ def test_request_action_builder_reflects_permissions_and_status(make_current_use
     assert actions.can_view_details is True
     assert actions.can_view_amounts is True
     assert actions.can_open_contractor_view is True
+    assert actions.can_update_status is True
     assert actions.can_upload_files is True
     assert actions.can_delete_files is True
     assert actions.can_send_email_notifications is True
@@ -63,9 +65,11 @@ def test_request_action_builder_hides_edit_actions_outside_management_scope(make
         owner_user_id="peer-owner",
         status="open",
         can_manage_in_scope=False,
+        can_update_status_in_scope=False,
     )
 
     assert actions.can_edit is False
+    assert actions.can_update_status is False
     assert actions.can_upload_files is False
 
 

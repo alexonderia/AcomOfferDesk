@@ -105,6 +105,7 @@ const buildWorkspaceHookState = (overrides?:
           view_amounts: true,
           open_contractor_view: false,
           edit: false,
+          update_status: false,
           change_owner: false,
           upload_file: false,
           delete_file: false,

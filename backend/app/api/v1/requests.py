@@ -15,7 +15,7 @@ from app.core.uow import UnitOfWork
 from app.domain.authorization import has_permission
 from app.domain.exceptions import Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
-from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
+from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPolicy
 from app.schemas.requests import (
     DeletedAlertViewed,
     DeletedAlertViewedResponse,
@@ -100,6 +100,8 @@ def _request_item_schema(
     item,
     *,
     can_manage_in_scope: bool,
+    can_update_status_in_scope: bool,
+    can_change_owner_in_scope: bool,
 ) -> RequestItemSchema:
     return RequestItemSchema(
         request_id=item.request_id,
@@ -124,6 +126,8 @@ def _request_item_schema(
             owner_user_id=item.owner_user_id,
             status=item.status,
             can_manage_in_scope=can_manage_in_scope,
+            can_update_status_in_scope=can_update_status_in_scope,
+            can_change_owner_in_scope=can_change_owner_in_scope,
             deleted_alert_count=item.count_deleted_alert,
         ),
     )
@@ -134,6 +138,8 @@ def _open_request_item_schema(
     item,
     *,
     can_manage_in_scope: bool,
+    can_update_status_in_scope: bool,
+    can_change_owner_in_scope: bool,
 ) -> OpenRequestItemSchema:
     can_create_offer = (
         current_user.role_id == settings.contractor_role_id
@@ -175,6 +181,8 @@ def _open_request_item_schema(
             owner_user_id=item.owner_user_id,
             status=item.status,
             can_manage_in_scope=can_manage_in_scope,
+            can_update_status_in_scope=can_update_status_in_scope,
+            can_change_owner_in_scope=can_change_owner_in_scope,
             can_create_offer=can_create_offer,
         ),
     )
@@ -192,6 +200,80 @@ async def _can_manage_request_in_scope(
         owner_user_ids={request_owner_user_id},
     )
     return request_owner_user_id in manageable_owner_ids
+
+
+async def _can_update_request_status_in_scope(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+    request_owner_user_id: str,
+) -> bool:
+    if current_user.role_id == settings.contractor_role_id:
+        return False
+    if current_user.role_id == settings.superadmin_role_id:
+        return has_permission(current_user, PermissionCodes.REQUESTS_STATUS_UPDATE)
+
+    users = getattr(uow, "users", None)
+    if users is None or not callable(getattr(users, "get_by_id", None)):
+        return False
+
+    if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_STATUS_UPDATE):
+        is_inside_department_scope = await DepartmentScopeService(users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
+        if is_inside_department_scope:
+            return True
+
+    if not has_permission(current_user, PermissionCodes.REQUESTS_STATUS_UPDATE):
+        return False
+
+    if current_user.role_id == settings.operator_role_id:
+        return current_user.user_id == request_owner_user_id
+
+    return await StaffAccessScopeService(users).is_hierarchy_manager_of(
+        current_user=current_user,
+        request_owner_user_id=request_owner_user_id,
+    )
+
+
+async def _can_change_request_owner_in_scope(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+    request_owner_user_id: str,
+) -> bool:
+    if current_user.role_id == settings.contractor_role_id:
+        return False
+
+    users = getattr(uow, "users", None)
+    if users is None or not callable(getattr(users, "get_by_id", None)):
+        return False
+
+    if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN):
+        is_inside_department_scope = await DepartmentScopeService(users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
+        if is_inside_department_scope:
+            return True
+
+    if not RequestPolicy.can_change_owner(
+        current_user,
+        request_owner_user_id=request_owner_user_id,
+    ):
+        return False
+
+    if current_user.role_id in {
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+    }:
+        return await StaffAccessScopeService(users).is_hierarchy_manager_of(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    return True
 
 
 async def _resolve_manageable_owner_ids_in_scope(
@@ -213,6 +295,52 @@ async def _resolve_manageable_owner_ids_in_scope(
     )
 
 
+async def _can_update_offer_status_in_scope(
+    *,
+    uow: UnitOfWork,
+    current_user: CurrentUser,
+    request_owner_user_id: str,
+    offer_owner_user_id: str,
+    status: str,
+) -> bool:
+    users = getattr(uow, "users", None)
+    if users is None or not callable(getattr(users, "get_by_id", None)):
+        return False
+
+    if has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_ACCEPT) and status == "accepted":
+        if await DepartmentScopeService(users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        ):
+            return True
+    if has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_REJECT) and status == "rejected":
+        if await DepartmentScopeService(users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        ):
+            return True
+
+    if not has_permission(current_user, PermissionCodes.OFFERS_STATUS_UPDATE):
+        return False
+
+    if current_user.role_id in {
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+        settings.economist_role_id,
+    }:
+        if not await StaffAccessScopeService(users).is_hierarchy_manager_of(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        ):
+            return False
+
+    return OfferPolicy.can_manage_offer(
+        current_user,
+        offer_owner_user_id=offer_owner_user_id,
+        request_owner_user_id=request_owner_user_id,
+    )
+
+
 @router.get("/requests", response_model=RequestListResponse)
 @router.get("/requests/", response_model=RequestListResponse, include_in_schema=False)
 async def list_requests(
@@ -229,11 +357,24 @@ async def list_requests(
         )
         schema_items = []
         for item in items:
+            can_manage_in_scope = item.owner_user_id in manageable_owner_ids
+            can_update_status_in_scope = await _can_update_request_status_in_scope(
+                uow=uow,
+                current_user=current_user,
+                request_owner_user_id=item.owner_user_id,
+            )
+            can_change_owner_in_scope = await _can_change_request_owner_in_scope(
+                uow=uow,
+                current_user=current_user,
+                request_owner_user_id=item.owner_user_id,
+            )
             schema_items.append(
                 _request_item_schema(
                     current_user,
                     item,
-                    can_manage_in_scope=item.owner_user_id in manageable_owner_ids,
+                    can_manage_in_scope=can_manage_in_scope,
+                    can_update_status_in_scope=can_update_status_in_scope,
+                    can_change_owner_in_scope=can_change_owner_in_scope,
                 )
             )
 
@@ -255,7 +396,13 @@ async def list_open_requests(
         if current_user.role_id == settings.contractor_role_id:
             items = await service.list_open_requests_for_contractor(current_user=current_user)
             schema_items = [
-                _open_request_item_schema(current_user, item, can_manage_in_scope=False)
+                _open_request_item_schema(
+                    current_user,
+                    item,
+                    can_manage_in_scope=False,
+                    can_update_status_in_scope=False,
+                    can_change_owner_in_scope=False,
+                )
                 for item in items
             ]
         else:
@@ -267,11 +414,24 @@ async def list_open_requests(
             )
             schema_items = []
             for item in items:
+                can_manage_in_scope = item.owner_user_id in manageable_owner_ids
+                can_update_status_in_scope = await _can_update_request_status_in_scope(
+                    uow=uow,
+                    current_user=current_user,
+                    request_owner_user_id=item.owner_user_id,
+                )
+                can_change_owner_in_scope = await _can_change_request_owner_in_scope(
+                    uow=uow,
+                    current_user=current_user,
+                    request_owner_user_id=item.owner_user_id,
+                )
                 schema_items.append(
                     _open_request_item_schema(
                         current_user,
                         item,
-                        can_manage_in_scope=item.owner_user_id in manageable_owner_ids,
+                        can_manage_in_scope=can_manage_in_scope,
+                        can_update_status_in_scope=can_update_status_in_scope,
+                        can_change_owner_in_scope=can_change_owner_in_scope,
                     )
                 )
 
@@ -295,7 +455,13 @@ async def list_offered_requests(
     return OpenRequestListResponse(
         data=OpenRequestListData(
             items=[
-                _open_request_item_schema(current_user, item, can_manage_in_scope=False)
+                _open_request_item_schema(
+                    current_user,
+                    item,
+                    can_manage_in_scope=False,
+                    can_update_status_in_scope=False,
+                    can_change_owner_in_scope=False,
+                )
                 for item in items
             ],
         ),
@@ -317,11 +483,23 @@ async def get_request_details(
             current_user=current_user,
             request_owner_user_id=item.owner_user_id,
         )
+        can_update_status = await _can_update_request_status_in_scope(
+            uow=uow,
+            current_user=current_user,
+            request_owner_user_id=item.owner_user_id,
+        )
+        can_change_owner = await _can_change_request_owner_in_scope(
+            uow=uow,
+            current_user=current_user,
+            request_owner_user_id=item.owner_user_id,
+        )
     request_actions = RequestActionBuilder.build(
         current_user,
         owner_user_id=item.owner_user_id,
         status=item.status,
         can_manage_in_scope=can_manage,
+        can_update_status_in_scope=can_update_status,
+        can_change_owner_in_scope=can_change_owner,
         can_create_offer=(
             item.status == "open"
             and RequestPolicy.can_create_manual_offer(
@@ -332,6 +510,57 @@ async def get_request_details(
         ),
         deleted_alert_count=item.count_deleted_alert,
     )
+    offer_schemas: list[OfferItemSchema] = []
+    for offer in item.offers:
+        can_accept_in_scope = await _can_update_offer_status_in_scope(
+            uow=uow,
+            current_user=current_user,
+            request_owner_user_id=item.owner_user_id,
+            offer_owner_user_id=offer.contractor_user_id,
+            status="accepted",
+        )
+        can_reject_in_scope = await _can_update_offer_status_in_scope(
+            uow=uow,
+            current_user=current_user,
+            request_owner_user_id=item.owner_user_id,
+            offer_owner_user_id=offer.contractor_user_id,
+            status="rejected",
+        )
+        offer_schemas.append(
+            OfferItemSchema(
+                offer_id=offer.offer_id,
+                contractor_user_id=offer.contractor_user_id,
+                status=offer.status,
+                status_label=offer.status_label,
+                offer_amount=offer.offer_amount,
+                created_at=offer.created_at,
+                updated_at=offer.updated_at,
+                offer_workspace_url=offer.offer_workspace_url,
+                contractor_full_name=offer.contractor_full_name,
+                contractor_phone=offer.contractor_phone,
+                contractor_mail=offer.contractor_mail,
+                contractor_inn=offer.contractor_inn,
+                contractor_company_name=offer.contractor_company_name,
+                contractor_company_phone=offer.contractor_company_phone,
+                contractor_company_mail=offer.contractor_company_mail,
+                contractor_contact_phone=offer.contractor_contact_phone,
+                contractor_contact_mail=offer.contractor_contact_mail,
+                contractor_address=offer.contractor_address,
+                contractor_note=offer.contractor_note,
+                files=[_request_file_schema(file_item) for file_item in offer.files],
+                unread_messages_count=offer.unread_messages_count,
+                actions=OfferActionBuilder.build(
+                    current_user,
+                    offer_owner_user_id=offer.contractor_user_id,
+                    request_owner_user_id=item.owner_user_id,
+                    contractor_user_id=offer.contractor_user_id,
+                    offer_status=offer.status,
+                    can_manage_in_scope=can_manage,
+                    can_accept_in_scope=can_accept_in_scope,
+                    can_reject_in_scope=can_reject_in_scope,
+                ),
+            )
+        )
 
     return RequestDetailsResponse(
         data=RequestDetailsResponseData(
@@ -354,40 +583,7 @@ async def get_request_details(
                 unread_messages_count=item.unread_messages_count,
                 files=[_request_file_schema(file_item) for file_item in item.files],
                 actions=request_actions,
-                offers=[
-                    OfferItemSchema(
-                        offer_id=offer.offer_id,
-                        contractor_user_id=offer.contractor_user_id,
-                        status=offer.status,
-                        status_label=offer.status_label,
-                        offer_amount=offer.offer_amount,
-                        created_at=offer.created_at,
-                        updated_at=offer.updated_at,
-                        offer_workspace_url=offer.offer_workspace_url,
-                        contractor_full_name=offer.contractor_full_name,
-                        contractor_phone=offer.contractor_phone,
-                        contractor_mail=offer.contractor_mail,
-                        contractor_inn=offer.contractor_inn,
-                        contractor_company_name=offer.contractor_company_name,
-                        contractor_company_phone=offer.contractor_company_phone,
-                        contractor_company_mail=offer.contractor_company_mail,
-                        contractor_contact_phone=offer.contractor_contact_phone,
-                        contractor_contact_mail=offer.contractor_contact_mail,
-                        contractor_address=offer.contractor_address,
-                        contractor_note=offer.contractor_note,
-                        files=[_request_file_schema(file_item) for file_item in offer.files],
-                        unread_messages_count=offer.unread_messages_count,
-                        actions=OfferActionBuilder.build(
-                            current_user,
-                            offer_owner_user_id=offer.contractor_user_id,
-                            request_owner_user_id=item.owner_user_id,
-                            contractor_user_id=offer.contractor_user_id,
-                            offer_status=offer.status,
-                            can_manage_in_scope=can_manage,
-                        ),
-                    )
-                    for offer in item.offers
-                ],
+                offers=offer_schemas,
             ),
         ),
     )

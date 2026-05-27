@@ -1209,12 +1209,28 @@ class RequestService:
                 target_user_id=request_owner_user_id,
             ):
                 return
+        await self._ensure_can_status_update_request_without_department_scope(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _ensure_can_status_update_request_without_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
         require_permission(
             current_user,
             PermissionCodes.REQUESTS_STATUS_UPDATE,
             message="Insufficient permissions to update request status",
         )
-        await self._ensure_can_edit_owned_unassigned_request(
+        if current_user.role_id == settings.operator_role_id:
+            if current_user.user_id != request_owner_user_id:
+                raise Forbidden("Operator can update status only for own requests")
+            return
+
+        await self._ensure_can_edit_request_without_department_scope(
             current_user=current_user,
             request_owner_user_id=request_owner_user_id,
         )
@@ -1243,6 +1259,11 @@ class RequestService:
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
         }:
+            if not await self._is_inside_hierarchy_management_scope(
+                current_user=current_user,
+                request_owner_user_id=request_owner_user_id,
+            ):
+                raise Forbidden("Request is outside your management scope")
             if new_owner_user_id == current_user.user_id:
                 raise Forbidden("Owner must be from current user's subordinates")
             is_subordinate = await self._is_descendant(

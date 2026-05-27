@@ -964,10 +964,10 @@ class OfferService:
 
         if not is_contractor_deleting_own_offer:
             if not has_department_status_scope:
-                await self._ensure_can_manage_offer_for_internal_user(
+                await self._ensure_can_update_offer_status_without_department_scope(
                     current_user=current_user,
                     request_owner_user_id=request.id_user,
-                    allow_department_request_update=False,
+                    offer_owner_user_id=offer.id_user,
                 )
             if status == "accepted" and request.status in {"closed", "cancelled"}:
                 raise Conflict("Cannot accept offer for closed or cancelled request")
@@ -1547,6 +1547,30 @@ class OfferService:
             message="Insufficient permissions to update offer status",
         )
         return False
+
+    async def _ensure_can_update_offer_status_without_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        offer_owner_user_id: str,
+    ) -> None:
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            if not await self._is_inside_hierarchy_management_scope(
+                current_user=current_user,
+                request_owner_user_id=request_owner_user_id,
+            ):
+                raise Forbidden("Offer is outside your management scope")
+
+        OfferPolicy.ensure_can_manage_offer(
+            current_user,
+            offer_owner_user_id=offer_owner_user_id,
+            request_owner_user_id=request_owner_user_id,
+        )
 
     async def _is_user_inside_current_department_scope(
         self,

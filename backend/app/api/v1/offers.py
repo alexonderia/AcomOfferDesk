@@ -314,6 +314,8 @@ async def get_offer_workspace(
                         contractor_user_id=item.contractor.user_id,
                         offer_status=request_offer.status,
                         can_manage_in_scope=getattr(resolved, "can_manage_request_in_scope", False),
+                        can_accept_in_scope=getattr(resolved, "can_accept_in_scope", False),
+                        can_reject_in_scope=getattr(resolved, "can_reject_in_scope", False),
                         offer_is_manual=resolved.offer_is_manual,
                     ),
                 }

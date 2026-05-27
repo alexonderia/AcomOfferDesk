@@ -105,9 +105,30 @@ class _OfferRepo:
 
 
 class _NoopUsersRepo:
+    def __init__(self) -> None:
+        self._users = {
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, tg_user_id=None),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
+            "econ-1": SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1", tg_user_id=None),
+            "econ-2": SimpleNamespace(id="econ-2", id_role=settings.economist_role_id, id_parent="lead-2", tg_user_id=None),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
+            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-1"),
+            "contractor-2": SimpleNamespace(id="contractor-2", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-2"),
+        }
+
     async def get_by_id(self, user_id: str | None = None):
-        _ = user_id
-        return SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, tg_user_id="tg-1")
+        if user_id is None:
+            return None
+        return self._users.get(user_id)
+
+    async def list_active_user_parent_pairs(self):
+        return [
+            ("lead-1", "pm-1"),
+            ("lead-2", "pm-1"),
+            ("econ-1", "lead-1"),
+            ("econ-2", "lead-2"),
+        ]
 
     async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int):
         _ = (user_id, contractor_role_id)
@@ -350,6 +371,98 @@ def test_accept_offer_requires_status_update_permission(
 
     assert allowed_response.status_code == 200
     assert uow.offers._offers[210].status == "accepted"
+
+
+def test_department_request_update_without_department_offer_accept_cannot_accept_offer_in_parallel_branch(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[211] = SimpleNamespace(
+        id=211,
+        id_request=10,
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.OFFERS_STATUS_UPDATE,
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/211/status", json={"status": "accepted"})
+
+    assert response.status_code == 403
+    assert uow.offers._offers[211].status == "submitted"
+
+
+def test_department_offer_accept_allows_accept_inside_department_scope(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[212] = SimpleNamespace(
+        id=212,
+        id_request=10,
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_OFFERS_ACCEPT},
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/212/status", json={"status": "accepted"})
+
+    assert response.status_code == 200
+    assert uow.offers._offers[212].status == "accepted"
 
 
 def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app):

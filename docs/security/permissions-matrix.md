@@ -108,7 +108,6 @@ Atomic `department.*` permissions:
 - `department.requests.update`
 - `department.requests.status_update`
 - `department.requests.assign`
-- `department.offers.read`
 - `department.offers.accept`
 - `department.offers.reject`
 - `department.chats.read`
@@ -126,7 +125,6 @@ Keycloak composite delegation roles in client `acom-api`:
 - `delegation.department.requests.update` -> `department.requests.update`
 - `delegation.department.requests.status_update` -> `department.requests.status_update`
 - `delegation.department.requests.assign` -> `department.requests.assign`
-- `delegation.department.offers.read` -> `department.offers.read`
 - `delegation.department.offers.accept` -> `department.offers.accept`
 - `delegation.department.offers.reject` -> `department.offers.reject`
 - `delegation.department.chats.read` -> `department.chats.read`
@@ -145,6 +143,7 @@ Rules:
 3. No new business role is introduced (`lead_economist + delegation.department.*` is not a new role).
 4. No DB table is used as source of truth for delegation checklist state; source of truth is Keycloak client role mappings for `acom-api`.
 5. Frontend remains UX-only and uses backend-provided `permissions`/`actions`; backend remains enforcement layer.
+6. `department.requests.status_update` must be enforced independently for foreign department requests; `department.requests.update` is not a substitute for status transitions.
 
 ## Business Scope Rules (2026-05)
 

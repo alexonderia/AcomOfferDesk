@@ -644,6 +644,52 @@ class ProcessNotificationEventHandler:
             },
         )
 
+    async def _is_operator_user(self, *, uow: UnitOfWork, user_id: str | None) -> bool:
+        if user_id is None or uow.users is None or not callable(getattr(uow.users, "get_by_id", None)):
+            return False
+        user = await uow.users.get_by_id(user_id)
+        return user is not None and getattr(user, "id_role", None) == settings.operator_role_id
+
+    async def _create_request_responsible_notification(
+        self,
+        *,
+        uow: UnitOfWork,
+        service: NotificationService,
+        repo: NotificationRepository,
+        event: ProcessNotificationEvent,
+        user_id: str,
+        title: str,
+        body: str,
+        severity: str = "info",
+        old_responsible: str | None,
+        new_responsible: str | None,
+        assigned_from_operator: bool,
+    ) -> None:
+        if await self._is_duplicate(repo=repo, user_id=user_id, notification_type=event.event_type, event=event):
+            return
+        eligible_recipients = await self._filter_center_recipients(uow=uow, user_ids=[user_id])
+        if not eligible_recipients:
+            return
+        await service.create_for_user(
+            user_id=user_id,
+            notification_type="request.responsible_changed",
+            severity=severity,
+            title=title,
+            body=body,
+            entity_type="request",
+            entity_id=event.request_id,
+            link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
+            payload={
+                "event_id": event.event_id,
+                "dedupe_key": event.dedupe_key,
+                "request_id": event.request_id,
+                "old_responsible_user_id": old_responsible,
+                "new_responsible_user_id": new_responsible,
+                "actor_user_id": event.actor_user_id,
+                "assigned_from_operator": assigned_from_operator,
+            },
+        )
+
     async def _handle_request_responsible_changed(
         self,
         *,
@@ -655,48 +701,66 @@ class ProcessNotificationEventHandler:
         payload = event.payload or {}
         old_responsible = _normalize_optional_str(payload.get("old_responsible_user_id"))
         new_responsible = _normalize_optional_str(payload.get("new_responsible_user_id"))
-        recipients: list[str] = []
-        if old_responsible is not None:
-            include_old = True
-            if uow.users is not None:
-                old_user = await uow.users.get_by_id(old_responsible)
-                if old_user is not None and getattr(old_user, "id_role", None) == settings.operator_role_id:
-                    include_old = False
-            if include_old:
-                recipients.append(old_responsible)
-        recipients = _normalize_user_ids([*recipients, new_responsible])
-        if event.actor_user_id is not None:
-            recipients = [user_id for user_id in recipients if user_id != event.actor_user_id]
-        recipients = await self._filter_center_recipients(uow=uow, user_ids=recipients)
-        if not recipients:
+        if new_responsible is None:
+            logger.warning(
+                "Skip request.responsible_changed event without new responsible user: event_id=%s",
+                event.event_id,
+            )
             return
 
-        filtered_recipients: list[str] = []
-        for user_id in recipients:
-            if await self._is_duplicate(repo=repo, user_id=user_id, notification_type=event.event_type, event=event):
-                continue
-            filtered_recipients.append(user_id)
-        if not filtered_recipients:
-            return
+        assigned_from_operator = await self._is_operator_user(uow=uow, user_id=old_responsible)
+        request_label = f"№{event.request_id}" if event.request_id is not None else ""
 
-        await service.create_many_for_users(
-            user_ids=filtered_recipients,
-            notification_type="request.responsible_changed",
-            severity="info",
-            title="Изменен ответственный по заявке",
-            body=f"По заявке №{event.request_id} изменен ответственный." if event.request_id is not None else "Изменен ответственный по заявке.",
-            entity_type="request",
-            entity_id=event.request_id,
-            link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
-            payload={
-                "event_id": event.event_id,
-                "dedupe_key": event.dedupe_key,
-                "request_id": event.request_id,
-                "old_responsible_user_id": old_responsible,
-                "new_responsible_user_id": new_responsible,
-                "actor_user_id": event.actor_user_id,
-            },
-        )
+        if new_responsible != event.actor_user_id:
+            if assigned_from_operator:
+                assignee_title = "Вам назначена заявка"
+                assignee_body = (
+                    f"Вы назначены ответственным по заявке {request_label}."
+                    if request_label
+                    else "Вы назначены ответственным по заявке."
+                )
+            else:
+                assignee_title = "Изменен ответственный по заявке"
+                assignee_body = (
+                    f"По заявке {request_label} вы назначены ответственным."
+                    if request_label
+                    else "По заявке вы назначены ответственным."
+                )
+            await self._create_request_responsible_notification(
+                uow=uow,
+                service=service,
+                repo=repo,
+                event=event,
+                user_id=new_responsible,
+                title=assignee_title,
+                body=assignee_body,
+                old_responsible=old_responsible,
+                new_responsible=new_responsible,
+                assigned_from_operator=assigned_from_operator,
+            )
+
+        if (
+            old_responsible is not None
+            and not assigned_from_operator
+            and old_responsible != event.actor_user_id
+            and old_responsible != new_responsible
+        ):
+            await self._create_request_responsible_notification(
+                uow=uow,
+                service=service,
+                repo=repo,
+                event=event,
+                user_id=old_responsible,
+                title="Изменен ответственный по заявке",
+                body=(
+                    f"По заявке {request_label} с вас снята ответственность."
+                    if request_label
+                    else "С вас снята ответственность по заявке."
+                ),
+                old_responsible=old_responsible,
+                new_responsible=new_responsible,
+                assigned_from_operator=assigned_from_operator,
+            )
 
     async def _handle_request_deadline_changed(
         self,

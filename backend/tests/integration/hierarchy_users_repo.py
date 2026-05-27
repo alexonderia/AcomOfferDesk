@@ -42,6 +42,11 @@ class HierarchyUsersRepo:
                 id_role=settings.economist_role_id,
                 id_parent="lead-2",
             ),
+            "operator-1": SimpleNamespace(
+                id="operator-1",
+                id_role=settings.operator_role_id,
+                id_parent=None,
+            ),
         }
 
     async def get_by_id(self, user_id: str):

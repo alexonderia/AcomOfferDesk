@@ -373,6 +373,7 @@ async def test_handler_request_responsible_changed_notifies_old_and_new_without_
     assert len(repo.created) == 1
     assert repo.created[0].user_id == "new-owner"
     assert repo.created[0].type == "request.responsible_changed"
+    assert repo.created[0].title == "Изменен ответственный по заявке"
 
 
 @pytest.mark.asyncio
@@ -406,6 +407,7 @@ async def test_handler_request_responsible_changed_skips_old_operator(monkeypatc
 
     assert len(repo.created) == 1
     assert repo.created[0].user_id == "new-owner"
+    assert repo.created[0].title == "Вам назначена заявка"
     assert repo.created[0].type == "request.responsible_changed"
 
 

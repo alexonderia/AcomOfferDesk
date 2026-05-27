@@ -65,6 +65,8 @@ _ECONOMIST_MANAGE_PERMISSIONS = {
         ("eco-1", "eco-3", False, False),
         ("pm-1", "eco-1", False, True),
         ("pm-1", "eco-3", False, True),
+        ("pm-1", "operator-1", False, True),
+        ("lead-1", "operator-1", False, True),
     ],
 )
 def test_request_list_actions_reflect_hierarchy_management_scope(

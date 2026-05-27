@@ -573,6 +573,9 @@ class RequestService:
             previous_owner_user_id = request.id_user
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
             if previous_owner_user_id != data.owner_user_id:
+                previous_owner_was_operator = await self._is_request_owned_by_operator(
+                    request_owner_user_id=previous_owner_user_id,
+                )
                 owner_event = build_process_notification_event(
                     event_type="request.responsible_changed",
                     actor_user_id=current_user.user_id,
@@ -583,6 +586,7 @@ class RequestService:
                     payload={
                         "old_responsible_user_id": previous_owner_user_id,
                         "new_responsible_user_id": data.owner_user_id,
+                        "assigned_from_operator": previous_owner_was_operator,
                     },
                 )
                 self._schedule_process_notification_event(owner_event)
@@ -1187,6 +1191,10 @@ class RequestService:
             request_owner_user_id=request_owner_user_id,
         )
 
+    async def _is_request_owned_by_operator(self, *, request_owner_user_id: str) -> bool:
+        owner = await self._users.get_by_id(request_owner_user_id)
+        return owner is not None and owner.id_role == settings.operator_role_id
+
     async def _ensure_can_status_update_request(
         self,
         *,
@@ -1249,7 +1257,10 @@ class RequestService:
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
         }:
-            if not await self._is_inside_hierarchy_management_scope(
+            operator_owned = await self._is_request_owned_by_operator(
+                request_owner_user_id=request_owner_user_id,
+            )
+            if not operator_owned and not await self._is_inside_hierarchy_management_scope(
                 current_user=current_user,
                 request_owner_user_id=request_owner_user_id,
             ):

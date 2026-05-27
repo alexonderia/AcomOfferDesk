@@ -285,6 +285,10 @@ async def _can_change_request_owner_in_scope(
     ):
         return False
 
+    request_owner = await users.get_by_id(request_owner_user_id)
+    if request_owner is not None and request_owner.id_role == settings.operator_role_id:
+        return True
+
     if current_user.role_id in {
         settings.project_manager_role_id,
         settings.lead_economist_role_id,

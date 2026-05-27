@@ -13,7 +13,7 @@ class _UsersRepo:
         self._users = {
             "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
             "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
-            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="lead-1"),
             "eco-1": SimpleNamespace(id="eco-1", id_role=settings.economist_role_id, id_parent="lead-1"),
             "eco-2": SimpleNamespace(id="eco-2", id_role=settings.economist_role_id, id_parent="lead-2"),
         }
@@ -24,7 +24,7 @@ class _UsersRepo:
     async def list_active_user_parent_pairs(self):
         return [
             ("lead-1", "pm-1"),
-            ("lead-2", "pm-1"),
+            ("lead-2", "lead-1"),
             ("eco-1", "lead-1"),
             ("eco-2", "lead-2"),
         ]
@@ -116,4 +116,21 @@ async def test_resolve_manageable_owner_ids_returns_bulk_scope_for_single_pass_c
         candidate_owner_ids={"lead-1", "eco-1", "eco-2"},
     )
 
-    assert manageable == {"lead-1", "eco-1"}
+    assert manageable == {"lead-1", "eco-1", "eco-2"}
+
+
+@pytest.mark.asyncio
+async def test_module_root_for_nested_lead_and_economist_is_top_lead_under_project_manager():
+    service = StaffAccessScopeService(_UsersRepo())
+
+    lead_module_root = await service.resolve_module_root_user_id(
+        user_id="lead-2",
+        role_id=settings.lead_economist_role_id,
+    )
+    economist_module_root = await service.resolve_module_root_user_id(
+        user_id="eco-2",
+        role_id=settings.economist_role_id,
+    )
+
+    assert lead_module_root == "lead-1"
+    assert economist_module_root == "lead-1"

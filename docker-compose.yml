@@ -18,6 +18,7 @@ services:
       - ./infra/keycloak/realm-import:/opt/keycloak/data/import:ro
       - ./infra/keycloak/themes:/opt/keycloak/themes-src:ro
       - ./infra/keycloak/prepare-theme.sh:/opt/keycloak/bootstrap/prepare-theme.sh:ro
+      - ./infra/keycloak/apply-realm-smtp.sh:/opt/keycloak/bootstrap/apply-realm-smtp.sh:ro
       - keycloak_data:/opt/keycloak/data
     expose:
       - "8080"

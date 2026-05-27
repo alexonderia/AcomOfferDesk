@@ -17,6 +17,10 @@ let authToken: string | null = null;
 let authRuntime: AuthRuntime | null = null;
 
 const ERROR_TRANSLATIONS: Record<string, string> = {
+  'Не удалось авторизоваться в Keycloak Admin API': 'Не удалось авторизоваться в Keycloak Admin API',
+  'Unable to authenticate in Keycloak admin API': 'Не удалось авторизоваться в Keycloak Admin API',
+  'Unable to create Keycloak account': 'Не удалось создать учетную запись в Keycloak',
+  'Unable to query Keycloak users': 'Не удалось получить пользователей из Keycloak',
   'User is not active': 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµР°РєС‚РёРІРµРЅ',
   'User not found': 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ',
   'Invalid credentials': 'РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ',
@@ -97,25 +101,31 @@ const VALIDATION_TRANSLATIONS: Record<string, string> = {
   'String should have at most 255 characters': 'РњР°РєСЃРёРјСѓРј 255 СЃРёРјРІРѕР»РѕРІ'
 };
 
+const isLikelyMojibake = (value: string): boolean => {
+  // Common UTF-8 -> cp1251/latin1 mojibake markers (e.g. "РџРѕР»Рµ")
+  return /(?:Р.|С.){2,}/.test(value);
+};
+
 const translateText = (message: string | null | undefined): string | null => {
   const normalized = (message ?? '').trim();
   if (!normalized) {
     return null;
   }
   const translated = ERROR_TRANSLATIONS[normalized] ?? VALIDATION_TRANSLATIONS[normalized] ?? null;
-  return normalizeUserFacingText(translated ?? normalized, GENERIC_ERROR_MESSAGE);
+  const safeTranslated = translated && !isLikelyMojibake(translated) ? translated : null;
+  return normalizeUserFacingText(safeTranslated ?? normalized, GENERIC_ERROR_MESSAGE);
 };
 
 const humanizeLoc = (loc: unknown): string => {
   if (!Array.isArray(loc)) {
-    return 'РџРѕР»Рµ';
+    return 'Поле';
   }
 
   const parts = loc
     .filter((item) => typeof item === 'string' && item !== 'body' && item !== 'query' && item !== 'path')
     .map((item) => String(item));
 
-  return parts.length ? parts.join('.') : 'РџРѕР»Рµ';
+  return parts.length ? parts.join('.') : 'Поле';
 };
 
 const extractDetailMessage = (detail: unknown): string | null => {

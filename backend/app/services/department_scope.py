@@ -53,11 +53,23 @@ class DepartmentScopeService:
 
         visible: set[str] = {root_user_id}
         queue: list[str] = [root_user_id]
+        root_user = await self._users.get_by_id(root_user_id)
+        root_is_project_manager = bool(
+            root_user is not None and root_user.id_role == settings.project_manager_role_id
+        )
         while queue:
             manager_id = queue.pop()
             for child_id in children_by_parent.get(manager_id, []):
                 if child_id in visible:
                     continue
+                if root_is_project_manager:
+                    child_user = await self._users.get_by_id(child_id)
+                    if (
+                        child_user is not None
+                        and child_user.id_role == settings.project_manager_role_id
+                    ):
+                        # Each project manager is a separate subdivision root.
+                        continue
                 visible.add(child_id)
                 queue.append(child_id)
         return list(visible)

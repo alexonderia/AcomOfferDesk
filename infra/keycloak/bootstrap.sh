@@ -16,8 +16,8 @@ BOOTSTRAP_PASSWORD="${KEYCLOAK_BOOTSTRAP_APP_PASSWORD:-}"
 BOOTSTRAP_EMAIL="${KEYCLOAK_BOOTSTRAP_APP_EMAIL:-${BOOTSTRAP_USERNAME}@local.invalid}"
 BOOTSTRAP_FIRST_NAME="${KEYCLOAK_BOOTSTRAP_APP_FIRST_NAME:-Bootstrap}"
 BOOTSTRAP_LAST_NAME="${KEYCLOAK_BOOTSTRAP_APP_LAST_NAME:-Superadmin}"
-SMTP_HOST="${SMTP_HOST:-}"
-SMTP_PORT="${SMTP_PORT:-}"
+SMTP_HOST="${KEYCLOAK_SMTP_HOST:-${SMTP_HOST:-}}"
+SMTP_PORT="${KEYCLOAK_SMTP_PORT:-${SMTP_PORT:-}}"
 SMTP_USERNAME="${KEYCLOAK_SMTP_USERNAME:-${EMAIL_ADDRESS:-}}"
 SMTP_PASSWORD="${KEYCLOAK_SMTP_PASSWORD:-${EMAIL_APP_PASSWORD:-}}"
 SMTP_FROM="${KEYCLOAK_SMTP_FROM:-${EMAIL_ADDRESS:-}}"
@@ -58,6 +58,92 @@ is_weak_secret() {
       ;;
   esac
   return 1
+}
+
+refresh_kcadm_credentials() {
+  until /opt/keycloak/bin/kcadm.sh config credentials \
+    --server "$SERVER_URL" \
+    --realm "$MASTER_REALM" \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
+    --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null 2>&1
+  do
+    sleep 3
+  done
+}
+
+apply_realm_mail_and_session_settings() {
+  REALM_UPDATE_FILE="$(mktemp)"
+
+  if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ] && [ -n "$SMTP_FROM" ]; then
+    if [ -z "$SMTP_SSL" ] && [ -z "$SMTP_STARTTLS" ]; then
+      if [ "$SMTP_PORT" = "465" ]; then
+        SMTP_SSL="true"
+        SMTP_STARTTLS="false"
+      else
+        SMTP_SSL="false"
+        SMTP_STARTTLS="true"
+      fi
+    fi
+
+    cat >"$REALM_UPDATE_FILE" <<EOF
+{
+  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
+  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
+  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
+  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
+  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
+  "revokeRefreshToken": true,
+  "loginTheme": "acom-offerdesk",
+  "internationalizationEnabled": true,
+  "defaultLocale": "ru",
+  "supportedLocales": ["ru"],
+  "smtpServer": {
+    "auth": "$SMTP_AUTH",
+    "host": "$SMTP_HOST",
+    "port": "$SMTP_PORT",
+    "user": "$SMTP_USERNAME",
+    "password": "$SMTP_PASSWORD",
+    "from": "$SMTP_FROM",
+    "replyTo": "$SMTP_REPLY_TO",
+    "fromDisplayName": "$SMTP_FROM_DISPLAY_NAME",
+    "ssl": "$SMTP_SSL",
+    "starttls": "$SMTP_STARTTLS"
+  }
+}
+EOF
+  else
+    cat >"$REALM_UPDATE_FILE" <<EOF
+{
+  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
+  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
+  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
+  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
+  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
+  "revokeRefreshToken": true,
+  "loginTheme": "acom-offerdesk",
+  "internationalizationEnabled": true,
+  "defaultLocale": "ru",
+  "supportedLocales": ["ru"]
+}
+EOF
+    echo "Keycloak SMTP configuration is incomplete; updating only realm verifyEmail=$KEYCLOAK_VERIFY_EMAIL"
+  fi
+
+  /opt/keycloak/bin/kcadm.sh update "realms/$APP_REALM" -f "$REALM_UPDATE_FILE"
+  rm -f "$REALM_UPDATE_FILE"
+  echo "[realm] Applied mail/session settings (smtp host=${SMTP_HOST:-<none>} port=${SMTP_PORT:-<none>})"
 }
 
 if [ -z "$ADMIN_SERVICE_CLIENT_SECRET" ] || is_weak_secret "$ADMIN_SERVICE_CLIENT_SECRET"; then
@@ -451,19 +537,14 @@ if [ -z "${KC_BOOTSTRAP_ADMIN_USERNAME:-}" ] || [ -z "${KC_BOOTSTRAP_ADMIN_PASSW
   exit 1
 fi
 
-until /opt/keycloak/bin/kcadm.sh config credentials \
-  --server "$SERVER_URL" \
-  --realm "$MASTER_REALM" \
-  --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
-  --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null 2>&1
-do
-  sleep 3
-done
+refresh_kcadm_credentials
 
 if ! /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM" >/dev/null 2>&1; then
   echo "Realm $APP_REALM is not available"
   exit 1
 fi
+
+apply_realm_mail_and_session_settings
 
 _CACHED_API_CLIENT_UUID=""
 
@@ -836,6 +917,7 @@ ensure_api_roles_model() {
   enforce_atomic_permission_roles
 
   echo "[5/6] Syncing composite membership for app.* and delegation.department.*"
+  refresh_kcadm_credentials
   sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
   sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
   sync_composite_role "app.contractor" "$ROLE_APP_CONTRACTOR"
@@ -937,77 +1019,8 @@ EOF
   fi
 }
 
-REALM_UPDATE_FILE="$(mktemp)"
-
-if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ] && [ -n "$SMTP_FROM" ]; then
-  if [ -z "$SMTP_SSL" ] && [ -z "$SMTP_STARTTLS" ]; then
-    if [ "$SMTP_PORT" = "465" ]; then
-      SMTP_SSL="true"
-      SMTP_STARTTLS="false"
-    else
-      SMTP_SSL="false"
-      SMTP_STARTTLS="true"
-    fi
-  fi
-
-  cat >"$REALM_UPDATE_FILE" <<EOF
-{
-  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
-  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
-  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
-  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
-  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
-  "revokeRefreshToken": true,
-  "loginTheme": "acom-offerdesk",
-  "internationalizationEnabled": true,
-  "defaultLocale": "ru",
-  "supportedLocales": ["ru"],
-  "smtpServer": {
-    "auth": "$SMTP_AUTH",
-    "host": "$SMTP_HOST",
-    "port": "$SMTP_PORT",
-    "user": "$SMTP_USERNAME",
-    "password": "$SMTP_PASSWORD",
-    "from": "$SMTP_FROM",
-    "replyTo": "$SMTP_REPLY_TO",
-    "fromDisplayName": "$SMTP_FROM_DISPLAY_NAME",
-    "ssl": "$SMTP_SSL",
-    "starttls": "$SMTP_STARTTLS"
-  }
-}
-EOF
-else
-  cat >"$REALM_UPDATE_FILE" <<EOF
-{
-  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
-  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
-  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
-  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
-  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
-  "revokeRefreshToken": true,
-  "loginTheme": "acom-offerdesk",
-  "internationalizationEnabled": true,
-  "defaultLocale": "ru",
-  "supportedLocales": ["ru"]
-}
-EOF
-  echo "Keycloak SMTP configuration is incomplete; updating only realm verifyEmail=$KEYCLOAK_VERIFY_EMAIL"
-fi
-
-/opt/keycloak/bin/kcadm.sh update "realms/$APP_REALM" -f "$REALM_UPDATE_FILE"
-rm -f "$REALM_UPDATE_FILE"
+refresh_kcadm_credentials
+apply_realm_mail_and_session_settings
 
 ensure_web_client
 ensure_api_client

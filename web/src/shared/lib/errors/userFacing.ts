@@ -48,6 +48,7 @@ const TECHNICAL_CONTENT_PATTERN =
 
 const containsCyrillic = (value: string) => /[А-Яа-яЁё]/.test(value);
 const containsLatin = (value: string) => /[A-Za-z]/.test(value);
+const isLikelyMojibake = (value: string) => /(?:Р.|С.){2,}/.test(value);
 
 export const fallbackByHttpStatus = (status: number): string | null => {
   switch (status) {
@@ -127,6 +128,10 @@ export const normalizeUserFacingText = (
   }
 
   if (TECHNICAL_CONTENT_PATTERN.test(normalized)) {
+    return fallback;
+  }
+
+  if (isLikelyMojibake(normalized)) {
     return fallback;
   }
 

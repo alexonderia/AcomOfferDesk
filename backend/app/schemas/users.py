@@ -67,12 +67,12 @@ class UserRoleUpdateResponse(BaseModel):
 
 
 class UserManagerUpdateRequest(BaseModel):
-    manager_user_id: str = Field(min_length=1)
+    manager_user_id: str | None = Field(default=None, min_length=1)
 
 
 class UserManagerUpdateData(BaseModel):
     user_id: str
-    manager_user_id: str
+    manager_user_id: str | None
 
 
 class UserManagerUpdateResponse(BaseModel):

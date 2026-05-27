@@ -765,6 +765,12 @@ const delegationGroupTitles: Record<string, string> = {
   plans: 'Планы',
 };
 
+const managerRoleNameById: Record<number, string> = {
+  [ROLE.PROJECT_MANAGER]: 'РП',
+  [ROLE.LEAD_ECONOMIST]: 'ВЭ',
+  [ROLE.ECONOMIST]: 'Экономист',
+};
+
 
 export const UsersTable = ({
   users,
@@ -934,7 +940,7 @@ export const UsersTable = ({
 
     let isCancelled = false;
     setManagerError(null);
-    void getManagerCandidates(selectedUser.role_id)
+    void getManagerCandidates(selectedUser.role_id, selectedUser.user_id)
       .then((result) => {
         if (!isCancelled) {
           setManagerOptions(result.items);
@@ -1106,14 +1112,21 @@ export const UsersTable = ({
   };
 
   const handleManagerUpdate = async () => {
-    if (!selectedUser || !managerUserId || managerUserId === selectedUser.id_parent) {
+    const canBeWithoutManager = selectedUser?.role_id === ROLE.PROJECT_MANAGER;
+    if (
+      !selectedUser
+      || (managerUserId === '' && !canBeWithoutManager)
+      || managerUserId === (selectedUser.id_parent ?? '')
+    ) {
       return;
     }
 
     setManagerError(null);
     setIsUpdatingManager(true);
     try {
-      await updateUserManager(selectedUser.user_id, { manager_user_id: managerUserId });
+      await updateUserManager(selectedUser.user_id, {
+        manager_user_id: managerUserId || null,
+      });
       await onStatusUpdated();
       setSelectedUser(null);
       setSubordinateProfile(null);
@@ -1590,9 +1603,16 @@ export const UsersTable = ({
                       label="Новый руководитель"
                       value={managerUserId}
                       onChange={(event) => setManagerUserId(event.target.value)}
-                      disabled={isUpdatingManager || managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0}
+                      disabled={
+                        isUpdatingManager
+                        || (
+                          managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
+                          && selectedUser.role_id !== ROLE.PROJECT_MANAGER
+                        )
+                      }
                       helperText={
                         managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length
+                        || selectedUser.role_id === ROLE.PROJECT_MANAGER
                           ? ''
                           : 'Нет доступных руководителей'
                       }
@@ -1603,11 +1623,18 @@ export const UsersTable = ({
                         }
                       }}
                     >
+                      {selectedUser.role_id === ROLE.PROJECT_MANAGER ? (
+                        <MenuItem value="">
+                          Без руководителя
+                        </MenuItem>
+                      ) : null}
                       {managerOptions
                         .filter((manager) => manager.user_id !== selectedUser.user_id)
                         .map((manager) => (
                           <MenuItem key={manager.user_id} value={manager.user_id}>
-                            {manager.full_name ? `${manager.full_name} (${manager.user_id})` : manager.user_id}
+                            {manager.full_name
+                              ? `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
+                              : `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.user_id}`}
                           </MenuItem>
                         ))}
                     </TextField>
@@ -1616,10 +1643,13 @@ export const UsersTable = ({
                         variant="outlined"
                         onClick={() => void handleManagerUpdate()}
                         disabled={
-                          !managerUserId
-                          || managerUserId === selectedUser.id_parent
+                          (managerUserId === '' && selectedUser.role_id !== ROLE.PROJECT_MANAGER)
+                          || managerUserId === (selectedUser.id_parent ?? '')
                           || isUpdatingManager
-                          || managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
+                          || (
+                            managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
+                            && selectedUser.role_id !== ROLE.PROJECT_MANAGER
+                          )
                         }
                         sx={{ borderRadius: 1, textTransform: 'none' }}
                       >

@@ -167,12 +167,17 @@ async def list_users(
 @router.get("/users/manager-candidates/", response_model=UserListResponse, include_in_schema=False)
 async def list_manager_candidates(
     target_role_id: int = Query(..., ge=1),
+    target_user_id: str | None = Query(default=None, min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserListResponse:
     async with uow:
         service = UserQueryService(uow.users, uow.user_status_periods)
-        users = await service.list_manager_candidates(current_user=current_user, target_role_id=target_role_id)
+        users = await service.list_manager_candidates(
+            current_user=current_user,
+            target_role_id=target_role_id,
+            target_user_id=target_user_id,
+        )
 
     return UserListResponse(
         data=UserListData(

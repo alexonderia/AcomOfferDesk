@@ -35,6 +35,7 @@ services:
       - /opt/keycloak/bootstrap/bootstrap.sh
     volumes:
       - ./infra/keycloak/bootstrap.sh:/opt/keycloak/bootstrap/bootstrap.sh:ro
+      - ./infra/keycloak/apply-realm-smtp.sh:/opt/keycloak/bootstrap/apply-realm-smtp.sh:ro
     depends_on:
       keycloak_db_prepare:
         condition: service_completed_successfully

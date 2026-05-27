@@ -14,7 +14,7 @@ class _UsersRepo:
             "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active"),
             "eco-1": SimpleNamespace(id="eco-1", id_role=settings.economist_role_id, id_parent="lead-1", status="active"),
             "eco-2": SimpleNamespace(id="eco-2", id_role=settings.economist_role_id, id_parent="lead-1", status="active"),
-            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent=None, status="active"),
+            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent="pm-1", status="active"),
             "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-2", status="active"),
         }
 
@@ -40,6 +40,17 @@ async def test_department_scope_for_economist_resolves_project_manager_subtree()
 
     owner_ids = await service.resolve_department_owner_ids_for_current_user(
         current_user=_current_user(user_id="eco-1", role_id=settings.economist_role_id),
+    )
+
+    assert set(owner_ids) == {"pm-1", "lead-1", "eco-1", "eco-2"}
+
+
+@pytest.mark.asyncio
+async def test_department_scope_for_project_manager_does_not_mix_nested_project_manager_department():
+    service = DepartmentScopeService(_UsersRepo())
+
+    owner_ids = await service.resolve_department_owner_ids_for_current_user(
+        current_user=_current_user(user_id="pm-1", role_id=settings.project_manager_role_id),
     )
 
     assert set(owner_ids) == {"pm-1", "lead-1", "eco-1", "eco-2"}

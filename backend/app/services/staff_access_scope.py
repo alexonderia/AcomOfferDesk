@@ -16,20 +16,23 @@ class StaffAccessScopeService:
         self._department_scope = DepartmentScopeService(users)
 
     async def resolve_module_root_user_id(self, *, user_id: str, role_id: int) -> str:
-        if role_id == settings.lead_economist_role_id:
-            return user_id
-
-        if role_id == settings.economist_role_id:
+        if role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
             cursor_id: str | None = user_id
             visited: set[str] = set()
+            fallback_lead_id: str | None = None
             while cursor_id is not None and cursor_id not in visited:
                 visited.add(cursor_id)
                 cursor_user = await self._users.get_by_id(cursor_id)
                 if cursor_user is None:
                     break
                 if cursor_user.id_role == settings.lead_economist_role_id:
-                    return cursor_user.id
+                    fallback_lead_id = cursor_user.id
+                    parent_user = await self._users.get_by_id(cursor_user.id_parent) if cursor_user.id_parent else None
+                    if parent_user is not None and parent_user.id_role == settings.project_manager_role_id:
+                        return cursor_user.id
                 cursor_id = cursor_user.id_parent
+            if fallback_lead_id is not None:
+                return fallback_lead_id
             return user_id
 
         return user_id

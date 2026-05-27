@@ -29,66 +29,67 @@ logger = logging.getLogger(__name__)
 
 _GENERIC_PUBLIC_ERROR = "Произошла ошибка. Попробуйте повторить действие."
 _DEFAULT_PUBLIC_ERROR_BY_STATUS = {
-    401: "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
+    401: "Сессия истекла. Войдите в систему заново.",
     403: "Недостаточно прав для выполнения действия.",
-    404: "Р”Р°РЅРЅС‹Рµ РЅРµ РЅР°Р№РґРµРЅС‹ РёР»Рё Р±С‹Р»Рё СѓРґР°Р»РµРЅС‹.",
-    409: "РљРѕРЅС„Р»РёРєС‚ РґР°РЅРЅС‹С…. РћР±РЅРѕРІРёС‚Рµ СЃС‚СЂР°РЅРёС†Сѓ Рё РїРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР°.",
+    404: "Данные не найдены или были удалены.",
+    409: "Конфликт данных. Обновите страницу и попробуйте снова.",
 }
 _DIRECT_PUBLIC_DETAIL_TRANSLATIONS = {
-    "Missing credentials": "РќРµРѕР±С…РѕРґРёРјРѕ РІРѕР№С‚Рё РІ СЃРёСЃС‚РµРјСѓ.",
-    "Invalid credentials": "РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ.",
-    "Invalid token": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
-    "Token expired": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
-    "Invalid token payload": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
-    "Invalid refresh": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
-    "Stale refresh token": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
-    "Broken bearer": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
-    "Authentication required": "РќРµРѕР±С…РѕРґРёРјРѕ РІРѕР№С‚Рё РІ СЃРёСЃС‚РµРјСѓ.",
-    "Unauthorized": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ.",
+    "Missing credentials": "Необходимо войти в систему.",
+    "Invalid credentials": "Неверный логин или пароль.",
+    "Invalid token": "Сессия истекла. Войдите в систему заново.",
+    "Token expired": "Сессия истекла. Войдите в систему заново.",
+    "Invalid token payload": "Сессия истекла. Войдите в систему заново.",
+    "Invalid refresh": "Сессия истекла. Войдите в систему заново.",
+    "Stale refresh token": "Сессия истекла. Войдите в систему заново.",
+    "Broken bearer": "Сессия истекла. Войдите в систему заново.",
+    "Authentication required": "Необходимо войти в систему.",
+    "Unauthorized": "Сессия истекла. Войдите в систему заново.",
     "Forbidden": "Недостаточно прав для выполнения действия.",
-    "Not found": "Р”Р°РЅРЅС‹Рµ РЅРµ РЅР°Р№РґРµРЅС‹ РёР»Рё Р±С‹Р»Рё СѓРґР°Р»РµРЅС‹.",
-    "Request not found": "Р—Р°СЏРІРєР° РЅРµ РЅР°Р№РґРµРЅР°.",
-    "Offer not found": "РљРѕРјРјРµСЂС‡РµСЃРєРѕРµ РїСЂРµРґР»РѕР¶РµРЅРёРµ РЅРµ РЅР°Р№РґРµРЅРѕ.",
-    "Notification not found": "РЈРІРµРґРѕРјР»РµРЅРёРµ РЅРµ РЅР°Р№РґРµРЅРѕ.",
-    "Message not found": "РЎРѕРѕР±С‰РµРЅРёРµ РЅРµ РЅР°Р№РґРµРЅРѕ.",
-    "File not found": "Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ.",
+    "Not found": "Данные не найдены или были удалены.",
+    "Request not found": "Заявка не найдена.",
+    "Offer not found": "Коммерческое предложение не найдено.",
+    "Notification not found": "Уведомление не найдено.",
+    "Message not found": "Сообщение не найдено.",
+    "File not found": "Файл не найден.",
     "Insufficient permissions": "Недостаточно прав для выполнения действия.",
-    "Insufficient permissions to edit request": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ Р·Р°СЏРІРєРё: РґРѕСЃС‚СѓРї РѕРіСЂР°РЅРёС‡РµРЅ РёРµСЂР°СЂС…РёРµР№/РїРѕРґСЂР°Р·РґРµР»РµРЅРёРµРј.",
-    "Insufficient permissions to edit offer": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РљРџ: С‚СЂРµР±СѓРµС‚СЃСЏ `offers.update` РёР»Рё `delegation.department.offers.update` РІ РґРѕРїСѓСЃС‚РёРјРѕРј СЃРєРѕСѓРїРµ.",
-    "Insufficient permissions to update offer amount": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ СЃСѓРјРјС‹ РљРџ: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ РёР·РјРµРЅРµРЅРёСЏ СЃСѓРјРјС‹ РІ РґРѕРїСѓСЃС‚РёРјРѕРј РєРѕРЅС‚СѓСЂРµ.",
-    "Insufficient permissions to upload offer files": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ РљРџ: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ РІ РґРѕРїСѓСЃС‚РёРјРѕРј РєРѕРЅС‚СѓСЂРµ.",
-    "Insufficient permissions to delete offer files": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ РљРџ: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ РІ РґРѕРїСѓСЃС‚РёРјРѕРј РєРѕРЅС‚СѓСЂРµ.",
-    "Insufficient permissions to update request status": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ СЃС‚Р°С‚СѓСЃР° Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ `requests.status.update` РёР»Рё `delegation.department.requests.status_update` РІ РґРѕРїСѓСЃС‚РёРјРѕРј СЃРєРѕСѓРїРµ.",
+    "Insufficient permissions to edit request": "Недостаточно прав для редактирования заявки: доступ ограничен иерархией/подразделением.",
+    "Insufficient permissions to edit offer": "Недостаточно прав для изменения КП: требуется `offers.update` или `delegation.department.offers.update` в допустимом скоупе.",
+    "Insufficient permissions to update offer amount": "Недостаточно прав для изменения суммы КП: требуется право изменения суммы в допустимом контуре.",
+    "Insufficient permissions to upload offer files": "Недостаточно прав для загрузки файлов КП: требуется право загрузки файлов в допустимом контуре.",
+    "Insufficient permissions to delete offer files": "Недостаточно прав для удаления файлов КП: требуется право удаления файлов в допустимом скоупе.",
+    "Insufficient permissions to update request status": "Недостаточно прав для изменения статуса заявки: требуется `requests.status.update` или `delegation.department.requests.status_update` в допустимом скоупе.",
     "Offer status cannot be changed for closed request": "КП нельзя изменить, если заявка уже закрыта или отклонена",
     "КП нельзя изменить, если заявка уже закрыта или отклонена": "КП нельзя изменить, если заявка уже закрыта или отклонена",
-    "Insufficient permissions to update request amounts": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ СЃСѓРјРј Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ РЅР° СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ С†РµРЅ РІ РґРѕРїСѓСЃС‚РёРјРѕРј РєРѕРЅС‚СѓСЂРµ.",
-    "Insufficient permissions to update request deadline": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РґРµРґР»Р°Р№РЅР° Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ РґРµРґР»Р°Р№РЅР° РІ РґРѕРїСѓСЃС‚РёРјРѕРј РєРѕРЅС‚СѓСЂРµ.",
-    "Insufficient permissions to upload request files": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ РІ Р·Р°СЏРІРєСѓ: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ Рё РґРѕСЃС‚СѓРї Рє Р·Р°СЏРІРєРµ.",
-    "Insufficient permissions to delete request files": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Рё РґРѕСЃС‚СѓРї Рє Р·Р°СЏРІРєРµ.",
-    "Insufficient permissions to send request email notifications": "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РѕС‚РїСЂР°РІРєРё РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№ РїРѕ Р·Р°СЏРІРєРµ.",
-    "Operator can update status only for own requests": "РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР° РѕРїРµСЂР°С‚РѕСЂРѕРј РґРѕСЃС‚СѓРїРЅРѕ С‚РѕР»СЊРєРѕ РґР»СЏ СЃРѕР±СЃС‚РІРµРЅРЅС‹С… Р·Р°СЏРІРѕРє.",
-    "Request is outside your management scope": "Р”РµР№СЃС‚РІРёРµ РЅРµРґРѕСЃС‚СѓРїРЅРѕ: Р·Р°СЏРІРєР° РІРЅРµ РІР°С€РµРіРѕ РєРѕРЅС‚СѓСЂР° СѓРїСЂР°РІР»РµРЅРёСЏ.",
+    "Insufficient permissions to update request amounts": "Недостаточно прав для изменения сумм заявки: требуется право редактирования цен в допустимом контуре.",
+    "Insufficient permissions to update request deadline": "Недостаточно прав для изменения дедлайна заявки: требуется право редактирования дедлайна в допустимом контуре.",
+    "Insufficient permissions to upload request files": "Недостаточно прав для загрузки файлов в заявку: требуется право загрузки файлов и доступ к заявке.",
+    "Insufficient permissions to delete request files": "Недостаточно прав для удаления файлов заявки: требуется право удаления файлов и доступ к заявке.",
+    "Insufficient permissions to send request email notifications": "Недостаточно прав для отправки дополнительных уведомлений по заявке.",
+    "Operator can update status only for own requests": "Изменение статуса оператором доступно только для собственных заявок.",
+    "Request is outside your management scope": "Действие недоступно: заявка вне вашего контура управления.",
     "Insufficient permissions to view chat": "Недостаточно прав для просмотра чата.",
     "Insufficient permissions to send chat message": "Недостаточно прав для отправки сообщения в чат.",
     "Insufficient permissions to view workspace": "Недостаточно прав для просмотра рабочего пространства.",
-    "Password is managed by the identity provider": "РџР°СЂРѕР»СЊ СѓРїСЂР°РІР»СЏРµС‚СЃСЏ РїСЂРѕРІР°Р№РґРµСЂРѕРј Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё.",
-    "Keycloak authentication is disabled": "Р’С…РѕРґ РІСЂРµРјРµРЅРЅРѕ РЅРµРґРѕСЃС‚СѓРїРµРЅ.",
-    "Keycloak email is already used by another account": "РџРѕС‡С‚Р° СѓР¶Рµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РґСЂСѓРіРёРј Р°РєРєР°СѓРЅС‚РѕРј.",
+    "Password is managed by the identity provider": "Пароль управляется провайдером аутентификации.",
+    "Keycloak authentication is disabled": "Вход временно недоступен.",
+    "Keycloak email is already used by another account": "Почта уже используется другим аккаунтом.",
 }
 _CONTAINS_PUBLIC_DETAIL_TRANSLATIONS: tuple[tuple[str, str], ...] = (
-    ("missing credentials", "РќРµРѕР±С…РѕРґРёРјРѕ РІРѕР№С‚Рё РІ СЃРёСЃС‚РµРјСѓ."),
-    ("invalid token", "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ."),
-    ("token expired", "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ."),
-    ("unauthorized", "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ СЃРёСЃС‚РµРјСѓ Р·Р°РЅРѕРІРѕ."),
+    ("missing credentials", "Необходимо войти в систему."),
+    ("invalid token", "Сессия истекла. Войдите в систему заново."),
+    ("token expired", "Сессия истекла. Войдите в систему заново."),
+    ("unauthorized", "Сессия истекла. Войдите в систему заново."),
     ("forbidden", "Недостаточно прав для выполнения действия."),
     ("insufficient permissions", "Недостаточно прав для выполнения действия."),
-    ("not found", "Р”Р°РЅРЅС‹Рµ РЅРµ РЅР°Р№РґРµРЅС‹ РёР»Рё Р±С‹Р»Рё СѓРґР°Р»РµРЅС‹."),
-    ("email is already used by another account", "РџРѕС‡С‚Р° СѓР¶Рµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РґСЂСѓРіРёРј Р°РєРєР°СѓРЅС‚РѕРј."),
+    ("not found", "Данные не найдены или были удалены."),
+    ("email is already used by another account", "Почта уже используется другим аккаунтом."),
 )
 _TECHNICAL_DETAIL_PATTERN = re.compile(
     r"traceback|stack\s*trace|sql|rabbitmq|smtp|psycopg|exception|validationerror|internal server error",
     re.IGNORECASE,
 )
+_MOJIBAKE_PATTERN = re.compile(r"(?:Р.|С.){2,}")
 
 
 def _normalize_public_error_detail(*, status_code: int, detail: str | None) -> str:
@@ -107,6 +108,8 @@ def _normalize_public_error_detail(*, status_code: int, detail: str | None) -> s
             return translated
 
     if _TECHNICAL_DETAIL_PATTERN.search(normalized):
+        return default_message
+    if _MOJIBAKE_PATTERN.search(normalized):
         return default_message
 
     has_cyrillic = bool(re.search(r"[А-Яа-яЁё]", normalized))

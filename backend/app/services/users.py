@@ -143,6 +143,7 @@ def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -
         return True
     if current_role_id == settings.project_manager_role_id:
         return target_role_id in {
+            settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
             settings.operator_role_id,
@@ -173,6 +174,77 @@ def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
     if current_user.role_id == settings.lead_economist_role_id:
         return {settings.economist_role_id, settings.operator_role_id}
     return set()
+
+
+@dataclass(frozen=True)
+class HierarchyRoleRule:
+    parent_required: bool
+    parent_allowed: bool
+    allowed_parent_role_ids: frozenset[int]
+
+
+def _hierarchy_rule_for_role(*, role_id: int) -> HierarchyRoleRule:
+    if role_id == settings.project_manager_role_id:
+        return HierarchyRoleRule(
+            parent_required=False,
+            parent_allowed=True,
+            allowed_parent_role_ids=frozenset({settings.project_manager_role_id}),
+        )
+    if role_id == settings.lead_economist_role_id:
+        return HierarchyRoleRule(
+            parent_required=True,
+            parent_allowed=True,
+            allowed_parent_role_ids=frozenset(
+                {
+                    settings.project_manager_role_id,
+                    settings.lead_economist_role_id,
+                }
+            ),
+        )
+    if role_id == settings.economist_role_id:
+        return HierarchyRoleRule(
+            parent_required=True,
+            parent_allowed=True,
+            allowed_parent_role_ids=frozenset(
+                {
+                    settings.lead_economist_role_id,
+                    settings.economist_role_id,
+                }
+            ),
+        )
+    return HierarchyRoleRule(
+        parent_required=False,
+        parent_allowed=False,
+        allowed_parent_role_ids=frozenset(),
+    )
+
+
+def _role_name_by_id(*, role_id: int) -> str:
+    if role_id == settings.project_manager_role_id:
+        return ROLE_NAME_PROJECT_MANAGER
+    if role_id == settings.lead_economist_role_id:
+        return ROLE_NAME_LEAD_ECONOMIST
+    if role_id == settings.economist_role_id:
+        return ROLE_NAME_ECONOMIST
+    if role_id == settings.operator_role_id:
+        return ROLE_NAME_OPERATOR
+    if role_id == settings.contractor_role_id:
+        return ROLE_NAME_CONTRACTOR
+    if role_id == settings.admin_role_id:
+        return ROLE_NAME_ADMIN
+    if role_id == settings.superadmin_role_id:
+        return ROLE_NAME_SUPERADMIN
+    return "Неизвестная роль"
+
+
+def _manager_required_error(*, role_id: int) -> str:
+    role_name = _role_name_by_id(role_id=role_id)
+    return f"Для роли «{role_name}» необходимо указать руководителя"
+
+
+def _manager_disallowed_error(*, role_id: int) -> str:
+    role_name = _role_name_by_id(role_id=role_id)
+    return f"Для роли «{role_name}» руководитель не используется"
 
 
 def _normalize_keycloak_email_value(value: str | None) -> str | None:
@@ -300,18 +372,24 @@ class UserRegistrationService:
 
         if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
             raise Forbidden("Ведущий экономист может создавать только экономистов")
-        if target_role.role == ROLE_NAME_ECONOMIST:
-            if id_parent is None:
-                raise Conflict("У экономиста должен быть руководитель с ролью экономиста или ведущего экономиста")
+        role_rule = _hierarchy_rule_for_role(role_id=role_id)
+        if not role_rule.parent_allowed:
+            id_parent = None
+        elif role_rule.parent_required and id_parent is None:
+            raise Conflict(_manager_required_error(role_id=role_id))
+
+        if id_parent is not None:
+            if id_parent == user_id:
+                raise Conflict("Пользователь не может быть руководителем самому себе")
             parent_user = await self._users.get_by_id(id_parent)
             if parent_user is None:
                 raise NotFound("Руководитель не найден")
-            parent_role = await self._users.get_role_by_id(parent_user.id_role)
-            if parent_role is None or parent_role.role not in {ROLE_NAME_ECONOMIST, ROLE_NAME_LEAD_ECONOMIST}:
-                raise Conflict("У экономиста руководителем может быть только экономист или ведущий экономист")
+            if parent_user.id_role not in role_rule.allowed_parent_role_ids:
+                raise Conflict("Выбранный пользователь не может быть руководителем для этой роли")
+
             if current_user.role_id == settings.lead_economist_role_id:
                 rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                    role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+                    role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
                 )
                 descendant_ids = _collect_descendant_user_ids(
                     manager_user_id=current_user.user_id,
@@ -320,21 +398,10 @@ class UserRegistrationService:
                 allowed_parent_ids = {current_user.user_id} | {
                     user.id
                     for user, _, _ in rows
-                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
+                    if user.id in descendant_ids and user.id_role in {settings.lead_economist_role_id, settings.economist_role_id}
                 }
                 if id_parent not in allowed_parent_ids:
-                    raise Forbidden("Руководитель-экономист должен входить в зону ответственности текущего пользователя")
-        elif target_role.role == ROLE_NAME_LEAD_ECONOMIST:
-            if id_parent is None:
-                raise Conflict("У ведущего экономиста должен быть руководитель проекта")
-            parent_user = await self._users.get_by_id(id_parent)
-            if parent_user is None:
-                raise NotFound("Руководитель не найден")
-            parent_role = await self._users.get_role_by_id(parent_user.id_role)
-            if parent_role is None or parent_user.id_role != settings.project_manager_role_id:
-                raise Conflict("У ведущего экономиста руководителем может быть только руководитель проекта")
-        else:
-            id_parent = None
+                    raise Forbidden("Выбранный руководитель вне разрешенной зоны управления")
         if await self._users.exists(user_id):
             raise Conflict("Пользователь уже существует")
 
@@ -775,6 +842,7 @@ class UserQueryService:
         current_user: CurrentUser,
         *,
         target_role_id: int,
+        target_user_id: str | None = None,
     ) -> list[UserListItem]:
         if not (
             UserPolicy.can_register_user(current_user)
@@ -787,45 +855,36 @@ class UserQueryService:
         if current_user.role_id == settings.economist_role_id and target_role_id != settings.economist_role_id:
             raise Forbidden("Экономист может управлять только экономистами")
         if current_user.role_id == settings.project_manager_role_id and target_role_id not in {
+            settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            raise Forbidden("Руководитель проекта может управлять только ведущими экономистами и экономистами")
+            raise Forbidden("Руководитель проекта может управлять только руководителями проекта, ведущими экономистами и экономистами")
 
-        if target_role_id == settings.economist_role_id:
-            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+        role_rule = _hierarchy_rule_for_role(role_id=target_role_id)
+        if not role_rule.parent_allowed:
+            return []
+
+        rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=list(role_rule.allowed_parent_role_ids),
+        )
+        rows = [row for row in rows if row[0].status == "active"]
+
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            hierarchy_rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
             )
-            if current_user.role_id == settings.lead_economist_role_id:
-                descendant_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
-                )
-                allowed_ids = {current_user.user_id} | {
-                    user.id
-                    for user, _, _ in rows
-                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
-                }
-                rows = [row for row in rows if row[0].id in allowed_ids]
-            elif current_user.role_id == settings.project_manager_role_id:
-                descendant_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
-                )
-                rows = [
-                    row for row in rows
-                    if row[0].id in descendant_ids
-                ]
-            elif current_user.role_id == settings.economist_role_id:
-                descendant_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
-                )
-                allowed_ids = {current_user.user_id} | {
-                    user.id
-                    for user, _, _ in rows
-                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
-                }
+            hierarchy_rows = [row for row in hierarchy_rows if row[0].status == "active"]
+            descendant_ids = _collect_descendant_user_ids(
+                manager_user_id=current_user.user_id,
+                rows=hierarchy_rows,
+            )
+            allowed_scope_ids = {current_user.user_id} | descendant_ids
+            if current_user.role_id == settings.economist_role_id:
                 cursor_id = current_user.user_id
                 visited: set[str] = set()
                 while cursor_id is not None and cursor_id not in visited:
@@ -833,41 +892,38 @@ class UserQueryService:
                     cursor_user = await self._users.get_by_id(cursor_id)
                     if cursor_user is None:
                         break
-                    if cursor_user.id_role in {settings.economist_role_id, settings.lead_economist_role_id}:
-                        allowed_ids.add(cursor_user.id)
+                    if cursor_user.status == "active":
+                        allowed_scope_ids.add(cursor_user.id)
                     cursor_id = cursor_user.id_parent
-                rows = [row for row in rows if row[0].id in allowed_ids]
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile, _ in rows
+            rows = [row for row in rows if row[0].id in allowed_scope_ids]
+
+        if target_user_id is not None:
+            rows_for_cycle = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
+            )
+            rows_for_cycle = [row for row in rows_for_cycle if row[0].status == "active"]
+            target_descendants = _collect_descendant_user_ids(
+                manager_user_id=target_user_id,
+                rows=rows_for_cycle,
+            )
+            rows = [
+                row
+                for row in rows
+                if row[0].id != target_user_id and row[0].id not in target_descendants
             ]
 
-        if target_role_id == settings.lead_economist_role_id:
-            if current_user.role_id not in {settings.superadmin_role_id, settings.project_manager_role_id}:
-                raise Forbidden("Только суперадминистратор и руководитель проекта могут управлять руководителем ведущего экономиста")
-            rows = await self._users.list_users_with_profiles(role_id=settings.project_manager_role_id)
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile in rows
-            ]
-
-        return []
+        return [
+            UserListItem(
+                user_id=user.id,
+                role_id=user.id_role,
+                id_parent=user.id_parent,
+                status=user.status,
+                full_name=profile.full_name if profile else None,
+                phone=profile.phone if profile else None,
+                mail=profile.mail if profile else None,
+            )
+            for user, profile, _ in rows
+        ]
     
     async def list_economists(self, current_user: CurrentUser) -> list[EconomistListItem]:
         UserPolicy.ensure_can_list_users(current_user)
@@ -1024,7 +1080,7 @@ class UserRoleUpdateResult:
 @dataclass(frozen=True)
 class UserManagerUpdateResult:
     user_id: str
-    manager_user_id: str
+    manager_user_id: str | None
 
 
 @dataclass(frozen=True)
@@ -1401,6 +1457,18 @@ class UserRoleService:
             if not is_subordinate:
                 raise Forbidden("Вы можете обновлять роль только своих подчиненных")
 
+        role_rule = _hierarchy_rule_for_role(role_id=role_id)
+        if not role_rule.parent_allowed:
+            await self._users.update_parent(user, None)
+        elif user.id_parent is None and role_rule.parent_required:
+            raise Conflict(_manager_required_error(role_id=role_id))
+        elif user.id_parent is not None:
+            manager_user = await self._users.get_by_id(user.id_parent)
+            if manager_user is None:
+                raise Conflict("Текущий руководитель пользователя не найден")
+            if manager_user.id_role not in role_rule.allowed_parent_role_ids:
+                raise Conflict("Текущий руководитель несовместим с выбранной ролью")
+
         await self._users.update_role(user, role_id)
 
         account = await self._user_auth_accounts.get_by_user_provider(
@@ -1427,7 +1495,7 @@ class UserManagerService:
         *,
         current_user: CurrentUser,
         user_id: str,
-        manager_user_id: str,
+        manager_user_id: str | None,
     ) -> UserManagerUpdateResult:
         UserPolicy.ensure_can_update_user_manager(current_user)
 
@@ -1452,23 +1520,22 @@ class UserManagerService:
         if not is_subordinate:
             raise Forbidden("Вы можете обновлять руководителя только своих подчиненных")
 
+        role_rule = _hierarchy_rule_for_role(role_id=user.id_role)
+        if not role_rule.parent_allowed:
+            raise Conflict(_manager_disallowed_error(role_id=user.id_role))
+
+        if manager_user_id is None:
+            if role_rule.parent_required:
+                raise Conflict(_manager_required_error(role_id=user.id_role))
+            await self._users.update_parent(user, None)
+            return UserManagerUpdateResult(user_id=user.id, manager_user_id=None)
+
         manager_user = await self._users.get_by_id(manager_user_id)
         if manager_user is None:
             raise NotFound("Руководитель не найден")
         if manager_user.id == user.id:
             raise Conflict("Пользователь не может быть руководителем самого себя")
-
-        if user.id_role == settings.economist_role_id:
-            allowed_manager_role_ids = {
-                settings.economist_role_id,
-                settings.lead_economist_role_id,
-            }
-        elif user.id_role == settings.lead_economist_role_id:
-            allowed_manager_role_ids = {settings.project_manager_role_id}
-        else:
-            raise Conflict("Руководителя можно менять только у ведущего экономиста и экономиста")
-
-        if manager_user.id_role not in allowed_manager_role_ids:
+        if manager_user.id_role not in role_rule.allowed_parent_role_ids:
             raise Conflict("Выбранная роль руководителя недопустима для этого пользователя")
 
         candidate_query = UserQueryService(
@@ -1480,6 +1547,7 @@ class UserManagerService:
             for item in await candidate_query.list_manager_candidates(
                 current_user=current_user,
                 target_role_id=user.id_role,
+                target_user_id=user.id,
             )
         }
         if manager_user.id not in allowed_manager_ids:
@@ -1491,7 +1559,7 @@ class UserManagerService:
             target_user_id=manager_user.id,
         )
         if would_create_cycle:
-            raise Conflict("Выбранный руководитель создаст цикл в иерархии")
+            raise Conflict("Нельзя назначить руководителя: это создаст цикл в иерархии")
 
         await self._users.update_parent(user, manager_user.id)
         return UserManagerUpdateResult(user_id=user.id, manager_user_id=user.id_parent or manager_user.id)

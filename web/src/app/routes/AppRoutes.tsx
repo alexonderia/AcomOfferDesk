@@ -5,6 +5,7 @@ import type { Location } from 'react-router-dom';
 import { AppLayout } from '@app/layouts/AppLayout';
 import { ProtectedRoute } from '@app/routes/ProtectedRoute';
 import { RoleRoute } from '@app/routes/RoleRoute';
+import { REQUESTS_ROUTE_PERMISSIONS } from '@shared/lib/routing/getDefaultPathByRole';
 
 const AuthPage = lazy(async () => ({ default: (await import('@pages/auth/AuthPage')).AuthPage }));
 const AuthCallbackPage = lazy(async () => ({ default: (await import('@pages/auth/AuthCallbackPage')).AuthCallbackPage }));
@@ -65,10 +66,38 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
             <Route path="/account" element={<AccountStatePage />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Navigate to={defaultPath} replace />} />
-              <Route path="/requests" element={<RequestsPage />} />
-              <Route path="/requests/create" element={<CreateRequestPage />} />
-              <Route path="/requests/:id" element={<RequestDetailsPage />} />
-              <Route path="/requests/:id/contractor" element={<ContractorRequestDetailsPage />} />
+              <Route
+                path="/requests"
+                element={
+                  <RoleRoute allowedPermissions={[...REQUESTS_ROUTE_PERMISSIONS]}>
+                    <RequestsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/requests/create"
+                element={
+                  <RoleRoute allowedPermissions={['requests.create']}>
+                    <CreateRequestPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/requests/:id"
+                element={
+                  <RoleRoute allowedPermissions={['requests.read', 'department.requests.read']}>
+                    <RequestDetailsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/requests/:id/contractor"
+                element={
+                  <RoleRoute allowedPermissions={[...REQUESTS_ROUTE_PERMISSIONS]}>
+                    <ContractorRequestDetailsPage />
+                  </RoleRoute>
+                }
+              />
               <Route path="/offers/:id/workspace" element={<OfferWorkspacePage />} />
               <Route
                 path="/admin"

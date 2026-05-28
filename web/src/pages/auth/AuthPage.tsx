@@ -2,7 +2,7 @@ import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
-import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
+import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
 
 export const AuthPage = () => {
   const navigate = useNavigate();
@@ -42,7 +42,7 @@ export const AuthPage = () => {
       navigate('/account', { replace: true });
       return;
     }
-    navigate(nextPath === '/' ? getDefaultPathByRole(session.roleId) : nextPath, { replace: true });
+    navigate(resolveAuthenticatedPath(nextPath, session), { replace: true });
   }, [isAuthenticated, navigate, nextPath, session]);
 
   useEffect(() => {

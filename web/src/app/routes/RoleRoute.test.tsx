@@ -164,4 +164,22 @@ describe("RoleRoute", () => {
       expect(screen.getByText("requests-page")).toBeInTheDocument();
     }
   );
+
+  it("allows route access when any permission from allowedPermissions is present", () => {
+    useAuthMock.mockReturnValue({
+      session: {
+        ...baseSession,
+        permissions: ["department.dashboard.read"],
+      },
+    });
+
+    renderRoleRoute(
+      "/pm-dashboard",
+      <RoleRoute allowedPermissions={["dashboard.process.read", "department.dashboard.read"]}>
+        <div>pm-dashboard-page</div>
+      </RoleRoute>
+    );
+
+    expect(screen.getByText("pm-dashboard-page")).toBeInTheDocument();
+  });
 });

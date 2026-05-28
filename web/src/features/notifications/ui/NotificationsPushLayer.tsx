@@ -30,12 +30,27 @@ const buildBatchSummaryNotification = (
     type: 'system.warning',
     severity: count >= 6 ? 'warning' : 'info',
     title: `У вас ${count} новых уведомлений`,
-    body: latest?.title ?? 'Откройте центр уведомлений, чтобы посмотреть детали.',
+    body: latest?.title ?? 'Откройте центр уведомлений, чтобы посмотреть подробности.',
     created_at: latest?.created_at ?? new Date().toISOString(),
   };
 };
 
-const PUSH_BURST_WINDOW_MS = 350;
+const PUSH_BURST_WINDOW_MS = 600;
+
+const toPushSignature = (notification: Notification) =>
+  `${notification.type}|${notification.title}|${notification.body}|${notification.link_url ?? ''}`;
+
+const hasDuplicateSignatures = (notifications: Notification[]) => {
+  const signatures = new Set<string>();
+  for (const notification of notifications) {
+    const signature = toPushSignature(notification);
+    if (signatures.has(signature)) {
+      return true;
+    }
+    signatures.add(signature);
+  }
+  return false;
+};
 
 export const NotificationsPushLayer = () => {
   const location = useLocation();
@@ -72,7 +87,11 @@ export const NotificationsPushLayer = () => {
         (left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)
       );
 
-      if (orderedNotifications.length >= NOTIFICATION_PUSH_BURST_THRESHOLD) {
+      const shouldShowSummary =
+        orderedNotifications.length >= NOTIFICATION_PUSH_BURST_THRESHOLD ||
+        hasDuplicateSignatures(orderedNotifications);
+
+      if (shouldShowSummary) {
         const summary = buildBatchSummaryNotification(orderedNotifications);
         const latestRoutePath = resolveNotificationLink(
           orderedNotifications[orderedNotifications.length - 1]?.link_url ?? null

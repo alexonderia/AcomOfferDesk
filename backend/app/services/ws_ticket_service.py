@@ -10,7 +10,7 @@ from typing import Literal
 from app.core.config import settings
 from app.domain.exceptions import Unauthorized
 
-WsTicketPurpose = Literal["chat_ws", "realtime_ws", "notifications_ws"]
+WsTicketPurpose = Literal["realtime_ws", "notifications_ws"]
 
 
 @dataclass(slots=True)
@@ -72,21 +72,21 @@ class WsTicketService:
         expected_purpose: WsTicketPurpose,
     ) -> WsTicketAccessContext:
         if not raw_ticket.strip():
-            raise Unauthorized("Invalid websocket ticket")
+            raise Unauthorized("Недействительный websocket-билет.")
         ticket_hash = self._hash_ticket(raw_ticket.strip())
         now = datetime.now(UTC)
         async with self._lock:
             record = self._store.get(ticket_hash)
             if record is None:
-                raise Unauthorized("Invalid websocket ticket")
+                raise Unauthorized("Недействительный websocket-билет.")
             if record.used_at is not None:
                 self._store.pop(ticket_hash, None)
-                raise Unauthorized("Invalid websocket ticket")
+                raise Unauthorized("Недействительный websocket-билет.")
             if record.access.expires_at <= now:
                 self._store.pop(ticket_hash, None)
-                raise Unauthorized("Websocket ticket expired")
+                raise Unauthorized("Срок действия websocket-билета истек.")
             if record.access.purpose != expected_purpose:
-                raise Unauthorized("Invalid websocket ticket purpose")
+                raise Unauthorized("Назначение websocket-билета не совпадает.")
             record.used_at = now
             self._store.pop(ticket_hash, None)
             return record.access

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
 import { appTheme } from '@shared/theme/appTheme';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,6 +62,33 @@ vi.mock('../model/NotificationsContext', () => ({
   useNotificationsState: () => notificationsState,
 }));
 
+vi.mock('./NotificationCenterPopover', () => ({
+  NotificationCenterPopover: ({
+    notifications,
+    onNotificationClick,
+  }: {
+    notifications: Notification[];
+    // eslint-disable-next-line no-unused-vars -- callback param name in mock prop type
+    onNotificationClick: (notification: Notification) => void;
+  }) => (
+    <div data-testid="notification-popover">
+      {notifications.map((notification) => (
+        <button
+          key={notification.id}
+          type="button"
+          onClick={() => onNotificationClick(notification)}
+        >
+          {notification.title}
+        </button>
+      ))}
+    </div>
+  ),
+}));
+
+vi.mock('./NotificationCenterDrawer', () => ({
+  NotificationCenterDrawer: () => null,
+}));
+
 describe('NotificationBell', () => {
   beforeEach(() => {
     loadNotificationsMock.mockReset();
@@ -83,14 +110,16 @@ describe('NotificationBell', () => {
 
     const { container } = render(
       <ThemeProvider theme={appTheme}>
-        <NotificationBell />
+        <NotificationBell variant="floating" />
       </ThemeProvider>
     );
 
     expect(screen.queryByText('3')).not.toBeInTheDocument();
     expect(container.querySelector('.MuiBadge-badge')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /Уведомления/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Открыть уведомления/i }));
+    });
 
     await waitFor(() => {
       expect(loadNotificationsMock).toHaveBeenCalledTimes(1);
@@ -104,16 +133,18 @@ describe('NotificationBell', () => {
 
     render(
       <ThemeProvider theme={appTheme}>
-        <NotificationBell />
+        <NotificationBell variant="floating" />
       </ThemeProvider>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Уведомления/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Открыть уведомления/i }));
+    });
 
     const notificationTitle = await screen.findByText('New message');
-    const clickableNotification = notificationTitle.closest('[role="button"]');
+    const clickableNotification = notificationTitle.closest('button');
     expect(clickableNotification).toBeTruthy();
-    fireEvent.click(clickableNotification as HTMLElement);
+    fireEvent.click(clickableNotification as HTMLButtonElement);
 
     await waitFor(() => {
       expect(markOneAsReadMock).toHaveBeenCalledWith(11);

@@ -105,8 +105,26 @@ describe('buildHeaderConfig role navigation', () => {
       canViewDashboardPlans: true,
     });
 
-    expect(tabKeys(config)).toEqual(['dashboard', 'plan', 'requests', 'economists']);
+    expect(tabKeys(config)).toEqual(['plan', 'requests', 'economists']);
     expect(mobileKeys(config)).toContain('dashboard');
+  });
+
+  it('shows process and savings dashboard tabs for economist with module statistics permissions', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ECONOMIST,
+      canOpenUsersPage: true,
+      canViewDashboardProcess: true,
+      canViewDashboardSavings: true,
+      canViewDashboardPlans: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'economists']);
+    expect(mobileKeys(config)).toContain('dashboard');
+    const dashboardNav = config.mobileNavItems?.find((item) => item.key === 'dashboard');
+    expect(dashboardNav?.children?.map((child) => child.key)).toEqual(
+      expect.arrayContaining(['dashboard-process', 'dashboard-savings', 'dashboard-plan'])
+    );
   });
 
   it('hides admin section when users permission is missing', () => {

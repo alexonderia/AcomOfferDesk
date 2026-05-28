@@ -216,3 +216,22 @@ Legacy-модуль для Telegram-сценариев. В основном runt
 - За системной архитектурой и потоками данных: [runtime-architecture.md](./runtime-architecture.md)
 - За картой кодовой базы и правилами навигации: [developer-guide.md](../development/developer-guide.md)
 - За auth-деталями: [auth-and-onboarding.md](../security/auth-and-onboarding.md)
+
+## Department And Module Scope (2026-05)
+
+Terminology used by permissions and delegation logic:
+
+- Department: a group of modules under one project manager.
+- Module: a branch of employees under a lead economist.
+
+Additional department accesses do not change core hierarchy:
+
+- no changes to `users.id_parent`;
+- no new business role such as `lead_economist_plus_pm`;
+- no replacement of the user's primary app role.
+
+Behavior model:
+
+- a lead economist with only regular permissions works in the regular module scope;
+- a lead economist with `delegation.department.*` receives scope expansion only for specific delegated actions;
+- a user without corresponding `department.*` permission never gets expanded department scope.

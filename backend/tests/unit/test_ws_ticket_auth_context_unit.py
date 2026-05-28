@@ -27,7 +27,7 @@ class _FakeWsService:
                     "app.contractor",
                 }
             ),
-            purpose="chat_ws",
+            purpose="realtime_ws",
             expires_at=datetime.now(UTC),
         )
 
@@ -42,25 +42,26 @@ async def test_ticket_auth_builds_current_user_from_ticket_keycloak_roles(monkey
     service = _FakeWsService()
     monkeypatch.setattr(ws_module, "get_ws_ticket_service", lambda: service)
 
-    current_user, claims = await ws_module._get_current_user_from_websocket(_FakeWebSocket("ticket-1"))  # noqa: SLF001
-
-    assert claims is None
-    assert current_user.user_id == "contractor-1"
-    assert PermissionCodes.CHAT_MESSAGE_SEND in current_user.permissions
-    assert PermissionCodes.CHAT_READ in current_user.permissions
-    assert service.expected_purpose == "chat_ws"
-
-
-@pytest.mark.asyncio
-async def test_ticket_auth_supports_realtime_ticket_purpose(monkeypatch):
-    service = _FakeWsService()
-    monkeypatch.setattr(ws_module, "get_ws_ticket_service", lambda: service)
-
-    current_user, claims = await ws_module._get_current_user_from_websocket_with_purpose(  # noqa: SLF001
-        _FakeWebSocket("ticket-2"),
+    current_user = await ws_module._get_current_user_from_websocket_with_purpose(  # noqa: SLF001
+        _FakeWebSocket("ticket-1"),
         expected_purpose="realtime_ws",
     )
 
-    assert claims is None
     assert current_user.user_id == "contractor-1"
+    assert PermissionCodes.CHAT_MESSAGE_SEND in current_user.permissions
+    assert PermissionCodes.CHAT_READ in current_user.permissions
     assert service.expected_purpose == "realtime_ws"
+
+
+@pytest.mark.asyncio
+async def test_ticket_auth_supports_notifications_ticket_purpose(monkeypatch):
+    service = _FakeWsService()
+    monkeypatch.setattr(ws_module, "get_ws_ticket_service", lambda: service)
+
+    current_user = await ws_module._get_current_user_from_websocket_with_purpose(  # noqa: SLF001
+        _FakeWebSocket("ticket-2"),
+        expected_purpose="notifications_ws",
+    )
+
+    assert current_user.user_id == "contractor-1"
+    assert service.expected_purpose == "notifications_ws"

@@ -18,6 +18,7 @@ services:
       - ./infra/keycloak/realm-import:/opt/keycloak/data/import:ro
       - ./infra/keycloak/themes:/opt/keycloak/themes-src:ro
       - ./infra/keycloak/prepare-theme.sh:/opt/keycloak/bootstrap/prepare-theme.sh:ro
+      - ./infra/keycloak/apply-realm-smtp.sh:/opt/keycloak/bootstrap/apply-realm-smtp.sh:ro
       - keycloak_data:/opt/keycloak/data
     expose:
       - "8080"
@@ -41,9 +42,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: backend
-    environment:
-      KEYCLOAK_ADMIN_USERNAME: ""
-      KEYCLOAK_ADMIN_PASSWORD: ""
+    # Keycloak admin credentials: only via env_file (KC_BOOTSTRAP_* / KEYCLOAK_ADMIN_*).
+    # Do not set KEYCLOAK_ADMIN_USERNAME/PASSWORD to "" here — empty compose overrides
+    # block bootstrap fallback and break manual user/contractor creation (regression dc660e0).
     volumes:
       - ./shared:/app/shared:ro
       - ./infra/keycloak/bootstrap.sh:/app/keycloak/bootstrap.sh:ro

@@ -45,6 +45,12 @@ const inputFieldSx = {
   }
 };
 
+const roleNameById: Record<number, string> = {
+  [ROLE.PROJECT_MANAGER]: 'РП',
+  [ROLE.LEAD_ECONOMIST]: 'ВЭ',
+  [ROLE.ECONOMIST]: 'Экономист',
+};
+
 export const AdminPageView = () => {
   const {
     isLeadLike,
@@ -249,18 +255,31 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
 
-                  {requiresParent ? (
+                  {selectedRoleId === ROLE.PROJECT_MANAGER || requiresParent ? (
                     <TextField
-                      label={selectedRoleId === ROLE.ECONOMIST ? 'Руководитель (экономист или ведущий экономист)' : 'Руководитель (руководитель проекта)'}
+                      label={
+                        selectedRoleId === ROLE.ECONOMIST
+                          ? 'Руководитель (ведущий экономист или экономист)'
+                          : selectedRoleId === ROLE.LEAD_ECONOMIST
+                            ? 'Руководитель (руководитель проекта или ведущий экономист)'
+                            : 'Руководитель (руководитель проекта)'
+                      }
                       select
                       error={Boolean(getFieldError('id_parent'))}
                       helperText={getFieldError('id_parent') ?? (managerOptions.length ? '' : 'Нет доступных руководителей')}
                       {...register('id_parent')}
                       sx={inputFieldSx}
                     >
+                      {!requiresParent ? (
+                        <MenuItem value="">
+                          Без руководителя
+                        </MenuItem>
+                      ) : null}
                       {managerOptions.map((manager) => (
                         <MenuItem key={manager.user_id} value={manager.user_id}>
-                          {manager.full_name ? `${manager.full_name} (${manager.user_id})` : manager.user_id}
+                          {manager.full_name
+                            ? `${roleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
+                            : `${roleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.user_id}`}
                         </MenuItem>
                       ))}
                     </TextField>

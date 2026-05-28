@@ -193,15 +193,29 @@ const buildLeadMobileNavItems = (canViewDashboardPlans: boolean): HeaderMobileNa
   }),
 ];
 
-const buildEconomistMobileNavItems = (canViewDashboardPlans: boolean, canOpenUsersPage: boolean): HeaderMobileNavItem[] => {
+const buildEconomistMobileNavItems = (
+  canViewDashboardPlans: boolean,
+  canViewDashboardProcess: boolean,
+  canViewDashboardSavings: boolean,
+  canOpenUsersPage: boolean
+): HeaderMobileNavItem[] => {
   const items: HeaderMobileNavItem[] = [];
-
+  const dashboardChildren: HeaderMobileNavItem[] = [];
+  if (canViewDashboardProcess) {
+    dashboardChildren.push({ key: 'dashboard-process', label: 'Процесс работы', to: '/pm-dashboard' });
+  }
+  if (canViewDashboardSavings) {
+    dashboardChildren.push({ key: 'dashboard-savings', label: 'Экономия', to: '/pm-dashboard/savings' });
+  }
   if (canViewDashboardPlans) {
+    dashboardChildren.push({ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' });
+  }
+  if (dashboardChildren.length > 0) {
     items.push({
       key: 'dashboard',
       label: '\u0414\u0430\u0448\u0431\u043e\u0440\u0434',
-      to: '/pm-dashboard/plan',
-      children: [{ key: 'dashboard-plan', label: '\u041f\u043b\u0430\u043d', to: '/pm-dashboard/plan' }],
+      to: dashboardChildren[0].to,
+      children: dashboardChildren,
     });
   }
 
@@ -333,7 +347,12 @@ const resolveDefaultMobileNavItems = ({
 
   if (isLeadLike && !isProjectManager && !isLeadEconomist) {
     if (isEconomist) {
-      return buildEconomistMobileNavItems(canViewDashboardPlans, canOpenUsersPage);
+      return buildEconomistMobileNavItems(
+        canViewDashboardPlans,
+        canViewDashboardProcess,
+        canViewDashboardSavings,
+        canOpenUsersPage
+      );
     }
     return buildLeadMobileNavItems(canViewDashboardPlans);
   }
@@ -385,8 +404,10 @@ export const buildHeaderConfig = ({
   const isRequestDetailsPage = /^\/requests\/\d+$/.test(pathname);
   const isContractorRequestDetailsPage = /^\/requests\/\d+\/contractor$/.test(pathname);
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(pathname);
-  const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && canViewDashboardProcess && pathname === '/pm-dashboard';
-  const isResponsibilitySavings = (isProjectManager || isLeadEconomist) && canViewDashboardSavings && pathname === '/pm-dashboard/savings';
+  const isResponsibilityDashboard =
+    (isProjectManager || isLeadEconomist || isEconomist) && canViewDashboardProcess && pathname === '/pm-dashboard';
+  const isResponsibilitySavings =
+    (isProjectManager || isLeadEconomist || isEconomist) && canViewDashboardSavings && pathname === '/pm-dashboard/savings';
   const isResponsibilityPlan = isLeadLike && canViewDashboardPlans && pathname === '/pm-dashboard/plan';
   const isResponsibilityRequestsPage =
     (isProjectManager || isLeadEconomist) && (pathname.startsWith('/requests') || isOfferWorkspacePage);
@@ -404,9 +425,15 @@ export const buildHeaderConfig = ({
   const isLeadRequestsTab = isLeadLike && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isLeadEconomistsTab = isLeadLike && pathname.startsWith('/admin');
   const isLeadPlanTab = isLeadLike && pathname === '/pm-dashboard/plan';
+  const isLeadDashboardTab =
+    isEconomist
+    && ((canViewDashboardProcess && pathname === '/pm-dashboard')
+      || (canViewDashboardSavings && pathname === '/pm-dashboard/savings'));
+  const hasEconomistDashboardNav =
+    canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans;
   const canUseLeadTabs = isLeadLike && !isProjectManager && !isLeadEconomist
-    && (isLeadRequestsTab || isLeadEconomistsTab || isLeadPlanTab)
-    && canViewDashboardPlans
+    && (isLeadRequestsTab || isLeadEconomistsTab || isLeadPlanTab || isLeadDashboardTab)
+    && hasEconomistDashboardNav
     && (canOpenUsersPage || isEconomist);
   const canUseEconomistTabs = isEconomist
     && (pathname.startsWith('/requests') || pathname.startsWith('/admin') || isOfferWorkspacePage)
@@ -592,20 +619,42 @@ export const buildHeaderConfig = ({
     return {
       mode: 'sidebar',
       breadcrumbs,
-      mobileNavItems: buildLeadMobileNavItems(canViewDashboardPlans),
+      mobileNavItems: buildEconomistMobileNavItems(
+        canViewDashboardPlans,
+        canViewDashboardProcess,
+        canViewDashboardSavings,
+        canOpenUsersPage
+      ),
       tabs: [
-        { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
-        { key: 'plan', value: 'plan', label: 'План' },
+        ...(canViewDashboardProcess ? [{ key: 'dashboard', value: 'dashboard', label: 'Дашборд' as const }] : []),
+        ...(canViewDashboardSavings ? [{ key: 'savings', value: 'savings', label: 'Экономия' as const }] : []),
+        ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: 'План' as const }] : []),
         { key: 'requests', value: 'requests', label: 'Заявки' },
-        { key: 'economists', value: 'economists', label: 'Экономисты' }
+        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Экономисты' }] : []),
       ],
-      activeTab: pathname === '/pm-dashboard/plan' ? 'plan' : pathname === '/admin' ? 'economists' : 'requests',
+      activeTab: isResponsibilityDashboard
+        ? 'dashboard'
+        : isResponsibilitySavings
+          ? 'savings'
+          : isResponsibilityPlan
+            ? 'plan'
+            : pathname === '/admin'
+              ? 'economists'
+              : 'requests',
       onTabChange: (value) => {
-        if ((value === 'dashboard' || value === 'plan') && canViewDashboardPlans) {
+        if (value === 'dashboard' && canViewDashboardProcess) {
+          onNavigateToDashboard();
+          return;
+        }
+        if (value === 'savings' && canViewDashboardSavings) {
+          onNavigateToSavings();
+          return;
+        }
+        if (value === 'plan' && canViewDashboardPlans) {
           onNavigateToPlan();
           return;
         }
-        if (value === 'economists') {
+        if (value === 'economists' && canOpenUsersPage) {
           onNavigateToAdmin();
           return;
         }
@@ -623,7 +672,12 @@ export const buildHeaderConfig = ({
     return {
       mode: 'sidebar',
       breadcrumbs,
-      mobileNavItems: buildEconomistMobileNavItems(canViewDashboardPlans, canOpenUsersPage),
+      mobileNavItems: buildEconomistMobileNavItems(
+        canViewDashboardPlans,
+        canViewDashboardProcess,
+        canViewDashboardSavings,
+        canOpenUsersPage
+      ),
       tabs: [
         { key: 'requests', value: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438' },
         ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u0441\u0442\u044b' }] : []),

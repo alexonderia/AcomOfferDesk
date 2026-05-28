@@ -37,6 +37,7 @@ type RequestDetailsMainCardProps = {
   statusOptions: readonly RequestStatusOption[];
   statusColor: string;
   canEditRequest: boolean;
+  canUpdateRequestStatus?: boolean;
   isEditMode: boolean;
   onStatusChange: (nextStatus: RequestStatus) => void;
   descriptionText: string;
@@ -84,6 +85,7 @@ export const RequestDetailsMainCard = ({
   statusOptions,
   statusColor,
   canEditRequest,
+  canUpdateRequestStatus = false,
   isEditMode,
   onStatusChange,
   descriptionText,
@@ -126,7 +128,7 @@ export const RequestDetailsMainCard = ({
 }: RequestDetailsMainCardProps) => {
   const isMobileViewport = useIsMobileViewport();
   const statusLabel = statusOptions.find((option) => option.value === status)?.label ?? String(status);
-  const showStatusSelect = canEditRequest && isEditMode;
+  const showStatusSelect = canUpdateRequestStatus && isEditMode;
 
   return (
   <Box

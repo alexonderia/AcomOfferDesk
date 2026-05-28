@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Post-deploy gate on VPS: infrastructure smoke + Keycloak permission model (read-only).
+# Keycloak checker needs --env-file; this script writes /app/post-deploy-verify.env from compose
+# env already injected into backend (not from /app/backend/.env, which is not in the image).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

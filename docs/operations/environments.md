@@ -4,6 +4,8 @@
 
 Этот документ — единый источник по режимам `dev/test/prod`, compose-слоям, сетевому периметру и admin-only доступу.
 
+**Слияние `dev` → `test` (деплой):** см. [`branch-merge-policy.md`](branch-merge-policy.md) — PR, CI gate `Promotion to test`, защита ветки `test` в GitHub.
+
 Смежные документы:
 - [Runtime-архитектура](../product/runtime-architecture.md)
 - [Production переменные/секреты](../release/production-env.md)
@@ -194,6 +196,33 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-prod-perimeter.ps1
 
 VPS deploy (`test` branch): `scripts/keycloak-init-deploy.sh` skips the long `keycloak_bootstrap` container when read-only `check_keycloak_permission_model` passes and `infra/keycloak/bootstrap.sh` is unchanged (state: `.deploy-state/keycloak-bootstrap.sha256`). On post-deploy failure it runs `run-keycloak-check-backend.sh --repair`. Force full bootstrap: `KEYCLOAK_BOOTSTRAP_FORCE=1` before deploy.
 
+Keycloak permission model on VPS (running `backend` container):
+
+- **Do not** `docker exec backend python -m app.scripts.check_keycloak_permission_model --env-file /app/backend/.env` — that file is not baked into the image; env is injected by `docker compose --env-file backend/.env` on the host.
+- **Do** from `/opt/acome-offer-desk` on the host:
+  - `./scripts/post-deploy-verify.sh` — full post-deploy gate (smoke + Keycloak);
+  - `./scripts/run-keycloak-check-backend.sh` — Keycloak only (add `--repair` if deploy gate failed and repair is intended).
+- CI deploy runs the same pattern via `post-deploy-verify.sh` after `docker compose up`.
+
+Local/dev Keycloak model check (host Python, repo env file): `./scripts/check-keycloak.sh .env.dev` (see `docs/development/testing-strategy.md`).
+
+### Keycloak Admin API (backend: создание пользователей / контрагентов)
+
+- Учётные данные для Admin API задаются в **runtime env** (`backend/.env` на VPS): `KC_BOOTSTRAP_ADMIN_*` и/или `KEYCLOAK_ADMIN_*`, плюс `KEYCLOAK_ADMIN_CLIENT_ID` / `KEYCLOAK_ADMIN_CLIENT_SECRET` для `acom-admin-service`.
+- В **`docker-compose.yml` не задавать** `KEYCLOAK_ADMIN_USERNAME` / `KEYCLOAK_ADMIN_PASSWORD` пустыми строками в `environment:` — это перекрывает `env_file` и ломает fallback на bootstrap (ошибка UI: «Unable to authenticate in Keycloak admin API»).
+- Если service account без admin-ролей, backend использует password grant bootstrap-админа (`master` realm) — те же переменные, что для `check-keycloak-bootstrap.sh`.
+
+Keycloak SMTP (realm `smtpServer`):
+
+- Переменные `SMTP_*` / `KEYCLOAK_SMTP_*` в `.env` **не попадают в realm автоматически** при обычном `docker compose up keycloak`.
+- После смены SMTP в env примените настройки в realm (быстро, без полного bootstrap):
+
+```bash
+ENV_FILE=.env.prod-like ./scripts/apply-keycloak-smtp.sh
+```
+
+- Полный `keycloak_bootstrap` (роли/клиенты) по-прежнему в `docker-compose.init.yml`; SMTP в нём теперь применяется в начале и перед тяжёлой синхронизацией ролей.
+
 Keycloak bootstrap validation:
 
 Linux/macOS:
@@ -215,3 +244,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-keycloak-bootstrap.ps1
 - `WS_LEGACY_QUERY_TOKEN_ENABLED=false` for prod-like/prod.
 - Legacy `?token=` websocket fallback is temporary dev compatibility only and should stay disabled by default.
 - `BACKEND_WORKERS=1` while ws-ticket storage is in-memory (without Redis/shared ticket store).
+
+### Department delegation bootstrap note (2026-05)
+
+`infra/keycloak/bootstrap.sh` now creates department delegation roles in `acom-api`:
+
+- atomic `department.*` roles;
+- composite `delegation.department.*` roles;
+- one-to-one composite mapping `delegation.department.X -> department.X`.
+
+Operational invariants:
+
+- `delegation.department.*` are not auto-assigned to all users;
+- `delegation.department.*` are not included in default `app.*` composites;
+- `keycloak_user_role_sync` reconciles only `app.*` by `users.id_role` and should not wipe manually assigned delegation roles.

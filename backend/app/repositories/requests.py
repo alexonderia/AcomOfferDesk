@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import Select, bindparam, delete, func, select, text
+from sqlalchemy import Select, and_, bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.core.datetime_utils import to_db_timestamp, utc_now_naive
 from app.models.orm_models import (
     Chat,
+    ChatParticipant,
     CompanyContact,
     File,
     Message,
@@ -24,6 +25,7 @@ from app.models.orm_models import (
     RequestOfferStats,
     User,
 )
+from app.models.auth_models import UserAuthAccount
 
 @dataclass(frozen=True)
 class PlanRequestStatsRow:
@@ -235,6 +237,16 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def get_request_owner_id_by_request_file_id(self, *, file_id: int) -> str | None:
+        stmt = (
+            select(Request.id_user)
+            .join(RequestFile, RequestFile.id_request == Request.id)
+            .where(RequestFile.id == file_id)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_open(self) -> list[Request]:
         stmt = select(Request).where(Request.status == "open").order_by(Request.created_at.desc(), Request.id.desc())
         result = await self._session.execute(stmt)
@@ -253,6 +265,37 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_active_keycloak_visible_contractor_user_ids(
+        self,
+        *,
+        request_id: int,
+        contractor_role_id: int,
+    ) -> list[str]:
+        stmt = (
+            select(User.id)
+            .join(
+                UserAuthAccount,
+                and_(
+                    UserAuthAccount.id_user == User.id,
+                    UserAuthAccount.provider == "keycloak",
+                    UserAuthAccount.is_active.is_(True),
+                ),
+            )
+            .outerjoin(
+                RequestHiddenContractor,
+                and_(
+                    RequestHiddenContractor.request_id == request_id,
+                    RequestHiddenContractor.contractor_user_id == User.id,
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(RequestHiddenContractor.request_id.is_(None))
+            .order_by(User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
     
     async def list_with_stats_and_files(
         self,
@@ -265,6 +308,12 @@ class RequestRepository:
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
             .join(Offer, Offer.id == Chat.id)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == current_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)
@@ -318,6 +367,12 @@ class RequestRepository:
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == contractor_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)
@@ -582,7 +637,11 @@ class RequestRepository:
         self,
         *,
         owner_ids: list[str],
-        plan_ids: list[int],
+        total_plan_ids: list[int],
+        distributed_plan_ids: list[int] | None,
+        total_scope_to_plan_ids: bool = False,
+        total_owner_ids: list[str] | None = None,
+        distributed_owner_ids: list[str] | None = None,
         period_start: date,
         period_end: date,
     ) -> PlanRequestStatsRow:
@@ -597,50 +656,47 @@ class RequestRepository:
 
         start_dt = datetime.combine(period_start, time.min)
         end_dt = datetime.combine(period_end + timedelta(days=1), time.min)
-        if not plan_ids:
-            plan_ids = [-1]
+        if not total_plan_ids:
+            total_plan_ids = [-1]
+        if not distributed_plan_ids:
+            distributed_plan_ids = [-1]
 
-        stmt = (
-            text(
-                """
-                SELECT
-                  COUNT(*) AS total_requests,
-                  COUNT(*) FILTER (WHERE r.id_plan IN :plan_ids) AS distributed_requests,
-                  COUNT(*) FILTER (WHERE r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids) AS unallocated_requests,
-                  COALESCE(SUM(
-                    CASE WHEN r.id_plan IN :plan_ids
-                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
-                      ELSE 0
-                    END
-                  ), 0) AS request_fact_amount,
-                  COALESCE(SUM(
-                    CASE WHEN r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids
-                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
-                      ELSE 0
-                    END
-                  ), 0) AS unallocated_amount
-                FROM requests r
-                WHERE r.status = 'closed'
-                  AND r.id_user IN :owner_ids
-                  AND r.closed_at IS NOT NULL
-                  AND r.closed_at >= :start_dt
-                  AND r.closed_at < :end_dt
-                """
-            )
-            .bindparams(
-                bindparam("owner_ids", expanding=True),
-                bindparam("plan_ids", expanding=True),
-            )
+        if total_owner_ids:
+            total_scope_condition = Request.id_user.in_(total_owner_ids)
+        elif total_scope_to_plan_ids:
+            total_scope_condition = Request.id_plan.in_(total_plan_ids)
+        else:
+            total_scope_condition = text("TRUE")
+
+        distributed_source_condition = (
+            Request.id_user.in_(distributed_owner_ids)
+            if distributed_owner_ids
+            else Request.id_plan.in_(distributed_plan_ids)
         )
-        result = await self._session.execute(
-            stmt,
-            {
-                "owner_ids": owner_ids,
-                "plan_ids": plan_ids,
-                "start_dt": start_dt,
-                "end_dt": end_dt,
-            },
+        distributed_condition = and_(total_scope_condition, distributed_source_condition)
+        unallocated_condition = and_(total_scope_condition, ~distributed_source_condition)
+        savings_expr = func.coalesce(Request.initial_amount, 0) - func.coalesce(Request.final_amount, 0)
+
+        stmt = select(
+            func.count().filter(total_scope_condition).label("total_requests"),
+            func.count().filter(distributed_condition).label("distributed_requests"),
+            func.count().filter(unallocated_condition).label("unallocated_requests"),
+            func.coalesce(
+                func.sum(savings_expr).filter(distributed_condition),
+                0,
+            ).label("request_fact_amount"),
+            func.coalesce(
+                func.sum(savings_expr).filter(unallocated_condition),
+                0,
+            ).label("unallocated_amount"),
+        ).where(
+            Request.status == "closed",
+            Request.id_user.in_(owner_ids),
+            Request.closed_at.is_not(None),
+            Request.closed_at >= start_dt,
+            Request.closed_at < end_dt,
         )
+        result = await self._session.execute(stmt)
         row = result.one()
         return PlanRequestStatsRow(
             total_requests=int(row.total_requests or 0),
@@ -701,6 +757,12 @@ class RequestRepository:
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == current_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)

@@ -5,6 +5,7 @@ import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlin
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import PieChartOutlineRoundedIcon from "@mui/icons-material/PieChartOutlineRounded";
 import QueryStatsRoundedIcon from "@mui/icons-material/QueryStatsRounded";
 import StarOutlinedIcon from "@mui/icons-material/StarOutlined";
@@ -19,6 +20,7 @@ import {
   MenuItem,
   Select,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme, type Theme } from "@mui/material/styles";
@@ -138,6 +140,18 @@ export const PlanProgressVisual = ({
         ];
 
   const progressAngle = (safeValue / 100) * 360;
+  const chartSize = 124;
+
+  const hiddenScrollbarSx = {
+    overflowY: "auto",
+    overflowX: "hidden",
+    pr: 0.25,
+    scrollbarWidth: "none",
+    msOverflowStyle: "none",
+    "&::-webkit-scrollbar": {
+      display: "none",
+    },
+  } as const;
 
   return (
     <Box
@@ -145,7 +159,7 @@ export const PlanProgressVisual = ({
         display: "grid",
         gridTemplateColumns: { xs: "1fr", sm: "140px minmax(0, 1fr)" },
         gap: { xs: 1.1, sm: 1.25 },
-        alignItems: "center",
+        alignItems: { xs: "stretch", sm: "center" },
       }}
     >
       
@@ -154,8 +168,8 @@ export const PlanProgressVisual = ({
         <Box
           sx={{
             position: "relative",
-            width: 124,
-            height: 124,
+            width: chartSize,
+            height: chartSize,
             borderRadius: "50%",
             backgroundColor: "#ffffff",
             boxShadow: "inset 0 0 0 1px rgba(59,130,246,0.08)",
@@ -233,21 +247,23 @@ export const PlanProgressVisual = ({
           </Stack>
         </Box>
       </Box>
-      <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0 }}>
-        
+      <Stack
+        spacing={1}
+        sx={{
+          minWidth: 0,
+          height: { xs: "auto", sm: chartSize },
+          minHeight: { xs: "auto", sm: chartSize },
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         <Stack
           spacing={0.8}
           sx={{
             minHeight: 0,
-            maxHeight: { xs: "none", sm: 108 },
-            overflowY: { xs: "visible", sm: "auto" },
-            overflowX: "hidden",
-            pr: 0.25,
-            scrollbarWidth: "none",
-            msOverflowStyle: "none",
-            "&::-webkit-scrollbar": {
-              display: "none",
-            },
+            flex: { xs: "none", sm: 1 },
+            maxHeight: { xs: 108, sm: "none" },
+            ...hiddenScrollbarSx,
           }}
         >
           {legendItems.map((item) => (
@@ -256,9 +272,8 @@ export const PlanProgressVisual = ({
               direction="row"
               justifyContent="space-between"
               spacing={1}
-              alignItems="center"
+              alignItems="flex-start"
             >
-              
               <Stack
                 direction="row"
                 spacing={0.75}
@@ -268,16 +283,17 @@ export const PlanProgressVisual = ({
                   cursor: item.onClick ? "pointer" : "default",
                   opacity: item.selected ? 1 : 0.94,
                   minWidth: 0,
+                  flex: 1,
                   overflow: "hidden",
                 }}
               >
-                
                 <Box
                   sx={{
                     width: 10,
                     height: 10,
                     borderRadius: "50%",
                     bgcolor: item.color,
+                    flexShrink: 0,
                   }}
                 />
                 <Typography
@@ -286,7 +302,9 @@ export const PlanProgressVisual = ({
                   sx={{
                     fontSize: 12,
                     lineHeight: 1.1,
-                    overflowWrap: "anywhere",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {item.label}
@@ -295,7 +313,13 @@ export const PlanProgressVisual = ({
               <Typography
                 variant="caption"
                 fontWeight={700}
-                sx={{ fontSize: 12, lineHeight: 1.1 }}
+                sx={{
+                  fontSize: 12,
+                  lineHeight: 1.1,
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
+                  pl: 0.5,
+                }}
               >
                 {item.value}
               </Typography>
@@ -304,6 +328,7 @@ export const PlanProgressVisual = ({
         </Stack>
         <Box
           sx={{
+            flexShrink: 0,
             borderRadius: (theme) => `${theme.acomShape.controlRadius}px`,
             px: 1.1,
             py: 0.95,
@@ -980,16 +1005,18 @@ export const PlanAnalyticsCards = ({
                 </Button>
               ) : null}
             </Stack>
-            <PlanProgressVisual
-              value={totalProgressPercent}
-              factAmount={totalFactAmount}
-              remainingAmount={totalRemainingAmount}
-              totalAmount={totalPlanAmount}
-              periodLabel={periodLabel}
-              slices={executionSlices}
-              selectedPlanId={selectedPlanId}
-              onSliceClick={onExecutionSliceClick}
-            />
+            <Box sx={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center" }}>
+              <PlanProgressVisual
+                value={totalProgressPercent}
+                factAmount={totalFactAmount}
+                remainingAmount={totalRemainingAmount}
+                totalAmount={totalPlanAmount}
+                periodLabel={periodLabel}
+                slices={executionSlices}
+                selectedPlanId={selectedPlanId}
+                onSliceClick={onExecutionSliceClick}
+              />
+            </Box>
           </Stack>
         </CardContent>
       </Card>
@@ -998,16 +1025,39 @@ export const PlanAnalyticsCards = ({
         <CardContent
           sx={{
             p: 1.05,
-            height: { xs: "auto", xl: 204 },
+            minHeight: { xs: "auto", xl: 204 },
             "&:last-child": { pb: 1.05 },
           }}
         >
           
-          <Stack spacing={1.1} sx={{ height: "100%" }}>
+          <Stack spacing={1.1} sx={{ minHeight: 0 }}>
             
-            <Typography variant="subtitle1" fontWeight={800}>
-              Заявки, формирующие экономию
-            </Typography>
+            <Stack direction="row" alignItems="center" spacing={0.6} useFlexGap flexWrap="wrap">
+              <Typography variant="subtitle1" fontWeight={800}>
+                Заявки, формирующие экономию
+              </Typography>
+              {showNoPeriodExecutionHint ? (
+                <Tooltip
+                  title="За выбранный месяц есть план, но выполнение за период отсутствует"
+                  arrow
+                >
+                  <Box
+                    component="span"
+                    tabIndex={0}
+                    role="img"
+                    aria-label="За выбранный месяц есть план, но выполнение за период отсутствует"
+                    sx={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      color: "warning.dark",
+                      cursor: "help",
+                    }}
+                  >
+                    <InfoOutlinedIcon sx={{ fontSize: 18 }} />
+                  </Box>
+                </Tooltip>
+              ) : null}
+            </Stack>
             {selectedPlanLabel ? (
               <Typography
                 variant="caption"
@@ -1017,24 +1067,21 @@ export const PlanAnalyticsCards = ({
                 План: {selectedPlanLabel}
               </Typography>
             ) : null}
-            {showNoPeriodExecutionHint ? (
-              <Typography
-                variant="caption"
-                sx={{
-                  mt: -0.25,
-                  color: "warning.dark",
-                  fontSize: 11.5,
-                  lineHeight: 1.1,
-                }}
-              >
-                За выбранный месяц есть план, но выполнение за период отсутствует
-              </Typography>
-            ) : null}
             <Box
               sx={{
                 display: "grid",
                 gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                 gap: 1,
+                minHeight: 0,
+                maxHeight: { xs: "none", md: 132 },
+                overflowY: { xs: "visible", md: "auto" },
+                overflowX: "hidden",
+                pr: 0.25,
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+                "&::-webkit-scrollbar": {
+                  display: "none",
+                },
               }}
             >
               <Stack spacing={0.95}>

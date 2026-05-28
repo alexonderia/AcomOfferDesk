@@ -198,6 +198,7 @@ export const useAdminPage = () => {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [economistAndLeadManagers, setEconomistAndLeadManagers] = useState<UserListItem[]>([]);
   const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
+  const [projectManagerRoleManagers, setProjectManagerRoleManagers] = useState<UserListItem[]>([]);
 
   const roleOptions = useMemo(() => {
     const roleIds: number[] = [];
@@ -272,9 +273,21 @@ export const useAdminPage = () => {
 
   const { watch, setValue, reset } = form;
   const selectedRoleId = watch('role_id');
+  const selectedParentId = watch('id_parent');
   const isContractorRole = selectedRoleId === ROLE.CONTRACTOR;
   const requiresParent = selectedRoleId === ROLE.ECONOMIST || selectedRoleId === ROLE.LEAD_ECONOMIST;
-  const managerOptions = selectedRoleId === ROLE.ECONOMIST ? economistAndLeadManagers : projectManagerManagers;
+  const managerOptions = useMemo(() => {
+    if (selectedRoleId === ROLE.PROJECT_MANAGER) {
+      return projectManagerRoleManagers;
+    }
+    if (selectedRoleId === ROLE.ECONOMIST) {
+      return economistAndLeadManagers;
+    }
+    if (selectedRoleId === ROLE.LEAD_ECONOMIST) {
+      return projectManagerManagers;
+    }
+    return [];
+  }, [economistAndLeadManagers, projectManagerManagers, projectManagerRoleManagers, selectedRoleId]);
 
   const handleTabChange = (value: UserTab) => {
     setActiveTab(value);
@@ -321,9 +334,10 @@ export const useAdminPage = () => {
   }, [canOpenCreateDialog, searchParams, setSearchParams]);
 
   const loadManagers = useCallback(async () => {
-    const [economistManagersResult, leadEconomistManagersResult] = await Promise.allSettled([
+    const [economistManagersResult, leadEconomistManagersResult, projectManagerRoleManagersResult] = await Promise.allSettled([
       getManagerCandidates(ROLE.ECONOMIST),
-      getManagerCandidates(ROLE.LEAD_ECONOMIST)
+      getManagerCandidates(ROLE.LEAD_ECONOMIST),
+      getManagerCandidates(ROLE.PROJECT_MANAGER),
     ]);
 
     setEconomistAndLeadManagers(
@@ -331,6 +345,11 @@ export const useAdminPage = () => {
     );
     setProjectManagerManagers(
       leadEconomistManagersResult.status === 'fulfilled' ? leadEconomistManagersResult.value.items : []
+    );
+    setProjectManagerRoleManagers(
+      projectManagerRoleManagersResult.status === 'fulfilled'
+        ? projectManagerRoleManagersResult.value.items
+        : []
     );
   }, []);
 
@@ -340,10 +359,14 @@ export const useAdminPage = () => {
   }, [isDialogOpen, loadManagers]);
 
   useEffect(() => {
-    if (!requiresParent) {
+    if (selectedParentId && !managerOptions.some((item) => item.user_id === selectedParentId)) {
+      setValue('id_parent', '');
+      return;
+    }
+    if (!requiresParent && selectedRoleId !== ROLE.PROJECT_MANAGER) {
       setValue('id_parent', '');
     }
-  }, [requiresParent, setValue]);
+  }, [managerOptions, requiresParent, selectedParentId, selectedRoleId, setValue]);
 
   const loadUsers = useCallback(async () => {
     setIsLoadingUsers(true);

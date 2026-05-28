@@ -28,6 +28,20 @@ vi.mock("@features/dashboard/components/EmployeeNodeCard", () => ({
   EmployeeNodeCard: () => <div data-testid="employee-node-card" />,
 }));
 
+const showErrorToastMock = vi.fn();
+const showSuccessToastMock = vi.fn();
+
+vi.mock("@shared/ui/toasts", () => ({
+  useSystemToasts: () => ({
+    showErrorToast: showErrorToastMock,
+    showSuccessToast: showSuccessToastMock,
+  }),
+}));
+
+vi.mock("@shared/lib/responsive", () => ({
+  useIsMobileViewport: () => false,
+}));
+
 const baseDashboardPayload = {
   tree: [],
   unassignedRequests: [],
@@ -54,6 +68,8 @@ const renderWithTheme = () =>
 describe("ProjectManagerDashboard widget states", () => {
   beforeEach(() => {
     vi.mocked(getResponsibilityDashboard).mockReset();
+    showErrorToastMock.mockReset();
+    showSuccessToastMock.mockReset();
   });
 
   it("renders loading state while dashboard request is pending", () => {
@@ -80,7 +96,7 @@ describe("ProjectManagerDashboard widget states", () => {
     renderWithTheme();
 
     await waitFor(() => {
-      expect(screen.getByText("dashboard failed")).toBeInTheDocument();
+      expect(showErrorToastMock).toHaveBeenCalledWith("dashboard failed");
     });
   });
 });

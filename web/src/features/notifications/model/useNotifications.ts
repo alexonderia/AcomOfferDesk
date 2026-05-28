@@ -132,7 +132,7 @@ export const useNotifications = ({
           }
           return response.items;
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to load notifications';
+          const message = error instanceof Error ? error.message : 'Не удалось загрузить уведомления.';
           setListError(message);
           throw error;
         } finally {
@@ -227,7 +227,6 @@ export const useNotifications = ({
           return nextItems;
         });
         setHasUnread(nextHasUnread);
-        await refreshUnreadState();
       } finally {
         setMarkingIds((current) => {
           const next = new Set(current);
@@ -237,7 +236,7 @@ export const useNotifications = ({
         });
       }
     },
-    [enabled, refreshUnreadState]
+    [enabled]
   );
 
   const markAllAsRead = useCallback(async () => {

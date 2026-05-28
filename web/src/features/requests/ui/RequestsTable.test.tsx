@@ -31,6 +31,7 @@ const baseRequest = (): RequestWithOfferStats => ({
     view_amounts: true,
     open_contractor_view: false,
     edit: false,
+    update_status: false,
     change_owner: false,
     upload_file: false,
     delete_file: false,
@@ -71,5 +72,53 @@ describe('RequestsTable states', () => {
     );
 
     expect(screen.getByText('Sample request')).toBeInTheDocument();
+  });
+
+  it('shows owner selector only for rows with change_owner action', () => {
+    const nonEditableOwner = baseRequest();
+    const editableOwner: RequestWithOfferStats = {
+      ...baseRequest(),
+      id: 202,
+      id_user: 'owner-2',
+      owner_full_name: 'Owner Two',
+      actions: {
+        ...baseRequest().actions,
+        change_owner: true,
+      },
+    };
+
+    const { rerender } = render(
+      <ThemeProvider theme={appTheme}>
+        <RequestsTable
+          requests={[nonEditableOwner]}
+          isLoading={false}
+          canEditOwner
+          ownerOptions={[
+            { id: 'owner-1', label: 'Owner One' },
+            { id: 'owner-2', label: 'Owner Two' },
+          ]}
+        />
+      </ThemeProvider>
+    );
+
+    const baseComboboxCount = screen.getAllByRole('combobox').length;
+
+    rerender(
+      <ThemeProvider theme={appTheme}>
+        <RequestsTable
+          requests={[nonEditableOwner, editableOwner]}
+          isLoading={false}
+          canEditOwner
+          ownerOptions={[
+            { id: 'owner-1', label: 'Owner One' },
+            { id: 'owner-2', label: 'Owner Two' },
+          ]}
+        />
+      </ThemeProvider>
+    );
+
+    expect(screen.getByText('Owner One')).toBeInTheDocument();
+    expect(screen.getByText('Owner Two')).toBeInTheDocument();
+    expect(screen.getAllByRole('combobox')).toHaveLength(baseComboboxCount + 1);
   });
 });

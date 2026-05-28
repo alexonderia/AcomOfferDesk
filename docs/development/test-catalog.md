@@ -211,7 +211,11 @@
 
 ### `scripts/check-keycloak.ps1` / `scripts/check-keycloak.sh`
 
-Запускают `backend/app/scripts/check_keycloak_permission_model.py`, который проверяет:
+Запускают `backend/app/scripts/check_keycloak_permission_model.py` **на хосте** с env-файлом из репозитория (например `.env.dev`).
+
+На **VPS** с уже поднятым контейнером `backend` используйте не `check-keycloak.sh`, а `./scripts/run-keycloak-check-backend.sh` или `./scripts/post-deploy-verify.sh` (env с хоста `backend/.env` → compose → снимок в контейнере). Путь `/app/backend/.env` внутри образа отсутствует.
+
+Скрипт проверяет:
 - realm и его enabled-состояние;
 - соответствие issuer и доступность JWKS;
 - настройки клиента `acom-web`;

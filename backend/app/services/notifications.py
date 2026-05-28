@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from datetime import datetime
@@ -77,26 +78,44 @@ class NotificationService:
         link_url: str | None = None,
         payload: dict | None = None,
     ) -> list[UserNotification]:
-        created: list[UserNotification] = []
         seen: set[str] = set()
+        notifications_to_create: list[UserNotification] = []
+        self._ensure_supported_type(notification_type)
+        self._ensure_supported_severity(severity)
         for user_id in user_ids:
             normalized = user_id.strip()
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)
-            created.append(
-                await self.create_for_user(
+            notifications_to_create.append(
+                UserNotification(
                     user_id=normalized,
-                    notification_type=notification_type,
+                    type=notification_type,
                     severity=severity,
-                    title=title,
-                    body=body,
-                    entity_type=entity_type,
+                    title=title.strip() or "Уведомление",
+                    body=body.strip() or "Есть обновление.",
+                    entity_type=(entity_type.strip() if entity_type else None),
                     entity_id=entity_id,
-                    link_url=link_url,
+                    link_url=(link_url.strip() if link_url else None),
                     payload=payload,
                 )
             )
+
+        if not notifications_to_create:
+            return []
+
+        create_many = getattr(self._notifications, "create_many", None)
+        if callable(create_many):
+            created = await create_many(notifications_to_create)
+        else:
+            created = []
+            for notification in notifications_to_create:
+                created.append(await self._notifications.create(notification))
+
+        await asyncio.gather(
+            *(self._send_created_event_best_effort(notification) for notification in created),
+            return_exceptions=True,
+        )
         return created
 
     async def list_for_current_user(
@@ -114,7 +133,7 @@ class NotificationService:
     async def mark_as_read_for_current_user(self, *, user_id: str, notification_id: int) -> UserNotification:
         notification = await self._notifications.mark_as_read(user_id=user_id, notification_id=notification_id)
         if notification is None:
-            raise NotFound("Notification not found")
+            raise NotFound("Уведомление не найдено.")
         return notification
 
     async def mark_all_as_read_for_current_user(self, *, user_id: str) -> int:

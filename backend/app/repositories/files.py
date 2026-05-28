@@ -121,6 +121,11 @@ class FileRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def is_normative_file(self, *, file_id: int) -> bool:
+        stmt = select(NormativeFile.id).where(NormativeFile.id_file == file_id).limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def list_by_ids(self, *, file_ids: Sequence[int]) -> list[File]:
         if not file_ids:
             return []

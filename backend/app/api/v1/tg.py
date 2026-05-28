@@ -183,6 +183,7 @@ async def complete_tg_registration(
             uow.company_contacts,
             uow.user_auth_accounts,
             uow.user_contact_channels,
+            after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         user = await service.register_contractor(
             tg_user_id=tg_id,

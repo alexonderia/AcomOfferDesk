@@ -99,6 +99,7 @@ export const RequestDetailsView = () => {
     const [offersStatusMap, setOffersStatusMap] = useState<Record<number, OfferDecisionStatus>>({});
     const [offersLoading, setOffersLoading] = useState(false);
     const [offersError, setOffersError] = useState<string | null>(null);
+    const lastOffersErrorToastRef = useRef<string | null>(null);
     const [isManualOfferDialogOpen, setIsManualOfferDialogOpen] = useState(false);
     const pollIntervalMs = 10000;
 
@@ -113,7 +114,7 @@ export const RequestDetailsView = () => {
         () => Boolean(requestDetails?.actions.view_amounts),
         [requestDetails?.actions.view_amounts]
     );
-    const effectiveDeadlineForChange = status === 'review' ? todayDate : deadline;
+    const effectiveDeadlineForChange = deadline;
     const hasRequestFieldChanges =
         status !== baselineStatus ||
         effectiveDeadlineForChange !== baselineDeadline ||
@@ -126,6 +127,18 @@ export const RequestDetailsView = () => {
     useEffect(() => {
         hasPendingChangesRef.current = hasPendingChanges;
     }, [hasPendingChanges]);
+
+    useEffect(() => {
+        if (!offersError) {
+            lastOffersErrorToastRef.current = null;
+            return;
+        }
+        if (lastOffersErrorToastRef.current === offersError) {
+            return;
+        }
+        showErrorToast(offersError);
+        lastOffersErrorToastRef.current = offersError;
+    }, [offersError, showErrorToast]);
 
     useEffect(() => {
         if (suppressPendingChangesToastRef.current && !hasPendingChanges) {
@@ -145,6 +158,10 @@ export const RequestDetailsView = () => {
     }, [hasPendingChanges, showSystemToast]);
 
     const canEditRequest = useMemo(() => Boolean(requestDetails?.actions.edit), [requestDetails?.actions.edit]);
+    const canUpdateRequestStatus = useMemo(
+        () => Boolean(requestDetails?.actions.update_status),
+        [requestDetails?.actions.update_status]
+    );
     const canEditOwner = useMemo(
         () => Boolean(requestDetails?.actions.change_owner),
         [requestDetails?.actions.change_owner]
@@ -169,12 +186,24 @@ export const RequestDetailsView = () => {
         () => status === 'open' && Boolean(requestDetails?.actions.create_offer),
         [requestDetails?.actions.create_offer, status]
     );
+    const hasStatusChange = status !== baselineStatus;
+    const hasNonStatusRequestFieldChanges =
+        effectiveDeadlineForChange !== baselineDeadline
+        || (canViewRequestAmounts && initialAmount !== baselineInitialAmount)
+        || (canViewRequestAmounts && finalAmount !== baselineFinalAmount)
+        || planId !== baselinePlanId;
     const canSaveRequestChanges =
-        (hasRequestFieldChanges && canEditRequest)
+        (hasStatusChange && canUpdateRequestStatus)
+        || (hasNonStatusRequestFieldChanges && canEditRequest)
         || (hasOwnerChange && canEditOwner)
         || (deletedFileIds.length > 0 && canDeleteRequestFiles)
         || (Boolean(newFile) && canUploadRequestFiles);
-    const canEnterEditMode = canEditRequest || canEditOwner || canUploadRequestFiles || canDeleteRequestFiles;
+    const canEnterEditMode =
+        canEditRequest
+        || canUpdateRequestStatus
+        || canEditOwner
+        || canUploadRequestFiles
+        || canDeleteRequestFiles;
     const statusTone = requestStatusToneByValue[status] ?? 'neutral';
     const statusColor = statusTone === 'success'
         ? theme.palette.success.main
@@ -342,6 +371,12 @@ export const RequestDetailsView = () => {
         const isFinalStatus = currentStatus === 'closed' || currentStatus === 'cancelled';
         if (!statusChanged && !deadlineChanged && !ownerChanged && !initialAmountChanged && !finalAmountChanged && !planChanged && !hasFileChanges) {
             return 'Нет изменений для сохранения';
+        }
+        if (statusChanged && !canUpdateRequestStatus) {
+            return 'Изменение статуса заявки недоступно: нет права на изменение статуса в текущем контуре доступа';
+        }
+        if ((deadlineChanged || initialAmountChanged || finalAmountChanged || planChanged) && !canEditRequest) {
+            return 'Редактирование параметров заявки недоступно: нет права на редактирование заявки';
         }
 
         if (canViewRequestAmounts) {
@@ -731,6 +766,7 @@ export const RequestDetailsView = () => {
                 statusOptions={statusOptions}
                 statusColor={statusColor}
                 canEditRequest={canEditRequest}
+                canUpdateRequestStatus={canUpdateRequestStatus}
                 isEditMode={isEditMode}
                 onStatusChange={handleStatusSelection}
                 descriptionText={descriptionText}
@@ -887,7 +923,7 @@ export const RequestDetailsView = () => {
                     statusMap={offersStatusMap}
                     acceptedOfferId={acceptedOfferId}
                     isLoading={offersLoading}
-                    errorMessage={offersError}
+                    errorMessage={null}
                     statusOptions={offerStatusOptions}
                     onStatusChange={(offerId, value) => void handleOfferStatusChange(offerId, value)}
                     onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace?requestId=${requestDetails.id}`)}
@@ -909,4 +945,3 @@ export const RequestDetailsView = () => {
         </Box>
     );
 };
-

@@ -292,5 +292,23 @@ def test_build_current_user_from_keycloak_claims_takes_permissions_from_token_cl
         ),
     )
 
-    assert current_user.permissions == frozenset({PermissionCodes.REQUESTS_READ})
+    # app.admin role fallback grants the full role ceiling when atomic permissions
+    # are missing or out of ceiling for the local role.
+    assert current_user.permissions == frozenset(
+        {
+            PermissionCodes.USERS_READ,
+            PermissionCodes.USERS_CREATE,
+            PermissionCodes.USERS_STATUS_UPDATE,
+            PermissionCodes.USERS_ROLE_UPDATE_ANY,
+            PermissionCodes.USERS_LOGIN_UPDATE,
+            PermissionCodes.USERS_PASSWORD_UPDATE,
+            PermissionCodes.PROFILE_MANAGE_OWN,
+            PermissionCodes.PROFILE_MANAGE_ANY,
+            PermissionCodes.COMPANY_CONTACTS_MANAGE_ANY,
+            PermissionCodes.FEEDBACK_CREATE,
+            PermissionCodes.CONTRACTORS_MANUAL_CREATE,
+            PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
+        }
+    )
+    assert PermissionCodes.REQUESTS_READ not in current_user.permissions
     assert current_user.app_roles == frozenset({"app.admin"})

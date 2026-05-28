@@ -64,6 +64,7 @@ type ApiRequestItem = RequestEntity & {
     can_view_amounts?: boolean;
     can_open_contractor_view?: boolean;
     can_edit?: boolean;
+    can_update_status?: boolean;
     can_change_owner?: boolean;
     can_upload_files?: boolean;
     can_delete_files?: boolean;

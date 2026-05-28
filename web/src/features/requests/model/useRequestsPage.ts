@@ -76,9 +76,13 @@ export const useRequestsPage = () => {
   const shouldLoadOnlyOpenRequests = isContractor && !canUseContractorTabs && canLoadOpenRequests;
   const shouldLoadOpenRequests = shouldLoadOnlyOpenRequests || (canUseContractorTabs && contractorTab === 'open');
 
-  const canEditOwner = useMemo(
+  const canEditOwnerByPermission = useMemo(
     () => hasPermission(session, 'requests.owner.change'),
     [session]
+  );
+  const canEditOwner = useMemo(
+    () => canEditOwnerByPermission || requests.some((request) => Boolean(request.actions.change_owner)),
+    [canEditOwnerByPermission, requests]
   );
   const canCreateRequest = useMemo(
     () => hasPermission(session, 'requests.create'),

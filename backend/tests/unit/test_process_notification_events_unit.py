@@ -41,11 +41,26 @@ class _FakeNotificationsRepo:
 
 
 class _FakeRequestsRepo:
-    def __init__(self, *, owner_id: str = "owner-1") -> None:
+    def __init__(
+        self,
+        *,
+        owner_id: str = "owner-1",
+        visible_contractors_by_request: dict[int, list[str]] | None = None,
+    ) -> None:
         self._owner_id = owner_id
+        self._visible_contractors_by_request = visible_contractors_by_request or {}
 
     async def get_by_id(self, *, request_id: int):
         return SimpleNamespace(id=request_id, id_user=self._owner_id)
+
+    async def list_active_keycloak_visible_contractor_user_ids(
+        self,
+        *,
+        request_id: int,
+        contractor_role_id: int,
+    ) -> list[str]:
+        _ = contractor_role_id
+        return list(self._visible_contractors_by_request.get(request_id, []))
 
 
 class _FakeChatsRepo:
@@ -73,12 +88,51 @@ class _FakeOffersRepo:
 
 
 class _FakeUsersRepo:
+    def __init__(self, *, role_by_user_id: dict[str, int]) -> None:
+        self._role_by_user_id = role_by_user_id
+
     async def list_by_role_ids_with_profiles_and_roles(self, *, role_ids: list[int]):
-        _ = role_ids
-        return [
-            (SimpleNamespace(id="admin-1"), None, None),
-            (SimpleNamespace(id="admin-2"), None, None),
-        ]
+        role_set = set(role_ids)
+        rows = []
+        for user_id, role_id in sorted(self._role_by_user_id.items()):
+            if role_id not in role_set:
+                continue
+            rows.append((SimpleNamespace(id=user_id, id_role=role_id), None, None))
+        return rows
+
+    async def list_by_ids_with_profiles_and_roles(self, *, user_ids: list[str]):
+        rows = []
+        for user_id in user_ids:
+            role_id = self._role_by_user_id.get(user_id)
+            if role_id is None:
+                continue
+            rows.append((SimpleNamespace(id=user_id, id_role=role_id), None, None))
+        return rows
+
+    async def get_by_id(self, user_id: str):
+        role_id = self._role_by_user_id.get(user_id)
+        if role_id is None:
+            return None
+        return SimpleNamespace(id=user_id, id_role=role_id)
+
+
+class _FakeUserAuthAccountsRepo:
+    def __init__(self, *, keycloak_user_ids: set[str]) -> None:
+        self._keycloak_user_ids = keycloak_user_ids
+
+    async def get_by_user_provider(
+        self,
+        *,
+        user_id: str,
+        provider: str,
+        include_inactive: bool = False,
+    ):
+        _ = include_inactive
+        if provider != "keycloak":
+            return None
+        if user_id not in self._keycloak_user_ids:
+            return None
+        return SimpleNamespace(id_user=user_id, provider=provider, is_active=True)
 
 
 class _FakeProfilesRepo:
@@ -94,12 +148,48 @@ class _FakeUow:
         owner_id: str = "owner-1",
         chat_recipients: list[str] | None = None,
         offers_by_request: dict[int, list[SimpleNamespace]] | None = None,
+        role_by_user_id: dict[str, int] | None = None,
+        keycloak_user_ids: set[str] | None = None,
+        visible_contractors_by_request: dict[int, list[str]] | None = None,
     ) -> None:
+        if role_by_user_id is None:
+            role_by_user_id = {
+                "admin-1": module.settings.admin_role_id,
+                "admin-2": module.settings.superadmin_role_id,
+                "owner-1": module.settings.project_manager_role_id,
+                "owner-2": module.settings.project_manager_role_id,
+                "owner-9": module.settings.project_manager_role_id,
+                "manager-1": module.settings.project_manager_role_id,
+                "employee-1": module.settings.economist_role_id,
+                "actor-1": module.settings.project_manager_role_id,
+                "user-1": module.settings.economist_role_id,
+                "user-2": module.settings.economist_role_id,
+                "user-3": module.settings.economist_role_id,
+                "old-owner": module.settings.project_manager_role_id,
+                "new-owner": module.settings.project_manager_role_id,
+                "contractor-1": module.settings.contractor_role_id,
+                "contractor-submitted": module.settings.contractor_role_id,
+                "contractor-accepted": module.settings.contractor_role_id,
+                "contractor-rejected": module.settings.contractor_role_id,
+                "target-1": module.settings.contractor_role_id,
+            }
+        if keycloak_user_ids is None:
+            keycloak_user_ids = {
+                "contractor-1",
+                "contractor-submitted",
+                "contractor-accepted",
+                "target-1",
+            }
+
         self.notifications = repo
-        self.requests = _FakeRequestsRepo(owner_id=owner_id)
+        self.requests = _FakeRequestsRepo(
+            owner_id=owner_id,
+            visible_contractors_by_request=visible_contractors_by_request,
+        )
         self.chats = _FakeChatsRepo(chat_recipients)
         self.offers = _FakeOffersRepo(offers_by_request=offers_by_request)
-        self.users = _FakeUsersRepo()
+        self.users = _FakeUsersRepo(role_by_user_id=role_by_user_id)
+        self.user_auth_accounts = _FakeUserAuthAccountsRepo(keycloak_user_ids=keycloak_user_ids)
         self.profiles = _FakeProfilesRepo()
 
     async def __aenter__(self):
@@ -233,32 +323,32 @@ async def test_handler_offer_created_sends_realtime_created_event(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("event_type", "expected_title"),
+    ("new_status", "expected_title"),
     (
-        ("offer.accepted", "Коммерческое предложение принято"),
-        ("offer.rejected", "Коммерческое предложение отклонено"),
-        ("offer.deleted", "Коммерческое предложение удалено"),
+        ("accepted", "Коммерческое предложение принято"),
+        ("rejected", "Коммерческое предложение отклонено"),
+        ("deleted", "Коммерческое предложение удалено"),
     ),
 )
-async def test_handler_offer_status_events_create_notifications(monkeypatch, event_type: str, expected_title: str):
+async def test_handler_offer_status_events_create_notifications(monkeypatch, new_status: str, expected_title: str):
     repo = _FakeNotificationsRepo()
     monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo, owner_id="owner-2"))
     handler = module.ProcessNotificationEventHandler()
 
     event = build_process_notification_event(
-        event_type=event_type,
+        event_type="offer.status_changed",
         actor_user_id="actor-1",
         request_id=10,
         offer_id=100,
-        dedupe_key=f"{event_type}:100",
-        payload={"recipient_user_ids": ["owner-2", "contractor-1"]},
+        dedupe_key=f"offer.status_changed:100:{new_status}",
+        payload={"recipient_user_ids": ["owner-2", "contractor-1"], "new_status": new_status},
     )
     await handler.handle(payload=event.to_payload())
 
     assert len(repo.created) == 2
     assert sorted(item.user_id for item in repo.created) == ["contractor-1", "owner-2"]
     assert all(item.title == expected_title for item in repo.created)
-    assert all(item.type == event_type for item in repo.created)
+    assert all(item.type == "offer.status_changed" for item in repo.created)
 
 
 @pytest.mark.asyncio
@@ -283,6 +373,67 @@ async def test_handler_request_responsible_changed_notifies_old_and_new_without_
     assert len(repo.created) == 1
     assert repo.created[0].user_id == "new-owner"
     assert repo.created[0].type == "request.responsible_changed"
+    assert repo.created[0].title == "Изменен ответственный по заявке"
+
+
+@pytest.mark.asyncio
+async def test_handler_request_responsible_changed_skips_old_operator(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    role_by_user_id = {
+        "admin-1": module.settings.admin_role_id,
+        "admin-2": module.settings.superadmin_role_id,
+        "old-owner": module.settings.operator_role_id,
+        "new-owner": module.settings.project_manager_role_id,
+        "manager-1": module.settings.project_manager_role_id,
+    }
+    monkeypatch.setattr(
+        module,
+        "UnitOfWork",
+        lambda: _FakeUow(repo, owner_id="owner-2", role_by_user_id=role_by_user_id),
+    )
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="request.responsible_changed",
+        actor_user_id="manager-1",
+        request_id=55,
+        dedupe_key="request.responsible_changed:55:old-owner:new-owner:operator",
+        payload={
+            "old_responsible_user_id": "old-owner",
+            "new_responsible_user_id": "new-owner",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "new-owner"
+    assert repo.created[0].title == "Вам назначена заявка"
+    assert repo.created[0].type == "request.responsible_changed"
+
+
+@pytest.mark.asyncio
+async def test_handler_offer_status_event_filters_non_keycloak_contractor(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(
+        module,
+        "UnitOfWork",
+        lambda: _FakeUow(repo, owner_id="owner-2", keycloak_user_ids=set()),
+    )
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="offer.status_changed",
+        actor_user_id="actor-1",
+        request_id=10,
+        offer_id=100,
+        dedupe_key="offer.status_changed:100:accepted:no-keycloak",
+        payload={"recipient_user_ids": ["owner-2", "contractor-1"], "new_status": "accepted"},
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "owner-2"
+    assert repo.created[0].type == "offer.status_changed"
 
 
 @pytest.mark.asyncio
@@ -357,6 +508,28 @@ async def test_handler_user_status_changed_notifies_admins_except_actor(monkeypa
     assert len(repo.created) == 1
     assert repo.created[0].user_id == "admin-2"
     assert repo.created[0].type == "user.status_changed"
+
+
+@pytest.mark.asyncio
+async def test_handler_user_review_required_notifies_admins_except_actor(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="user.review_required",
+        actor_user_id="admin-1",
+        dedupe_key="user.review_required:target-1",
+        payload={
+            "target_user_id": "target-1",
+            "target_role": module.settings.contractor_role_id,
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].user_id == "admin-2"
+    assert repo.created[0].type == "user.review_required"
 
 
 @pytest.mark.asyncio

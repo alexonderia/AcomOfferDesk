@@ -166,3 +166,31 @@ class OfferRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def get_request_owner_id_by_offer_file_id(self, *, file_id: int) -> str | None:
+        from app.models.orm_models import Request
+
+        stmt = (
+            select(Request.id_user)
+            .join(Offer, Offer.id_request == Request.id)
+            .join(OfferFile, OfferFile.id_offer == Offer.id)
+            .where(OfferFile.id == file_id)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_request_owner_id_by_message_file_id(self, *, file_id: int) -> str | None:
+        from app.models.orm_models import Request
+
+        stmt = (
+            select(Request.id_user)
+            .join(Offer, Offer.id_request == Request.id)
+            .join(Chat, Chat.id == Offer.id)
+            .join(Message, Message.id_chat == Chat.id)
+            .join(MessageFile, MessageFile.id_message == Message.id)
+            .where(MessageFile.id == file_id)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()

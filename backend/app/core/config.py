@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -205,6 +207,26 @@ class Settings(BaseSettings):
         default_factory=list,
         validation_alias="CORS_ALLOW_ORIGINS",
     )
+    registration_notify_enabled: bool = Field(
+        default=False,
+        validation_alias="REGISTRATION_NOTIFY_ENABLED",
+    )
+    registration_notify_url: str | None = Field(
+        default=None,
+        validation_alias="REGISTRATION_NOTIFY_URL",
+    )
+    registration_notify_token: str | None = Field(
+        default=None,
+        validation_alias="REGISTRATION_NOTIFY_TOKEN",
+    )
+    registration_notify_service: str = Field(
+        default="acom-registration",
+        validation_alias="REGISTRATION_NOTIFY_SERVICE",
+    )
+    registration_notify_timeout_seconds: float = Field(
+        default=20.0,
+        validation_alias="REGISTRATION_NOTIFY_TIMEOUT_SECONDS",
+    )
 
     @field_validator("allowed_creation_role_ids", mode="before")
     @classmethod
@@ -270,6 +292,15 @@ class Settings(BaseSettings):
             self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
         if self.keycloak_admin_password is not None:
             self.keycloak_admin_password = self.keycloak_admin_password.strip() or None
+        # Compose may set KEYCLOAK_ADMIN_*="" (overrides env_file). Fall back like bootstrap scripts.
+        if not self.keycloak_admin_username:
+            bootstrap_username = os.getenv("KC_BOOTSTRAP_ADMIN_USERNAME", "").strip()
+            if bootstrap_username:
+                self.keycloak_admin_username = bootstrap_username
+        if not self.keycloak_admin_password:
+            bootstrap_password = os.getenv("KC_BOOTSTRAP_ADMIN_PASSWORD", "").strip()
+            if bootstrap_password:
+                self.keycloak_admin_password = bootstrap_password
         self.keycloak_bootstrap_app_username = self.keycloak_bootstrap_app_username.strip() or "superadmin"
         if self.keycloak_jwks_cache_ttl_seconds <= 0:
             self.keycloak_jwks_cache_ttl_seconds = 300

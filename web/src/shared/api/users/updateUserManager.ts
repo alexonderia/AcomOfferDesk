@@ -1,13 +1,13 @@
 import { fetchJson } from '../client';
 
 type UpdateUserManagerPayload = {
-  manager_user_id: string;
+  manager_user_id: string | null;
 };
 
 type UpdateUserManagerResponse = {
   data: {
     user_id: string;
-    manager_user_id: string;
+    manager_user_id: string | null;
   };
 };
 

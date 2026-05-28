@@ -19,6 +19,13 @@ def _dt() -> datetime:
 
 
 class _DashboardUsersRepo:
+    async def get_by_id(self, user_id: str):
+        if user_id == "econ-1":
+            return SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="pm-1")
+        if user_id == "pm-1":
+            return SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None)
+        return None
+
     async def list_staff_with_profiles_and_roles_for_dashboard(self, *, role_ids):
         _ = role_ids
         return [
@@ -30,7 +37,7 @@ class _DashboardUsersRepo:
         ]
 
     async def list_active_user_parent_pairs(self):
-        return []
+        return [("econ-1", "pm-1")]
 
 
 class _DashboardRequestsRepo:
@@ -147,9 +154,49 @@ async def test_responsibility_dashboard_contains_status_counters_and_assigned_re
     assert dashboard.savings.total_savings_amount == pytest.approx(0.0)
 
 
+@pytest.mark.asyncio
+async def test_responsibility_dashboard_allows_department_dashboard_read_without_global_dashboard_pair(make_current_user):
+    service = DashboardService(
+        users=_DashboardUsersRepo(),
+        requests=_DashboardRequestsRepo(),
+        user_status_periods=_DashboardUserStatusPeriodsRepo(),
+        plans=_DashboardPlansRepo(),
+    )
+    current_user = make_current_user(
+        user_id="econ-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_DASHBOARD_READ},
+    )
+
+    dashboard = await service.get_responsibility_dashboard(current_user=current_user)
+
+    assert len(dashboard.tree) == 1
+    assert dashboard.tree[0].user_id == "econ-1"
+
+
 class _PlanRequestsRepo:
-    async def aggregate_plan_request_stats(self, *, owner_ids, plan_ids, period_start, period_end):
-        _ = (owner_ids, plan_ids, period_start, period_end)
+    async def aggregate_plan_request_stats(
+        self,
+        *,
+        owner_ids,
+        total_plan_ids,
+        distributed_plan_ids,
+        total_scope_to_plan_ids,
+        total_owner_ids,
+        distributed_owner_ids,
+        period_start,
+        period_end,
+    ):
+        _ = (
+            owner_ids,
+            total_plan_ids,
+            distributed_plan_ids,
+            total_scope_to_plan_ids,
+            total_owner_ids,
+            distributed_owner_ids,
+            period_start,
+            period_end,
+        )
         return SimpleNamespace(
             total_requests=7,
             distributed_requests=5,
@@ -210,9 +257,49 @@ async def test_plan_request_stats_aggregate_by_hierarchy_existing_logic():
     assert stats.completion_percent == Decimal("60.00")
 
 
+class _PlanUsersRepo:
+    def __init__(self) -> None:
+        self._users = {
+            "pm-1": SimpleNamespace(
+                id="pm-1",
+                id_role=settings.project_manager_role_id,
+                id_parent=None,
+            ),
+            "lead-1": SimpleNamespace(
+                id="lead-1",
+                id_role=settings.lead_economist_role_id,
+                id_parent="pm-1",
+            ),
+            "econ-1": SimpleNamespace(
+                id="econ-1",
+                id_role=settings.economist_role_id,
+                id_parent="lead-1",
+            ),
+            "econ-2": SimpleNamespace(
+                id="econ-2",
+                id_role=settings.economist_role_id,
+                id_parent="lead-1",
+            ),
+        }
+
+    async def get_by_id(self, user_id: str):
+        return self._users.get(user_id)
+
+    async def list_active_user_parent_pairs(self):
+        return [
+            ("lead-1", "pm-1"),
+            ("econ-1", "lead-1"),
+            ("econ-2", "lead-1"),
+        ]
+
+
 @pytest.mark.asyncio
 async def test_plan_dashboard_entry_for_economist_is_limited_to_own_delegated_branch(make_current_user):
-    service = PlanService(plans=SimpleNamespace(), users=SimpleNamespace(), requests=_PlanRequestsRepo())
+    service = PlanService(
+        plans=SimpleNamespace(),
+        users=_PlanUsersRepo(),
+        requests=_PlanRequestsRepo(),
+    )
     current_user = make_current_user(
         user_id="econ-1",
         role_id=settings.economist_role_id,
@@ -231,3 +318,57 @@ async def test_plan_dashboard_entry_for_economist_is_limited_to_own_delegated_br
     )
 
     assert [plan.id for plan in entry_plans] == [2]
+
+
+@pytest.mark.asyncio
+async def test_plan_dashboard_entry_for_economist_uses_module_lead_root_when_present(make_current_user):
+    service = PlanService(
+        plans=SimpleNamespace(),
+        users=_PlanUsersRepo(),
+        requests=_PlanRequestsRepo(),
+    )
+    current_user = make_current_user(
+        user_id="econ-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.DASHBOARD_PLANS_READ},
+    )
+    period_plans = [
+        SimpleNamespace(id=1, id_user="pm-1", id_parent_plan=None),
+        SimpleNamespace(id=10, id_user="lead-1", id_parent_plan=1),
+        SimpleNamespace(id=11, id_user="econ-1", id_parent_plan=10),
+        SimpleNamespace(id=12, id_user="econ-2", id_parent_plan=10),
+    ]
+
+    entry_plans = await service._resolve_dashboard_entry_plans(
+        period_plans=period_plans,
+        current_user=current_user,
+    )
+
+    assert [plan.id for plan in entry_plans] == [10]
+
+
+@pytest.mark.asyncio
+async def test_plan_dashboard_entry_with_department_plans_read_uses_department_root(make_current_user):
+    service = PlanService(
+        plans=SimpleNamespace(),
+        users=_PlanUsersRepo(),
+        requests=_PlanRequestsRepo(),
+    )
+    current_user = make_current_user(
+        user_id="econ-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_PLANS_READ},
+    )
+    period_plans = [
+        SimpleNamespace(id=1, id_user="pm-1", id_parent_plan=None),
+        SimpleNamespace(id=10, id_user="lead-1", id_parent_plan=1),
+        SimpleNamespace(id=11, id_user="econ-1", id_parent_plan=10),
+        SimpleNamespace(id=12, id_user="econ-2", id_parent_plan=10),
+    ]
+
+    entry_plans = await service._resolve_dashboard_entry_plans(
+        period_plans=period_plans,
+        current_user=current_user,
+    )
+
+    assert [plan.id for plan in entry_plans] == [1]

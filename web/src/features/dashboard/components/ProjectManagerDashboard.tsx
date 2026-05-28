@@ -14,7 +14,7 @@ import {
   Typography,
   useTheme
 } from '@mui/material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getResponsibilityDashboard,
   type ResponsibilityEmployeeNode,
@@ -45,6 +45,7 @@ import {
 } from './dashboardUtils';
 import { CircularProcessChart, EmployeeWorkloadChart } from './DashboardCharts';
 import { EmployeeNodeCard } from './EmployeeNodeCard';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 const getRequestStatusTone = (status: string): StatusPillTone => {
   if (status === 'open') {
@@ -66,6 +67,8 @@ export const ProjectManagerDashboard = () => {
   }), [theme]);
   const workloadColors = useMemo(() => theme.palette.dashboard.workload, [theme]);
   const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
+  const lastErrorRef = useRef<string | null>(null);
 
   const [tree, setTree] = useState<ResponsibilityEmployeeNode[]>([]);
   const [unassignedRequests, setUnassignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
@@ -86,7 +89,6 @@ export const ProjectManagerDashboard = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [dismissedWarningKey, setDismissedWarningKey] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
@@ -248,7 +250,6 @@ export const ProjectManagerDashboard = () => {
     }
 
     setErrorMessage(null);
-    setSuccessMessage(null);
     setIsAssigning(true);
 
     try {
@@ -260,7 +261,7 @@ export const ProjectManagerDashboard = () => {
           })
         )
       );
-      setSuccessMessage(
+      showSuccessToast(
         prepared.length === 1
           ? `Заявка #${prepared[0].requestId} назначена сотруднику`
           : `Распределено заявок: ${prepared.length}`
@@ -298,6 +299,18 @@ export const ProjectManagerDashboard = () => {
     }
   }, [dismissedWarningKey, warningKey]);
 
+  useEffect(() => {
+    if (!errorMessage) {
+      lastErrorRef.current = null;
+      return;
+    }
+    if (lastErrorRef.current === errorMessage) {
+      return;
+    }
+    showErrorToast(errorMessage);
+    lastErrorRef.current = errorMessage;
+  }, [errorMessage, showErrorToast]);
+
   return (
     <Stack spacing={2.5}>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -317,16 +330,6 @@ export const ProjectManagerDashboard = () => {
         <EmployeeWorkloadChart employees={allSubordinates} workloadColors={workloadColors} />
       </Box>
 
-      {errorMessage ? (
-        <Alert severity="error" onClose={() => setErrorMessage(null)}>
-          {errorMessage}
-        </Alert>
-      ) : null}
-      {successMessage ? (
-        <Alert severity="success" onClose={() => setSuccessMessage(null)}>
-          {successMessage}
-        </Alert>
-      ) : null}
       {isWarningVisible ? (
         <Alert severity="warning" onClose={() => setDismissedWarningKey(warningKey)}>
           <Stack spacing={0.5}>
@@ -449,91 +452,128 @@ export const ProjectManagerDashboard = () => {
                     activePeriod: requestOwnerActiveUnavailability,
                     upcomingPeriod: requestOwnerUpcomingUnavailability,
                   });
+                  const ownerDisplayName =
+                    request.owner_full_name
+                    || employeeNameById[request.owner_user_id]
+                    || request.owner_user_id
+                    || '-';
                   return (
                     <Card key={`${requestsTab}-${request.request_id}`} variant="outlined" sx={{ borderRadius: 2 }}>
-                      <CardContent>
-                        <Stack
-                          direction={{ xs: 'column', md: 'row' }}
-                          spacing={1.5}
-                          justifyContent="space-between"
-                          alignItems={{ xs: 'stretch', md: 'flex-start' }}
-                        >
-                          <Stack spacing={0.9} sx={{ minWidth: 0 }}>
-                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                              <Typography fontWeight={700}>Заявка #{request.request_id}</Typography>
-                              <StatusPill
-                                label={STATUS_LABELS[request.status] ?? request.status_label}
-                                tone={getRequestStatusTone(request.status)}
-                              />
-                            </Stack>
-                            <Typography variant="body2" color="text.secondary">
-                              {request.description || 'Описание не указано'}
+                      <CardContent sx={{ '&:last-child': { pb: 2 } }}>
+                        <Stack spacing={1.25}>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                            <Typography fontWeight={700} sx={{ lineHeight: 1.3 }}>
+                              Заявка #{request.request_id}
                             </Typography>
-                            <Box
-                              sx={{
-                                border: '1px solid',
-                                borderColor: 'divider',
-                                borderRadius: 1.5,
-                                px: 1.1,
-                                py: 0.8,
-                                display: 'grid',
-                                gap: 0.6,
-                                maxWidth: { xs: '100%', md: 480 }
-                              }}
-                            >
-                              <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
-                                <Typography variant="caption" color="text.secondary">
-                                  Дедлайн
-                                </Typography>
-                                <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
-                                  {formatDate(request.deadline_at)}
-                                </Typography>
-                              </Stack>
-                              <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
-                                <Typography variant="caption" color="text.secondary">
-                                  Ответственный
-                                </Typography>
-                                <Stack direction="row" spacing={0.6} alignItems="center" sx={{ minWidth: 0 }}>
-                                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
-                                    {request.owner_full_name || employeeNameById[request.owner_user_id] || request.owner_user_id || '-'}
-                                  </Typography>
-                                  {requestsTab !== 'unassigned' && requestOwnerWarningTooltip ? (
-                                    <Tooltip title={requestOwnerWarningTooltip} arrow>
-                                      <Box
-                                        component="span"
-                                        tabIndex={0}
-                                        role="img"
-                                        aria-label={requestOwnerWarningTooltip}
-                                        sx={{
-                                          width: 18,
-                                          height: 18,
-                                          borderRadius: '50%',
-                                          backgroundColor: requestOwnerActiveUnavailability ? '#fef2f2' : '#fff7ed',
-                                          border: `1px solid ${requestOwnerActiveUnavailability ? '#ef4444' : '#f59e0b'}`,
-                                          color: requestOwnerActiveUnavailability ? '#dc2626' : '#d97706',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          fontSize: 12,
-                                          fontWeight: 800,
-                                          lineHeight: 1,
-                                          cursor: 'help',
-                                          flexShrink: 0
-                                        }}
-                                      >
-                                        !
-                                      </Box>
-                                    </Tooltip>
-                                  ) : null}
-                                </Stack>
-                              </Stack>
-                            </Box>
+                            <StatusPill
+                              label={STATUS_LABELS[request.status] ?? request.status_label}
+                              tone={getRequestStatusTone(request.status)}
+                            />
                           </Stack>
 
-                          <Stack
-                            spacing={1}
-                            sx={{ width: { xs: '100%', md: 300 }, minHeight: { md: 92 }, justifyContent: 'space-between' }}
+                          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+                            {request.description || 'Описание не указано'}
+                          </Typography>
+
+                          <Box
+                            sx={(theme) => ({
+                              border: `1px solid ${theme.palette.divider}`,
+                              borderRadius: `${theme.acomShape.controlRadius}px`,
+                              overflow: 'hidden',
+                              backgroundColor: theme.palette.background.paper,
+                              width: '100%',
+                              boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)'
+                            })}
                           >
+                            <Box
+                              sx={(theme) => ({
+                                display: 'grid',
+                                gridTemplateColumns: '1fr auto',
+                                alignItems: 'center',
+                                gap: 1,
+                                px: 1.25,
+                                py: 0.8,
+                                borderBottom: `1px solid ${theme.palette.divider}`
+                              })}
+                            >
+                              <Typography variant="body2" color="text.secondary">
+                                Дедлайн
+                              </Typography>
+                              <Typography variant="body2" sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                {formatDate(request.deadline_at)}
+                              </Typography>
+                            </Box>
+                            <Box
+                              sx={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr auto',
+                                alignItems: 'center',
+                                gap: 1,
+                                px: 1.25,
+                                py: 0.8
+                              }}
+                            >
+                              <Typography variant="body2" color="text.secondary">
+                                Ответственный
+                              </Typography>
+                              <Stack
+                                direction="row"
+                                spacing={0.6}
+                                alignItems="center"
+                                justifyContent="flex-end"
+                                sx={{ minWidth: 0 }}
+                              >
+                                <Tooltip
+                                  title={ownerDisplayName}
+                                  arrow
+                                  disableHoverListener={ownerDisplayName === '-'}
+                                >
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      textAlign: 'right',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      minWidth: 0
+                                    }}
+                                  >
+                                    {ownerDisplayName}
+                                  </Typography>
+                                </Tooltip>
+                                {requestsTab !== 'unassigned' && requestOwnerWarningTooltip ? (
+                                  <Tooltip title={requestOwnerWarningTooltip} arrow>
+                                    <Box
+                                      component="span"
+                                      tabIndex={0}
+                                      role="img"
+                                      aria-label={requestOwnerWarningTooltip}
+                                      sx={{
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        backgroundColor: requestOwnerActiveUnavailability ? '#fef2f2' : '#fff7ed',
+                                        border: `1px solid ${requestOwnerActiveUnavailability ? '#ef4444' : '#f59e0b'}`,
+                                        color: requestOwnerActiveUnavailability ? '#dc2626' : '#d97706',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                        lineHeight: 1,
+                                        cursor: 'help',
+                                        flexShrink: 0
+                                      }}
+                                    >
+                                      !
+                                    </Box>
+                                  </Tooltip>
+                                ) : null}
+                              </Stack>
+                            </Box>
+                          </Box>
+
+                          <Stack direction="row" spacing={1} alignItems="center">
                             <Select
                               size="small"
                               displayEmpty
@@ -541,6 +581,7 @@ export const ProjectManagerDashboard = () => {
                               value={selectedOwner}
                               renderValue={(value) => resolveAssigneeLabel(request, String(value ?? ''))}
                               onChange={(event) => handleAssigneeChange(request.request_id, String(event.target.value))}
+                              sx={{ minWidth: 0, flex: 1 }}
                             >
                               <MenuItem value="">Выберите ответственного</MenuItem>
                               {allSubordinates.map((employee) => (
@@ -552,28 +593,26 @@ export const ProjectManagerDashboard = () => {
                                 />
                               ))}
                             </Select>
-
-                            <Stack direction="row" justifyContent="flex-end" sx={{ pt: { xs: 0, md: 0.5 } }}>
-                              <ActionButton
-                                kind="outlined"
-                                showNavigationIcons={false}
-                                sx={{
-                                  minWidth: 44,
-                                  height: 36,
-                                  px: 1.4,
-                                  fontWeight: 600,
-                                  borderColor: 'divider',
-                                  color: 'text.secondary'
-                                }}
-                                onClick={() => void handleAssignSingle(request.request_id)}
-                                disabled={!assignmentState[request.request_id] || isAssigning}
-                              >
-                                ОК
-                              </ActionButton>
-                            </Stack>
+                            <ActionButton
+                              kind="outlined"
+                              showNavigationIcons={false}
+                              sx={{
+                                minWidth: 52,
+                                height: 40,
+                                px: 1.6,
+                                flexShrink: 0,
+                                fontWeight: 600,
+                                borderColor: 'divider',
+                                color: 'text.secondary'
+                              }}
+                              onClick={() => void handleAssignSingle(request.request_id)}
+                              disabled={!assignmentState[request.request_id] || isAssigning}
+                            >
+                              ОК
+                            </ActionButton>
                           </Stack>
                         </Stack>
-                        </CardContent>
+                      </CardContent>
                     </Card>
                   );
                 })

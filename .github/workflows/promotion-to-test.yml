@@ -1,0 +1,59 @@
+# Gates merges into deploy branch `test` (typically PR dev → test).
+name: Promotion to test
+
+on:
+  pull_request:
+    branches:
+      - test
+  workflow_dispatch:
+
+jobs:
+  promotion-checks:
+    name: Promotion checks (deploy branch)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Forbidden compose overrides
+        run: |
+          set -euo pipefail
+          if grep -qE 'KEYCLOAK_ADMIN_USERNAME:\s*""' docker-compose.yml; then
+            echo "FAIL: KEYCLOAK_ADMIN_USERNAME must not be empty in docker-compose.yml"
+            exit 1
+          fi
+          if grep -qE 'KEYCLOAK_ADMIN_PASSWORD:\s*""' docker-compose.yml; then
+            echo "FAIL: KEYCLOAK_ADMIN_PASSWORD must not be empty in docker-compose.yml"
+            exit 1
+          fi
+          echo "OK: no empty KEYCLOAK_ADMIN overrides"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Keycloak admin settings unit tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          APP_ENV: development
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
+          JWT_SECRET: ci-test-jwt-secret
+          EMAIL_ADDRESS: ci@example.com
+          EMAIL_APP_PASSWORD: ci-email-app-password
+          SMTP_HOST: smtp.example.com
+          EMAIL_VERIFICATION_SECRET: ci-email-verification-secret
+          S3_ENDPOINT: localhost:9000
+          S3_ACCESS_KEY: ci-access-key
+          S3_SECRET_KEY: ci-secret-key
+          S3_BUCKET: ci-bucket
+        run: python -m pytest backend/tests/unit/test_keycloak_admin_settings_unit.py -q
+
+      - name: Verify promotion script
+        run: bash scripts/verify-promotion-to-test.sh

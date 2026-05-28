@@ -52,5 +52,8 @@ def test_build_process_notification_event_populates_defaults():
 
 
 def test_process_notification_event_types_include_plan_events():
+    assert "offer.updated" in PROCESS_EVENT_TYPES
+    assert "offer.status_changed" in PROCESS_EVENT_TYPES
+    assert "user.review_required" in PROCESS_EVENT_TYPES
     assert "plan.assigned" in PROCESS_EVENT_TYPES
     assert "plan.updated" in PROCESS_EVENT_TYPES

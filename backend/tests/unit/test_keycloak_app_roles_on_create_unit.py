@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.config import settings
+from app.domain.auth_context import CurrentUser
 from app.services import users as users_module
 from app.services.users import ManualContractorCreateInput, ManualContractorService
 
@@ -52,3 +53,48 @@ async def test_create_manual_contractor_syncs_keycloak_app_contractor_role(monke
     sync_mock.assert_awaited_once()
     assert sync_mock.await_args.kwargs["local_role_id"] == settings.contractor_role_id
     assert sync_mock.await_args.kwargs["keycloak_user_id"] == "kc-subject-1"
+
+
+@pytest.mark.asyncio
+async def test_create_manual_contractor_notify_does_not_use_missing_full_name(monkeypatch):
+    notify_mock = AsyncMock()
+    monkeypatch.setattr(users_module, "notify_new_user_registration", notify_mock)
+    monkeypatch.setattr(users_module, "_bind_keycloak_account", AsyncMock())
+    monkeypatch.setattr(users_module, "_sync_keycloak_role_after_bind", AsyncMock())
+
+    keycloak_admin = AsyncMock()
+    keycloak_admin.ensure_user = AsyncMock(return_value=SimpleNamespace(id="kc-subject-2"))
+
+    users_repo = AsyncMock()
+    users_repo.exists = AsyncMock(return_value=False)
+    users_repo.get_role_by_id = AsyncMock(return_value=SimpleNamespace(role="Контрагент"))
+
+    service = ManualContractorService(
+        users=users_repo,
+        profiles=AsyncMock(),
+        company_contacts=AsyncMock(),
+        user_auth_accounts=AsyncMock(),
+        keycloak_admin=keycloak_admin,
+    )
+
+    company = 'ООО "Кубик"'
+    await service.create_manual_contractor(
+        current_user=CurrentUser(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            status="active",
+            permissions=frozenset({"contractors.manual.create"}),
+        ),
+        data=ManualContractorCreateInput(
+            company_name=company,
+            inn="2365485695",
+            company_phone="+79999999999",
+            company_mail="kkybikkik@gmail.com",
+        ),
+    )
+
+    notify_mock.assert_awaited_once()
+    ctx = notify_mock.await_args.args[0]
+    assert ctx.source == "manual_contractor"
+    assert ctx.full_name is None
+    assert ctx.company_name == company

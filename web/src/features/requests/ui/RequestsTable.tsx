@@ -312,7 +312,7 @@ const RequestMobileCard = ({
                                         >
                                             {detail.label}
                                         </Typography>
-                                        {isOwnerDetail && canEditOwner ? (
+                                        {isOwnerDetail && canEditOwner && row.actions.change_owner ? (
                                             <Stack
                                                 onClick={(event: ReactMouseEvent<HTMLDivElement>) => event.stopPropagation()}
                                                 onMouseDown={(event: ReactMouseEvent<HTMLDivElement>) => event.stopPropagation()}
@@ -518,7 +518,7 @@ export const RequestsTable = ({
             getFilterValue: (row) => row.owner_full_name ?? row.id_user,
             getSearchValue: (row) => row.owner_full_name ?? row.id_user,
             renderCell: (row) =>
-                canEditOwner ? (
+                canEditOwner && row.actions.change_owner ? (
                     <Select
                         size="small"
                         value={row.id_user}

@@ -137,8 +137,26 @@ const isSingleMonthRange = (dateFrom: string, dateTo: string) => {
 };
 
 const collectLeadOptions = (nodes: PlanTreeNode[]): PlanLeadOption[] => {
+  const isProjectManagerRole = (role: string) => {
+    const normalized = role.trim().toLowerCase();
+    return normalized.includes("руководитель проекта") || normalized.includes("project manager");
+  };
+  const isLeadEconomistRole = (role: string) => {
+    const normalized = role.trim().toLowerCase();
+    return normalized.includes("ведущий экономист") || normalized.includes("lead_economist");
+  };
+  const walk = (node: PlanTreeNode, collector: PlanTreeNode[]) => {
+    collector.push(node);
+    node.children.forEach((child) => walk(child, collector));
+  };
+  const allNodes: PlanTreeNode[] = [];
+  nodes.forEach((node) => walk(node, allNodes));
+
   const optionsByUserId = new Map<string, PlanLeadOption>();
-  nodes.forEach((node) => {
+  allNodes.forEach((node) => {
+    if (isProjectManagerRole(node.user_role) || !isLeadEconomistRole(node.user_role)) {
+      return;
+    }
     if (!optionsByUserId.has(node.user_id)) {
       optionsByUserId.set(node.user_id, {
         userId: node.user_id,
@@ -208,6 +226,7 @@ export const ProjectManagerPlanDashboard = () => {
     Record<number, boolean>
   >({});
   const [selectedPlanRequestStats, setSelectedPlanRequestStats] = useState<PlanRequestStats | null>(null);
+  const [scopedRequestStats, setScopedRequestStats] = useState<PlanRequestStats | null>(null);
 
   const rootPlanForm = useForm<RootPlanFormValues>({
     resolver: zodResolver(rootPlanSchema),
@@ -401,6 +420,35 @@ export const ProjectManagerPlanDashboard = () => {
   }, [dateFrom, dateTo, selectedPlanTree]);
 
   useEffect(() => {
+    if (selectedPlanTree) {
+      setScopedRequestStats(null);
+      return;
+    }
+    let isMounted = true;
+    getPlanRequestStats({
+      dateFrom,
+      dateTo,
+      rootUserId:
+        selectedLeadUserId === ALL_LEAD_MANAGERS_SCOPE
+          ? null
+          : selectedLeadUserId,
+    })
+      .then((stats) => {
+        if (isMounted) {
+          setScopedRequestStats(stats);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setScopedRequestStats(null);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [dateFrom, dateTo, selectedLeadUserId, selectedPlanTree]);
+
+  useEffect(() => {
     setExpandedNodeIds((prev) => {
       const next = { ...prev };
       expandableNodeIds.forEach((planId) => {
@@ -504,7 +552,7 @@ export const ProjectManagerPlanDashboard = () => {
       }
       return buildRequestFactMetrics(
         scopedSummary,
-        dashboardRequestStats,
+        scopedRequestStats ?? dashboardRequestStats,
         dashboardSummary?.total_period_fact_amount ?? null,
         dashboardSummary?.total_period_progress_percent ?? null,
       );
@@ -513,6 +561,7 @@ export const ProjectManagerPlanDashboard = () => {
       dashboardSummary?.total_period_fact_amount,
       dashboardSummary?.total_period_progress_percent,
       dashboardRequestStats,
+      scopedRequestStats,
       scopedSummary,
       selectedPlanRequestStats,
       selectedPlanTree,

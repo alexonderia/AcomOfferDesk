@@ -128,7 +128,7 @@ describe('NotificationsPushLayer', () => {
 
     act(() => {
       emitRealtimeNotificationCreated(messageNotification(1, 11));
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(700);
     });
 
     expect(enqueueSnackbarMock).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe('NotificationsPushLayer', () => {
 
     act(() => {
       emitRealtimeNotificationCreated(messageNotification(2, 11));
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(700);
     });
 
     expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
@@ -168,7 +168,7 @@ describe('NotificationsPushLayer', () => {
     act(() => {
       emitRealtimeNotificationCreated(messageNotification(3, 11));
       emitRealtimeNotificationCreated(messageNotification(3, 11));
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(700);
     });
 
     expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
@@ -181,7 +181,7 @@ describe('NotificationsPushLayer', () => {
       emitRealtimeNotificationCreated(messageNotification(21, 11));
       emitRealtimeNotificationCreated(messageNotification(22, 11));
       emitRealtimeNotificationCreated(messageNotification(23, 12));
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(700);
     });
 
     expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);

@@ -58,7 +58,7 @@ docker compose up -d --force-recreate --no-deps gateway
 
 ## Чат (WebSocket): с домена не работает, с IP:8080 — работает
 
-Внутренний nginx в **`gateway`** уже пробрасывает **`Upgrade`** для **`/api/`**. Если **`wss://домен/api/v1/ws/chat`** не подключается (часто **404** на handshake), а **`ws://IP:8080/...?token=…`** даёт **`connection.ready`** — чинить **хостовый** nginx/TLS **перед** Docker.
+Внутренний nginx в **`gateway`** уже пробрасывает **`Upgrade`** для **`/api/`**. Если **`wss://домен/api/v1/ws/realtime?ticket=...`** не подключается (часто **404** на handshake), а **`ws://IP:8080/api/v1/ws/realtime?ticket=...`** даёт **`connection.ready`** — чинить **хостовый** nginx/TLS **перед** Docker.
 
 **Проверенный патч на хосте (Debian/Ubuntu):**
 

@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createWsTicketMock = vi.fn();
 
 vi.mock('@shared/api/wsTickets', () => ({
-  createWsTicket: (...args: unknown[]) => createWsTicketMock(...args)
+  createWsTicket: (...args: unknown[]) => createWsTicketMock(...args),
 }));
 
 class FakeWebSocket {
@@ -34,9 +34,9 @@ class FakeWebSocket {
     this.dispatch('close', { code });
   }
 
-  dispatch(type: string, _event: any = {}) {
+  dispatch(type: string, event: any = {}) {
     for (const listener of this.listeners[type] ?? []) {
-      listener(_event);
+      listener(event);
     }
   }
 }
@@ -51,19 +51,29 @@ describe('chatSocketClient', () => {
 
   afterEach(async () => {
     const { chatSocketClient } = await import('./chatSocket');
+    const { realtimeSocketClient } = await import('./realtimeSocket');
     chatSocketClient.disconnect();
+    realtimeSocketClient.disconnect();
     vi.useRealTimers();
   });
 
-  it('uses ws ticket in URL and does not include token', async () => {
-    createWsTicketMock.mockResolvedValueOnce({ ticket: 'ticket-1', expires_in: 30, expires_at: '2026-01-01T00:00:00Z' });
+  it('uses realtime_ws ticket in URL and does not include token', async () => {
+    createWsTicketMock.mockResolvedValueOnce({
+      ticket: 'ticket-1',
+      expires_in: 30,
+      expires_at: '2026-01-01T00:00:00Z',
+    });
     const { chatSocketClient } = await import('./chatSocket');
+    const { realtimeSocketClient } = await import('./realtimeSocket');
 
     chatSocketClient.connect();
     await vi.runAllTimersAsync();
 
-    const ws = (chatSocketClient as any).socket as FakeWebSocket;
-    expect(createWsTicketMock).toHaveBeenCalledWith('chat_ws');
+    const ws = (realtimeSocketClient as any).socket as FakeWebSocket;
+    expect(createWsTicketMock).toHaveBeenCalledWith('realtime_ws');
+    expect(createWsTicketMock).not.toHaveBeenCalledWith('chat_ws' as any);
+    expect(ws.url).toContain('/api/v1/ws/realtime');
+    expect(ws.url).not.toContain('/api/v1/ws/chat');
     expect(ws.url).toContain('ticket=ticket-1');
     expect(ws.url).not.toContain('token=');
     expect(ws.url).not.toContain('access_token');
@@ -71,19 +81,61 @@ describe('chatSocketClient', () => {
 
   it('requests new ticket on reconnect', async () => {
     createWsTicketMock
-      .mockResolvedValueOnce({ ticket: 'ticket-1', expires_in: 30, expires_at: '2026-01-01T00:00:00Z' })
-      .mockResolvedValueOnce({ ticket: 'ticket-2', expires_in: 30, expires_at: '2026-01-01T00:00:05Z' });
+      .mockResolvedValueOnce({
+        ticket: 'ticket-1',
+        expires_in: 30,
+        expires_at: '2026-01-01T00:00:00Z',
+      })
+      .mockResolvedValueOnce({
+        ticket: 'ticket-2',
+        expires_in: 30,
+        expires_at: '2026-01-01T00:00:05Z',
+      });
     const { chatSocketClient } = await import('./chatSocket');
+    const { realtimeSocketClient } = await import('./realtimeSocket');
 
     chatSocketClient.connect();
     await vi.runAllTimersAsync();
-    const first = (chatSocketClient as any).socket as FakeWebSocket;
+
+    const first = (realtimeSocketClient as any).socket as FakeWebSocket;
     first.close(1006);
     await vi.advanceTimersByTimeAsync(2000);
     await vi.runAllTimersAsync();
 
-    const second = (chatSocketClient as any).socket as FakeWebSocket;
+    const second = (realtimeSocketClient as any).socket as FakeWebSocket;
     expect(createWsTicketMock).toHaveBeenCalledTimes(2);
     expect(second.url).toContain('ticket=ticket-2');
+  });
+
+  it('maps canonical chat.* events to legacy envelope for temporary UI compatibility', async () => {
+    createWsTicketMock.mockResolvedValueOnce({
+      ticket: 'ticket-compat',
+      expires_in: 30,
+      expires_at: '2026-01-01T00:00:00Z',
+    });
+    const { chatSocketClient } = await import('./chatSocket');
+    const { realtimeSocketClient } = await import('./realtimeSocket');
+    const receivedEvents: Array<{ type: string }> = [];
+
+    const unsubscribe = chatSocketClient.onEvent((event) => {
+      receivedEvents.push(event as { type: string });
+    });
+
+    chatSocketClient.connect();
+    await vi.runAllTimersAsync();
+
+    const ws = (realtimeSocketClient as any).socket as FakeWebSocket;
+    ws.dispatch('message', {
+      data: JSON.stringify({
+        type: 'chat.message.created',
+        event_id: 'evt-1',
+        ts: '2026-05-18T12:00:00Z',
+        data: { chat_id: 10, message: { id: 101 } },
+      }),
+    });
+
+    unsubscribe();
+
+    expect(receivedEvents.some((event) => event.type === 'message.created')).toBe(true);
   });
 });

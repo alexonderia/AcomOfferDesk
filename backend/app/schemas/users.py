@@ -67,12 +67,12 @@ class UserRoleUpdateResponse(BaseModel):
 
 
 class UserManagerUpdateRequest(BaseModel):
-    manager_user_id: str = Field(min_length=1)
+    manager_user_id: str | None = Field(default=None, min_length=1)
 
 
 class UserManagerUpdateData(BaseModel):
     user_id: str
-    manager_user_id: str
+    manager_user_id: str | None
 
 
 class UserManagerUpdateResponse(BaseModel):
@@ -183,6 +183,32 @@ class SetSubordinateUnavailabilityPeriodRequest(BaseModel):
 
 class SetSubordinateUnavailabilityPeriodResponse(BaseModel):
     data: SubordinateProfileData
+
+
+class DepartmentDelegationAccessSchema(BaseModel):
+    code: str
+    permission_code: str
+    group: str
+    label: str
+    enabled: bool
+
+
+class UserDepartmentDelegationsData(BaseModel):
+    user_id: str
+    role_id: int
+    full_name: str | None = None
+    can_manage: bool
+    accesses: list[DepartmentDelegationAccessSchema] = Field(default_factory=list)
+    token_refresh_required: bool = False
+    warning: str | None = None
+
+
+class UserDepartmentDelegationsResponse(BaseModel):
+    data: UserDepartmentDelegationsData
+
+
+class UserDepartmentDelegationsUpdateRequest(BaseModel):
+    access_codes: list[str] = Field(default_factory=list)
 
 
 class UpdateMyCredentialsRequest(BaseModel):

@@ -44,9 +44,16 @@ const normalizeUserItem = (item: UsersRow): UserListItem => ({
   actions: normalizeUserActions(item.actions)
 });
 
-export const getManagerCandidates = async (targetRoleId: number): Promise<GetManagerCandidatesResult> => {
+export const getManagerCandidates = async (
+  targetRoleId: number,
+  targetUserId?: string
+): Promise<GetManagerCandidatesResult> => {
+  const query = new URLSearchParams({ target_role_id: String(targetRoleId) });
+  if (targetUserId?.trim()) {
+    query.set('target_user_id', targetUserId.trim());
+  }
   const response = await fetchJson<UserListResponse>(
-    `/api/v1/users/manager-candidates?target_role_id=${targetRoleId}`,
+    `/api/v1/users/manager-candidates?${query.toString()}`,
     { method: 'GET' },
     'Ошибка загрузки списка руководителей'
   );

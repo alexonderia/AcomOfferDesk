@@ -62,7 +62,7 @@ def test_role_map_contains_only_atomic_permissions() -> None:
     assert all(not permission.startswith("delegation.") for permission in flattened)
 
 
-def test_app_roles_do_not_grant_atomic_permissions_by_themselves() -> None:
+def test_matching_app_role_grants_role_ceiling_when_jwt_has_no_leaf_permissions() -> None:
     current_user = build_current_user_from_keycloak(
         user_id="user-app-only",
         role_id=settings.superadmin_role_id,
@@ -70,7 +70,7 @@ def test_app_roles_do_not_grant_atomic_permissions_by_themselves() -> None:
         api_roles=frozenset({"app.superadmin", "app.admin"}),
     )
 
-    assert current_user.permissions == frozenset()
+    assert current_user.permissions == get_known_permissions()
     assert current_user.app_roles == frozenset({"app.superadmin", "app.admin"})
 
 
@@ -118,3 +118,24 @@ def test_economist_role_includes_plan_dashboard_permission() -> None:
     role_map = get_role_permissions_map()
 
     assert PermissionCodes.DASHBOARD_PLANS_READ in role_map[settings.economist_role_id]
+
+
+def test_economist_role_includes_module_dashboard_permissions() -> None:
+    role_map = get_role_permissions_map()
+    economist_permissions = role_map[settings.economist_role_id]
+
+    assert PermissionCodes.DASHBOARD_PROCESS_READ in economist_permissions
+    assert PermissionCodes.DASHBOARD_SAVINGS_READ in economist_permissions
+
+
+def test_project_manager_role_is_read_only_for_requests_offers_and_chats() -> None:
+    role_map = get_role_permissions_map()
+    pm_permissions = role_map[settings.project_manager_role_id]
+
+    assert PermissionCodes.REQUESTS_READ in pm_permissions
+    assert PermissionCodes.OFFERS_WORKSPACE_READ in pm_permissions
+    assert PermissionCodes.CHAT_READ in pm_permissions
+    assert PermissionCodes.REQUESTS_OWNER_CHANGE in pm_permissions
+    assert PermissionCodes.REQUESTS_UPDATE not in pm_permissions
+    assert PermissionCodes.OFFERS_STATUS_UPDATE not in pm_permissions
+    assert PermissionCodes.CHAT_MESSAGE_SEND not in pm_permissions

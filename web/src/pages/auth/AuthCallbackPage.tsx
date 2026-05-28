@@ -2,7 +2,7 @@ import { Box, CircularProgress, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
-import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
+import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
 
 export const AuthCallbackPage = () => {
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ export const AuthCallbackPage = () => {
       navigate('/account', { replace: true });
       return;
     }
-    navigate(nextPath === '/' ? getDefaultPathByRole(session.roleId) : nextPath, { replace: true });
+    navigate(resolveAuthenticatedPath(nextPath, session), { replace: true });
   }, [isAuthenticated, navigate, nextPath, session]);
 
   return (

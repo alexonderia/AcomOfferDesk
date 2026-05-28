@@ -135,9 +135,30 @@ describe("RoleRoute", () => {
       );
 
       expect(screen.queryByText(pageText)).not.toBeInTheDocument();
-      expect(screen.getByText("requests-page")).toBeInTheDocument();
+      expect(screen.getByText("account-page")).toBeInTheDocument();
     }
   );
+
+  it("redirects administrator without feedback.read to /admin when users.read is present", () => {
+    useAuthMock.mockReturnValue({
+      session: {
+        ...baseSession,
+        roleId: 2,
+        role: "admin",
+        permissions: ["users.read"],
+      },
+    });
+
+    renderRoleRoute(
+      "/feedback",
+      <RoleRoute allowedPermissions={["feedback.read"]}>
+        <div>feedback-page</div>
+      </RoleRoute>
+    );
+
+    expect(screen.queryByText("feedback-page")).not.toBeInTheDocument();
+    expect(screen.getByText("admin-page")).toBeInTheDocument();
+  });
 
   it.each(guardedCases)(
     "does not grant access from raw app/delegation claims without permission for $path",
@@ -161,7 +182,7 @@ describe("RoleRoute", () => {
       );
 
       expect(screen.queryByText(pageText)).not.toBeInTheDocument();
-      expect(screen.getByText("requests-page")).toBeInTheDocument();
+      expect(screen.getByText("account-page")).toBeInTheDocument();
     }
   );
 

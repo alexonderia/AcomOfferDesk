@@ -28,13 +28,13 @@ export const App = () => {
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         >
           <NotificationsPushLayer />
+          <AppRoutes
+            defaultPath={defaultPath}
+            hasSession={Boolean(session)}
+            location={location}
+            backgroundLocation={state?.backgroundLocation}
+          />
         </SnackbarProvider>
-        <AppRoutes
-          defaultPath={defaultPath}
-          hasSession={Boolean(session)}
-          location={location}
-          backgroundLocation={state?.backgroundLocation}
-        />
       </RealtimeProvider>
     </NotificationsProvider>
   );

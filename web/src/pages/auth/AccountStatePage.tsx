@@ -10,7 +10,7 @@ import {
 } from '@shared/api/users/getCurrentUserProfile';
 import { ROLE } from '@shared/constants/roles';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
-import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
+import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 type ProfileDraft = {
@@ -193,7 +193,7 @@ export const AccountStatePage = () => {
       return;
     }
     if (session.businessAccess) {
-      navigate(getDefaultPathByRole(session.roleId), { replace: true });
+      navigate(resolveAuthenticatedPath('/', session), { replace: true });
       return;
     }
 

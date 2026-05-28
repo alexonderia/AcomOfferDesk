@@ -104,6 +104,7 @@ export const useOfferWorkspace = () => {
   const [isUpdatingOfferStatus, setIsUpdatingOfferStatus] = useState(false);
   const [offerDecisionStatus, setOfferDecisionStatus] = useState<'accepted' | 'rejected' | ''>('');
   const [isUpdatingOfferAmount, setIsUpdatingOfferAmount] = useState(false);
+  const [lastOfferSaveSuccessAt, setLastOfferSaveSuccessAt] = useState<number | null>(null);
   const [offerAmountInput, setOfferAmountInput] = useState('');
   const [baselineOfferAmount, setBaselineOfferAmount] = useState('');
   const [existingOfferFiles, setExistingOfferFiles] = useState<Array<{ id: number; name: string; download_url: string }>>([]);
@@ -275,6 +276,7 @@ export const useOfferWorkspace = () => {
   const canUpload = Boolean(selectedOffer?.actions.upload_file) && (!isContractor || isSelectedOfferSubmitted);
   const canDeleteFile = Boolean(selectedOffer?.actions.delete_file) && (!isContractor || isSelectedOfferSubmitted);
   const canSendMessage = chatActions.send_message;
+  const canViewMessages = chatActions.view_messages;
   const canSendMessageWithAttachments = chatActions.attach_file || canSendMessage;
   const canSetReadMessages = chatActions.mark_messages_read;
   const canSetReceivedMessages = chatActions.mark_messages_received;
@@ -351,15 +353,15 @@ export const useOfferWorkspace = () => {
       return;
     }
     if (hasOfferAmountChanges && parsedOfferAmount === null) {
-      setErrorMessage('Enter offer amount');
+      setErrorMessage('Укажите сумму коммерческого предложения.');
       return;
     }
     if (hasOfferAmountChanges && Number.isNaN(parsedOfferAmount)) {
-      setErrorMessage('Enter valid offer amount');
+      setErrorMessage('Укажите корректную сумму коммерческого предложения.');
       return;
     }
     if (hasOfferAmountChanges && parsedOfferAmount !== null && parsedOfferAmount < 0) {
-      setErrorMessage('Offer amount cannot be negative');
+      setErrorMessage('Сумма коммерческого предложения не может быть отрицательной.');
       return;
     }
 
@@ -379,8 +381,9 @@ export const useOfferWorkspace = () => {
       await refreshWorkspace(selectedOffer.offer_id);
       setDeletedOfferFileIds([]);
       setNewOfferFile(null);
+      setLastOfferSaveSuccessAt(Date.now());
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Failed to save offer changes'));
+      setErrorMessage(getErrorMessage(error, 'Не удалось сохранить изменения.'));
     } finally {
       setIsUpdatingOfferAmount(false);
       setIsUploading(false);
@@ -424,6 +427,7 @@ export const useOfferWorkspace = () => {
     offerDecisionStatus,
     isUpdatingOfferStatus,
     isUpdatingOfferAmount,
+    lastOfferSaveSuccessAt,
     messages,
     typingUserIds,
     connectionState,
@@ -431,6 +435,7 @@ export const useOfferWorkspace = () => {
     canUpload,
     canDeleteFile,
     canSendMessage,
+    canViewMessages,
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,

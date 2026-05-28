@@ -372,7 +372,24 @@ class UserNotification(Base):
     __tablename__ = "user_notifications"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('offer.created','offer.accepted','offer.rejected','offer.deleted','message.created','email.sent','email.failed','request.created','request.responsible_changed','request.deadline_changed','request.status_changed','system.warning')",
+            "type IN ("
+            "'offer.created',"
+            "'offer.updated',"
+            "'offer.status_changed',"
+            "'message.created',"
+            "'email.sent',"
+            "'email.failed',"
+            "'request.created',"
+            "'request.files_changed',"
+            "'request.responsible_changed',"
+            "'request.deadline_changed',"
+            "'request.status_changed',"
+            "'user.status_changed',"
+            "'user.review_required',"
+            "'plan.assigned',"
+            "'plan.updated',"
+            "'system.warning'"
+            ")",
             name="user_notifications_type_chk",
         ),
         CheckConstraint(

@@ -18,8 +18,11 @@ def _dt() -> datetime:
 
 
 class _FakeRuntime:
+    def __init__(self) -> None:
+        self.events: list[tuple[int, object]] = []
+
     async def publish_chat_event(self, *, chat_id: int, event) -> None:
-        _ = (chat_id, event)
+        self.events.append((chat_id, event))
 
 
 class _FakeOfferService:
@@ -119,11 +122,13 @@ class _FakeRealtimeService:
         return {"chat_id": offer_id, "message": {"id": message_id}}
 
 
-def _patch_chat_stack(monkeypatch) -> None:
+def _patch_chat_stack(monkeypatch) -> _FakeRuntime:
+    runtime = _FakeRuntime()
     monkeypatch.setattr(offers_api, "build_offer_service", lambda uow, file_service=None: _FakeOfferService())
     monkeypatch.setattr(offers_api, "_offer_action_resolver", lambda uow: _FakeResolver())
     monkeypatch.setattr(offers_api, "ChatRealtimeService", lambda: _FakeRealtimeService())
-    monkeypatch.setattr(offers_api, "get_chat_runtime", lambda: _FakeRuntime())
+    monkeypatch.setattr(offers_api, "get_chat_runtime", lambda: runtime)
+    return runtime
 
 
 def test_allowed_user_can_read_workspace_messages(test_client, monkeypatch, set_current_user, make_current_user):
@@ -143,7 +148,7 @@ def test_allowed_user_can_read_workspace_messages(test_client, monkeypatch, set_
 
 
 def test_allowed_user_can_send_text_message(test_client, monkeypatch, set_current_user, make_current_user):
-    _patch_chat_stack(monkeypatch)
+    runtime = _patch_chat_stack(monkeypatch)
     user = make_current_user(
         user_id="contractor-1",
         role_id=settings.contractor_role_id,
@@ -155,10 +160,13 @@ def test_allowed_user_can_send_text_message(test_client, monkeypatch, set_curren
 
     assert response.status_code == 200
     assert response.json()["data"]["message_id"] == 901
+    assert len(runtime.events) == 1
+    assert runtime.events[0][0] == 10
+    assert runtime.events[0][1].type == "chat.message.created"
 
 
 def test_allowed_user_can_send_message_with_attachment(test_client, monkeypatch, set_current_user, make_current_user):
-    _patch_chat_stack(monkeypatch)
+    runtime = _patch_chat_stack(monkeypatch)
     user = make_current_user(
         user_id="contractor-1",
         role_id=settings.contractor_role_id,
@@ -174,6 +182,9 @@ def test_allowed_user_can_send_message_with_attachment(test_client, monkeypatch,
 
     assert response.status_code == 200
     assert response.json()["data"]["message_id"] == 777
+    assert len(runtime.events) == 1
+    assert runtime.events[0][0] == 10
+    assert runtime.events[0][1].type == "chat.message.created"
 
 
 def test_mark_delivered_and_read_updates_receipts_for_allowed_user(
@@ -182,7 +193,7 @@ def test_mark_delivered_and_read_updates_receipts_for_allowed_user(
     set_current_user,
     make_current_user,
 ):
-    _patch_chat_stack(monkeypatch)
+    runtime = _patch_chat_stack(monkeypatch)
     user = make_current_user(
         user_id="contractor-1",
         role_id=settings.contractor_role_id,
@@ -203,6 +214,7 @@ def test_mark_delivered_and_read_updates_receipts_for_allowed_user(
     assert delivered.json()["data"]["updated_count"] == 2
     assert read.status_code == 200
     assert read.json()["data"]["updated_count"] == 1
+    assert [event.type for _, event in runtime.events] == ["chat.message.delivered", "chat.message.read"]
 
 
 def test_anonymous_user_gets_401_for_chat_endpoint(test_client, api_app):

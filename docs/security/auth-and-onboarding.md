@@ -355,3 +355,29 @@ Manual/stage-only часть, которая остается вне backend int
 - Email mismatch handling считается security-sensitive: тесты должны подтверждать, что invite email mismatch не создает неверную link-связь и не выдает полноценную session.
 - Unit/integration tests не подключаются к реальному Keycloak. Проверки реального realm/client/roles выполняются только через `scripts/check-keycloak.*` или manual `Release Smoke (Manual)` на поднятом стенде.
 
+
+## Department Delegation Update (2026-05)
+
+This project now uses `delegation.department.*` composite roles in Keycloak client `acom-api` for checklist-based per-user department extensions.
+
+Important model details:
+
+- `delegation.department.*` roles are composite roles and each contains exactly one atomic `department.*` permission code.
+- `department.*` permissions are distinct from regular permissions (`requests.*`, `offers.*`, etc.) and are used by backend to expand scope for a specific action only.
+- `delegation.department.*` must not be bundled into default `app.*` roles.
+- `keycloak_user_role_sync` must keep reconciling only `app.*` roles by `users.id_role` and must not wipe manually assigned `delegation.department.*` roles.
+- The source of truth for checklist state is Keycloak client role mappings, not local DB storage.
+
+Current clients and ownership:
+
+- `acom-web`: frontend login/token flow.
+- `acom-api`: app roles, delegation roles, and atomic permissions for backend enforcement.
+- `acom-admin-service`: backend technical/admin operations via Keycloak Admin API.
+
+Backend contract:
+
+- `app.*` roles are exposed as `app_roles`.
+- `delegation.*` roles are exposed as `delegation_roles`.
+- only known permission codes from `PermissionCodes` are added to `permissions`.
+- unknown roles must never become permissions.
+- frontend remains UX-only; final authorization enforcement is backend-only.

@@ -205,6 +205,7 @@ async def get_plan_request_stats(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     plan_id: int | None = Query(default=None, ge=1),
+    root_user_id: str | None = Query(default=None, min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> PlanRequestStatsResponse:
@@ -230,6 +231,7 @@ async def get_plan_request_stats(
             period_start=period_start,
             period_end=period_end,
             plan_id=plan_id,
+            root_user_id=root_user_id,
             current_user=current_user,
         )
 

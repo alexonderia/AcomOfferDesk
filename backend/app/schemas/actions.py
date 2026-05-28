@@ -6,6 +6,7 @@ class RequestActionsSchema(BaseModel):
     can_view_amounts: bool = False
     can_open_contractor_view: bool = False
     can_edit: bool = False
+    can_update_status: bool = False
     can_change_owner: bool = False
     can_upload_files: bool = False
     can_delete_files: bool = False

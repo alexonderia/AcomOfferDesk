@@ -62,6 +62,20 @@ class PermissionCodes:
     UNAVAILABILITY_MANAGE_SUBORDINATE = "unavailability.manage_subordinate"
     CONTRACTORS_MANUAL_CREATE = "contractors.manual.create"
     CONTRACTORS_MANUAL_MANAGE = "contractors.manual.manage"
+    DEPARTMENT_REQUESTS_READ = "department.requests.read"
+    DEPARTMENT_REQUESTS_UPDATE = "department.requests.update"
+    DEPARTMENT_REQUESTS_STATUS_UPDATE = "department.requests.status_update"
+    DEPARTMENT_REQUESTS_ASSIGN = "department.requests.assign"
+    DEPARTMENT_OFFERS_UPDATE = "department.offers.update"
+    DEPARTMENT_OFFERS_ACCEPT = "department.offers.accept"
+    DEPARTMENT_OFFERS_REJECT = "department.offers.reject"
+    DEPARTMENT_CHATS_READ = "department.chats.read"
+    DEPARTMENT_FILES_READ = "department.files.read"
+    DEPARTMENT_FILES_UPLOAD = "department.files.upload"
+    DEPARTMENT_FILES_DELETE = "department.files.delete"
+    DEPARTMENT_DASHBOARD_READ = "department.dashboard.read"
+    DEPARTMENT_PLANS_READ = "department.plans.read"
+    DEPARTMENT_PLANS_MANAGE = "department.plans.manage"
 
 
 @lru_cache(maxsize=1)
@@ -209,6 +223,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_MANAGER_UPDATE,
                 PermissionCodes.NORMATIVE_FILES_READ,
+                PermissionCodes.DASHBOARD_PROCESS_READ,
+                PermissionCodes.DASHBOARD_SAVINGS_READ,
                 PermissionCodes.DASHBOARD_PLANS_READ,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,

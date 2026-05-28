@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RequestsPageView } from './RequestsPageView';
 
 const useRequestsPageMock = vi.fn();
+const showErrorToastMock = vi.fn();
 
 vi.mock('@features/requests/model/useRequestsPage', () => ({
   useRequestsPage: () => useRequestsPageMock(),
@@ -13,8 +14,15 @@ vi.mock('@features/requests/ui/RequestsTable', () => ({
   RequestsTable: () => <div data-testid="requests-table-mock" />,
 }));
 
+vi.mock('@shared/ui/toasts', () => ({
+  useSystemToasts: () => ({
+    showErrorToast: showErrorToastMock,
+  }),
+}));
+
 describe('RequestsPageView', () => {
-  it('renders error state message from requests hook', () => {
+  it('shows error toast from requests hook errorMessage', () => {
+    showErrorToastMock.mockReset();
     useRequestsPageMock.mockReturnValue({
       canCreateRequest: false,
       canEditOwner: false,
@@ -34,6 +42,7 @@ describe('RequestsPageView', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText('Request loading failed')).toBeInTheDocument();
+    expect(screen.getByTestId('requests-table-mock')).toBeInTheDocument();
+    expect(showErrorToastMock).toHaveBeenCalledWith('Request loading failed');
   });
 });

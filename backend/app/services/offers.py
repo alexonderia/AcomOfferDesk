@@ -26,6 +26,8 @@ from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.files import FileService
+from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.users import _bind_keycloak_account
@@ -167,6 +169,7 @@ class OfferWorkspaceRequest:
 @dataclass(frozen=True)
 class OfferWorkspaceOffer:
     offer_id: int
+    owner_user_id: str
     status: str
     status_label: str
     offer_amount: float | None
@@ -274,6 +277,8 @@ class OfferService:
         self._notifications = notifications
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
+        self._department_scope = DepartmentScopeService(users)
+        self._staff_scope = StaffAccessScopeService(users)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -335,13 +340,17 @@ class OfferService:
     ):
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         if require_send:
-            OfferPolicy.ensure_can_send_chat_message(
-                current_user,
+            await self._ensure_can_send_chat_message(
+                current_user=current_user,
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
             )
         else:
-            OfferPolicy.ensure_can_view_chat(current_user, offer_owner_user_id=offer.id_user)
+            await self._ensure_can_view_chat(
+                current_user=current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
 
         chat = await self._offers.get_chat(offer_id=offer.id)
         if chat is None:
@@ -349,7 +358,11 @@ class OfferService:
 
         chat_state = await self._chats.get_chat_state_for_user(chat_id=chat.id, user_id=current_user.user_id)
         if chat_state is None:
-            if not require_send and current_user.role_id == settings.project_manager_role_id:
+            if await self._can_access_chat_without_participation(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+                require_send=require_send,
+            ):
                 chat_state = self._build_read_only_chat_state(
                     chat_id=chat.id,
                     last_message_id=chat.last_message_id,
@@ -359,6 +372,28 @@ class OfferService:
                 raise Forbidden("Insufficient permissions to view chat")
 
         return offer, request, chat, chat_state
+
+    async def _can_access_chat_without_participation(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        require_send: bool,
+    ) -> bool:
+        if current_user.role_id == settings.project_manager_role_id:
+            return not require_send
+        if require_send:
+            return False
+        has_department_chat_permission = has_permission(
+            current_user,
+            PermissionCodes.DEPARTMENT_CHATS_READ,
+        )
+        if not has_department_chat_permission:
+            return False
+        return await self._is_user_inside_current_department_scope(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
 
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
         normalized = (value or "").strip()
@@ -699,7 +734,11 @@ class OfferService:
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
-        OfferPolicy.ensure_can_access_offer_workspace(current_user, offer_owner_user_id=offer.id_user)
+        await self._ensure_can_access_offer_workspace(
+            current_user=current_user,
+            offer_owner_user_id=offer.id_user,
+            request_owner_user_id=request.id_user,
+        )
 
         profile = await self._profiles.get_by_id(offer.id_user)
         company = await self._company_contacts.get_by_id(offer.id_user)
@@ -734,6 +773,7 @@ class OfferService:
             ),
             offer=OfferWorkspaceOffer(
                 offer_id=offer.id,
+                owner_user_id=offer.id_user,
                 status=offer.status,
                 status_label=format_offer_status(offer.status),
                 offer_amount=offer.offer_amount,
@@ -744,6 +784,7 @@ class OfferService:
             offers=[
                 OfferWorkspaceOffer(
                     offer_id=request_offer.id,
+                    owner_user_id=request_offer.id_user,
                     status=request_offer.status,
                     status_label=format_offer_status(request_offer.status),
                     offer_amount=request_offer.offer_amount,
@@ -802,8 +843,10 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
-        offer_is_manual = await self._is_manual_offer(offer_owner_user_id=offer.id_user)
-
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
                 current_user,
@@ -815,17 +858,24 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
             )
-        elif has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD):
-            OfferPolicy.ensure_can_manage_offer(
+        elif not has_department_offer_update_scope:
+            require_permission(
                 current_user,
-                offer_owner_user_id=offer.id_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
+            )
+        elif has_department_offer_update_scope:
+            pass
+        elif has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE):
+            await self._ensure_can_manage_offer_for_internal_user(
+                current_user=current_user,
                 request_owner_user_id=request.id_user,
+                offer_owner_user_id=offer.id_user,
+                allow_department_request_update=False,
             )
         else:
-            OfferPolicy.ensure_can_manage_manual_offer_files(
-                current_user,
-                request_owner_user_id=request.id_user,
-                offer_is_manual=offer_is_manual,
+            raise Forbidden(
+                "Insufficient permissions to upload offer files",
             )
 
         if (
@@ -848,16 +898,17 @@ class OfferService:
         original_name = getattr(db_file, "original_name", None) or upload.original_name
         self._schedule_process_notification_event(
             build_process_notification_event(
-                event_type="offer.files_changed",
+                event_type="offer.updated",
                 actor_user_id=current_user.user_id,
                 entity_type="offer",
                 entity_id=offer.id,
                 request_id=request.id,
                 offer_id=offer.id,
-                dedupe_key=f"offer.files_changed:{offer.id}:{db_file.id}",
+                dedupe_key=f"offer.updated:{offer.id}:{db_file.id}",
                 payload={
                     "request_id": request.id,
                     "offer_id": offer.id,
+                    "offer_author_user_id": offer.id_user,
                     "actor_user_id": current_user.user_id,
                     "file_ids": [db_file.id],
                     "changed_file_count": 1,
@@ -875,8 +926,10 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
-        offer_is_manual = await self._is_manual_offer(offer_owner_user_id=offer.id_user)
-
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
         if current_user.role_id == settings.contractor_role_id:
             require_permission(
                 current_user,
@@ -888,17 +941,24 @@ class OfferService:
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
             )
-        elif has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE):
-            OfferPolicy.ensure_can_manage_offer(
+        elif not has_department_offer_update_scope:
+            require_permission(
                 current_user,
-                offer_owner_user_id=offer.id_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
+            )
+        elif has_department_offer_update_scope:
+            pass
+        elif has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE):
+            await self._ensure_can_manage_offer_for_internal_user(
+                current_user=current_user,
                 request_owner_user_id=request.id_user,
+                offer_owner_user_id=offer.id_user,
+                allow_department_request_update=False,
             )
         else:
-            OfferPolicy.ensure_can_manage_manual_offer_files(
-                current_user,
-                request_owner_user_id=request.id_user,
-                offer_is_manual=offer_is_manual,
+            raise Forbidden(
+                "Insufficient permissions to delete offer files",
             )
 
         detached = await self._offers.detach_file(offer_id=offer.id, file_id=file_id)
@@ -908,16 +968,17 @@ class OfferService:
         await self._file_service.delete_file(file_id=file_id)
         self._schedule_process_notification_event(
             build_process_notification_event(
-                event_type="offer.files_changed",
+                event_type="offer.updated",
                 actor_user_id=current_user.user_id,
                 entity_type="offer",
                 entity_id=offer.id,
                 request_id=request.id,
                 offer_id=offer.id,
-                dedupe_key=f"offer.files_changed:{offer.id}:{file_id}:deleted",
+                dedupe_key=f"offer.updated:{offer.id}:{file_id}:deleted",
                 payload={
                     "request_id": request.id,
                     "offer_id": offer.id,
+                    "offer_author_user_id": offer.id_user,
                     "actor_user_id": current_user.user_id,
                     "file_ids": [file_id],
                     "changed_file_count": 1,
@@ -926,15 +987,17 @@ class OfferService:
         )
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
-        require_permission(
-            current_user,
-            PermissionCodes.OFFERS_STATUS_UPDATE,
-            message="Insufficient permissions to update offer status",
-        )
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
 
         if status not in EDITABLE_OFFER_STATUSES:
             raise Conflict("Unsupported offer status")
+        if request.status in {"closed", "cancelled"}:
+            raise Conflict("КП нельзя изменить, если заявка уже закрыта или отклонена")
+        has_department_status_scope = await self._ensure_can_update_offer_status(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+            status=status,
+        )
 
         is_contractor_deleting_own_offer = (
             current_user.role_id == settings.contractor_role_id
@@ -943,10 +1006,12 @@ class OfferService:
         )
 
         if not is_contractor_deleting_own_offer:
-            RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
-            if status == "accepted" and request.status in {"closed", "cancelled"}:
-                raise Conflict("Cannot accept offer for closed or cancelled request")
-
+            if not has_department_status_scope:
+                await self._ensure_can_update_offer_status_without_department_scope(
+                    current_user=current_user,
+                    request_owner_user_id=request.id_user,
+                    offer_owner_user_id=offer.id_user,
+                )
         status_changed = offer.status != status
         previous_status = offer.status
         await self._offers.update_status(offer=offer, status=status)
@@ -961,13 +1026,13 @@ class OfferService:
 
         if status_changed and status in {"accepted", "rejected", "deleted"}:
             event = build_process_notification_event(
-                event_type=f"offer.{status}",
+                event_type="offer.status_changed",
                 actor_user_id=current_user.user_id,
                 entity_type="offer",
                 entity_id=offer.id,
                 request_id=request.id,
                 offer_id=offer.id,
-                dedupe_key=f"offer.{status}:{offer.id}:{previous_status}->{status}",
+                dedupe_key=f"offer.status_changed:{offer.id}:{previous_status}->{status}",
                 payload={
                     "recipient_user_ids": [offer.id_user, request.id_user],
                     "old_status": previous_status,
@@ -979,19 +1044,41 @@ class OfferService:
         return offer.status
 
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
-        require_permission(
-            current_user,
-            PermissionCodes.OFFERS_AMOUNT_UPDATE,
-            message="Insufficient permissions to update offer",
-        )
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         self._validate_offer_amount(offer_amount)
-
-        OfferPolicy.ensure_can_manage_offer(
-            current_user,
-            offer_owner_user_id=offer.id_user,
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
             request_owner_user_id=request.id_user,
         )
+
+        if current_user.role_id == settings.contractor_role_id:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_AMOUNT_UPDATE,
+                message="Insufficient permissions to update offer amount",
+            )
+            OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
+        elif not has_department_offer_update_scope:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_UPDATE,
+                message="Insufficient permissions to edit offer",
+            )
+        elif has_department_offer_update_scope:
+            pass
+        elif has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE):
+            await self._ensure_can_manage_offer_for_internal_user(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+                offer_owner_user_id=offer.id_user,
+                allow_department_request_update=False,
+            )
+        else:
+            raise Forbidden("Insufficient permissions to update offer amount")
         if (
             current_user.role_id == settings.contractor_role_id
             and current_user.user_id == offer.id_user
@@ -999,7 +1086,28 @@ class OfferService:
         ):
             raise Conflict("Cannot edit amount for finalized offer")
 
+        old_offer_amount = offer.offer_amount
         await self._offers.update_amount(offer=offer, offer_amount=offer_amount)
+        if old_offer_amount != offer.offer_amount:
+            self._schedule_process_notification_event(
+                build_process_notification_event(
+                    event_type="offer.updated",
+                    actor_user_id=current_user.user_id,
+                    entity_type="offer",
+                    entity_id=offer.id,
+                    request_id=request.id,
+                    offer_id=offer.id,
+                    dedupe_key=f"offer.updated:{offer.id}:amount:{old_offer_amount}->{offer.offer_amount}",
+                    payload={
+                        "request_id": request.id,
+                        "offer_id": offer.id,
+                        "offer_author_user_id": offer.id_user,
+                        "actor_user_id": current_user.user_id,
+                        "old_offer_amount": str(old_offer_amount) if old_offer_amount is not None else None,
+                        "new_offer_amount": str(offer.offer_amount) if offer.offer_amount is not None else None,
+                    },
+                )
+            )
         return float(Decimal(str(offer.offer_amount)))
 
     async def list_messages(self, *, current_user: CurrentUser, offer_id: int) -> list[OfferMessageItem]:
@@ -1065,19 +1173,23 @@ class OfferService:
         offer_id: int,
         upload: AttachmentFileInput,
     ) -> UploadedMessageAttachment:
-        require_permission(
-            current_user,
-            PermissionCodes.CHAT_MESSAGE_ATTACH,
-            message="Insufficient permissions to attach files to chat messages",
+        offer, request, _chat, _ = await self._require_chat_context(
+            current_user=current_user,
+            offer_id=offer_id,
+            require_send=True,
         )
-        await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=True)
+        if not await self._can_attach_chat_files(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        ):
+            raise Forbidden("Insufficient permissions to attach files to chat messages")
         prepared = await self._file_service.prepare_bytes(
             original_name=upload.original_name,
             content_bytes=upload.content_bytes,
             mime_type=upload.mime_type,
         )
         db_file = await self._file_service.create_chat_temp_file(
-            offer_id=offer_id,
+            offer_id=offer.id,
             upload=prepared,
         )
         return UploadedMessageAttachment(file_id=db_file.id, path=db_file.path, name=db_file.name)
@@ -1136,12 +1248,12 @@ class OfferService:
         normalized_text = text.strip()
         new_attachments = attachments or []
         stored_file_refs = existing_file_refs or []
-        if new_attachments or stored_file_refs:
-            require_permission(
-                current_user,
-                PermissionCodes.CHAT_MESSAGE_ATTACH,
-                message="Insufficient permissions to attach files to chat messages",
-            )
+        has_file_payload = bool(new_attachments or stored_file_refs)
+        if has_file_payload and not await self._can_attach_chat_files(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        ):
+            raise Forbidden("Insufficient permissions to attach files to chat messages")
         if not normalized_text and not new_attachments and not stored_file_refs:
             raise Conflict("Message text cannot be empty")
 
@@ -1304,6 +1416,274 @@ class OfferService:
             if item.id == message_id:
                 return item
         raise NotFound("Message not found")
+
+    async def _ensure_can_access_offer_workspace(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_owner_user_id: str,
+        request_owner_user_id: str,
+    ) -> None:
+        if has_permission(current_user, PermissionCodes.OFFERS_WORKSPACE_READ):
+            OfferPolicy.ensure_can_access_offer_workspace(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+            )
+            if (
+                current_user.role_id != settings.contractor_role_id
+                and not await self._staff_scope.can_view_request_owner(
+                    current_user=current_user,
+                    request_owner_user_id=request_owner_user_id,
+                )
+            ):
+                raise Forbidden("Insufficient permissions to view offer workspace")
+            return
+        has_department_offer_scope = (
+            has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_UPDATE)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_ACCEPT)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_REJECT)
+        )
+        if has_department_offer_scope and await self._is_user_inside_current_department_scope(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        ):
+            return
+        raise Forbidden("Insufficient permissions to view offer workspace")
+
+    async def _ensure_can_view_chat(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_owner_user_id: str,
+        request_owner_user_id: str,
+    ) -> None:
+        if has_permission(current_user, PermissionCodes.CHAT_READ):
+            OfferPolicy.ensure_can_view_chat(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+            )
+            if (
+                current_user.role_id != settings.contractor_role_id
+                and not await self._staff_scope.can_view_chat_for_request(
+                    current_user=current_user,
+                    request_owner_user_id=request_owner_user_id,
+                )
+            ):
+                raise Forbidden("Insufficient permissions to view chat")
+            return
+        if (
+            has_permission(current_user, PermissionCodes.DEPARTMENT_CHATS_READ)
+            and await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            )
+        ):
+            return
+        raise Forbidden("Insufficient permissions to view chat")
+
+    async def _ensure_can_send_chat_message(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_owner_user_id: str,
+        request_owner_user_id: str,
+    ) -> None:
+        if has_permission(current_user, PermissionCodes.CHAT_MESSAGE_SEND):
+            OfferPolicy.ensure_can_send_chat_message(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            )
+            if (
+                current_user.role_id != settings.contractor_role_id
+                and not await self._staff_scope.can_send_chat_for_request(
+                    current_user=current_user,
+                    request_owner_user_id=request_owner_user_id,
+                )
+            ):
+                raise Forbidden("Insufficient permissions to send chat message")
+            return
+        raise Forbidden("Insufficient permissions to send chat message")
+
+    async def _can_attach_chat_files(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if has_permission(current_user, PermissionCodes.CHAT_MESSAGE_ATTACH):
+            return True
+        return False
+
+    async def _has_department_offer_update_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if not has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_UPDATE):
+            return False
+        return await self._is_user_inside_current_department_scope(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
+
+    async def _ensure_can_manage_offer_for_internal_user(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        offer_owner_user_id: str | None = None,
+        allow_department_request_update: bool = False,
+    ) -> None:
+        if current_user.role_id == settings.contractor_role_id:
+            if offer_owner_user_id is None:
+                raise Forbidden("Insufficient permissions to manage offer")
+            OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            )
+            return
+
+        if (
+            allow_department_request_update
+            and
+            has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_UPDATE)
+            and await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            )
+        ):
+            return
+
+        if (
+            current_user.role_id in {
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+            }
+        ):
+            # When department-request delegation should not apply, use strict
+            # hierarchy scope to avoid implicit escalation from
+            # `department.requests.update` to offer-level edits.
+            if allow_department_request_update:
+                can_manage_scope = await self._staff_scope.can_manage_request_owner(
+                    current_user=current_user,
+                    request_owner_user_id=request_owner_user_id,
+                )
+            else:
+                can_manage_scope = await self._is_inside_hierarchy_management_scope(
+                    current_user=current_user,
+                    request_owner_user_id=request_owner_user_id,
+                )
+            if not can_manage_scope:
+                raise Forbidden("Insufficient permissions to manage offer")
+
+        if offer_owner_user_id is None:
+            offer_owner_user_id = current_user.user_id
+        OfferPolicy.ensure_can_manage_offer(
+            current_user,
+            offer_owner_user_id=offer_owner_user_id,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _ensure_can_update_offer_status(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        status: str,
+    ) -> bool:
+        if status == "accepted":
+            if (
+                has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_ACCEPT)
+                and await self._is_user_inside_current_department_scope(
+                    current_user=current_user,
+                    target_user_id=request_owner_user_id,
+                )
+            ):
+                return True
+        if status == "rejected":
+            if (
+                has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_REJECT)
+                and await self._is_user_inside_current_department_scope(
+                    current_user=current_user,
+                    target_user_id=request_owner_user_id,
+                )
+            ):
+                return True
+
+        require_permission(
+            current_user,
+            PermissionCodes.OFFERS_STATUS_UPDATE,
+            message="Insufficient permissions to update offer status",
+        )
+        return False
+
+    async def _ensure_can_update_offer_status_without_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        offer_owner_user_id: str,
+    ) -> None:
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            if not await self._is_inside_hierarchy_management_scope(
+                current_user=current_user,
+                request_owner_user_id=request_owner_user_id,
+            ):
+                raise Forbidden("Offer is outside your management scope")
+
+        OfferPolicy.ensure_can_manage_offer(
+            current_user,
+            offer_owner_user_id=offer_owner_user_id,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _is_user_inside_current_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+    ) -> bool:
+        owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
+            current_user=current_user,
+        )
+        return target_user_id in set(owner_ids)
+
+    async def _is_inside_hierarchy_management_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        return await self._staff_scope.is_hierarchy_manager_of(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _is_descendant(
+        self,
+        *,
+        ancestor_user_id: str,
+        target_user_id: str,
+    ) -> bool:
+        cursor_id: str | None = target_user_id
+        visited: set[str] = set()
+        while cursor_id is not None and cursor_id not in visited:
+            if cursor_id == ancestor_user_id:
+                return True
+            visited.add(cursor_id)
+            cursor_user = await self._users.get_by_id(cursor_id)
+            if cursor_user is None:
+                return False
+            cursor_id = cursor_user.id_parent
+        return False
 
     def _resolve_message_type(self, *, has_text: bool, has_attachments: bool) -> str:
         if has_text and has_attachments:

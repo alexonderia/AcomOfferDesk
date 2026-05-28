@@ -12,6 +12,8 @@ from app.repositories.chats import ChatRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
+from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from app.schemas.actions import (
     ChatActionsSchema,
     OfferActionsSchema,
@@ -63,6 +65,9 @@ class RequestActionBuilder:
         *,
         owner_user_id: str,
         status: str,
+        can_manage_in_scope: bool,
+        can_update_status_in_scope: bool = False,
+        can_change_owner_in_scope: bool | None = None,
         can_create_offer: bool = False,
         deleted_alert_count: int | None = None,
     ) -> RequestActionsSchema:
@@ -71,22 +76,32 @@ class RequestActionBuilder:
             current_user,
             request_owner_user_id=owner_user_id,
         )
+        can_edit_in_scope = can_edit_owned_unassigned and can_manage_in_scope
+        if can_change_owner_in_scope is None:
+            can_change_owner_in_scope = (
+                RequestPolicy.can_change_owner(current_user, request_owner_user_id=owner_user_id)
+                and can_manage_in_scope
+            )
         return RequestActionsSchema(
-            can_view_details=UserPolicy.can_view_requests(current_user),
+            can_view_details=(
+                UserPolicy.can_view_requests(current_user)
+                or has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ)
+            ),
             can_view_amounts=UserPolicy.can_view_request_amounts(current_user),
             can_open_contractor_view=has_permission(current_user, PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ),
-            can_edit=can_edit_owned_unassigned,
-            can_change_owner=RequestPolicy.can_change_owner(current_user, request_owner_user_id=owner_user_id),
-            can_upload_files=has_permission(current_user, PermissionCodes.REQUESTS_FILES_UPLOAD) and can_edit,
-            can_delete_files=has_permission(current_user, PermissionCodes.REQUESTS_FILES_DELETE) and can_edit,
+            can_edit=can_edit_in_scope,
+            can_update_status=can_update_status_in_scope,
+            can_change_owner=bool(can_change_owner_in_scope),
+            can_upload_files=has_permission(current_user, PermissionCodes.REQUESTS_FILES_UPLOAD) and can_edit_in_scope,
+            can_delete_files=has_permission(current_user, PermissionCodes.REQUESTS_FILES_DELETE) and can_edit_in_scope,
             can_send_email_notifications=(
                 has_permission(current_user, PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND)
-                and can_edit_owned_unassigned
+                and can_edit_in_scope
                 and status == "open"
             ),
             can_mark_deleted_alert_viewed=(
                 has_permission(current_user, PermissionCodes.REQUESTS_DELETED_ALERTS_MARK_VIEWED)
-                and can_edit
+                and can_edit_in_scope
                 and (deleted_alert_count is None or deleted_alert_count > 0)
             ),
             can_create_offer=can_create_offer,
@@ -102,11 +117,18 @@ class OfferActionBuilder:
         request_owner_user_id: str,
         contractor_user_id: str,
         offer_status: str,
+        can_manage_in_scope: bool,
+        has_department_offer_update_scope: bool = False,
+        can_accept_in_scope: bool | None = None,
+        can_reject_in_scope: bool | None = None,
         offer_is_manual: bool = False,
     ) -> OfferActionsSchema:
-        can_manage_request_offer = RequestPolicy.can_edit(
-            current_user,
-            request_owner_user_id=request_owner_user_id,
+        can_manage_request_offer = (
+            RequestPolicy.can_edit(
+                current_user,
+                request_owner_user_id=request_owner_user_id,
+            )
+            and can_manage_in_scope
         )
         can_manage_own_offer = OfferPolicy.can_access_contractor_offer(
             current_user,
@@ -117,26 +139,41 @@ class OfferActionBuilder:
             offer_owner_user_id=offer_owner_user_id,
             request_owner_user_id=request_owner_user_id,
         )
+        has_offer_update_permission = has_permission(current_user, PermissionCodes.OFFERS_UPDATE)
         is_contractor = current_user.role_id == settings.contractor_role_id
-        can_manage_manual_offer_files = (
-            not is_contractor
-            and OfferPolicy.can_manage_manual_offer_files(
-                current_user,
-                request_owner_user_id=request_owner_user_id,
-                offer_is_manual=offer_is_manual,
-            )
-        )
+        can_manage_offer_in_effective_scope = can_manage_offer and (can_manage_in_scope or is_contractor)
         can_upload_files_by_permission = (
             not is_contractor
-            and has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
-            and can_manage_offer
+            and has_offer_update_permission
+            and has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE)
+            and can_manage_offer_in_effective_scope
         )
         can_delete_files_by_permission = (
             not is_contractor
+            and has_offer_update_permission
+            and has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE)
+            and can_manage_offer_in_effective_scope
+        )
+        can_upload_files_for_contractor = (
+            is_contractor
+            and has_offer_update_permission
+            and has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
+            and can_manage_offer_in_effective_scope
+            and offer_status not in {"accepted", "rejected"}
+        )
+        can_delete_files_for_contractor = (
+            is_contractor
+            and has_offer_update_permission
             and has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
-            and can_manage_offer
+            and can_manage_offer_in_effective_scope
         )
         can_update_status = has_permission(current_user, PermissionCodes.OFFERS_STATUS_UPDATE)
+        has_custom_accept_scope = can_accept_in_scope is not None
+        has_custom_reject_scope = can_reject_in_scope is not None
+        if can_accept_in_scope is None:
+            can_accept_in_scope = can_manage_request_offer
+        if can_reject_in_scope is None:
+            can_reject_in_scope = can_manage_request_offer
         return OfferActionsSchema(
             can_open_workspace=OfferPolicy.can_access_offer_workspace(
                 current_user,
@@ -147,36 +184,45 @@ class OfferActionBuilder:
                 contractor_user_id=contractor_user_id,
             ),
             can_edit_amount=(
-                has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE)
-                and can_manage_offer
-                and (
-                    current_user.role_id != settings.contractor_role_id
-                    or offer_status not in {"accepted", "rejected"}
+                (
+                    has_offer_update_permission
+                    and
+                    has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE)
+                    and can_manage_offer_in_effective_scope
                 )
+                or (
+                    current_user.role_id != settings.contractor_role_id
+                    and has_department_offer_update_scope
+                )
+            )
+            and (
+                current_user.role_id != settings.contractor_role_id
+                or offer_status not in {"accepted", "rejected"}
             ),
-            can_accept=can_update_status and can_manage_request_offer and offer_status != "accepted",
-            can_reject=can_update_status and can_manage_request_offer and offer_status != "rejected",
+            can_accept=(
+                can_accept_in_scope
+                and offer_status != "accepted"
+                and (True if has_custom_accept_scope else can_update_status)
+            ),
+            can_reject=(
+                can_reject_in_scope
+                and offer_status != "rejected"
+                and (True if has_custom_reject_scope else can_update_status)
+            ),
             can_delete=(
                 can_update_status
                 and offer_status != "deleted"
                 and (can_manage_request_offer or can_manage_own_offer)
             ),
             can_upload_files=(
-                (
-                    has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
-                    and can_manage_offer
-                    and offer_status not in {"accepted", "rejected"}
-                )
+                can_upload_files_for_contractor
                 if is_contractor
-                else (can_upload_files_by_permission or can_manage_manual_offer_files)
+                else (can_upload_files_by_permission or has_department_offer_update_scope)
             ),
             can_delete_files=(
-                (
-                    has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
-                    and can_manage_offer
-                )
+                can_delete_files_for_contractor
                 if is_contractor
-                else (can_delete_files_by_permission or can_manage_manual_offer_files)
+                else (can_delete_files_by_permission or has_department_offer_update_scope)
             ),
         )
 
@@ -189,19 +235,37 @@ class ChatActionBuilder:
         offer_owner_user_id: str,
         request_owner_user_id: str,
         can_acknowledge_messages: bool,
+        can_view_in_scope: bool,
+        can_send_in_scope: bool,
+        has_department_chat_view_scope: bool = False,
+        has_department_chat_send_scope: bool = False,
     ) -> ChatActionsSchema:
-        can_send_message = OfferPolicy.can_send_chat_message(
-            current_user,
-            offer_owner_user_id=offer_owner_user_id,
-            request_owner_user_id=request_owner_user_id,
-        )
-        return ChatActionsSchema(
-            can_view_messages=OfferPolicy.can_view_chat(
+        can_send_message = ((
+            OfferPolicy.can_send_chat_message(
                 current_user,
                 offer_owner_user_id=offer_owner_user_id,
-            ),
+                request_owner_user_id=request_owner_user_id,
+            )
+            and can_send_in_scope
+        ) or has_department_chat_send_scope)
+        can_view_messages = ((
+            OfferPolicy.can_view_chat(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+            )
+            and can_view_in_scope
+        ) or has_department_chat_view_scope)
+        can_attach_files = (
+            can_send_message
+            and (
+                has_permission(current_user, PermissionCodes.CHAT_MESSAGE_ATTACH)
+                or has_department_chat_send_scope
+            )
+        )
+        return ChatActionsSchema(
+            can_view_messages=can_view_messages,
             can_send_message=can_send_message,
-            can_attach_files=can_send_message and has_permission(current_user, PermissionCodes.CHAT_MESSAGE_ATTACH),
+            can_attach_files=can_attach_files,
             can_mark_messages_received=(
                 can_acknowledge_messages
                 and has_permission(current_user, PermissionCodes.CHAT_RECEIPTS_MARK_RECEIVED)
@@ -315,6 +379,13 @@ class ResolvedOfferActionContext:
     offer_is_manual: bool
     can_create_new_offer: bool
     can_acknowledge_messages: bool
+    can_manage_request_in_scope: bool
+    can_manage_offer_in_scope: bool
+    has_department_offer_update_scope: bool
+    has_department_chat_view_scope: bool
+    has_department_chat_send_scope: bool
+    can_accept_in_scope: bool
+    can_reject_in_scope: bool
     offer_actions: OfferActionsSchema
     chat_actions: ChatActionsSchema
 
@@ -332,6 +403,82 @@ class OfferActionResolver:
         self._requests = requests
         self._chats = chats
         self._users = users
+
+    async def _can_update_offer_status_in_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        offer_owner_user_id: str,
+        status: str,
+    ) -> bool:
+        users = self._users
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_ACCEPT) and status == "accepted":
+            if await DepartmentScopeService(users).is_user_in_current_user_department(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            ):
+                return True
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_REJECT) and status == "rejected":
+            if await DepartmentScopeService(users).is_user_in_current_user_department(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            ):
+                return True
+
+        if not has_permission(current_user, PermissionCodes.OFFERS_STATUS_UPDATE):
+            return False
+
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            if not await StaffAccessScopeService(users).is_hierarchy_manager_of(
+                current_user=current_user,
+                request_owner_user_id=request_owner_user_id,
+            ):
+                return False
+
+        return OfferPolicy.can_manage_offer(
+            current_user,
+            offer_owner_user_id=offer_owner_user_id,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _has_department_offer_update_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if not has_permission(current_user, PermissionCodes.DEPARTMENT_OFFERS_UPDATE):
+            return False
+        return await DepartmentScopeService(self._users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
+
+    async def _has_department_chat_view_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if not has_permission(current_user, PermissionCodes.DEPARTMENT_CHATS_READ):
+            return False
+        return await DepartmentScopeService(self._users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
+
+    async def _has_department_chat_send_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        return False
 
     async def resolve_workspace_context(
         self,
@@ -371,12 +518,65 @@ class OfferActionResolver:
             participant = await self._chats.get_active_participant(chat_id=chat.id, user_id=current_user.user_id)
             can_acknowledge_messages = participant is not None
 
+        staff_scope = StaffAccessScopeService(self._users)
+        if current_user.role_id == settings.contractor_role_id:
+            can_manage_in_scope = current_user.user_id == offer.id_user
+            can_manage_offer_in_scope = can_manage_in_scope
+            can_view_in_scope = can_manage_in_scope
+            can_send_in_scope = can_manage_in_scope
+        else:
+            can_manage_in_scope = await staff_scope.can_manage_request_owner(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+            )
+            can_manage_offer_in_scope = await staff_scope.is_hierarchy_manager_of(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+            )
+            can_view_in_scope = await staff_scope.can_view_chat_for_request(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+            )
+            can_send_in_scope = await staff_scope.can_send_chat_for_request(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+            )
+
+        can_accept_in_scope = await self._can_update_offer_status_in_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+            offer_owner_user_id=offer.id_user,
+            status="accepted",
+        )
+        can_reject_in_scope = await self._can_update_offer_status_in_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+            offer_owner_user_id=offer.id_user,
+            status="rejected",
+        )
+        has_department_offer_update_scope = await self._has_department_offer_update_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
+        has_department_chat_view_scope = await self._has_department_chat_view_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
+        has_department_chat_send_scope = await self._has_department_chat_send_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
+
         offer_actions = OfferActionBuilder.build(
             current_user,
             offer_owner_user_id=offer.id_user,
             request_owner_user_id=request.id_user,
             contractor_user_id=offer.id_user,
             offer_status=offer.status,
+            can_manage_in_scope=can_manage_offer_in_scope,
+            has_department_offer_update_scope=has_department_offer_update_scope,
+            can_accept_in_scope=can_accept_in_scope,
+            can_reject_in_scope=can_reject_in_scope,
             offer_is_manual=offer_is_manual,
         )
         chat_actions = ChatActionBuilder.build(
@@ -384,6 +584,10 @@ class OfferActionResolver:
             offer_owner_user_id=offer.id_user,
             request_owner_user_id=request.id_user,
             can_acknowledge_messages=can_acknowledge_messages,
+            can_view_in_scope=can_view_in_scope,
+            can_send_in_scope=can_send_in_scope,
+            has_department_chat_view_scope=has_department_chat_view_scope,
+            has_department_chat_send_scope=has_department_chat_send_scope,
         )
         return ResolvedOfferActionContext(
             offer_owner_user_id=offer.id_user,
@@ -392,6 +596,13 @@ class OfferActionResolver:
             offer_is_manual=offer_is_manual,
             can_create_new_offer=can_create_new_offer,
             can_acknowledge_messages=can_acknowledge_messages,
+            can_manage_request_in_scope=can_manage_in_scope,
+            can_manage_offer_in_scope=can_manage_offer_in_scope,
+            has_department_offer_update_scope=has_department_offer_update_scope,
+            has_department_chat_view_scope=has_department_chat_view_scope,
+            has_department_chat_send_scope=has_department_chat_send_scope,
+            can_accept_in_scope=can_accept_in_scope,
+            can_reject_in_scope=can_reject_in_scope,
             offer_actions=offer_actions,
             chat_actions=chat_actions,
         )

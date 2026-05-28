@@ -52,8 +52,8 @@ Legend: `Y` = granted, `N` = not granted.
 | `chat.receipts.mark_read` | Y | N | N | Y | Y | N | Y |
 | `feedback.read` | Y | N | N | N | N | N | N |
 | `feedback.create` | Y | Y | Y | Y | Y | Y | Y |
-| `dashboard.process.read` | Y | N | Y | Y | N | N | N |
-| `dashboard.savings.read` | Y | N | Y | Y | N | N | N |
+| `dashboard.process.read` | Y | N | Y | Y | Y | N | N |
+| `dashboard.savings.read` | Y | N | Y | Y | Y | N | N |
 | `dashboard.plans.read` | Y | N | Y | Y | Y | N | N |
 | `normative_files.read` | Y | N | Y | Y | Y | Y | N |
 | `normative_files.create` | Y | N | N | Y | N | N | N |
@@ -71,7 +71,7 @@ Legend: `Y` = granted, `N` = not granted.
 |---|---|---|
 | `superadmin` | `/admin`, `/requests`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/feedback` | Full management across users, requests, offers, contractors, dashboards, normative files and statuses |
 | `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
-| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Manage hierarchy assignments, change request owner, manage manual contractors, set subordinate unavailability, economy-role changes for subordinates |
+| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Read requests/offers/chats across department; change request owner; manage users hierarchy, manual contractors, subordinate unavailability, economy-role changes for subordinates |
 | `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Full request/offer workflow, create manual offers, manage normative files, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
 | `economist` | `/pm-dashboard/plan`, `/requests`, `/admin` | Request/offers processing in scope, manual offers, subordinate unavailability, manual contractors create/manage, plan dashboard (only delegated branch and below) |
 | `operator` | `/requests` | Create/read/update requests (pricing/deadline/status), view normative files, no offer/chat/admin/dashboard features |
@@ -97,3 +97,58 @@ Legend: `Y` = granted, `N` = not granted.
 - Browser role matrix: `web/e2e/roles.access.spec.ts` (`@roles`, manual extended e2e).
 - Dashboard permission/calculation coverage: `backend/tests/unit/test_dashboard_calculations_unit.py`, `web/e2e/dashboard.extended.spec.ts` (`@dashboard`).
 - При изменении этой матрицы обновлять `backend/app/domain/permissions.py`, Keycloak bootstrap docs/scripts при необходимости, backend/frontend tests и `docs/development/test-coverage-map.md`.
+
+## Department Delegation Model (2026-05)
+
+`department.*` permissions are separate atomic access codes used only for department-scope expansion. They are not aliases of regular `requests.*`, `offers.*`, `chat.*`, `files.*`, `dashboard.*`, `plans.*` permissions.
+
+Atomic `department.*` permissions:
+
+- `department.requests.read`
+- `department.requests.update`
+- `department.requests.status_update`
+- `department.requests.assign`
+- `department.offers.update`
+- `department.offers.accept`
+- `department.offers.reject`
+- `department.chats.read`
+- `department.chats.send_message`
+- `department.files.read`
+- `department.files.upload`
+- `department.files.delete`
+- `department.dashboard.read`
+- `department.plans.read`
+- `department.plans.manage`
+
+Keycloak composite delegation roles in client `acom-api`:
+
+- `delegation.department.requests.read` -> `department.requests.read`
+- `delegation.department.requests.update` -> `department.requests.update`
+- `delegation.department.requests.status_update` -> `department.requests.status_update`
+- `delegation.department.requests.assign` -> `department.requests.assign`
+- `delegation.department.offers.update` -> `department.offers.update`
+- `delegation.department.offers.accept` -> `department.offers.accept`
+- `delegation.department.offers.reject` -> `department.offers.reject`
+- `delegation.department.chats.read` -> `department.chats.read`
+- `delegation.department.chats.send_message` -> `department.chats.send_message`
+- `delegation.department.files.read` -> `department.files.read`
+- `delegation.department.files.upload` -> `department.files.upload`
+- `delegation.department.files.delete` -> `department.files.delete`
+- `delegation.department.dashboard.read` -> `department.dashboard.read`
+- `delegation.department.plans.read` -> `department.plans.read`
+- `delegation.department.plans.manage` -> `department.plans.manage`
+
+Rules:
+
+1. `delegation.department.*` are not included in any `app.*` role by default.
+2. `keycloak_user_role_sync` updates only `app.*` alignment by `users.id_role` and must not remove manually assigned `delegation.department.*`.
+3. No new business role is introduced (`lead_economist + delegation.department.*` is not a new role).
+4. No DB table is used as source of truth for delegation checklist state; source of truth is Keycloak client role mappings for `acom-api`.
+5. Frontend remains UX-only and uses backend-provided `permissions`/`actions`; backend remains enforcement layer.
+6. `department.requests.status_update` must be enforced independently for foreign department requests; `department.requests.update` is not a substitute for status transitions.
+
+## Business Scope Rules (2026-05)
+
+1. Department visibility: PM/LE/EC users in the same PM subtree can read requests, offers, and chats for each other; edit/chat-send remains limited to hierarchy chain or `department.*` delegation.
+2. Module statistics: LE and EC dashboard scope is the LE module subtree; PM dashboard scope is the whole department.
+3. Plan dashboard: EC sees the module plan tree via their LE root; plan edit/delegate remains hierarchy-only (subordinates required for delegation).

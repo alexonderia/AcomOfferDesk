@@ -2,23 +2,107 @@
 
 export type RealtimeConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting';
 
+type AckPayload = {
+  event_type: string;
+  chat_id?: number;
+  message_id?: number;
+  updated_count?: number;
+  last_read_message_id?: number | null;
+};
+
 type ErrorPayload = {
   code: string;
   message: string;
 };
 
 export type RealtimeEnvelope =
-  | { type: 'connection.ready'; event_id: string; ts: string; data: { connection_id: string; user_id: string; transport: string; supported_event_types?: string[] } }
-  | { type: 'notification.created'; event_id: string; ts: string; data: Record<string, unknown> }
-  | { type: 'notification.read'; event_id: string; ts: string; data: Record<string, unknown> }
-  | { type: 'notification.read_all'; event_id: string; ts: string; data: Record<string, unknown> }
-  | { type: 'chat.message.created'; event_id: string; ts: string; data: Record<string, unknown> }
-  | { type: 'system.toast'; event_id: string; ts: string; data: Record<string, unknown> }
-  | { type: 'error'; event_id: string; ts: string; data: ErrorPayload }
-  | { type: string; event_id: string; ts: string; data: Record<string, unknown> };
+  | {
+      type: 'connection.ready';
+      event_id: string;
+      ts: string;
+      request_id?: string | null;
+      data: {
+        connection_id: string;
+        user_id: string;
+        transport: string;
+        supported_event_types?: string[];
+      };
+    }
+  | { type: 'notification.created'; event_id: string; ts: string; request_id?: string | null; data: Record<string, unknown> }
+  | { type: 'notification.read'; event_id: string; ts: string; request_id?: string | null; data: Record<string, unknown> }
+  | { type: 'notification.read_all'; event_id: string; ts: string; request_id?: string | null; data: Record<string, unknown> }
+  | {
+      type: 'chat.message.created' | 'message.created';
+      event_id: string;
+      ts: string;
+      request_id?: string | null;
+      data: { chat_id: number; message: unknown };
+    }
+  | {
+      type: 'chat.message.delivered' | 'message.delivered';
+      event_id: string;
+      ts: string;
+      request_id?: string | null;
+      data: { chat_id: number; user_id: string; message_ids: number[] };
+    }
+  | {
+      type: 'chat.message.read' | 'message.read';
+      event_id: string;
+      ts: string;
+      request_id?: string | null;
+      data: {
+        chat_id: number;
+        user_id: string;
+        user_full_name?: string | null;
+        message_ids: number[];
+        last_read_message_id: number | null;
+      };
+    }
+  | {
+      type: 'chat.typing.started' | 'typing.start';
+      event_id: string;
+      ts: string;
+      request_id?: string | null;
+      data: { chat_id: number; user_id: string };
+    }
+  | {
+      type: 'chat.typing.stopped' | 'typing.stop';
+      event_id: string;
+      ts: string;
+      request_id?: string | null;
+      data: { chat_id: number; user_id: string };
+    }
+  | {
+      type: 'chat.sync';
+      event_id: string;
+      ts: string;
+      request_id?: string | null;
+      data: {
+        chat_id: number;
+        last_message_id: number | null;
+        last_read_message_id: number | null;
+        last_read_at: string | null;
+        is_muted: boolean;
+        is_archived: boolean;
+        resync_required: boolean;
+      };
+    }
+  | { type: 'chat.unsubscribed'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number } }
+  | { type: 'system.toast'; event_id: string; ts: string; request_id?: string | null; data: Record<string, unknown> }
+  | { type: 'ack'; event_id: string; ts: string; request_id?: string | null; data: AckPayload }
+  | { type: 'error'; event_id: string; ts: string; request_id?: string | null; data: ErrorPayload }
+  | { type: string; event_id: string; ts: string; request_id?: string | null; data: Record<string, unknown> };
 
 type EventListener = (event: RealtimeEnvelope) => void;
 type StateListener = (state: RealtimeConnectionState) => void;
+
+type PendingRequest = {
+  resolve: (data: AckPayload) => void;
+  reject: (error: Error) => void;
+  timeoutId: number;
+};
+
+const REQUEST_TIMEOUT_MS = 15_000;
 
 const buildSocketUrl = (ticket: string) => {
   const url = new URL(window.location.origin);
@@ -28,13 +112,27 @@ const buildSocketUrl = (ticket: string) => {
   return url.toString();
 };
 
-const createEventId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const createEventId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const createRequestId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isAckPayload = (value: unknown): value is AckPayload =>
+  isObject(value) && typeof value.event_type === 'string';
+
+const isErrorPayload = (value: unknown): value is ErrorPayload =>
+  isObject(value) && typeof value.code === 'string' && typeof value.message === 'string';
 
 class RealtimeSocketClient {
   private socket: WebSocket | null = null;
   private shouldStayConnected = false;
+  private desiredChats = new Set<number>();
   private eventListeners = new Set<EventListener>();
   private stateListeners = new Set<StateListener>();
+  private pendingRequests = new Map<string, PendingRequest>();
   private reconnectTimerId: number | null = null;
   private reconnectAttempts = 0;
   private connectionState: RealtimeConnectionState = 'idle';
@@ -77,12 +175,59 @@ class RealtimeSocketClient {
     this.shouldStayConnected = false;
     this.ticketRequestPromise = null;
     this.openSocketPromise = null;
+    this.desiredChats.clear();
     this.clearReconnectTimer();
+    this.rejectPendingRequests('Соединение с сервером уведомлений закрыто.');
     if (this.socket) {
       this.socket.close();
       this.socket = null;
     }
     this.setState('idle');
+  }
+
+  subscribeChat(chatId: number) {
+    this.desiredChats.add(chatId);
+    if (this.connectionState === 'connected') {
+      void this.sendRequest('chat.subscribe', { chat_id: chatId }).catch(() => undefined);
+    }
+  }
+
+  unsubscribeChat(chatId: number) {
+    this.desiredChats.delete(chatId);
+    if (this.connectionState === 'connected') {
+      void this.sendRequest('chat.unsubscribe', { chat_id: chatId }).catch(() => undefined);
+    }
+  }
+
+  sendChatMessage(
+    chatId: number,
+    text: string,
+    files: Array<{ file_id: number; upload_token: string }>
+  ) {
+    return this.sendRequest('message.send', { chat_id: chatId, text, files });
+  }
+
+  markChatRead(chatId: number, params: { messageIds?: number[]; upToMessageId?: number | null }) {
+    return this.sendRequest('message.read', {
+      chat_id: chatId,
+      message_ids: params.messageIds,
+      up_to_message_id: params.upToMessageId ?? null,
+    });
+  }
+
+  syncChat(chatId: number, lastKnownMessageId?: number | null) {
+    return this.sendRequest('chat.sync', {
+      chat_id: chatId,
+      last_known_message_id: lastKnownMessageId ?? null,
+    });
+  }
+
+  startTyping(chatId: number) {
+    return this.sendRequest('typing.start', { chat_id: chatId });
+  }
+
+  stopTyping(chatId: number) {
+    return this.sendRequest('typing.stop', { chat_id: chatId });
   }
 
   private async getConnectionTicket(): Promise<string> {
@@ -144,6 +289,17 @@ class RealtimeSocketClient {
     socket.addEventListener('message', (message) => {
       try {
         const payload = JSON.parse(message.data) as RealtimeEnvelope;
+        if (payload.type === 'ack' && payload.request_id && isAckPayload(payload.data)) {
+          this.resolvePendingRequest(payload.request_id, payload.data);
+        }
+        if (payload.type === 'error' && payload.request_id && isErrorPayload(payload.data)) {
+          this.rejectPendingRequest(payload.request_id, payload.data.message);
+        }
+        if (payload.type === 'connection.ready') {
+          for (const chatId of this.desiredChats) {
+            void this.sendRequest('chat.subscribe', { chat_id: chatId }).catch(() => undefined);
+          }
+        }
         this.emitEvent(payload);
       } catch {
         // Ignore malformed websocket messages.
@@ -152,6 +308,7 @@ class RealtimeSocketClient {
 
     socket.addEventListener('close', (event) => {
       this.socket = null;
+      this.rejectPendingRequests('Соединение с сервером потеряно.');
 
       if (event.code === 4401) {
         this.setState('idle');
@@ -161,7 +318,7 @@ class RealtimeSocketClient {
           ts: new Date().toISOString(),
           data: {
             code: 'auth_failed',
-            message: 'Auth failed',
+            message: 'Сессия истекла. Войдите в систему заново.',
           },
         });
         return;
@@ -182,11 +339,62 @@ class RealtimeSocketClient {
     });
   }
 
+  private async sendRequest(type: string, data: Record<string, unknown>): Promise<AckPayload> {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      throw new Error('Соединение с сервером уведомлений недоступно.');
+    }
+
+    const requestId = createRequestId();
+    const payload = JSON.stringify({
+      type,
+      request_id: requestId,
+      data,
+    });
+
+    return await new Promise<AckPayload>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Сервер не подтвердил websocket-запрос вовремя.'));
+      }, REQUEST_TIMEOUT_MS);
+
+      this.pendingRequests.set(requestId, { resolve, reject, timeoutId });
+      this.socket?.send(payload);
+    });
+  }
+
+  private resolvePendingRequest(requestId: string, payload: AckPayload) {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) {
+      return;
+    }
+    window.clearTimeout(pending.timeoutId);
+    this.pendingRequests.delete(requestId);
+    pending.resolve(payload);
+  }
+
+  private rejectPendingRequest(requestId: string, message: string) {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) {
+      return;
+    }
+    window.clearTimeout(pending.timeoutId);
+    this.pendingRequests.delete(requestId);
+    pending.reject(new Error(message));
+  }
+
+  private rejectPendingRequests(message: string) {
+    this.pendingRequests.forEach((pending, requestId) => {
+      window.clearTimeout(pending.timeoutId);
+      pending.reject(new Error(message));
+      this.pendingRequests.delete(requestId);
+    });
+  }
+
   private scheduleReconnect() {
     this.clearReconnectTimer();
     this.reconnectAttempts += 1;
     this.setState('reconnecting');
-    const delayMs = Math.min(1000 * 2 ** Math.min(this.reconnectAttempts, 4), 15000);
+    const delayMs = Math.min(1000 * 2 ** Math.min(this.reconnectAttempts, 4), 15_000);
     this.reconnectTimerId = window.setTimeout(() => {
       this.reconnectTimerId = null;
       this.ensureSocketOpen();

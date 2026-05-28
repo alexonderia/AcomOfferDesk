@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 _runtime: "ChatRealtimeRuntime | None" = None
 _realtime_runtime: "UnifiedRealtimeRuntime | None" = None
 
+_CHAT_EVENT_TYPE_NORMALIZATION: dict[str, str] = {
+    "message.created": "chat.message.created",
+    "message.delivered": "chat.message.delivered",
+    "message.read": "chat.message.read",
+    "typing.start": "chat.typing.started",
+    "typing.stop": "chat.typing.stopped",
+}
+
 
 class ChatRealtimeRuntime:
     def __init__(self) -> None:
@@ -44,18 +52,23 @@ class ChatRealtimeRuntime:
         exclude_user_ids: set[str] | None = None,
         publish_remote: bool = True,
     ) -> None:
-        delivered_user_ids = await self.manager.broadcast_to_chat(
+        canonical_event = _normalize_chat_event(event)
+        delivered_user_ids = await self._broadcast_to_chat(
             chat_id=chat_id,
-            event=event,
+            event=canonical_event,
             exclude_user_ids=exclude_user_ids,
         )
-        await self._process_local_side_effects(chat_id=chat_id, event=event, delivered_user_ids=delivered_user_ids)
+        await self._process_local_side_effects(
+            chat_id=chat_id,
+            event=canonical_event,
+            delivered_user_ids=delivered_user_ids,
+        )
         if publish_remote:
             await self.pubsub.publish(
                 {
                     "chat_id": chat_id,
                     "exclude_user_ids": sorted(exclude_user_ids or []),
-                    "event": event.model_dump(mode="json"),
+                    "event": canonical_event.model_dump(mode="json"),
                 }
             )
 
@@ -63,13 +76,27 @@ class ChatRealtimeRuntime:
         chat_id = int(payload["chat_id"])
         event_payload = payload["event"]
         exclude_user_ids = set(payload.get("exclude_user_ids") or [])
-        event = OutboundEnvelope.model_validate(event_payload)
-        delivered_user_ids = await self.manager.broadcast_to_chat(
+        event = _normalize_chat_event(OutboundEnvelope.model_validate(event_payload))
+        delivered_user_ids = await self._broadcast_to_chat(
             chat_id=chat_id,
             event=event,
             exclude_user_ids=exclude_user_ids,
         )
         await self._process_local_side_effects(chat_id=chat_id, event=event, delivered_user_ids=delivered_user_ids)
+
+    async def _broadcast_to_chat(
+        self,
+        *,
+        chat_id: int,
+        event: OutboundEnvelope,
+        exclude_user_ids: set[str] | None = None,
+    ) -> set[str]:
+        delivered_user_ids = await self.manager.broadcast_to_chat(
+            chat_id=chat_id,
+            event=event,
+            exclude_user_ids=exclude_user_ids,
+        )
+        return delivered_user_ids
 
     async def _process_local_side_effects(
         self,
@@ -78,7 +105,7 @@ class ChatRealtimeRuntime:
         event: OutboundEnvelope,
         delivered_user_ids: set[str],
     ) -> None:
-        if event.type != "message.created":
+        if event.type != "chat.message.created":
             return
 
         message_payload = event.data.get("message")
@@ -99,7 +126,7 @@ class ChatRealtimeRuntime:
             if not ack.updated_message_ids:
                 continue
             delivered_event = OutboundEnvelope(
-                type="message.delivered",
+                type="chat.message.delivered",
                 data={
                     "chat_id": chat_id,
                     "user_id": user_id,
@@ -109,9 +136,22 @@ class ChatRealtimeRuntime:
             await self.publish_chat_event(chat_id=chat_id, event=delivered_event, publish_remote=True)
 
 
+def _normalize_chat_event(event: OutboundEnvelope) -> OutboundEnvelope:
+    canonical_type = _CHAT_EVENT_TYPE_NORMALIZATION.get(event.type, event.type)
+    if canonical_type == event.type:
+        return event
+    return OutboundEnvelope(
+        type=canonical_type,
+        event_id=event.event_id,
+        ts=event.ts,
+        request_id=event.request_id,
+        data=event.data,
+    )
+
+
 class UnifiedRealtimeRuntime:
-    def __init__(self) -> None:
-        self.manager = WebSocketConnectionManager()
+    def __init__(self, *, manager: WebSocketConnectionManager | None = None) -> None:
+        self.manager = manager or WebSocketConnectionManager()
 
     async def connect(self, *, websocket: WebSocket, user_id: str) -> str:
         return await self.manager.connect(websocket=websocket, user_id=user_id)
@@ -132,8 +172,10 @@ def set_chat_runtime(runtime: ChatRealtimeRuntime) -> None:
 
 
 def get_chat_runtime() -> ChatRealtimeRuntime:
+    global _runtime
     if _runtime is None:
-        raise RuntimeError("Chat realtime runtime is not initialized")
+        # Fallback for test scenarios where app lifespan startup is bypassed.
+        _runtime = ChatRealtimeRuntime()
     return _runtime
 
 
@@ -146,5 +188,8 @@ def get_unified_realtime_runtime() -> UnifiedRealtimeRuntime:
     global _realtime_runtime
     if _realtime_runtime is None:
         # Fallback for test scenarios where app lifespan startup is bypassed.
-        _realtime_runtime = UnifiedRealtimeRuntime()
+        if _runtime is not None:
+            _realtime_runtime = UnifiedRealtimeRuntime(manager=_runtime.manager)
+        else:
+            _realtime_runtime = UnifiedRealtimeRuntime()
     return _realtime_runtime

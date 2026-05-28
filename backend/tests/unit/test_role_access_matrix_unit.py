@@ -118,3 +118,24 @@ def test_economist_role_includes_plan_dashboard_permission() -> None:
     role_map = get_role_permissions_map()
 
     assert PermissionCodes.DASHBOARD_PLANS_READ in role_map[settings.economist_role_id]
+
+
+def test_economist_role_includes_module_dashboard_permissions() -> None:
+    role_map = get_role_permissions_map()
+    economist_permissions = role_map[settings.economist_role_id]
+
+    assert PermissionCodes.DASHBOARD_PROCESS_READ in economist_permissions
+    assert PermissionCodes.DASHBOARD_SAVINGS_READ in economist_permissions
+
+
+def test_project_manager_role_is_read_only_for_requests_offers_and_chats() -> None:
+    role_map = get_role_permissions_map()
+    pm_permissions = role_map[settings.project_manager_role_id]
+
+    assert PermissionCodes.REQUESTS_READ in pm_permissions
+    assert PermissionCodes.OFFERS_WORKSPACE_READ in pm_permissions
+    assert PermissionCodes.CHAT_READ in pm_permissions
+    assert PermissionCodes.REQUESTS_OWNER_CHANGE in pm_permissions
+    assert PermissionCodes.REQUESTS_UPDATE not in pm_permissions
+    assert PermissionCodes.OFFERS_STATUS_UPDATE not in pm_permissions
+    assert PermissionCodes.CHAT_MESSAGE_SEND not in pm_permissions

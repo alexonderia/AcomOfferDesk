@@ -139,7 +139,7 @@ type SummaryListItem = {
 const toSummaryListItem = (item: ResponsibilitySavingsItem | ResponsibilityClosedSavingsItem): SummaryListItem => ({
   key: `request-${item.request_id}`,
   title: `Заявка #${item.request_id}`,
-  subtitle: `${item.owner_full_name || item.owner_user_id}${item.closed_at ? ` В· ${formatDate(item.closed_at)}` : ''}`,
+  subtitle: `${item.owner_full_name || item.owner_user_id}${item.closed_at ? ` · ${formatDate(item.closed_at)}` : ''}`,
   amount: typeof item.savings_amount === 'number' ? formatSignedAmount(item.savings_amount) : undefined,
   amountColor:
     typeof item.savings_amount === 'number'

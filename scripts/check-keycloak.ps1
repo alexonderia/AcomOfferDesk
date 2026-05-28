@@ -1,7 +1,8 @@
 param(
   [Parameter(Mandatory=$false)]
   [string]$EnvFile = ".env.dev",
-  [switch]$StrictUnknownAtomic
+  [switch]$StrictUnknownAtomic,
+  [switch]$Repair
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,9 @@ $PythonCmd = if (Test-Path $VenvPython) { $VenvPython } else { "python" }
 $argsList = @("-m", "app.scripts.check_keycloak_permission_model", "--env-file", $EnvFile)
 if ($StrictUnknownAtomic) {
   $argsList += "--strict-unknown-atomic"
+}
+if ($Repair) {
+  $argsList += "--repair"
 }
 
 & $PythonCmd @argsList

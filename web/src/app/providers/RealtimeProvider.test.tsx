@@ -98,6 +98,32 @@ describe('RealtimeProvider', () => {
     expect(disconnectMock).toHaveBeenCalledTimes(1);
   });
 
+  it('reuses one transport lifecycle across logout and next login', () => {
+    const view = render(<div />, { wrapper: Wrapper });
+
+    expect(connectMock).toHaveBeenCalledTimes(1);
+
+    authState = {
+      session: null,
+      status: 'anonymous',
+      refresh: vi.fn().mockResolvedValue(false),
+      logout: vi.fn(),
+    };
+    view.rerender(<div />);
+
+    expect(disconnectMock).toHaveBeenCalledTimes(1);
+
+    authState = {
+      session: { token: 'token-2', businessAccess: true },
+      status: 'authenticated',
+      refresh: vi.fn().mockResolvedValue(true),
+      logout: vi.fn(),
+    };
+    view.rerender(<div />);
+
+    expect(connectMock).toHaveBeenCalledTimes(2);
+  });
+
   it('applies notification.created event to notifications state', async () => {
     render(<div />, { wrapper: Wrapper });
 

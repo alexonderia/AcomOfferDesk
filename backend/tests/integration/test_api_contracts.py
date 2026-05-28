@@ -267,6 +267,7 @@ def test_offer_workspace_contract_contains_request_offer_chat_actions(
                 offer_is_manual=False,
                 can_create_new_offer=False,
                 can_acknowledge_messages=True,
+                can_manage_request_in_scope=False,
                 offer_actions=OfferActionsSchema(can_open_workspace=True),
                 chat_actions=ChatActionsSchema(can_view_messages=True),
             )

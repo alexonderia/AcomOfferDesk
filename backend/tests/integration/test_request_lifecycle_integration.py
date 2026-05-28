@@ -81,7 +81,10 @@ class _UsersRepo:
         return self._users_by_id.get(user_id)
 
     async def list_active_user_parent_pairs(self):
-        return []
+        return [
+            (user.id, user.id_parent)
+            for user in self._users_by_id.values()
+        ]
 
 
 class _UserStatusPeriodsRepo:
@@ -139,7 +142,13 @@ class _ContractorViewUow:
 
 
 class _RequestLifecycleUow:
-    def __init__(self, request_row: SimpleNamespace, *, accepted_offer_amount: float | None = None) -> None:
+    def __init__(
+        self,
+        request_row: SimpleNamespace,
+        *,
+        accepted_offer_amount: float | None = None,
+        users_by_id: dict[str, SimpleNamespace] | None = None,
+    ) -> None:
         accepted_offer_id = 501 if accepted_offer_amount is not None else None
         offers_by_id = (
             {accepted_offer_id: SimpleNamespace(id=accepted_offer_id, offer_amount=accepted_offer_amount)}
@@ -149,7 +158,8 @@ class _RequestLifecycleUow:
         self.requests = _MutableRequestsRepo(request_row, accepted_offer_id=accepted_offer_id)
         self.files = object()
         self.users = _UsersRepo(
-            users_by_id={
+            users_by_id=users_by_id
+            or {
                 "owner-1": SimpleNamespace(id="owner-1", id_parent=None, id_role=settings.economist_role_id),
                 "owner-2": SimpleNamespace(id="owner-2", id_parent="owner-1", id_role=settings.economist_role_id),
             }
@@ -173,10 +183,16 @@ class _RequestLifecycleUow:
         _ = (exc_type, exc, tb)
 
 
-def _request_row(*, status: str = "open", initial: float = 100.0, final: float = 100.0) -> SimpleNamespace:
+def _request_row(
+    *,
+    status: str = "open",
+    initial: float = 100.0,
+    final: float = 100.0,
+    owner_user_id: str = "owner-1",
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=1,
-        id_user="owner-1",
+        id_user=owner_user_id,
         status=status,
         initial_amount=initial,
         final_amount=final,
@@ -188,6 +204,16 @@ def _request_row(*, status: str = "open", initial: float = 100.0, final: float =
         description="Request",
         id_plan=None,
     )
+
+
+def _department_users_tree() -> dict[str, SimpleNamespace]:
+    return {
+        "pm-1": SimpleNamespace(id="pm-1", id_parent=None, id_role=settings.project_manager_role_id),
+        "lead-1": SimpleNamespace(id="lead-1", id_parent="pm-1", id_role=settings.lead_economist_role_id),
+        "lead-2": SimpleNamespace(id="lead-2", id_parent="pm-1", id_role=settings.lead_economist_role_id),
+        "econ-1": SimpleNamespace(id="econ-1", id_parent="lead-1", id_role=settings.economist_role_id),
+        "econ-2": SimpleNamespace(id="econ-2", id_parent="lead-2", id_role=settings.economist_role_id),
+    }
 
 
 def _role_user(make_current_user, role_id: int):
@@ -475,6 +501,7 @@ def test_invalid_request_status_transition_returns_409(
     request_row = _request_row(status="open")
     set_uow(_RequestLifecycleUow(request_row))
     user = make_current_user(
+        user_id="owner-1",
         role_id=settings.lead_economist_role_id,
         permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
     )
@@ -486,6 +513,106 @@ def test_invalid_request_status_transition_returns_409(
     )
 
     assert response.status_code == 409
+
+
+def test_department_request_update_without_department_status_update_cannot_change_foreign_request_status(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", owner_user_id="econ-2")
+    set_uow(_RequestLifecycleUow(request_row, users_by_id=_department_users_tree()))
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_STATUS_UPDATE,
+            PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"status": "review"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_department_status_update_allows_changing_foreign_request_status_inside_department_scope(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", owner_user_id="econ-2")
+    set_uow(_RequestLifecycleUow(request_row, users_by_id=_department_users_tree()))
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_REQUESTS_STATUS_UPDATE},
+    )
+    set_current_user(user)
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"status": "review"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_department_requests_update_without_department_assign_cannot_change_foreign_request_owner(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", owner_user_id="econ-2")
+    set_uow(_RequestLifecycleUow(request_row, users_by_id=_department_users_tree()))
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_READ,
+            PermissionCodes.REQUESTS_OWNER_CHANGE,
+            PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"owner_user_id": "econ-1"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_department_assign_allows_changing_foreign_request_owner_inside_department_scope(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", owner_user_id="econ-2")
+    set_uow(_RequestLifecycleUow(request_row, users_by_id=_department_users_tree()))
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN},
+    )
+    set_current_user(user)
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"owner_user_id": "econ-1"},
+    )
+
+    assert response.status_code == 200
+    assert request_row.id_user == "econ-1"
 
 
 def test_closed_request_requires_consistent_amounts_when_updated(
@@ -541,6 +668,7 @@ def test_request_can_be_closed_without_offers_when_final_matches_initial(
     request_row = _request_row(status="open", initial=120.0, final=120.0)
     set_uow(_RequestLifecycleUow(request_row))
     user = make_current_user(
+        user_id="owner-1",
         role_id=settings.lead_economist_role_id,
         permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
     )
@@ -563,6 +691,7 @@ def test_request_can_be_closed_with_accepted_offer_amount(
     request_row = _request_row(status="open", initial=120.0, final=90.0)
     set_uow(_RequestLifecycleUow(request_row, accepted_offer_amount=90.0))
     user = make_current_user(
+        user_id="owner-1",
         role_id=settings.lead_economist_role_id,
         permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
     )

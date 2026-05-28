@@ -27,9 +27,12 @@ class _UsersRepo:
         self._session = object()
         self._users: dict[str, SimpleNamespace] = {
             "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, status="active", tg_user_id=None),
+            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent="pm-1", status="active", tg_user_id=None),
             "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active", tg_user_id=None),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="lead-1", status="active", tg_user_id=None),
             "eco-1": SimpleNamespace(id="eco-1", id_role=settings.economist_role_id, id_parent="lead-1", status="active", tg_user_id=None),
             "eco-2": SimpleNamespace(id="eco-2", id_role=settings.economist_role_id, id_parent="eco-1", status="active", tg_user_id=None),
+            "eco-3": SimpleNamespace(id="eco-3", id_role=settings.economist_role_id, id_parent="lead-2", status="active", tg_user_id=None),
             "operator-1": SimpleNamespace(id="operator-1", id_role=settings.operator_role_id, id_parent="lead-1", status="active", tg_user_id=None),
             "admin-1": SimpleNamespace(id="admin-1", id_role=settings.admin_role_id, id_parent=None, status="active", tg_user_id=None),
             "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, status="active", tg_user_id=None),
@@ -144,7 +147,12 @@ def _set_fake_keycloak(monkeypatch) -> None:
         _ = (self, username, email, email_verified)
         return SimpleNamespace(id=f"kc-{username}")
 
+    async def _fake_sync_keycloak_app_role_for_user(*args, **kwargs) -> None:
+        _ = (args, kwargs)
+        return None
+
     monkeypatch.setattr(users_service.KeycloakAdminService, "ensure_user", _fake_ensure_user)
+    monkeypatch.setattr(users_service, "sync_keycloak_app_role_for_user", _fake_sync_keycloak_app_role_for_user)
 
 
 def test_admin_can_create_user_with_permission(
@@ -197,6 +205,151 @@ def test_user_without_users_create_cannot_register_user(test_client, set_uow, se
     )
 
     assert response.status_code == 403
+
+
+def test_superadmin_can_create_project_manager_without_manager(
+    test_client,
+    monkeypatch,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    _set_fake_keycloak(monkeypatch)
+    set_uow(_UsersUow())
+    superadmin = make_current_user(
+        user_id="root-1",
+        role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.USERS_CREATE},
+    )
+    set_current_user(superadmin)
+
+    response = test_client.post(
+        "/api/v1/users/register",
+        json={
+            "login": "pm-new",
+            "role_id": settings.project_manager_role_id,
+            "mail": "pm-new@example.com",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["user_id"] == "pm-new"
+
+
+def test_superadmin_cannot_create_project_manager_with_lead_as_manager(
+    test_client,
+    monkeypatch,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    _set_fake_keycloak(monkeypatch)
+    set_uow(_UsersUow())
+    superadmin = make_current_user(
+        user_id="root-1",
+        role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.USERS_CREATE},
+    )
+    set_current_user(superadmin)
+
+    response = test_client.post(
+        "/api/v1/users/register",
+        json={
+            "login": "pm-invalid",
+            "role_id": settings.project_manager_role_id,
+            "id_parent": "lead-1",
+            "mail": "pm-invalid@example.com",
+        },
+    )
+
+    assert response.status_code == 409
+
+
+def test_superadmin_cannot_create_lead_without_manager(
+    test_client,
+    monkeypatch,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    _set_fake_keycloak(monkeypatch)
+    set_uow(_UsersUow())
+    superadmin = make_current_user(
+        user_id="root-1",
+        role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.USERS_CREATE},
+    )
+    set_current_user(superadmin)
+
+    response = test_client.post(
+        "/api/v1/users/register",
+        json={
+            "login": "lead-no-manager",
+            "role_id": settings.lead_economist_role_id,
+            "mail": "lead-no-manager@example.com",
+        },
+    )
+
+    assert response.status_code == 409
+
+
+def test_superadmin_can_create_lead_with_lead_manager(
+    test_client,
+    monkeypatch,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    _set_fake_keycloak(monkeypatch)
+    set_uow(_UsersUow())
+    superadmin = make_current_user(
+        user_id="root-1",
+        role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.USERS_CREATE},
+    )
+    set_current_user(superadmin)
+
+    response = test_client.post(
+        "/api/v1/users/register",
+        json={
+            "login": "lead-second",
+            "role_id": settings.lead_economist_role_id,
+            "id_parent": "lead-1",
+            "mail": "lead-second@example.com",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["user_id"] == "lead-second"
+
+
+def test_superadmin_cannot_create_economist_with_project_manager_manager(
+    test_client,
+    monkeypatch,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    _set_fake_keycloak(monkeypatch)
+    set_uow(_UsersUow())
+    superadmin = make_current_user(
+        user_id="root-1",
+        role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.USERS_CREATE},
+    )
+    set_current_user(superadmin)
+
+    response = test_client.post(
+        "/api/v1/users/register",
+        json={
+            "login": "eco-invalid-manager",
+            "role_id": settings.economist_role_id,
+            "id_parent": "pm-1",
+            "mail": "eco-invalid-manager@example.com",
+        },
+    )
+
+    assert response.status_code == 409
 
 
 def test_lead_economist_can_update_subordinate_status(
@@ -274,8 +427,8 @@ def test_project_manager_can_update_subordinate_manager(
     set_current_user,
     make_current_user,
 ):
-    async def _fake_manager_candidates(self, *, current_user, target_role_id):
-        _ = (self, current_user, target_role_id)
+    async def _fake_manager_candidates(self, *, current_user, target_role_id, target_user_id=None):
+        _ = (self, current_user, target_role_id, target_user_id)
         return [SimpleNamespace(user_id="lead-1")]
 
     monkeypatch.setattr(users_service.UserQueryService, "list_manager_candidates", _fake_manager_candidates)
@@ -291,6 +444,83 @@ def test_project_manager_can_update_subordinate_manager(
 
     assert response.status_code == 200
     assert response.json()["data"]["manager_user_id"] == "lead-1"
+
+
+def test_project_manager_can_remove_project_manager_manager(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    set_uow(_UsersUow())
+    manager = make_current_user(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        permissions={PermissionCodes.USERS_MANAGER_UPDATE},
+    )
+    set_current_user(manager)
+
+    response = test_client.patch("/api/v1/users/pm-2/manager", json={"manager_user_id": None})
+
+    assert response.status_code == 200
+    assert response.json()["data"]["manager_user_id"] is None
+
+
+def test_project_manager_cannot_remove_lead_manager(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    set_uow(_UsersUow())
+    manager = make_current_user(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        permissions={PermissionCodes.USERS_MANAGER_UPDATE},
+    )
+    set_current_user(manager)
+
+    response = test_client.patch("/api/v1/users/lead-1/manager", json={"manager_user_id": None})
+
+    assert response.status_code == 409
+
+
+def test_project_manager_cannot_assign_project_manager_to_economist_directly(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    set_uow(_UsersUow())
+    manager = make_current_user(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        permissions={PermissionCodes.USERS_MANAGER_UPDATE},
+    )
+    set_current_user(manager)
+
+    response = test_client.patch("/api/v1/users/eco-1/manager", json={"manager_user_id": "pm-1"})
+
+    assert response.status_code == 409
+
+
+def test_project_manager_cannot_assign_descendant_as_manager_due_to_cycle(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    set_uow(_UsersUow())
+    manager = make_current_user(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        permissions={PermissionCodes.USERS_MANAGER_UPDATE},
+    )
+    set_current_user(manager)
+
+    response = test_client.patch("/api/v1/users/lead-1/manager", json={"manager_user_id": "eco-2"})
+
+    assert response.status_code == 409
 
 
 def test_user_without_users_manager_update_cannot_change_manager(
@@ -328,6 +558,39 @@ def test_economist_users_list_is_limited_to_own_contour(test_client, set_uow, se
     assert "eco-2" in user_ids
     assert "lead-1" not in user_ids
     assert "admin-1" not in user_ids
+
+
+def test_manager_candidates_follow_new_matrix_and_exclude_self_and_descendants(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    set_uow(_UsersUow())
+    superadmin = make_current_user(
+        user_id="root-1",
+        role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.USERS_CREATE},
+    )
+    set_current_user(superadmin)
+
+    pm_response = test_client.get("/api/v1/users/manager-candidates?target_role_id=4&target_user_id=pm-2")
+    lead_response = test_client.get("/api/v1/users/manager-candidates?target_role_id=5&target_user_id=lead-1")
+    eco_response = test_client.get("/api/v1/users/manager-candidates?target_role_id=6&target_user_id=eco-1")
+
+    assert pm_response.status_code == 200
+    assert lead_response.status_code == 200
+    assert eco_response.status_code == 200
+
+    pm_candidate_ids = {item["user_id"] for item in pm_response.json()["data"]["items"]}
+    lead_candidate_ids = {item["user_id"] for item in lead_response.json()["data"]["items"]}
+    eco_candidate_ids = {item["user_id"] for item in eco_response.json()["data"]["items"]}
+
+    assert pm_candidate_ids == {"pm-1"}
+    assert "eco-2" not in lead_candidate_ids
+    assert {"pm-1", "pm-2", "lead-1", "lead-2"}.issuperset(lead_candidate_ids)
+    assert "pm-1" not in eco_candidate_ids
+    assert {"lead-1", "lead-2", "eco-2", "eco-3"}.issuperset(eco_candidate_ids)
 
 
 def test_anonymous_user_gets_401_for_users_endpoint(test_client, api_app):

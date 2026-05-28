@@ -18,7 +18,10 @@ const TRANSIENT_NAVIGATION_ERRORS = [
 
 const isTransientNavigationError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
-  return TRANSIENT_NAVIGATION_ERRORS.some((fragment) => message.includes(fragment));
+  if (TRANSIENT_NAVIGATION_ERRORS.some((fragment) => message.includes(fragment))) {
+    return true;
+  }
+  return message.includes('page.goto: Timeout') || message.includes('TimeoutError');
 };
 
 export const bypassNgrokInterstitialIfPresent = async (page: Page): Promise<void> => {
@@ -110,7 +113,8 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await gotoWithRetry(page, loginUrl, {
-      attempts: 5,
+      attempts: 6,
+      timeoutMs: 45_000,
       waitUntil: 'domcontentloaded',
     });
 

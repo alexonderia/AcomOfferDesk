@@ -212,6 +212,17 @@ Local/dev Keycloak model check (host Python, repo env file): `./scripts/check-ke
 - В **`docker-compose.yml` не задавать** `KEYCLOAK_ADMIN_USERNAME` / `KEYCLOAK_ADMIN_PASSWORD` пустыми строками в `environment:` — это перекрывает `env_file` и ломает fallback на bootstrap (ошибка UI: «Unable to authenticate in Keycloak admin API»).
 - Если service account без admin-ролей, backend использует password grant bootstrap-админа (`master` realm) — те же переменные, что для `check-keycloak-bootstrap.sh`.
 
+Keycloak SMTP (realm `smtpServer`):
+
+- Переменные `SMTP_*` / `KEYCLOAK_SMTP_*` в `.env` **не попадают в realm автоматически** при обычном `docker compose up keycloak`.
+- После смены SMTP в env примените настройки в realm (быстро, без полного bootstrap):
+
+```bash
+ENV_FILE=.env.prod-like ./scripts/apply-keycloak-smtp.sh
+```
+
+- Полный `keycloak_bootstrap` (роли/клиенты) по-прежнему в `docker-compose.init.yml`; SMTP в нём теперь применяется в начале и перед тяжёлой синхронизацией ролей.
+
 Keycloak bootstrap validation:
 
 Linux/macOS:
@@ -233,3 +244,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-keycloak-bootstrap.ps1
 - `WS_LEGACY_QUERY_TOKEN_ENABLED=false` for prod-like/prod.
 - Legacy `?token=` websocket fallback is temporary dev compatibility only and should stay disabled by default.
 - `BACKEND_WORKERS=1` while ws-ticket storage is in-memory (without Redis/shared ticket store).
+
+### Department delegation bootstrap note (2026-05)
+
+`infra/keycloak/bootstrap.sh` now creates department delegation roles in `acom-api`:
+
+- atomic `department.*` roles;
+- composite `delegation.department.*` roles;
+- one-to-one composite mapping `delegation.department.X -> department.X`.
+
+Operational invariants:
+
+- `delegation.department.*` are not auto-assigned to all users;
+- `delegation.department.*` are not included in default `app.*` composites;
+- `keycloak_user_role_sync` reconciles only `app.*` by `users.id_role` and should not wipe manually assigned delegation roles.

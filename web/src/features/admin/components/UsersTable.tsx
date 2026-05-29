@@ -54,6 +54,12 @@ import {
   updateDepartmentDelegations,
   type UserDepartmentDelegations,
 } from '@shared/api/users/getDepartmentDelegations';
+import {
+  getContractorDelegations,
+  updateContractorDelegations,
+  type UserContractorDelegations,
+} from '@shared/api/users/getContractorDelegations';
+import { useAuth } from '@app/providers/AuthProvider';
 
 const statusSchema = z.object({
   user_status: z.enum(['review', 'active', 'inactive', 'blacklist'])
@@ -819,6 +825,11 @@ export const UsersTable = ({
   const [departmentDelegationsError, setDepartmentDelegationsError] = useState<string | null>(null);
   const [isLoadingDepartmentDelegations, setIsLoadingDepartmentDelegations] = useState(false);
   const [isSavingDepartmentDelegations, setIsSavingDepartmentDelegations] = useState(false);
+  const [contractorDelegations, setContractorDelegations] = useState<UserContractorDelegations | null>(null);
+  const [contractorDelegationsError, setContractorDelegationsError] = useState<string | null>(null);
+  const [isLoadingContractorDelegations, setIsLoadingContractorDelegations] = useState(false);
+  const [isSavingContractorDelegations, setIsSavingContractorDelegations] = useState(false);
+  const { session } = useAuth();
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const lastDelegationToastRef = useRef<string | null>(null);
 
@@ -995,6 +1006,49 @@ export const UsersTable = ({
       isCancelled = true;
     };
   }, [isContractorsTab, selectedUser?.user_id]);
+
+  const shouldLoadContractorDelegations = Boolean(
+    selectedUser
+    && !isContractorsTab
+    && selectedUser.role_id === ROLE.LEAD_ECONOMIST
+    && session?.roleId === ROLE.SUPERADMIN
+  );
+
+  useEffect(() => {
+    if (!shouldLoadContractorDelegations || !selectedUser) {
+      setContractorDelegations(null);
+      setContractorDelegationsError(null);
+      setIsLoadingContractorDelegations(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsLoadingContractorDelegations(true);
+    setContractorDelegationsError(null);
+    void getContractorDelegations(selectedUser.user_id)
+      .then((result) => {
+        if (!isCancelled) {
+          setContractorDelegations(result);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setContractorDelegations(null);
+          setContractorDelegationsError(
+            error instanceof Error ? error.message : 'Не удалось загрузить доступы к контрагентам'
+          );
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingContractorDelegations(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedUser?.user_id, shouldLoadContractorDelegations]);
 
   const rows: UserRow[] = useMemo(
     () =>
@@ -1228,6 +1282,48 @@ export const UsersTable = ({
       }
     } finally {
       setIsSavingDepartmentDelegations(false);
+    }
+  };
+
+  const handleContractorDelegationToggle = (code: string, enabled: boolean) => {
+    setContractorDelegations((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return {
+        ...prev,
+        accesses: prev.accesses.map((item) =>
+          item.code === code ? { ...item, enabled } : item
+        ),
+      };
+    });
+  };
+
+  const handleSaveContractorDelegations = async () => {
+    if (!selectedUser || !contractorDelegations || !contractorDelegations.canManage) {
+      return;
+    }
+
+    setIsSavingContractorDelegations(true);
+    setContractorDelegationsError(null);
+    try {
+      const nextState = await updateContractorDelegations(
+        selectedUser.user_id,
+        contractorDelegations.accesses.filter((item) => item.enabled).map((item) => item.code)
+      );
+      setContractorDelegations(nextState);
+      showSystemToast({
+        severity: 'success',
+        message: 'Доступ к контрагентам обновлён.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось сохранить доступы';
+      setContractorDelegationsError(message);
+      void getContractorDelegations(selectedUser.user_id)
+        .then((state) => setContractorDelegations(state))
+        .catch(() => undefined);
+    } finally {
+      setIsSavingContractorDelegations(false);
     }
   };
 
@@ -1717,6 +1813,60 @@ export const UsersTable = ({
                   </Stack>
                 ) : null}
 
+                {isLoadingContractorDelegations ? (
+                  <Alert severity="info">Загрузка доступов к контрагентам...</Alert>
+                ) : null}
+                {contractorDelegations ? (
+                  <Stack
+                    spacing={1.2}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: { xs: 1.4, sm: 1.8 },
+                      backgroundColor: 'background.paper'
+                    }}
+                  >
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                      Управление контрагентами
+                    </Typography>
+                    <Stack spacing={1}>
+                      {contractorDelegations.accesses.map((item) => (
+                        <FormControlLabel
+                          key={item.code}
+                          control={(
+                            <Checkbox
+                              checked={item.enabled}
+                              onChange={(event) => handleContractorDelegationToggle(item.code, event.target.checked)}
+                              disabled={!contractorDelegations.canManage || isSavingContractorDelegations}
+                            />
+                          )}
+                          label={(
+                            <Stack spacing={0.2}>
+                              <Typography variant="body2">{item.label}</Typography>
+                              <Typography variant="caption" color="text.secondary">{item.description}</Typography>
+                            </Stack>
+                          )}
+                        />
+                      ))}
+                    </Stack>
+                    {contractorDelegationsError ? <Alert severity="error">{contractorDelegationsError}</Alert> : null}
+                    {contractorDelegations.canManage ? (
+                      <Stack direction="row" justifyContent="flex-end">
+                        <Button
+                          variant="outlined"
+                          onClick={() => void handleSaveContractorDelegations()}
+                          disabled={isSavingContractorDelegations}
+                          sx={{ borderRadius: 1, textTransform: 'none' }}
+                        >
+                          {isSavingContractorDelegations ? 'Сохранение...' : 'Сохранить доступ'}
+                        </Button>
+                      </Stack>
+                    ) : (
+                      <Alert severity="info">У вас нет прав на изменение этого доступа.</Alert>
+                    )}
+                  </Stack>
+                ) : null}
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
                   <Button

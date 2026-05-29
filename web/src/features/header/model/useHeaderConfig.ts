@@ -22,6 +22,7 @@ export const useHeaderConfig = () => {
   const canLoadOpenRequests = hasPermission(session, 'requests.open.read');
   const canLoadOfferedRequests = hasPermission(session, 'requests.offered.read');
   const canOpenUsersPage = hasPermission(session, 'users.read');
+  const canOpenContractorsPage = hasPermission(session, 'contractors.read');
   const canRegisterUser = hasPermission(session, 'users.create');
   const canCreateNormativeFile = hasPermission(session, 'normative_files.create');
   const canViewFeedback = hasPermission(session, 'feedback.read');
@@ -45,6 +46,10 @@ export const useHeaderConfig = () => {
   const breadcrumbs = useMemo(() => {
     if (location.pathname === '/admin') {
       return [{ key: 'users', label: 'Пользователи' }];
+    }
+
+    if (location.pathname === '/contractors') {
+      return [{ key: 'contractors', label: 'Контрагенты' }];
     }
 
     if (location.pathname === '/requests') {
@@ -120,6 +125,7 @@ export const useHeaderConfig = () => {
         canLoadOpenRequests,
         canLoadOfferedRequests,
         canOpenUsersPage,
+        canOpenContractorsPage,
         canCreateNormativeFile,
         canViewFeedback,
         canViewDashboardProcess,
@@ -134,6 +140,7 @@ export const useHeaderConfig = () => {
         onNavigateToRequests: () => navigate('/requests'),
         onNavigateToRequestCreate: () => navigate('/requests/create', { state: { backgroundLocation: location } }),
         onNavigateToAdmin: () => navigate('/admin'),
+        onNavigateToContractors: () => navigate('/contractors'),
         onNavigateToAdminCreate: () => {
           const params = new URLSearchParams(searchParams);
           if (location.pathname.startsWith('/admin')) {
@@ -168,6 +175,7 @@ export const useHeaderConfig = () => {
       canLoadOfferedRequests,
       canLoadOpenRequests,
       canOpenUsersPage,
+      canOpenContractorsPage,
       canCreateNormativeFile,
       canViewFeedback,
       canViewDashboardProcess,

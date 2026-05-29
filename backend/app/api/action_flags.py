@@ -371,6 +371,15 @@ class UserActionBuilder:
         )
 
 
+class ContractorActionBuilder:
+    @staticmethod
+    def build_contractor_actions(current_user: CurrentUser) -> UserActionsSchema:
+        return UserActionsSchema(
+            can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
+            can_update_status=UserPolicy.can_update_contractor_profile_status(current_user),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedOfferActionContext:
     offer_owner_user_id: str

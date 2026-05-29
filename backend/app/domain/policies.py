@@ -134,6 +134,42 @@ class UserPolicy:
         )
 
     @staticmethod
+    def can_list_contractors(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.CONTRACTORS_READ)
+
+    @staticmethod
+    def ensure_can_list_contractors(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.CONTRACTORS_READ,
+            message="Недостаточно прав для просмотра контрагентов",
+        )
+
+    @staticmethod
+    def can_read_contractor_profile(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_READ)
+
+    @staticmethod
+    def ensure_can_read_contractor_profile(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.CONTRACTORS_PROFILE_READ,
+            message="Недостаточно прав для просмотра профиля контрагента",
+        )
+
+    @staticmethod
+    def can_update_contractor_profile_status(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE)
+
+    @staticmethod
+    def ensure_can_update_contractor_profile_status(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            message="Недостаточно прав для изменения статуса профиля контрагента",
+        )
+
+    @staticmethod
     def can_update_user_role(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY) or has_permission(
             current_user,

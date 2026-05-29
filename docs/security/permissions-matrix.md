@@ -62,6 +62,9 @@ Legend: `Y` = granted, `N` = not granted.
 | `unavailability.manage_all` | Y | N | N | N | N | N | N |
 | `unavailability.manage_own` | Y | N | Y | Y | Y | N | N |
 | `unavailability.manage_subordinate` | Y | N | Y | Y | Y | N | N |
+| `contractors.read` | Y | N | N | N | N | N | N |
+| `contractors.profile.read` | Y | N | N | N | N | N | N |
+| `contractors.profile.status.update` | Y | N | N | N | N | N | N |
 | `contractors.manual.create` | Y | Y | Y | Y | Y | N | N |
 | `contractors.manual.manage` | Y | Y | Y | Y | Y | N | N |
 
@@ -144,6 +147,26 @@ Rules:
 4. No DB table is used as source of truth for delegation checklist state; source of truth is Keycloak client role mappings for `acom-api`.
 5. Frontend remains UX-only and uses backend-provided `permissions`/`actions`; backend remains enforcement layer.
 6. `department.requests.status_update` must be enforced independently for foreign department requests; `department.requests.update` is not a substitute for status transitions.
+
+## Contractor Delegation Model (2026-05)
+
+Atomic `contractors.*` permissions:
+
+- `contractors.read`
+- `contractors.profile.read`
+- `contractors.profile.status.update`
+
+Keycloak composite delegation role in client `acom-api`:
+
+- `delegation.contractors.profile.status.update` -> `contractors.read`, `contractors.profile.read`, `contractors.profile.status.update`
+
+Rules:
+
+1. `delegation.contractors.profile.status.update` is not included in any `app.*` role by default.
+2. Only `superadmin` can assign or revoke this delegation for users with role `lead_economist` (ВЭ).
+3. `contractors.*` permissions are granted only via `delegation.contractors.profile.status.update`, not via bare atomic codes in token claims.
+4. Frontend section `/contractors` is shown only when `contractors.read` is present; status changes require `contractors.profile.status.update`.
+5. `PATCH /api/v1/contractors/{id}/status` changes status only for users with role `contractor`.
 
 ## Business Scope Rules (2026-05)
 

@@ -1598,8 +1598,12 @@ class UserStatusService:
         user_id: str,
         user_status: str,
         tg_status: str | None,
+        contractor_only: bool = False,
     ) -> UserStatusUpdateResult:
-        UserPolicy.ensure_can_update_user_status(current_user)
+        if contractor_only:
+            UserPolicy.ensure_can_update_contractor_profile_status(current_user)
+        else:
+            UserPolicy.ensure_can_update_user_status(current_user)
 
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Неподдерживаемое значение users.status")
@@ -1612,7 +1616,10 @@ class UserStatusService:
         if user is None:
             raise NotFound("Пользователь не найден")
 
-        if current_user.role_id in {
+        if contractor_only:
+            if user.id_role != settings.contractor_role_id:
+                raise Forbidden("Изменение статуса доступно только для контрагентов")
+        elif current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,

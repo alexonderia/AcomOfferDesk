@@ -216,6 +216,9 @@ files.download
 unavailability.manage_all
 unavailability.manage_own
 unavailability.manage_subordinate
+contractors.read
+contractors.profile.read
+contractors.profile.status.update
 contractors.manual.create
 contractors.manual.manage
 department.requests.read
@@ -246,6 +249,11 @@ app.contractor
 EOF
 )
 
+CONTRACTOR_DELEGATION_ROLE_NAMES=$(cat <<'EOF'
+delegation.contractors.profile.status.update
+EOF
+)
+
 DEPARTMENT_DELEGATION_ROLE_NAMES=$(cat <<'EOF'
 delegation.department.requests.read
 delegation.department.requests.update
@@ -267,6 +275,7 @@ EOF
 ALL_ROLE_NAMES=$(cat <<EOF
 $PERMISSION_ROLE_NAMES
 $APP_ROLE_NAMES
+$CONTRACTOR_DELEGATION_ROLE_NAMES
 $DEPARTMENT_DELEGATION_ROLE_NAMES
 EOF
 )
@@ -443,6 +452,12 @@ requests.status.update
 requests.amounts.read
 offers.contractor_info.read
 normative_files.read
+EOF
+)
+ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE=$(cat <<'EOF'
+contractors.read
+contractors.profile.read
+contractors.profile.status.update
 EOF
 )
 ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ=$(cat <<'EOF'
@@ -895,17 +910,24 @@ ensure_api_roles_model() {
     fi
   done
 
-  echo "[3/6] Ensuring delegation.department.* composite roles exist"
+  echo "[3/7] Ensuring delegation.contractors.* composite roles exist"
+  printf '%s\n' "$CONTRACTOR_DELEGATION_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -n "$role_name" ]; then
+      ensure_client_role "$api_client_uuid" "$role_name" "true"
+    fi
+  done
+
+  echo "[4/7] Ensuring delegation.department.* composite roles exist"
   printf '%s\n' "$DEPARTMENT_DELEGATION_ROLE_NAMES" | while IFS= read -r role_name; do
     if [ -n "$role_name" ]; then
       ensure_client_role "$api_client_uuid" "$role_name" "true"
     fi
   done
 
-  echo "[4/6] Enforcing atomic permission roles (no nested composites)"
+  echo "[5/7] Enforcing atomic permission roles (no nested composites)"
   enforce_atomic_permission_roles
 
-  echo "[5/6] Syncing composite membership for app.* and delegation.department.*"
+  echo "[6/7] Syncing composite membership for app.* and delegation.*"
   refresh_kcadm_credentials
   sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
   sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
@@ -914,6 +936,7 @@ ensure_api_roles_model() {
   sync_composite_role "app.lead_economist" "$ROLE_APP_LEAD_ECONOMIST"
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
+  sync_composite_role "delegation.contractors.profile.status.update" "$ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE"
   sync_composite_role "delegation.department.requests.read" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ"
   sync_composite_role "delegation.department.requests.update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE"
   sync_composite_role "delegation.department.requests.status_update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE"
@@ -934,7 +957,7 @@ ensure_api_roles_model() {
   echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after composite sync"
   enforce_atomic_permission_roles
 
-  echo "[6/6] Verifying final Keycloak permission model"
+  echo "[7/7] Verifying final Keycloak permission model"
   verify_keycloak_permission_model
 }
 

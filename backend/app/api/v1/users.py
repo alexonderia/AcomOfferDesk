@@ -50,6 +50,10 @@ from app.schemas.users import (
     UserDepartmentDelegationsResponse,
     UserDepartmentDelegationsData,
     UserDepartmentDelegationsUpdateRequest,
+    ContractorDelegationAccessSchema,
+    UserContractorDelegationsResponse,
+    UserContractorDelegationsData,
+    UserContractorDelegationsUpdateRequest,
 )
 from app.services.users import (
     ManualContractorCreateInput,
@@ -62,6 +66,7 @@ from app.services.users import (
     UserStatusService,
 )
 from app.services.user_department_delegations import UserDepartmentDelegationsService
+from app.services.user_contractor_delegations import UserContractorDelegationsService
 
 router = APIRouter()
 
@@ -136,6 +141,26 @@ def _department_delegations_data(item) -> UserDepartmentDelegationsData:
                 permission_code=access.permission_code,
                 group=access.group,
                 label=access.label,
+                enabled=access.enabled,
+            )
+            for access in item.accesses
+        ],
+        token_refresh_required=item.token_refresh_required,
+        warning=item.warning,
+    )
+
+
+def _contractor_delegations_data(item) -> UserContractorDelegationsData:
+    return UserContractorDelegationsData(
+        user_id=item.user_id,
+        role_id=item.role_id,
+        full_name=item.full_name,
+        can_manage=item.can_manage,
+        accesses=[
+            ContractorDelegationAccessSchema(
+                code=access.code,
+                label=access.label,
+                description=access.description,
                 enabled=access.enabled,
             )
             for access in item.accesses
@@ -401,6 +426,52 @@ async def get_user_department_delegations(
 
     return UserDepartmentDelegationsResponse(
         data=_department_delegations_data(state),
+    )
+
+
+@router.get("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
+async def get_user_contractor_delegations(
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserContractorDelegationsResponse:
+    async with uow:
+        service = UserContractorDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.get_state(
+            current_user=current_user,
+            target_user_id=user_id,
+        )
+
+    return UserContractorDelegationsResponse(
+        data=_contractor_delegations_data(state),
+    )
+
+
+@router.put("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
+async def update_user_contractor_delegations(
+    payload: UserContractorDelegationsUpdateRequest,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserContractorDelegationsResponse:
+    async with uow:
+        service = UserContractorDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.update_state(
+            current_user=current_user,
+            target_user_id=user_id,
+            requested_access_codes=payload.access_codes,
+        )
+
+    return UserContractorDelegationsResponse(
+        data=_contractor_delegations_data(state),
     )
 
 

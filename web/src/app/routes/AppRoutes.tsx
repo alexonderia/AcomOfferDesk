@@ -22,6 +22,7 @@ const ContractorRequestDetailsPage = lazy(
 );
 const OfferWorkspacePage = lazy(async () => ({ default: (await import('@pages/offers/OfferWorkspacePage')).OfferWorkspacePage }));
 const AdminPage = lazy(async () => ({ default: (await import('@pages/admin/AdminPage')).AdminPage }));
+const ContractorsPage = lazy(async () => ({ default: (await import('@pages/contractors/ContractorsPage')).ContractorsPage }));
 const FeedbackPage = lazy(async () => ({ default: (await import('@pages/feedback/FeedbackPage')).FeedbackPage }));
 const ProjectManagerDashboardPage = lazy(
   async () => ({ default: (await import('@pages/dashboard/ProjectManagerDashboardPage')).ProjectManagerDashboardPage })
@@ -104,6 +105,14 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
                 element={
                   <RoleRoute allowedPermissions={['users.read']}>
                     <AdminPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/contractors"
+                element={
+                  <RoleRoute allowedPermissions={['contractors.read']}>
+                    <ContractorsPage />
                   </RoleRoute>
                 }
               />

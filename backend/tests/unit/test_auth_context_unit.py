@@ -149,6 +149,44 @@ def test_build_current_user_from_keycloak_grants_department_permission_via_deleg
     assert "delegation.department.requests.read" in current_user.delegation_roles
 
 
+def test_build_current_user_from_keycloak_grants_contractor_permissions_via_delegation_role():
+    current_user = build_current_user_from_keycloak(
+        user_id="u-contractor-delegation",
+        role_id=settings.lead_economist_role_id,
+        status="active",
+        api_roles=frozenset(
+            {
+                PermissionCodes.REQUESTS_READ,
+                "delegation.contractors.profile.status.update",
+            }
+        ),
+    )
+
+    assert PermissionCodes.CONTRACTORS_READ in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_PROFILE_READ in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE in current_user.permissions
+    assert "delegation.contractors.profile.status.update" in current_user.delegation_roles
+
+
+def test_build_current_user_from_keycloak_ignores_contractor_permission_without_delegation_role():
+    current_user = build_current_user_from_keycloak(
+        user_id="u-contractor-raw-atomic",
+        role_id=settings.lead_economist_role_id,
+        status="active",
+        api_roles=frozenset(
+            {
+                PermissionCodes.REQUESTS_READ,
+                PermissionCodes.CONTRACTORS_READ,
+                PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            }
+        ),
+    )
+
+    assert PermissionCodes.REQUESTS_READ in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_READ not in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE not in current_user.permissions
+
+
 def test_build_current_user_from_keycloak_ignores_department_permission_without_delegation_role():
     current_user = build_current_user_from_keycloak(
         user_id="u-dept-raw-atomic",

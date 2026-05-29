@@ -112,7 +112,6 @@ Atomic `department.*` permissions:
 - `department.offers.accept`
 - `department.offers.reject`
 - `department.chats.read`
-- `department.chats.send_message`
 - `department.files.read`
 - `department.files.upload`
 - `department.files.delete`
@@ -130,7 +129,6 @@ Keycloak composite delegation roles in client `acom-api`:
 - `delegation.department.offers.accept` -> `department.offers.accept`
 - `delegation.department.offers.reject` -> `department.offers.reject`
 - `delegation.department.chats.read` -> `department.chats.read`
-- `delegation.department.chats.send_message` -> `department.chats.send_message`
 - `delegation.department.files.read` -> `department.files.read`
 - `delegation.department.files.upload` -> `department.files.upload`
 - `delegation.department.files.delete` -> `department.files.delete`

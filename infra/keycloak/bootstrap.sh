@@ -222,12 +222,10 @@ department.requests.read
 department.requests.update
 department.requests.status_update
 department.requests.assign
-department.offers.read
 department.offers.update
 department.offers.accept
 department.offers.reject
 department.chats.read
-department.chats.send_message
 department.files.read
 department.files.upload
 department.files.delete
@@ -253,12 +251,10 @@ delegation.department.requests.read
 delegation.department.requests.update
 delegation.department.requests.status_update
 delegation.department.requests.assign
-delegation.department.offers.read
 delegation.department.offers.update
 delegation.department.offers.accept
 delegation.department.offers.reject
 delegation.department.chats.read
-delegation.department.chats.send_message
 delegation.department.files.read
 delegation.department.files.upload
 delegation.department.files.delete
@@ -464,10 +460,6 @@ ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN=$(cat <<'EOF'
 department.requests.assign
 EOF
 )
-ROLE_DELEGATION_DEPARTMENT_OFFERS_READ=$(cat <<'EOF'
-department.offers.read
-EOF
-)
 ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE=$(cat <<'EOF'
 department.offers.update
 EOF
@@ -482,10 +474,6 @@ EOF
 )
 ROLE_DELEGATION_DEPARTMENT_CHATS_READ=$(cat <<'EOF'
 department.chats.read
-EOF
-)
-ROLE_DELEGATION_DEPARTMENT_CHATS_SEND_MESSAGE=$(cat <<'EOF'
-department.chats.send_message
 EOF
 )
 ROLE_DELEGATION_DEPARTMENT_FILES_READ=$(cat <<'EOF'
@@ -929,12 +917,10 @@ ensure_api_roles_model() {
   sync_composite_role "delegation.department.requests.update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE"
   sync_composite_role "delegation.department.requests.status_update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE"
   sync_composite_role "delegation.department.requests.assign" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN"
-  sync_composite_role "delegation.department.offers.read" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_READ"
   sync_composite_role "delegation.department.offers.update" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE"
   sync_composite_role "delegation.department.offers.accept" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT"
   sync_composite_role "delegation.department.offers.reject" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_REJECT"
   sync_composite_role "delegation.department.chats.read" "$ROLE_DELEGATION_DEPARTMENT_CHATS_READ"
-  sync_composite_role "delegation.department.chats.send_message" "$ROLE_DELEGATION_DEPARTMENT_CHATS_SEND_MESSAGE"
   sync_composite_role "delegation.department.files.read" "$ROLE_DELEGATION_DEPARTMENT_FILES_READ"
   sync_composite_role "delegation.department.files.upload" "$ROLE_DELEGATION_DEPARTMENT_FILES_UPLOAD"
   sync_composite_role "delegation.department.files.delete" "$ROLE_DELEGATION_DEPARTMENT_FILES_DELETE"

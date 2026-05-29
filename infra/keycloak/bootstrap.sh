@@ -683,6 +683,17 @@ ensure_composite_role_has_member() {
   rm -f "$payload_file"
 }
 
+ensure_composite_role_has_member_force() {
+  client_uuid="$1"
+  composite_role_name="$2"
+  member_role_name="$3"
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
+  # Force-add: ignore possible duplicates / already-present errors.
+  /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
+  rm -f "$payload_file"
+}
+
 remove_composite_role_member() {
   client_uuid="$1"
   composite_role_name="$2"
@@ -951,6 +962,14 @@ ensure_api_roles_model() {
   sync_composite_role "delegation.department.dashboard.read" "$ROLE_DELEGATION_DEPARTMENT_DASHBOARD_READ"
   sync_composite_role "delegation.department.plans.read" "$ROLE_DELEGATION_DEPARTMENT_PLANS_READ"
   sync_composite_role "delegation.department.plans.manage" "$ROLE_DELEGATION_DEPARTMENT_PLANS_MANAGE"
+
+  # Force ensure direct membership for newly introduced contractor profile status permissions.
+  # Some environments may have pre-existing role composition artifacts; this makes the bootstrap idempotent.
+  api_client_uuid="$(resolve_api_client_uuid)"
+  ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.read"
+  ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.status.update"
+  ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.read"
+  ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.status.update"
 
   # Always re-apply after composite sync:
   # this keeps department.* and all other atomic permission roles strictly leaf.

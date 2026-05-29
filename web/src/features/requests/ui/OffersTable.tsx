@@ -84,6 +84,8 @@ const getCounterpartyInfo = (offer: RequestDetailsOffer) => {
   ];
 };
 
+const canOpenOfferWorkspace = (offer: RequestDetailsOffer) => Boolean(offer.actions.open_workspace);
+
 const getContactPersonInfo = (offer: RequestDetailsOffer) => {
   const fullName = offer.contractor_full_name ?? null;
   const phone = offer.contractor_contact_phone ?? offer.contractor_phone ?? null;
@@ -246,6 +248,7 @@ const OfferMobileCard = ({
   ];
 
   const unreadLabel = getUnreadMessagesLabel(offer.unread_messages_count ?? 0);
+  const workspaceClickable = canOpenOfferWorkspace(offer);
   const handleToggleExpand = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     onToggleExpand();
@@ -253,20 +256,24 @@ const OfferMobileCard = ({
 
   return (
     <Paper
-      onClick={() => onOpenWorkspace(offer.offer_id)}
+      onClick={workspaceClickable ? () => onOpenWorkspace(offer.offer_id) : undefined}
       sx={{
         p: { xs: 1.25, sm: 1.5 },
         borderRadius: `${theme.acomShape.controlRadius}px`,
         bgcolor: 'background.paper',
         border: '1px solid',
         borderColor: 'divider',
-        cursor: 'pointer',
+        cursor: workspaceClickable ? 'pointer' : 'default',
         transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
         boxShadow: `0 2px 8px ${alpha(theme.palette.common.black, 0.04)}`,
-        '&:hover': {
-          borderColor: 'primary.main',
-          boxShadow: `0 6px 14px ${alpha(theme.palette.common.black, 0.08)}`
-        }
+        ...(workspaceClickable
+          ? {
+              '&:hover': {
+                borderColor: 'primary.main',
+                boxShadow: `0 6px 14px ${alpha(theme.palette.common.black, 0.08)}`
+              }
+            }
+          : {})
       }}
     >
       <Stack spacing={1.1}>
@@ -674,7 +681,11 @@ export const OffersTable = ({
       statusContent={statusContent}
       noRowsLabel="КП пока не получены."
       searchPlaceholder="Найти КП"
-      onRowClick={(offer) => onOpenWorkspace(offer.offer_id)}
+      onRowClick={(offer) => {
+        if (canOpenOfferWorkspace(offer)) {
+          onOpenWorkspace(offer.offer_id);
+        }
+      }}
       minTableWidth={1280}
       addButtonLabel="Внести КП вручную"
       onAddClick={onAddClick}

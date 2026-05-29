@@ -954,10 +954,10 @@ class RequestService:
             raise NotFound("Request not found")
 
         request, stats, owner_profile = request_row
-        allowed_owner_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
-        if allowed_owner_ids is not None:
-            if request.id_user not in set(allowed_owner_ids):
-                raise Forbidden("Request is outside your management scope")
+        await self._ensure_can_view_request_in_staff_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
         request_files = await self._requests.list_files(request_id=request_id)
         request_file_items = [
             RequestFileItem(id=file.id, path=file.path, name=file.name)
@@ -1033,6 +1033,9 @@ class RequestService:
     async def _resolve_visible_owner_ids_for_staff_scope(self, *, current_user: CurrentUser) -> list[str] | None:
         if current_user.role_id == settings.superadmin_role_id:
             return None
+        if current_user.role_id == settings.operator_role_id:
+            # Operator sees only own requests that are still unassigned (owner role is operator).
+            return [current_user.user_id]
         if current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
@@ -1053,6 +1056,22 @@ class RequestService:
             return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=lead_root_user_id)
         # Non-hierarchy roles must not receive implicit global request visibility.
         return []
+
+    async def _ensure_can_view_request_in_staff_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
+        allowed_owner_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
+        if allowed_owner_ids is None:
+            return
+        if request_owner_user_id not in set(allowed_owner_ids):
+            raise Forbidden("Request is outside your management scope")
+        if current_user.role_id != settings.operator_role_id:
+            return
+        if not await self._is_request_owned_by_operator(request_owner_user_id=request_owner_user_id):
+            raise Forbidden("Request is no longer available for operator")
 
     async def _ensure_can_manage_request_files(
         self,

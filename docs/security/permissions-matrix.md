@@ -44,7 +44,7 @@ Legend: `Y` = granted, `N` = not granted.
 | `offers.status.update` | Y | N | N | Y | Y | N | Y |
 | `offers.files.upload` | Y | N | N | N | N | N | Y |
 | `offers.files.delete` | Y | N | N | N | N | N | Y |
-| `offers.contractor_info.read` | Y | N | Y | Y | Y | N | Y |
+| `offers.contractor_info.read` | Y | N | Y | Y | Y | Y | Y |
 | `chat.read` | Y | N | Y | Y | Y | N | Y |
 | `chat.message.send` | Y | N | N | Y | Y | N | Y |
 | `chat.message.attach` | Y | N | N | Y | Y | N | Y |
@@ -74,7 +74,7 @@ Legend: `Y` = granted, `N` = not granted.
 | `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Read requests/offers/chats across department; change request owner; manage users hierarchy, manual contractors, subordinate unavailability, economy-role changes for subordinates |
 | `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Full request/offer workflow, create manual offers, manage normative files, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
 | `economist` | `/pm-dashboard/plan`, `/requests`, `/admin` | Request/offers processing in scope, manual offers, subordinate unavailability, manual contractors create/manage, plan dashboard (only delegated branch and below) |
-| `operator` | `/requests` | Create/read/update requests (pricing/deadline/status), view normative files, no offer/chat/admin/dashboard features |
+| `operator` | `/requests` | Own unassigned requests (owner still operator): create/read/update (pricing/deadline/status), view offer list on request details without workspace/chat, view normative files, no admin/dashboard |
 | `contractor` | `/requests` (tabs: open/my), `/requests/:id/contractor`, `/offers/:id/workspace` | Create offers, work in workspace, manage own company contacts, chat and files within own offer scope |
 
 ## Special Rules

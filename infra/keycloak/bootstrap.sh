@@ -441,6 +441,7 @@ requests.pricing.update
 requests.deadline.update
 requests.status.update
 requests.amounts.read
+offers.contractor_info.read
 normative_files.read
 EOF
 )

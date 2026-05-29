@@ -128,6 +128,16 @@ def test_economist_role_includes_module_dashboard_permissions() -> None:
     assert PermissionCodes.DASHBOARD_SAVINGS_READ in economist_permissions
 
 
+def test_operator_role_can_read_offers_on_request_without_workspace() -> None:
+    role_map = get_role_permissions_map()
+    operator_permissions = role_map[settings.operator_role_id]
+
+    assert PermissionCodes.REQUESTS_READ in operator_permissions
+    assert PermissionCodes.OFFERS_CONTRACTOR_INFO_READ in operator_permissions
+    assert PermissionCodes.OFFERS_WORKSPACE_READ not in operator_permissions
+    assert PermissionCodes.CHAT_READ not in operator_permissions
+
+
 def test_project_manager_role_is_read_only_for_requests_offers_and_chats() -> None:
     role_map = get_role_permissions_map()
     pm_permissions = role_map[settings.project_manager_role_id]

@@ -244,6 +244,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.REQUESTS_DEADLINE_UPDATE,
                 PermissionCodes.REQUESTS_STATUS_UPDATE,
                 PermissionCodes.REQUESTS_AMOUNTS_READ,
+                PermissionCodes.OFFERS_CONTRACTOR_INFO_READ,
                 PermissionCodes.NORMATIVE_FILES_READ,
             }
         ),

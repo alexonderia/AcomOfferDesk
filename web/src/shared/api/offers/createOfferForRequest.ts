@@ -1,20 +1,20 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 
 type ApiResponse = {
   data: {
     offer_id: number;
-    request_id: number;
+    request_id: string;
   };
 };
 
 export type CreatedOffer = {
   offerId: number;
-  requestId: number;
+  requestId: string;
   workspacePath: string;
 };
 
 export const createOfferForRequest = async (
-  requestId: number,
+  requestId: string,
   payload?: { offer_amount?: number }
 ): Promise<CreatedOffer> => {
   const response = await fetchJson<ApiResponse>(

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from app.core.config import settings
 from app.infrastructure.email_service import SMTPEmailService
@@ -23,7 +23,7 @@ class EmailNotificationService:
     async def notify_new_request(
         self,
         *,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
     ) -> None:
@@ -46,7 +46,7 @@ class EmailNotificationService:
     async def notify_request_to_additional_emails(
         self,
         *,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str],
         initiator_user_id: str | None = None,
     ) -> None:

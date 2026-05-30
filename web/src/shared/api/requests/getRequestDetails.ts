@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import { normalizeOfferActions, normalizeRequestActions, type OfferActions, type RequestActions } from '../mappers';
 import type { FileEntity, RequestEntity } from '@entities/request';
 
@@ -35,7 +35,7 @@ export type RequestDetailsOffer = {
 };
 
 export type RequestDetails = {
-  id: number;
+  id: string;
   id_user: string;
   owner_full_name?: string | null;
   status: string;
@@ -97,7 +97,7 @@ type ApiResponse = {
   };
 };
 
-export const getRequestDetails = async (requestId: number): Promise<RequestDetails> => {
+export const getRequestDetails = async (requestId: string): Promise<RequestDetails> => {
   const response = await fetchJson<ApiResponse>(
     `/api/v1/requests/${requestId}`,
     { method: 'GET' },

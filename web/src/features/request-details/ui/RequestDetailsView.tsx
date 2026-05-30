@@ -250,7 +250,7 @@ export const RequestDetailsView = () => {
 
     const fetchRequest = useCallback(
         async (showLoading: boolean) => {
-            if (!Number.isFinite(requestId) || requestId <= 0) {
+            if (!requestId) {
                 return;
             }
             if (showLoading) {

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 
@@ -58,7 +58,7 @@ class ExistingOfferPreviewSchema(BaseModel):
 
 
 class ContractorRequestViewSchema(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -75,7 +75,7 @@ class ContractorRequestViewResponse(BaseModel):
 
 
 class OfferWorkspaceRequestSchema(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -127,7 +127,7 @@ class OfferWorkspaceResponse(BaseModel):
 
 class OfferCreateResponseData(BaseModel):
     offer_id: int
-    request_id: int
+    request_id: str
 
 
 class OfferCreateResponse(BaseModel):
@@ -254,7 +254,7 @@ class ManualContractorCreatePayload(BaseModel):
 
 class ManualOfferCreateResponseData(BaseModel):
     offer_id: int
-    request_id: int
+    request_id: str
     contractor_user_id: str
     contractor_created: bool
 

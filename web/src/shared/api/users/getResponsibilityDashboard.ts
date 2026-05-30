@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 
 export type ResponsibilityStatusCounter = {
   status: string;
@@ -18,7 +18,7 @@ export type ResponsibilityEmployeeNode = {
 };
 
 export type ResponsibilityDashboardRequest  = {
-  request_id: number;
+  request_id: string;
   description: string | null;
   status: string;
   status_label: string;
@@ -30,7 +30,7 @@ export type ResponsibilityDashboardRequest  = {
 };
 
 export type ResponsibilitySavingsItem = {
-  request_id: number;
+  request_id: string;
   owner_user_id: string;
   owner_full_name: string | null;
   initial_amount: number;
@@ -43,7 +43,7 @@ export type ResponsibilitySavingsItem = {
 };
 
 export type ResponsibilityClosedSavingsItem = {
-  request_id: number;
+  request_id: string;
   owner_user_id: string;
   owner_full_name: string | null;
   initial_amount: number | null;

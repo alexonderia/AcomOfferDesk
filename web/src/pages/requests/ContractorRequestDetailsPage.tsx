@@ -44,7 +44,7 @@ export const ContractorRequestDetailsPage = () => {
   const { session } = useAuth();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const requestId = Number(id ?? 0);
+  const requestId = (id ?? '').trim();
   const [request, setRequest] = useState<ContractorRequestView | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isResponding, setIsResponding] = useState(false);
@@ -53,7 +53,7 @@ export const ContractorRequestDetailsPage = () => {
   const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
 
   useEffect(() => {
-    if (!Number.isFinite(requestId) || requestId <= 0) {
+    if (!requestId) {
       return;
     }
 

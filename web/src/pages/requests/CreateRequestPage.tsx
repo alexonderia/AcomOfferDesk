@@ -1,4 +1,5 @@
 ﻿import { zodResolver } from '@hookform/resolvers/zod';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -9,6 +10,7 @@ import {
   Chip,
   Dialog,
   DialogContent,
+  InputAdornment,
   Stack,
   TextField,
   Typography,
@@ -19,6 +21,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
+import { checkRequestIdAvailability } from '@shared/api/requests/checkRequestIdAvailability';
 import { createRequest } from '@shared/api/requests/createRequest';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { hasPermission } from '@shared/auth/permissions';
@@ -41,6 +44,11 @@ const isValidAmountValue = (value: string) => {
 };
 
 const schema = z.object({
+  requestNumber: z
+    .string()
+    .trim()
+    .min(1, 'Укажите номер заявки')
+    .refine((value) => value.trim().length > 0, 'Укажите номер заявки'),
   initialAmount: z.string().trim().min(1, 'Укажите сумму по ТЗ').refine(isValidAmountValue, 'Укажите корректную сумму'),
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
@@ -83,6 +91,8 @@ export const CreateRequestPage = () => {
 
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requestIdStatus, setRequestIdStatus] = useState<{ available: boolean; detail: string } | null>(null);
+  const [isCheckingRequestId, setIsCheckingRequestId] = useState(false);
   const [contractorOptions, setContractorOptions] = useState<RequestContractorItem[]>([]);
   const [isLoadingContractors, setIsLoadingContractors] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -96,10 +106,13 @@ export const CreateRequestPage = () => {
     handleSubmit,
     watch,
     setValue,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
+      requestNumber: '',
       initialAmount: '',
       description: '',
       deadlineAt: todayDate,
@@ -109,6 +122,7 @@ export const CreateRequestPage = () => {
     },
   });
 
+  const requestNumberValue = watch('requestNumber');
   const files = watch('files');
   const additionalEmails = watch('additionalEmails');
   const hiddenContractorIds = watch('hiddenContractorIds');
@@ -116,6 +130,73 @@ export const CreateRequestPage = () => {
     () => contractorOptions.filter((contractor) => hiddenContractorIds.includes(contractor.user_id)),
     [contractorOptions, hiddenContractorIds]
   );
+
+  const requestNumberRef = useRef(requestNumberValue);
+  requestNumberRef.current = requestNumberValue;
+
+  useEffect(() => {
+    const normalizedRequestNumber = requestNumberValue.trim();
+    if (!normalizedRequestNumber) {
+      setRequestIdStatus(null);
+      setIsCheckingRequestId(false);
+      return;
+    }
+
+    setIsCheckingRequestId(true);
+    setRequestIdStatus(null);
+
+    const timer = setTimeout(async () => {
+      const checkedValue = normalizedRequestNumber;
+      try {
+        const result = await checkRequestIdAvailability(checkedValue);
+        if (requestNumberRef.current.trim() !== checkedValue) {
+          return;
+        }
+        setRequestIdStatus({
+          available: result.available,
+          detail: result.detail ?? (result.available ? 'Номер заявки свободен' : 'Заявка с таким номером уже существует'),
+        });
+      } catch {
+        if (requestNumberRef.current.trim() !== checkedValue) {
+          return;
+        }
+        setRequestIdStatus({
+          available: false,
+          detail: 'Не удалось проверить номер заявки. Повторите позже.',
+        });
+      } finally {
+        if (requestNumberRef.current.trim() === checkedValue) {
+          setIsCheckingRequestId(false);
+        }
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [requestNumberValue]);
+
+  useEffect(() => {
+    if (!requestIdStatus) {
+      return;
+    }
+
+    if (requestIdStatus.available) {
+      clearErrors('requestNumber');
+      return;
+    }
+
+    if (requestNumberValue.trim().length > 0) {
+      setError('requestNumber', { type: 'manual', message: requestIdStatus.detail });
+    }
+  }, [requestIdStatus, requestNumberValue, clearErrors, setError]);
+
+  const isRequestNumberBlocked =
+    !requestNumberValue.trim()
+    || isCheckingRequestId
+    || !requestIdStatus
+    || !requestIdStatus.available;
+
+  const isRequestNumberAvailable =
+    Boolean(requestNumberValue.trim()) && Boolean(requestIdStatus?.available) && !isCheckingRequestId;
 
   useEffect(() => {
     let isMounted = true;
@@ -164,6 +245,17 @@ export const CreateRequestPage = () => {
   };
 
   const handleSubmitForm = async (values: FormValues) => {
+    const normalizedRequestNumber = values.requestNumber.trim();
+    if (!normalizedRequestNumber) {
+      setError('requestNumber', { type: 'manual', message: 'Укажите номер заявки' });
+      return;
+    }
+
+    if (requestIdStatus && !requestIdStatus.available) {
+      setError('requestNumber', { type: 'manual', message: requestIdStatus.detail });
+      return;
+    }
+
     const nextAdditionalEmails = additionalEmailsEnabled
       ? additionalEmailsFieldRef.current?.commitPendingInput()
       : [];
@@ -177,6 +269,7 @@ export const CreateRequestPage = () => {
 
     try {
       await createRequest({
+        id: normalizedRequestNumber,
         description: values.description?.trim() || null,
         deadline_at: `${values.deadlineAt}T23:59:59`,
         initial_amount: normalizeAmountValue(values.initialAmount),
@@ -188,6 +281,10 @@ export const CreateRequestPage = () => {
       navigate('/requests');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось создать заявку';
+      if (message.includes('Заявка с таким номером уже существует') || message.toLowerCase().includes('already exists')) {
+        setError('requestNumber', { type: 'manual', message: 'Заявка с таким номером уже существует' });
+        setRequestIdStatus({ available: false, detail: 'Заявка с таким номером уже существует' });
+      }
       setErrorMessage(message);
       showErrorToast(message);
     } finally {
@@ -233,6 +330,40 @@ export const CreateRequestPage = () => {
             <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Новая заявка
             </Typography>
+
+            <Stack spacing={1}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Номер заявки
+              </Typography>
+              <TextField
+                placeholder="Например: 2026-001"
+                fullWidth
+                error={Boolean(errors.requestNumber)}
+                helperText={
+                  errors.requestNumber?.message
+                  ?? (isCheckingRequestId ? 'Проверяем номер заявки...' : undefined)
+                }
+                {...register('requestNumber', {
+                  onChange: () => {
+                    clearErrors('requestNumber');
+                    setRequestIdStatus(null);
+                  },
+                })}
+                InputProps={{
+                  endAdornment: isRequestNumberAvailable ? (
+                    <InputAdornment position="end">
+                      <CheckCircleOutlineIcon color="success" fontSize="small" />
+                    </InputAdornment>
+                  ) : undefined,
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1,
+                    backgroundColor: 'background.paper',
+                  },
+                }}
+              />
+            </Stack>
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
@@ -522,7 +653,7 @@ export const CreateRequestPage = () => {
               variant="contained"
               fullWidth
               type="submit"
-              disabled={isSubmittingRequest}
+              disabled={isSubmittingRequest || isRequestNumberBlocked}
               sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 18, fontWeight: 700, boxShadow: 'none' }}
             >
               {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}

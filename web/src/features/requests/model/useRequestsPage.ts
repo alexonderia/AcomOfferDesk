@@ -54,7 +54,7 @@ export const useRequestsPage = () => {
   const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [chatAlertsMap, setChatAlertsMap] = useState<Record<number, number>>({});
+  const [chatAlertsMap, setChatAlertsMap] = useState<Record<string, number>>({});
   const requestsSignatureRef = useRef('');
   const ownerOptionsSignatureRef = useRef('');
 
@@ -172,7 +172,7 @@ export const useRequestsPage = () => {
     }
 
     setChatAlertsMap(
-      requests.reduce<Record<number, number>>((acc, request) => {
+      requests.reduce<Record<string, number>>((acc, request) => {
         const alertCount = request.count_chat_alert ?? 0;
         if (alertCount > 0) {
           acc[request.id] = alertCount;

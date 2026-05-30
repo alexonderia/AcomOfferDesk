@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from html import escape
@@ -9,7 +9,7 @@ from app.infrastructure.email.email_message_payload import EmailMessagePayload
 def build_request_notification_email_payload(
     *,
     to_email: str,
-    request_id: int,
+    request_id: str,
     description: str | None,
     deadline_at: datetime,
     request_url: str,
@@ -43,7 +43,7 @@ def build_request_notification_email_payload(
 def build_request_registration_email_payload(
     *,
     to_email: str,
-    request_id: int,
+    request_id: str,
     description: str | None,
     deadline_at: datetime,
     tg_bot_url: str | None,
@@ -76,7 +76,7 @@ def build_request_registration_email_payload(
     )
 
 
-def _request_header(*, request_id: int, description: str | None, deadline_at: datetime) -> tuple[str, str]:
+def _request_header(*, request_id: str, description: str | None, deadline_at: datetime) -> tuple[str, str]:
     deadline_label = deadline_at.strftime("%d.%m.%Y %H:%M")
     request_description = description or "Описание не указано"
     return deadline_label, request_description
@@ -111,7 +111,7 @@ def _reply_token_mail_footer_html(*, reply_token: str) -> str:
 
 def _build_standard_text(
     *,
-    request_id: int,
+    request_id: str,
     description: str | None,
     deadline_at: datetime,
     request_url: str,
@@ -147,7 +147,7 @@ def _build_standard_text(
 
 def _build_registration_text(
     *,
-    request_id: int,
+    request_id: str,
     description: str | None,
     deadline_at: datetime,
     tg_bot_url: str | None,
@@ -199,7 +199,7 @@ def _registration_contact_html() -> str:
 
 def _build_standard_html(
     *,
-    request_id: int,
+    request_id: str,
     description: str | None,
     deadline_at: datetime,
     request_url: str,
@@ -293,7 +293,7 @@ def _build_standard_html(
 
 def _build_registration_html(
     *,
-    request_id: int,
+    request_id: str,
     description: str | None,
     deadline_at: datetime,
     tg_bot_url: str | None,

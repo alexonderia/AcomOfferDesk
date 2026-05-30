@@ -14,7 +14,7 @@ vi.mock('@shared/lib/responsive', () => ({
 }));
 
 const baseRequest = (): RequestWithOfferStats => ({
-  id: 101,
+  id: '101',
   id_user: 'owner-1',
   owner_full_name: 'Owner One',
   status: 'open',
@@ -78,7 +78,7 @@ describe('RequestsTable states', () => {
     const nonEditableOwner = baseRequest();
     const editableOwner: RequestWithOfferStats = {
       ...baseRequest(),
-      id: 202,
+      id: '202',
       id_user: 'owner-2',
       owner_full_name: 'Owner Two',
       actions: {

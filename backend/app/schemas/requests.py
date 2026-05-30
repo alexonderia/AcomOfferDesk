@@ -46,8 +46,14 @@ class OfferItemSchema(BaseModel):
     actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 
+class RequestIdAvailabilityResponse(BaseModel):
+    available: bool
+    detail: str | None = None
+    reason: str | None = None
+
+
 class RequestItemSchema(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -78,7 +84,7 @@ class OfferedRequestOfferSchema(BaseModel):
     actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 class OpenRequestItemSchema(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -120,7 +126,7 @@ class OpenRequestListResponse(BaseModel):
 
 
 class RequestCreateResponseData(BaseModel):
-    request_id: int
+    request_id: str
     file_ids: list[int]
 
 
@@ -129,11 +135,11 @@ class RequestCreateResponse(BaseModel):
 
 
 class DeletedAlertViewed(BaseModel):
-    request_id: int
+    request_id: str
 
 
 class RequestOfferStatsSchema(BaseModel):
-    request_id: int
+    request_id: str
     count_deleted_alert: int
     updated_at: datetime
 
@@ -161,16 +167,16 @@ class RequestEmailNotificationPayload(BaseModel):
 
 
 class RequestFileMutationResponseData(BaseModel):
-    request_id: int
+    request_id: str
     file_id: int
 
 
 class RequestMutationResponseData(BaseModel):
-    request_id: int
+    request_id: str
 
 
 class RequestEmailNotificationResponseData(BaseModel):
-    request_id: int
+    request_id: str
     sent_to: list[str]
 
 

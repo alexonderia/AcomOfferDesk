@@ -1,6 +1,7 @@
-import { fetchJson  } from '../client';
+﻿import { fetchJson  } from '../client';
 
 export type CreateRequestPayload = {
+  id: string;
   description?: string | null;
   deadline_at: string;
   initial_amount?: string | number | null;
@@ -11,13 +12,14 @@ export type CreateRequestPayload = {
 
 export type CreateRequestResponse = {
   data: {
-    request_id: number;
+    request_id: string;
     file_ids: number[];
   };
 };
 
 export const createRequest = async (payload: CreateRequestPayload): Promise<CreateRequestResponse> => {
   const formData = new FormData();
+  formData.append('id', payload.id.trim());
   formData.append('deadline_at', payload.deadline_at);
 
   

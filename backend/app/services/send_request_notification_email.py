@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import smtplib
 from dataclasses import dataclass
@@ -48,7 +48,7 @@ class SendRequestNotificationEmailUseCase:
     async def execute(
         self,
         *,
-        request_id: int,
+        request_id: str,
         contractor_role_id: int,
         initiator_user_id: str | None = None,
         additional_emails: list[str] | None = None,
@@ -203,7 +203,7 @@ class SendRequestNotificationEmailUseCase:
 
         return recipients
 
-    async def _build_attachments(self, *, request_id: int) -> tuple[list[EmailAttachment], str | None]:
+    async def _build_attachments(self, *, request_id: str) -> tuple[list[EmailAttachment], str | None]:
         files = await self._request_repository.list_files_by_request_id(request_id=request_id)
         if not files:
             return [], None

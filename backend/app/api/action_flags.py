@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -384,7 +384,7 @@ class ContractorActionBuilder:
 class ResolvedOfferActionContext:
     offer_owner_user_id: str
     request_owner_user_id: str
-    request_id: int
+    request_id: str
     offer_is_manual: bool
     can_create_new_offer: bool
     can_acknowledge_messages: bool

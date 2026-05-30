@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import type { ContractorRequestViewFile } from '../requests/getContractorRequestView';
 import { normalizeChatActions, normalizeOfferActions, normalizeRequestActions, type ChatActions, type OfferActions, type RequestActions } from '../mappers';
 
@@ -16,7 +16,7 @@ export type WorkspaceOfferItem = {
 
 export type OfferWorkspace = {
   request: {
-    request_id: number;
+    request_id: string;
     description: string | null;
     status: string;
     status_label: string;

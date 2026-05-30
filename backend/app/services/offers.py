@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import unicodedata
@@ -137,7 +137,7 @@ class ExistingOfferPreview:
 
 @dataclass(frozen=True)
 class ContractorRequestView:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -151,7 +151,7 @@ class ContractorRequestView:
 
 @dataclass(frozen=True)
 class OfferWorkspaceRequest:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -211,7 +211,7 @@ class OfferMessageReader:
 class OfferMessageMutationResult:
     offer_id: int
     chat_id: int
-    request_id: int
+    request_id: str
     message_id: int
 
 
@@ -240,7 +240,7 @@ class ManualContractorCreateInput:
 @dataclass(frozen=True)
 class ManualOfferCreateResult:
     offer_id: int
-    request_id: int
+    request_id: str
     contractor_user_id: str
     contractor_created: bool
 
@@ -300,7 +300,7 @@ class OfferService:
             is_archived=False,
         )
 
-    async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: int) -> None:
+    async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: str) -> None:
         if current_user.role_id != settings.contractor_role_id:
             return
         is_hidden = await self._requests.is_hidden_for_contractor(
@@ -550,7 +550,7 @@ class OfferService:
             )
         return login
 
-    async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:
+    async def get_request_view(self, *, current_user: CurrentUser, request_id: str) -> ContractorRequestView:
         require_permission(
             current_user,
             PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ,
@@ -598,7 +598,7 @@ class OfferService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         offer_amount: float | None = None,
     ) -> int:
         UserPolicy.ensure_can_create_offer(current_user)
@@ -647,7 +647,7 @@ class OfferService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         contractor_user_id: str | None,
         contractor_data: ManualContractorCreateInput | None,
         offer_amount: float | None = None,

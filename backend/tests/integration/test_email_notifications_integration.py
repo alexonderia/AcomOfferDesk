@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -41,17 +41,17 @@ class _FakeRequestRepoForCreate:
         self._next_request_id += 1
         return row
 
-    async def attach_file(self, *, request_id: int, file_id: int) -> None:
+    async def attach_file(self, *, request_id: str, file_id: int) -> None:
         self.attached.append((request_id, file_id))
 
-    async def hide_from_contractors(self, *, request_id: int, contractor_user_ids: list[str]) -> None:
+    async def hide_from_contractors(self, *, request_id: str, contractor_user_ids: list[str]) -> None:
         self.hidden.append((request_id, contractor_user_ids))
 
     async def get_economy_plan_owner_user_id(self, *, plan_id: int):
         _ = plan_id
         return "plan-owner"
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         for item in self.created_requests:
             if item.id == request_id:
                 return item
@@ -81,7 +81,7 @@ class _FakeUsersRepo:
 
 
 class _FakeOffersRepo:
-    async def list_contractor_tg_ids_for_request(self, *, request_id: int, contractor_role_id: int):
+    async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int):
         _ = (request_id, contractor_role_id)
         return []
 
@@ -104,7 +104,7 @@ class _FakeFileServiceForCreate:
             mime_type=mime_type,
         )
 
-    async def create_request_file(self, *, request_id: int, upload):
+    async def create_request_file(self, *, request_id: str, upload):
         _ = (request_id, upload)
         return SimpleNamespace(id=901)
 
@@ -116,7 +116,7 @@ class _FakeEmailNotificationService:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    async def notify_new_request(self, *, request_id: int, additional_emails: list[str] | None, hidden_contractor_ids: list[str] | None):
+    async def notify_new_request(self, *, request_id: str, additional_emails: list[str] | None, hidden_contractor_ids: list[str] | None):
         self.calls.append(
             {
                 "request_id": request_id,
@@ -128,7 +128,7 @@ class _FakeEmailNotificationService:
     async def notify_request_to_additional_emails(
         self,
         *,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str],
         initiator_user_id: str | None = None,
     ) -> None:
@@ -146,10 +146,10 @@ class _FakeRequestRepoForSendUseCase:
         self._request_row = request_row
         self._files = files or []
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return self._request_row if self._request_row.id == request_id else None
 
-    async def list_files_by_request_id(self, *, request_id: int):
+    async def list_files_by_request_id(self, *, request_id: str):
         _ = request_id
         return self._files
 

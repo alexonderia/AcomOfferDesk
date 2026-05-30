@@ -1,13 +1,13 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 
 type SendRequestEmailNotificationsPayload = {
-  requestId: number;
+  requestId: string;
   additional_emails: string[];
 };
 
 type SendRequestEmailNotificationsResponse = {
   data: {
-    request_id: number;
+    request_id: string;
     sent_to: string[];
   };
 };

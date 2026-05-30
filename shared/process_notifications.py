@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -63,7 +63,7 @@ class ProcessNotificationEvent:
     actor_user_id: str | None = None
     entity_type: str | None = None
     entity_id: str | None = None
-    request_id: int | None = None
+    request_id: str | None = None
     offer_id: int | None = None
     chat_id: int | None = None
     message_id: int | None = None
@@ -117,7 +117,7 @@ class ProcessNotificationEvent:
             actor_user_id=_normalize_optional_str(payload.get("actor_user_id")),
             entity_type=_normalize_optional_str(payload.get("entity_type")),
             entity_id=_normalize_optional_str(payload.get("entity_id")),
-            request_id=_as_optional_int(payload.get("request_id")),
+            request_id=_normalize_optional_str(payload.get("request_id")),
             offer_id=_as_optional_int(payload.get("offer_id")),
             chat_id=_as_optional_int(payload.get("chat_id")),
             message_id=_as_optional_int(payload.get("message_id")),
@@ -132,7 +132,7 @@ def build_process_notification_event(
     actor_user_id: str | None = None,
     entity_type: str | None = None,
     entity_id: int | str | None = None,
-    request_id: int | None = None,
+    request_id: str | None = None,
     offer_id: int | None = None,
     chat_id: int | None = None,
     message_id: int | None = None,

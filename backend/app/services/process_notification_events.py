@@ -992,7 +992,7 @@ class ProcessNotificationEventHandler:
         self,
         *,
         uow: UnitOfWork,
-        request_id: int,
+        request_id: str,
     ) -> list[str]:
         if uow.requests is None:
             return []

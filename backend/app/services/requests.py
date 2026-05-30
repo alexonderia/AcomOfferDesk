@@ -96,7 +96,7 @@ class RequestFileItem:
 
 @dataclass(frozen=True)
 class RequestListItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -118,7 +118,7 @@ class RequestListItem:
 
 @dataclass(frozen=True)
 class OpenRequestListItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -171,7 +171,7 @@ class OfferItem:
 
 @dataclass(frozen=True)
 class RequestDetailItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -196,14 +196,14 @@ class RequestDetailItem:
 
 @dataclass(frozen=True)
 class DeletedAlertViewedResult:
-    request_id: int
+    request_id: str
     count_deleted_alert: int
     updated_at: datetime
 
 
 @dataclass(frozen=True)
 class RequestEmailNotificationResult:
-    request_id: int
+    request_id: str
     sent_to: list[str]
 
 
@@ -242,10 +242,19 @@ class RequestService:
         )
         return True
 
+    async def check_request_id_available(self, *, request_id: str) -> tuple[bool, str | None]:
+        normalized_id = request_id.strip()
+        if not normalized_id:
+            return False, "empty"
+        if await self._requests.exists_by_id(request_id=normalized_id):
+            return False, "already_exists"
+        return True, None
+
     async def create_request(
         self,
         *,
         current_user: CurrentUser,
+        request_id: str | None = None,
         deadline_at: datetime,
         description: str | None,
         initial_amount: float | None,
@@ -253,7 +262,7 @@ class RequestService:
         files: list[RequestFileCreateInput],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
-    ) -> tuple[int, list[int]]:
+    ) -> tuple[str, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
         if _normalize_to_utc(deadline_at) < _utcnow():
@@ -268,7 +277,16 @@ class RequestService:
         normalized_additional_emails = self._normalize_additional_emails(additional_emails)
         normalized_hidden_contractor_ids = await self._normalize_hidden_contractor_ids(hidden_contractor_ids)
 
+        normalized_request_id: str | None = None
+        if request_id is not None:
+            normalized_request_id = request_id.strip()
+            if not normalized_request_id:
+                raise Conflict("Request id cannot be empty")
+            if await self._requests.exists_by_id(request_id=normalized_request_id):
+                raise Conflict("Request with this id already exists")
+
         request = await self._requests.create(
+            request_id=normalized_request_id,
             id_user=current_user.user_id,
             deadline_at=deadline_at,
             description=description,
@@ -337,7 +355,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str] | None,
     ) -> RequestEmailNotificationResult:
         require_permission(
@@ -422,7 +440,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         data: RequestEditInput,
     ) -> None:
         request = await self._requests.get_by_id(request_id=request_id)
@@ -669,7 +687,7 @@ class RequestService:
         if final_amount != initial_amount and final_amount != offer_amount:
             raise Conflict("Final amount must match initial amount or accepted offer amount")
     
-    async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: int) -> DeletedAlertViewedResult:
+    async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: str) -> DeletedAlertViewedResult:
         require_permission(
             current_user,
             PermissionCodes.REQUESTS_DELETED_ALERTS_MARK_VIEWED,
@@ -698,7 +716,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         file_data: RequestFileCreateInput,
     ) -> int:
         request = await self._requests.get_by_id(request_id=request_id)
@@ -745,7 +763,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         file_id: int,
     ) -> None:
         request = await self._requests.get_by_id(request_id=request_id)
@@ -780,7 +798,7 @@ class RequestService:
             )
         )
 
-    async def _attach_partner_card_file(self, *, request_id: int) -> int:
+    async def _attach_partner_card_file(self, *, request_id: str) -> int:
         partner_card = await self._files.get_normative_file(normative_id=PARTNER_CARD_NORMATIVE_ID)
         if partner_card is None:
             raise Conflict("Partner card file is not configured")
@@ -868,8 +886,8 @@ class RequestService:
         UserPolicy.ensure_can_view_offered_requests(current_user)
         rows = await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id)
 
-        grouped: dict[int, OpenRequestListItem] = {}
-        request_offer_ids: dict[int, set[int]] = {}
+        grouped: dict[str, OpenRequestListItem] = {}
+        request_offer_ids: dict[str, set[int]] = {}
         for request, offer, profile, unread_messages_count in rows:
             existing = grouped.get(request.id)
             
@@ -942,7 +960,7 @@ class RequestService:
         ]
 
 
-    async def get_request_details(self, *, current_user: CurrentUser, request_id: int) -> RequestDetailItem:
+    async def get_request_details(self, *, current_user: CurrentUser, request_id: str) -> RequestDetailItem:
         if not (
             UserPolicy.can_view_requests(current_user)
             or has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ)

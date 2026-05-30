@@ -31,6 +31,8 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Link expired': 'РЎСЂРѕРє РґРµР№СЃС‚РІРёСЏ СЃСЃС‹Р»РєРё РёСЃС‚РµРє',
   'Access denied': 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ',
   'Request not found': 'Р—Р°СЏРІРєР° РЅРµ РЅР°Р№РґРµРЅР°',
+  'Request id cannot be empty': 'Укажите номер заявки',
+  'Request with this id already exists': 'Заявка с таким номером уже существует',
   'Offer not found': 'РљРџ РЅРµ РЅР°Р№РґРµРЅРѕ',
   'Chat not found': 'Р§Р°С‚ РЅРµ РЅР°Р№РґРµРЅ',
   'File not found': 'Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ',

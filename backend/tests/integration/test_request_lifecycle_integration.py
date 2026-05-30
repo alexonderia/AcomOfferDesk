@@ -1,4 +1,4 @@
-"""Integration-style tests for request lifecycle auth/enforcement scenarios."""
+﻿"""Integration-style tests for request lifecycle auth/enforcement scenarios."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class _MutableRequestsRepo:
         self.request_row = request_row
         self.accepted_offer_id = accepted_offer_id
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return self.request_row if self.request_row.id == request_id else None
 
     async def update_initial_amount(self, *, request, initial_amount: float) -> None:
@@ -43,7 +43,7 @@ class _MutableRequestsRepo:
         request.closed_at = closed_at
         request.id_offer = chosen_offer_id
 
-    async def get_latest_accepted_offer_id(self, *, request_id: int):
+    async def get_latest_accepted_offer_id(self, *, request_id: str):
         _ = request_id
         return self.accepted_offer_id
 
@@ -62,13 +62,13 @@ class _MutableRequestsRepo:
 
 
 class _OffersRepo:
-    def __init__(self, offers_by_id: dict[int, SimpleNamespace] | None = None) -> None:
+    def __init__(self, offers_by_id: dict[str, SimpleNamespace] | None = None) -> None:
         self._offers_by_id = offers_by_id or {}
 
     async def get_by_id(self, *, offer_id: int):
         return self._offers_by_id.get(offer_id)
 
-    async def list_contractor_tg_ids_for_request(self, *, request_id: int, contractor_role_id: int):
+    async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int):
         _ = (request_id, contractor_role_id)
         return []
 
@@ -97,19 +97,19 @@ class _ContractorViewRequestsRepo:
     def __init__(self, request_row: SimpleNamespace) -> None:
         self._request_row = request_row
 
-    async def get_visible_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str):
+    async def get_visible_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
         if request_id != self._request_row.id:
             return None
         return self._request_row
 
-    async def list_files(self, *, request_id: int):
+    async def list_files(self, *, request_id: str):
         _ = request_id
         return []
 
 
 class _ContractorViewOffersRepo:
-    async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str):
+    async def get_contractor_offer_for_request(self, *, request_id: str, contractor_user_id: str):
         _ = (request_id, contractor_user_id)
         return None
 

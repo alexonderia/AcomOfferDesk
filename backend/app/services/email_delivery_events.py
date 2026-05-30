@@ -18,6 +18,13 @@ def _as_optional_int(value) -> int | None:
         return None
 
 
+def _normalize_optional_str(value) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 class EmailDeliveryEventHandler:
     async def handle(self, *, routing_key: str, payload: dict) -> None:
         correlation_id = str(payload.get("correlation_id") or "").strip()
@@ -30,7 +37,7 @@ class EmailDeliveryEventHandler:
             logger.warning("Skip email delivery event without recipient_user_id")
             return
 
-        request_id = _as_optional_int(payload.get("request_id"))
+        request_id = _normalize_optional_str(payload.get("request_id"))
         offer_id = _as_optional_int(payload.get("offer_id"))
         to_email = str(payload.get("to_email") or "").strip()
         safe_error_code = str(payload.get("safe_error_code") or "").strip() or None

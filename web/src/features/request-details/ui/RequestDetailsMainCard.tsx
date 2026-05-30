@@ -1,4 +1,4 @@
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+﻿import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import {
   Box,
@@ -32,7 +32,7 @@ const requestStatusPillTone: Record<RequestStatus, StatusPillTone> = {
 };
 
 type RequestDetailsMainCardProps = {
-  requestId: number;
+  requestId: string;
   status: RequestStatus;
   statusOptions: readonly RequestStatusOption[];
   statusColor: string;

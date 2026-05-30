@@ -1,4 +1,4 @@
-"""P1 backend contract coverage for existing API surface.
+﻿"""P1 backend contract coverage for existing API surface.
 
 These tests keep the integration contour in-memory: no SMTP, S3/MinIO,
 Keycloak, or external database is contacted.
@@ -145,7 +145,7 @@ class _PreparedFileService:
             mime_type=mime_type or "text/plain",
         )
 
-    async def create_request_file(self, *, request_id: int, upload):
+    async def create_request_file(self, *, request_id: str, upload):
         self.created_request_files.append({"request_id": request_id, "name": upload.original_name})
         return SimpleNamespace(id=501)
 
@@ -169,13 +169,13 @@ class _RequestFilesRepo:
         self.attached: list[tuple[int, int]] = []
         self.detached = detached
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 
-    async def attach_file(self, *, request_id: int, file_id: int) -> None:
+    async def attach_file(self, *, request_id: str, file_id: int) -> None:
         self.attached.append((request_id, file_id))
 
-    async def detach_file(self, *, request_id: int, file_id: int) -> bool:
+    async def detach_file(self, *, request_id: str, file_id: int) -> bool:
         _ = (request_id, file_id)
         return self.detached
 
@@ -300,7 +300,7 @@ class _OfferFilesOffersRepo:
         self.detached = detached
 
     async def get_by_id(self, *, offer_id: int):
-        return SimpleNamespace(id=offer_id, id_request=10, id_user="contractor-1", status="submitted")
+        return SimpleNamespace(id=offer_id, id_request="10", id_user="contractor-1", status="submitted")
 
     async def attach_file(self, *, offer_id: int, file_id: int) -> None:
         self.attached.append((offer_id, file_id))
@@ -311,10 +311,10 @@ class _OfferFilesOffersRepo:
 
 
 class _OfferFilesRequestsRepo:
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 
-    async def is_hidden_for_contractor(self, *, request_id: int, contractor_user_id: str) -> bool:
+    async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
         _ = (request_id, contractor_user_id)
         return False
 
@@ -382,12 +382,12 @@ class _ManualEmailNotifications:
         _ = (profiles, requests)
         self.calls: list[dict] = []
 
-    async def notify_request_to_additional_emails(self, *, request_id: int, additional_emails: list[str]) -> None:
+    async def notify_request_to_additional_emails(self, *, request_id: str, additional_emails: list[str]) -> None:
         self.calls.append({"request_id": request_id, "additional_emails": additional_emails})
 
 
 class _ManualEmailRequestsRepo:
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 
 

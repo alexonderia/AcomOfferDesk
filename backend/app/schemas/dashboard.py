@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 
@@ -23,7 +23,7 @@ class DashboardEconomistNodeSchema(BaseModel):
 
 
 class DashboardRequestItemSchema(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -44,7 +44,7 @@ class UpcomingUnavailabilityItemSchema(BaseModel):
 
 
 class DashboardSavingsItemSchema(BaseModel):
-    request_id: int
+    request_id: str
     owner_user_id: str
     owner_full_name: str | None
     initial_amount: float
@@ -57,7 +57,7 @@ class DashboardSavingsItemSchema(BaseModel):
 
 
 class DashboardClosedRequestItemSchema(BaseModel):
-    request_id: int
+    request_id: str
     owner_user_id: str
     owner_full_name: str | None
     initial_amount: float | None

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -45,18 +45,18 @@ class _FakeRequestsRepo:
         self,
         *,
         owner_id: str = "owner-1",
-        visible_contractors_by_request: dict[int, list[str]] | None = None,
+        visible_contractors_by_request: dict[str, list[str]] | None = None,
     ) -> None:
         self._owner_id = owner_id
         self._visible_contractors_by_request = visible_contractors_by_request or {}
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user=self._owner_id)
 
     async def list_active_keycloak_visible_contractor_user_ids(
         self,
         *,
-        request_id: int,
+        request_id: str,
         contractor_role_id: int,
     ) -> list[str]:
         _ = contractor_role_id
@@ -73,10 +73,10 @@ class _FakeChatsRepo:
 
 
 class _FakeOffersRepo:
-    def __init__(self, *, offers_by_request: dict[int, list[SimpleNamespace]] | None = None) -> None:
+    def __init__(self, *, offers_by_request: dict[str, list[SimpleNamespace]] | None = None) -> None:
         self._offers_by_request = offers_by_request or {}
 
-    async def list_by_request(self, *, request_id: int):
+    async def list_by_request(self, *, request_id: str):
         return list(self._offers_by_request.get(request_id, []))
 
     async def get_by_id(self, *, offer_id: int):
@@ -147,10 +147,10 @@ class _FakeUow:
         *,
         owner_id: str = "owner-1",
         chat_recipients: list[str] | None = None,
-        offers_by_request: dict[int, list[SimpleNamespace]] | None = None,
+        offers_by_request: dict[str, list[SimpleNamespace]] | None = None,
         role_by_user_id: dict[str, int] | None = None,
         keycloak_user_ids: set[str] | None = None,
-        visible_contractors_by_request: dict[int, list[str]] | None = None,
+        visible_contractors_by_request: dict[str, list[str]] | None = None,
     ) -> None:
         if role_by_user_id is None:
             role_by_user_id = {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import {
   Alert,
@@ -22,7 +22,7 @@ import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 
 type Props = {
   open: boolean;
-  requestId: number;
+  requestId: string;
   onClose: () => void;
   onCreated: (workspacePath: string) => void;
 };

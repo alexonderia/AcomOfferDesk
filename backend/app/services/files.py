@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import io
@@ -96,7 +96,7 @@ class FileService:
             content_sha256=hashlib.sha256(content_bytes).hexdigest(),
         )
 
-    async def create_request_file(self, *, request_id: int, upload: PreparedUpload) -> File:
+    async def create_request_file(self, *, request_id: str, upload: PreparedUpload) -> File:
         _ = request_id
         return await self._store(upload=upload)
 

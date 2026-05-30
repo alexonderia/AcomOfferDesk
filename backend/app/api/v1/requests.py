@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.action_flags import OfferActionBuilder, RequestActionBuilder
@@ -25,6 +25,7 @@ from app.schemas.requests import (
     OpenRequestListData,
     OpenRequestListResponse,
     RequestCreateResponse,
+    RequestIdAvailabilityResponse,
     RequestDetailsResponse,
     RequestDetailsResponseData,
     RequestDetailsSchema,
@@ -510,10 +511,37 @@ async def list_offered_requests(
     )
 
 
+@router.get("/requests/check-id", response_model=RequestIdAvailabilityResponse)
+@router.get("/requests/check-id/", response_model=RequestIdAvailabilityResponse, include_in_schema=False)
+async def check_request_id_availability(
+    id: str = Query(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestIdAvailabilityResponse:
+    UserPolicy.ensure_can_create_request(current_user)
+    normalized_id = id.strip()
+    if not normalized_id:
+        return RequestIdAvailabilityResponse(available=False, detail="Укажите номер заявки", reason="empty")
+
+    async with uow:
+        service = _build_request_service(uow)
+        available, reason = await service.check_request_id_available(request_id=normalized_id)
+
+    if available:
+        return RequestIdAvailabilityResponse(available=True, detail="Номер заявки свободен")
+    if reason == "already_exists":
+        return RequestIdAvailabilityResponse(
+            available=False,
+            detail="Заявка с таким номером уже существует",
+            reason="already_exists",
+        )
+    return RequestIdAvailabilityResponse(available=False, detail="Укажите номер заявки", reason=reason)
+
+
 @router.get("/requests/{request_id}", response_model=RequestDetailsResponse)
 @router.get("/requests/{request_id}/", response_model=RequestDetailsResponse, include_in_schema=False)
 async def get_request_details(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestDetailsResponse:
@@ -644,6 +672,7 @@ async def get_request_details(
 
 @router.post("/requests", response_model=RequestCreateResponse)
 async def create_request(
+    id: str = Form(...),
     deadline_at: datetime = Form(...),
     description: str | None = Form(default=None),
     initial_amount: float | None = Form(default=None),
@@ -678,6 +707,7 @@ async def create_request(
             )
             request_id, file_ids = await service.create_request(
                 current_user=current_user,
+                request_id=id,
                 deadline_at=deadline_at,
                 description=description,
                 initial_amount=initial_amount,
@@ -699,7 +729,7 @@ async def create_request(
 @router.patch("/requests/{request_id}", response_model=RequestMutationResponse)
 async def update_request(
     payload: RequestEditPayload = Body(...),
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestMutationResponse:
@@ -727,7 +757,7 @@ async def update_request(
 @router.post("/requests/{request_id}/email-notifications", response_model=RequestEmailNotificationResponse)
 async def send_request_email_notifications(
     payload: RequestEmailNotificationPayload = Body(...),
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEmailNotificationResponse:
@@ -750,7 +780,7 @@ async def send_request_email_notifications(
 
 @router.post("/requests/{request_id}/files", response_model=RequestFileMutationResponse)
 async def add_request_file(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     file: UploadFile = File(...),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
@@ -786,7 +816,7 @@ async def add_request_file(
 
 @router.delete("/requests/{request_id}/files/{file_id}", response_model=RequestFileMutationResponse)
 async def delete_request_file(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     file_id: int = PathParam(..., ge=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),

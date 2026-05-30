@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -20,7 +20,7 @@ class TgStartRequest(BaseModel):
 
 
 class TgOpenRequestItem(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     deadline_at: datetime
     link: str

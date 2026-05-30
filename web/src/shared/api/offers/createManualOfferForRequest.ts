@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 
 export type ManualOfferExistingContractorPayload = {
   contractor_mode: 'existing';
@@ -26,7 +26,7 @@ export type ManualOfferCreatePayload =
 type ApiResponse = {
   data: {
     offer_id: number;
-    request_id: number;
+    request_id: string;
     contractor_user_id: string;
     contractor_created: boolean;
   };
@@ -34,14 +34,14 @@ type ApiResponse = {
 
 export type ManualOfferCreateResult = {
   offerId: number;
-  requestId: number;
+  requestId: string;
   contractorUserId: string;
   contractorCreated: boolean;
   workspacePath: string;
 };
 
 export const createManualOfferForRequest = async (
-  requestId: number,
+  requestId: string,
   payload: ManualOfferCreatePayload
 ): Promise<ManualOfferCreateResult> => {
   const body = new FormData();

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, Query, UploadFile
 from pydantic import ValidationError
@@ -90,7 +90,7 @@ async def get_contractor_info(
 
 @router.get("/requests/{request_id}/contractor-view", response_model=ContractorRequestViewResponse)
 async def get_contractor_request_view(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorRequestViewResponse:
@@ -140,7 +140,7 @@ async def get_contractor_request_view(
 
 @router.post("/requests/{request_id}/offers", response_model=OfferCreateResponse)
 async def create_empty_offer(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     payload: OfferCreatePayload | None = Body(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
@@ -160,7 +160,7 @@ async def create_empty_offer(
 
 @router.post("/requests/{request_id}/offers/manual", response_model=ManualOfferCreateResponse)
 async def create_manual_offer(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     contractor_mode: str = Form(...),
     contractor_user_id: str | None = Form(default=None),
     company_name: str | None = Form(default=None),

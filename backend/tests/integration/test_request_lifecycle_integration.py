@@ -241,29 +241,36 @@ def test_allowed_roles_can_create_request(test_client, monkeypatch, set_current_
         self,
         *,
         current_user,
+        request_id,
         deadline_at,
         description,
         initial_amount,
         id_plan,
+        normative_file_id,
         files,
         additional_emails,
         hidden_contractor_ids,
     ):
-        _ = (self, deadline_at, description, initial_amount, id_plan, files, additional_emails, hidden_contractor_ids)
+        _ = (self, request_id, deadline_at, description, initial_amount, id_plan, normative_file_id, files, additional_emails, hidden_contractor_ids)
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
-        return 700, [701]
+        return "700", [701]
 
     monkeypatch.setattr(requests_api.RequestService, "create_request", _guarded_create_request)
 
     response = test_client.post(
         "/api/v1/requests",
-        data={"deadline_at": _future_dt().isoformat(), "description": "Created in test"},
+        data={
+            "id": "REQ-700",
+            "deadline_at": _future_dt().isoformat(),
+            "description": "Created in test",
+            "normative_file_id": "1",
+        },
         files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
     )
 
     assert response.status_code == 200
-    assert response.json()["data"]["request_id"] == 700
+    assert response.json()["data"]["request_id"] == "700"
 
 
 @pytest.mark.parametrize(
@@ -282,24 +289,31 @@ def test_forbidden_roles_cannot_create_request(test_client, monkeypatch, set_cur
         self,
         *,
         current_user,
+        request_id,
         deadline_at,
         description,
         initial_amount,
         id_plan,
+        normative_file_id,
         files,
         additional_emails,
         hidden_contractor_ids,
     ):
-        _ = (self, deadline_at, description, initial_amount, id_plan, files, additional_emails, hidden_contractor_ids)
+        _ = (self, request_id, deadline_at, description, initial_amount, id_plan, normative_file_id, files, additional_emails, hidden_contractor_ids)
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
-        return 700, [701]
+        return "700", [701]
 
     monkeypatch.setattr(requests_api.RequestService, "create_request", _guarded_create_request)
 
     response = test_client.post(
         "/api/v1/requests",
-        data={"deadline_at": _future_dt().isoformat(), "description": "Created in test"},
+        data={
+            "id": "REQ-700",
+            "deadline_at": _future_dt().isoformat(),
+            "description": "Created in test",
+            "normative_file_id": "1",
+        },
         files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
     )
 

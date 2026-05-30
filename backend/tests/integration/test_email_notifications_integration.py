@@ -59,6 +59,10 @@ class _FakeRequestRepoForCreate:
 
 
 class _FakeFilesRepo:
+    async def get_normative_file_status(self, *, normative_id: int):
+        _ = normative_id
+        return "actual"
+
     async def get_normative_file(self, *, normative_id: int):
         _ = normative_id
         return SimpleNamespace(id_storage_object=501, original_name="partner-card.pdf")
@@ -204,6 +208,7 @@ async def test_create_request_triggers_email_notification_event(make_current_use
         description="Новая заявка",
         initial_amount=None,
         id_plan=None,
+        normative_file_id=1,
         files=[
             RequestFileCreateInput(
                 original_name="spec.pdf",

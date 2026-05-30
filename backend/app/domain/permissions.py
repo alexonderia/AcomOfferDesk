@@ -56,6 +56,7 @@ class PermissionCodes:
     NORMATIVE_FILES_READ = "normative_files.read"
     NORMATIVE_FILES_CREATE = "normative_files.create"
     NORMATIVE_FILES_MANAGE = "normative_files.manage"
+    NORMATIVE_FILES_STATUS_UPDATE = "normative_files.status.update"
     FILES_DOWNLOAD = "files.download"
     UNAVAILABILITY_MANAGE_ALL = "unavailability.manage_all"
     UNAVAILABILITY_MANAGE_OWN = "unavailability.manage_own"
@@ -208,6 +209,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.NORMATIVE_FILES_MANAGE,
                 PermissionCodes.NORMATIVE_FILES_CREATE,
                 PermissionCodes.NORMATIVE_FILES_READ,
+                PermissionCodes.NORMATIVE_FILES_STATUS_UPDATE,
                 PermissionCodes.PROFILE_MANAGE_ANY,
                 PermissionCodes.COMPANY_CONTACTS_MANAGE_ANY,
                 PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,

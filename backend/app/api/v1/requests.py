@@ -674,6 +674,7 @@ async def get_request_details(
 async def create_request(
     id: str = Form(...),
     deadline_at: datetime = Form(...),
+    normative_file_id: int = Form(...),
     description: str | None = Form(default=None),
     initial_amount: float | None = Form(default=None),
     id_plan: int | None = Form(default=None),
@@ -712,6 +713,7 @@ async def create_request(
                 description=description,
                 initial_amount=initial_amount,
                 id_plan=id_plan,
+                normative_file_id=normative_file_id,
                 files=file_inputs,
                 additional_emails=additional_emails,
                 hidden_contractor_ids=hidden_contractor_ids,

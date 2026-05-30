@@ -357,13 +357,33 @@ class _NormativeFilesRepo:
     def __init__(self, *, existing_file_id: int | None = None) -> None:
         self.existing_file_id = existing_file_id
         self.upserts: list[tuple[int, int]] = []
+        self.created: list[tuple[int, int, str]] = []
 
     async def get_normative_file_id(self, *, normative_id: int):
         _ = normative_id
         return self.existing_file_id
 
-    async def upsert_normative_file(self, *, normative_id: int, file_id: int) -> None:
+    async def supports_normative_status_column(self):
+        return True
+
+    async def get_next_normative_file_id(self):
+        return 1 if self.existing_file_id is None else 2
+
+    async def create_normative_file_record(self, *, normative_id: int, file_id: int, status: str = "actual") -> None:
+        self.created.append((normative_id, file_id, status))
+
+    async def upsert_normative_file(self, *, normative_id: int, file_id: int, status: str = "actual") -> None:
         self.upserts.append((normative_id, file_id))
+
+    async def list_normative_files(self, *, status: str | None = None):
+        return []
+
+    async def get_normative_file_row(self, *, normative_id: int):
+        return None
+
+    async def update_normative_file_status(self, *, normative_id: int, status: str) -> bool:
+        _ = (normative_id, status)
+        return False
 
 
 class _NormativeUow:
@@ -879,13 +899,13 @@ def test_normative_file_upload_allows_create_permission(
     set_uow(_NormativeUow(files_repo))
 
     response = test_client.post(
-        "/api/v1/normative-files/1",
+        "/api/v1/normative-files",
         files={"file": ("norm.txt", b"normative text", "text/plain")},
     )
 
     assert response.status_code == 200
     assert response.json() == {"data": {"normative_id": 1, "file_id": 701}}
-    assert files_repo.upserts == [(1, 701)]
+    assert files_repo.created == [(1, 701, "actual")]
 
 
 @pytest.mark.parametrize(

@@ -73,7 +73,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
     setIsSubmitting(true);
     setError(null);
     try {
-      await uploadNormativeFile(selectedFile, 1);
+      await uploadNormativeFile(selectedFile);
       showSuccessToast('Нормативный документ загружен');
       setSelectedFile(null);
       if (inputRef.current) {

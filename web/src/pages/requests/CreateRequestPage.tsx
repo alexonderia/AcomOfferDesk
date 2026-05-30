@@ -4,13 +4,19 @@ import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
+  Alert,
   Autocomplete,
   Box,
   Button,
   Chip,
   Dialog,
   DialogContent,
+  FormControl,
+  FormHelperText,
   InputAdornment,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Typography,
@@ -23,6 +29,8 @@ import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { checkRequestIdAvailability } from '@shared/api/requests/checkRequestIdAvailability';
 import { createRequest } from '@shared/api/requests/createRequest';
+import { getNormativeFiles } from '@shared/api/normative/getNormativeFiles';
+import type { NormativeFileItem } from '@shared/api/normative/types';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
@@ -52,7 +60,8 @@ const schema = z.object({
   initialAmount: z.string().trim().min(1, 'Укажите сумму по ТЗ').refine(isValidAmountValue, 'Укажите корректную сумму'),
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
-  files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
+  normativeFileId: z.number({ required_error: 'Выберите нормативный документ' }).int().positive('Выберите нормативный документ'),
+  files: z.array(z.instanceof(File)).min(1, 'Прикрепите файл заявки'),
   additionalEmails: z.array(z.string().email('Введите корректный email')).default([]),
   hiddenContractorIds: z.array(z.string().min(1)).default([]),
 });
@@ -89,6 +98,9 @@ export const CreateRequestPage = () => {
     return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
   }, []);
 
+  const [isLoadingNormativeFiles, setIsLoadingNormativeFiles] = useState(true);
+  const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
+  const [actualNormativeFiles, setActualNormativeFiles] = useState<NormativeFileItem[]>([]);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requestIdStatus, setRequestIdStatus] = useState<{ available: boolean; detail: string } | null>(null);
@@ -116,6 +128,7 @@ export const CreateRequestPage = () => {
       initialAmount: '',
       description: '',
       deadlineAt: todayDate,
+      normativeFileId: undefined,
       files: [],
       additionalEmails: [],
       hiddenContractorIds: [],
@@ -123,6 +136,7 @@ export const CreateRequestPage = () => {
   });
 
   const requestNumberValue = watch('requestNumber');
+  const normativeFileId = watch('normativeFileId');
   const files = watch('files');
   const additionalEmails = watch('additionalEmails');
   const hiddenContractorIds = watch('hiddenContractorIds');
@@ -133,6 +147,41 @@ export const CreateRequestPage = () => {
 
   const requestNumberRef = useRef(requestNumberValue);
   requestNumberRef.current = requestNumberValue;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadNormativeFiles = async () => {
+      setIsLoadingNormativeFiles(true);
+      setNormativeFilesError(null);
+      try {
+        const items = await getNormativeFiles('actual');
+        if (!isMounted) {
+          return;
+        }
+        setActualNormativeFiles(items);
+        if (items.length === 1) {
+          setValue('normativeFileId', items[0].id, { shouldValidate: true });
+        }
+      } catch (error) {
+        if (isMounted) {
+          setNormativeFilesError(
+            error instanceof Error ? error.message : 'Не удалось загрузить нормативные документы'
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingNormativeFiles(false);
+        }
+      }
+    };
+
+    void loadNormativeFiles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [setValue]);
 
   useEffect(() => {
     const normalizedRequestNumber = requestNumberValue.trim();
@@ -244,7 +293,24 @@ export const CreateRequestPage = () => {
     handleFilesAdded(Array.from(event.dataTransfer.files ?? []));
   };
 
+  const hasActualNormativeFiles = actualNormativeFiles.length > 0;
+  const isSubmitBlocked =
+    isRequestNumberBlocked
+    || !hasActualNormativeFiles
+    || isLoadingNormativeFiles
+    || !normativeFileId;
+
   const handleSubmitForm = async (values: FormValues) => {
+    if (!values.normativeFileId) {
+      setError('normativeFileId', { type: 'manual', message: 'Выберите нормативный документ' });
+      return;
+    }
+
+    if (!values.files.length) {
+      setError('files', { type: 'manual', message: 'Прикрепите файл заявки' });
+      return;
+    }
+
     const normalizedRequestNumber = values.requestNumber.trim();
     if (!normalizedRequestNumber) {
       setError('requestNumber', { type: 'manual', message: 'Укажите номер заявки' });
@@ -270,6 +336,7 @@ export const CreateRequestPage = () => {
     try {
       await createRequest({
         id: normalizedRequestNumber,
+        normative_file_id: values.normativeFileId,
         description: values.description?.trim() || null,
         deadline_at: `${values.deadlineAt}T23:59:59`,
         initial_amount: normalizeAmountValue(values.initialAmount),
@@ -447,7 +514,56 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Загрузить документы
+                Нормативный документ
+              </Typography>
+              <FormControl fullWidth error={Boolean(errors.normativeFileId)}>
+                <InputLabel id="normative-file-label">Нормативный документ</InputLabel>
+                <Controller
+                  control={control}
+                  name="normativeFileId"
+                  render={({ field }) => (
+                    <Select
+                      labelId="normative-file-label"
+                      label="Нормативный документ"
+                      value={field.value ?? ''}
+                      disabled={isLoadingNormativeFiles || !hasActualNormativeFiles}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        field.onChange(Number.isFinite(value) ? value : undefined);
+                      }}
+                      sx={{
+                        borderRadius: 1,
+                        backgroundColor: 'background.paper',
+                      }}
+                    >
+                      {actualNormativeFiles.map((item) => (
+                        <MenuItem key={item.id} value={item.id}>
+                          {item.original_name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
+                />
+                <FormHelperText>
+                  {errors.normativeFileId?.message
+                    ?? (isLoadingNormativeFiles
+                      ? 'Загружаем список нормативных документов...'
+                      : !hasActualNormativeFiles
+                        ? 'Нет актуальных нормативных документов. Создание заявки недоступно.'
+                        : 'Выберите актуальный нормативный документ')}
+                </FormHelperText>
+              </FormControl>
+              {normativeFilesError ? <Alert severity="error">{normativeFilesError}</Alert> : null}
+              {!hasActualNormativeFiles && !isLoadingNormativeFiles ? (
+                <Alert severity="warning">
+                  Нет актуальных нормативных документов. Обратитесь к ведущему экономисту.
+                </Alert>
+              ) : null}
+            </Stack>
+
+            <Stack spacing={1}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Файл заявки
               </Typography>
 
                 <Stack direction="row" spacing={1} alignItems="center">
@@ -455,7 +571,7 @@ export const CreateRequestPage = () => {
                   <InfoOutlinedIcon fontSize="small" />
                 </Box>
                 <Typography variant="body1" lineHeight={1.3}>
-                  Карта партнера будет прикреплена к заявке автоматически.
+                  Прикрепите дополнительный файл заявки от экономиста.
                 </Typography>
               </Stack>
 
@@ -653,7 +769,7 @@ export const CreateRequestPage = () => {
               variant="contained"
               fullWidth
               type="submit"
-              disabled={isSubmittingRequest || isRequestNumberBlocked}
+              disabled={isSubmittingRequest || isSubmitBlocked}
               sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 18, fontWeight: 700, boxShadow: 'none' }}
             >
               {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}

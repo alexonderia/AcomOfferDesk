@@ -24,7 +24,7 @@ export const useHeaderConfig = () => {
   const canOpenUsersPage = hasPermission(session, 'users.read');
   const canOpenContractorsPage = hasPermission(session, 'contractors.read');
   const canRegisterUser = hasPermission(session, 'users.create');
-  const canCreateNormativeFile = hasPermission(session, 'normative_files.create');
+  const canManageNormativeFiles = hasPermission(session, 'normative_files.manage');
   const canViewFeedback = hasPermission(session, 'feedback.read');
   const canViewDashboardProcess = hasPermission(session, 'dashboard.process.read')
     || hasPermission(session, 'department.dashboard.read');
@@ -61,6 +61,10 @@ export const useHeaderConfig = () => {
         { key: 'requests', label: 'Заявки', to: '/requests' },
         { key: 'request-create', label: 'Создание заявки' },
       ];
+    }
+
+    if (location.pathname === '/normative-files') {
+      return [{ key: 'normative-files', label: 'Нормативные документы' }];
     }
 
     if (isPmDashboard) {
@@ -126,7 +130,7 @@ export const useHeaderConfig = () => {
         canLoadOfferedRequests,
         canOpenUsersPage,
         canOpenContractorsPage,
-        canCreateNormativeFile,
+        canManageNormativeFiles,
         canViewFeedback,
         canViewDashboardProcess,
         canViewDashboardSavings,
@@ -141,6 +145,7 @@ export const useHeaderConfig = () => {
         onNavigateToRequestCreate: () => navigate('/requests/create', { state: { backgroundLocation: location } }),
         onNavigateToAdmin: () => navigate('/admin'),
         onNavigateToContractors: () => navigate('/contractors'),
+        onNavigateToNormativeFiles: () => navigate('/normative-files'),
         onNavigateToAdminCreate: () => {
           const params = new URLSearchParams(searchParams);
           if (location.pathname.startsWith('/admin')) {
@@ -176,7 +181,7 @@ export const useHeaderConfig = () => {
       canLoadOpenRequests,
       canOpenUsersPage,
       canOpenContractorsPage,
-      canCreateNormativeFile,
+      canManageNormativeFiles,
       canViewFeedback,
       canViewDashboardProcess,
       canViewDashboardSavings,

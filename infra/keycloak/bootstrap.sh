@@ -212,6 +212,7 @@ dashboard.plans.read
 normative_files.read
 normative_files.create
 normative_files.manage
+normative_files.status.update
 files.download
 unavailability.manage_all
 unavailability.manage_own
@@ -392,6 +393,7 @@ dashboard.plans.read
 unavailability.manage_subordinate
 normative_files.manage
 normative_files.create
+normative_files.status.update
 profile.manage_any
 company_contacts.manage_any
 unavailability.manage_own

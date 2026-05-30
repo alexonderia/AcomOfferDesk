@@ -11,7 +11,7 @@ const baseArgs = () => ({
   canLoadOfferedRequests: false,
   canOpenUsersPage: false,
   canOpenContractorsPage: false,
-  canCreateNormativeFile: false,
+  canManageNormativeFiles: false,
   canViewFeedback: false,
   canViewDashboardProcess: false,
   canViewDashboardSavings: false,
@@ -26,6 +26,7 @@ const baseArgs = () => ({
   onNavigateToRequestCreate: vi.fn(),
   onNavigateToAdmin: vi.fn(),
   onNavigateToContractors: vi.fn(),
+  onNavigateToNormativeFiles: vi.fn(),
   onNavigateToAdminCreate: vi.fn(),
   onNavigateBackToRequests: vi.fn(),
   onSetContractorTab: vi.fn(),
@@ -165,5 +166,21 @@ describe('buildHeaderConfig role navigation', () => {
     expect(tabKeys(config)).toEqual(['requests']);
     expect(mobileKeys(config)).toContain('requests');
     expect(tabKeys(config)).not.toEqual(expect.arrayContaining(['dashboard', 'users', 'offers', 'chat']));
+  });
+
+  it('does not highlight requests tab on normative files page', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.LEAD_ECONOMIST,
+      pathname: '/normative-files',
+      canManageNormativeFiles: true,
+      canOpenUsersPage: true,
+      canOpenContractorsPage: true,
+      canViewDashboardProcess: true,
+    });
+
+    expect(config.activeTab).toBe('normative');
+    expect(config.normativeFilesActive).toBe(true);
+    expect(config.tabs.some((tab) => tab.value === config.activeTab)).toBe(false);
   });
 });

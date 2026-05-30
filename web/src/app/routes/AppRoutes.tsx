@@ -16,6 +16,7 @@ const RegistrationLinkStatusPage = lazy(
 const VerifyEmailPage = lazy(async () => ({ default: (await import('@pages/auth/VerifyEmailPage')).VerifyEmailPage }));
 const RequestsPage = lazy(async () => ({ default: (await import('@pages/requests/RequestsPage')).RequestsPage }));
 const CreateRequestPage = lazy(async () => ({ default: (await import('@pages/requests/CreateRequestPage')).CreateRequestPage }));
+const NormativeFilesPage = lazy(async () => ({ default: (await import('@pages/normative-files/NormativeFilesPage')).NormativeFilesPage }));
 const RequestDetailsPage = lazy(async () => ({ default: (await import('@pages/requests/RequestDetailsPage')).RequestDetailsPage }));
 const ContractorRequestDetailsPage = lazy(
   async () => ({ default: (await import('@pages/requests/ContractorRequestDetailsPage')).ContractorRequestDetailsPage })
@@ -80,6 +81,14 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
                 element={
                   <RoleRoute allowedPermissions={['requests.create']}>
                     <CreateRequestPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/normative-files"
+                element={
+                  <RoleRoute allowedPermissions={['normative_files.manage']}>
+                    <NormativeFilesPage />
                   </RoleRoute>
                 }
               />

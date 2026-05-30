@@ -437,14 +437,14 @@ class NormativeFile(Base):
     __tablename__ = "normative_files"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('actual', 'archived')",
-            name="normative_files_status_check",
+            "document_status IN ('actual', 'outdated')",
+            name="normative_files_document_status_chk",
         ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     id_file: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="RESTRICT"), nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="actual")
+    status: Mapped[str] = mapped_column("document_status", Text, nullable=False, server_default="actual")
 
 
 class FeedBack(Base):

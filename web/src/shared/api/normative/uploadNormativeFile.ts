@@ -7,12 +7,12 @@ type UploadNormativeFileResponse = {
   };
 };
 
-export const uploadNormativeFile = async (file: File, normativeId = 1): Promise<number> => {
+export const uploadNormativeFile = async (file: File): Promise<number> => {
   const formData = new FormData();
   formData.append('file', file, file.name);
 
   const response = await fetchJson<UploadNormativeFileResponse>(
-    `/api/v1/normative-files/${normativeId}`,
+    '/api/v1/normative-files',
     {
       method: 'POST',
       body: formData

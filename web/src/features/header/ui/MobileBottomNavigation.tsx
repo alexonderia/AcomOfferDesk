@@ -13,7 +13,6 @@ import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ActionButton } from '@shared/components/ActionButton';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
-import { NormativeFileButton } from '@shared/components/NormativeFileButton';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import { NotificationBell } from '@features/notifications';
@@ -161,7 +160,34 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
     }
 
     if (item.key === 'normative') {
-      return <NormativeFileButton sidebar />;
+      return (
+        <ActionButton
+          kind="custom"
+          showNavigationIcons={false}
+          onClick={() => {
+            setMoreAnchorEl(null);
+            navigate('/normative-files');
+          }}
+          sx={{
+            width: '100%',
+            minHeight: 42,
+            minWidth: 0,
+            justifyContent: 'flex-start',
+            px: 1.75,
+            gap: 1.25,
+            borderRadius: (theme) => `${theme.acomShape.buttonRadius}px !important`,
+            fontSize: 14,
+            fontWeight: 500,
+            lineHeight: 1.2,
+            textTransform: 'none'
+          }}
+        >
+          <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+            {getHeaderNavigationIcon('normative')}
+          </Box>
+          Нормативные документы
+        </ActionButton>
+      );
     }
 
     if (item.key === 'guide') {

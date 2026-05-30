@@ -259,16 +259,19 @@ class RequestService:
         description: str | None,
         initial_amount: float | None,
         id_plan: int | None = None,
+        normative_file_id: int | None = None,
         files: list[RequestFileCreateInput],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
     ) -> tuple[str, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
+        if normative_file_id is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
+        if not files:
+            raise Conflict("Прикрепите файл заявки")
         if _normalize_to_utc(deadline_at) < _utcnow():
             raise Conflict("Deadline cannot be in the past")
-        if not files:
-            raise Conflict("At least one file is required")
         self._validate_amount(value=initial_amount, field_name="Initial amount")
         await self._ensure_plan_assignment_allowed(
             current_user=current_user,
@@ -295,10 +298,11 @@ class RequestService:
         )
 
         file_ids: list[int] = []
-        # TEMP: partner card is not auto-attached to requests.
-        # All request files must be attached by the user manually.
-        # partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
-        # file_ids.append(partner_card_file_id)
+        normative_file_id_value = await self._attach_normative_file_copy(
+            request_id=request.id,
+            normative_file_id=normative_file_id,
+        )
+        file_ids.append(normative_file_id_value)
         for file_item in files:
             prepared = await self._file_service.prepare_bytes(
                 original_name=file_item.original_name,
@@ -798,17 +802,29 @@ class RequestService:
             )
         )
 
-    async def _attach_partner_card_file(self, *, request_id: str) -> int:
-        partner_card = await self._files.get_normative_file(normative_id=PARTNER_CARD_NORMATIVE_ID)
-        if partner_card is None:
-            raise Conflict("Partner card file is not configured")
+    async def _attach_normative_file_copy(self, *, request_id: str, normative_file_id: int) -> int:
+        normative_status = await self._files.get_normative_file_status(normative_id=normative_file_id)
+        if normative_status is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
+        if normative_status != "actual":
+            raise Conflict("Выбранный нормативный документ больше не актуален")
+
+        normative_file = await self._files.get_normative_file(normative_id=normative_file_id)
+        if normative_file is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
 
         db_file = await self._files.create(
-            storage_object_id=partner_card.id_storage_object,
-            original_name=partner_card.original_name,
+            storage_object_id=normative_file.id_storage_object,
+            original_name=normative_file.original_name,
         )
         await self._requests.attach_file(request_id=request_id, file_id=db_file.id)
         return db_file.id
+
+    async def _attach_partner_card_file(self, *, request_id: str) -> int:
+        return await self._attach_normative_file_copy(
+            request_id=request_id,
+            normative_file_id=PARTNER_CARD_NORMATIVE_ID,
+        )
 
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:

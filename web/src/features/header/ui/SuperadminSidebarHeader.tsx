@@ -10,7 +10,6 @@ import { NavLink } from 'react-router-dom';
 import { ActionButton } from '@shared/components/ActionButton';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
 import { NotificationBell } from '@features/notifications';
-import { NormativeFileButton } from '@shared/components/NormativeFileButton';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
@@ -254,7 +253,15 @@ export const SuperadminSidebarHeader = ({
             />
           ))}
 
-          <NormativeFileButton iconOnly={collapsed} sidebar />
+          {config.showNormativeFiles ? (
+            <SidebarMenuButton
+              label="Нормативные документы"
+              icon={getHeaderNavigationIcon('normative')}
+              collapsed={collapsed}
+              active={Boolean(config.normativeFilesActive)}
+              onClick={() => config.onNavigateToNormativeFiles?.()}
+            />
+          ) : null}
         </Stack>
 
         <Menu

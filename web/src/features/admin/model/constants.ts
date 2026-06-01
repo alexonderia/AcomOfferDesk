@@ -43,3 +43,18 @@ export const addUserButtonSx = {
   minWidth: 220,
   whiteSpace: 'nowrap'
 };
+
+export const employeePersonLabels = {
+  searchPlaceholder: 'Найти сотрудника',
+  addButtonLabel: 'Добавить сотрудника',
+  emptyList: 'Список сотрудников пока пуст.',
+  cardTitle: 'Карточка сотрудника',
+  detailsToggle: 'Детали сотрудника',
+  userSectionTitle: 'Сотрудник',
+  profileSectionTitle: 'Профиль сотрудника',
+  createDialogTitle: 'Создание нового сотрудника',
+  roleFieldLabel: 'Роль сотрудника',
+  createSubmitLabel: 'Создать сотрудника',
+  loadListError: 'Не удалось загрузить список сотрудников',
+  createError: 'Не удалось создать сотрудника',
+} as const;

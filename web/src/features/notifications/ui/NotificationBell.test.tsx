@@ -151,4 +151,39 @@ describe('NotificationBell', () => {
     });
     expect(navigateMock).toHaveBeenCalledWith('/offers/11/workspace');
   });
+
+  it('expands grouped notifications without closing center or navigating', async () => {
+    loadNotificationsMock.mockResolvedValue(undefined);
+    notificationsState.items = [
+      notificationItem,
+      {
+        ...notificationItem,
+        id: 12,
+        title: 'Another message',
+        body: 'Another body',
+        entity_id: 12,
+        link_url: '/offers/12/workspace',
+        payload: { offer_id: 12, chat_id: 12 },
+      },
+    ];
+
+    render(
+      <ThemeProvider theme={appTheme}>
+        <NotificationBell variant="floating" />
+      </ThemeProvider>
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Открыть уведомления/i }));
+    });
+
+    const groupedTitle = await screen.findByText('Новые сообщения (2)');
+    fireEvent.click(groupedTitle.closest('button') as HTMLButtonElement);
+
+    expect(screen.getByText('New message')).toBeInTheDocument();
+    expect(screen.getByText('Another message')).toBeInTheDocument();
+    expect(markOneAsReadMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('notification-popover')).toBeInTheDocument();
+  });
 });

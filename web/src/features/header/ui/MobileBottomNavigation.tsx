@@ -178,14 +178,16 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
             borderRadius: (theme) => `${theme.acomShape.buttonRadius}px !important`,
             fontSize: 14,
             fontWeight: 500,
-            lineHeight: 1.2,
-            textTransform: 'none'
+            lineHeight: 1.25,
+            textTransform: 'none',
+            whiteSpace: 'pre-line',
+            textAlign: 'left'
           }}
         >
-          <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+          <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1, mt: 0.15 }}>
             {getHeaderNavigationIcon('normative')}
           </Box>
-          Нормативные документы
+          {'Нормативные\nдокументы'}
         </ActionButton>
       );
     }

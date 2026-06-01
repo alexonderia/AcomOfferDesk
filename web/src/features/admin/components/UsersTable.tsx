@@ -284,7 +284,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                   color: 'primary.main'
                 }}
               >
-                Детали пользователя
+                Детали сотрудника
               </Typography>
               <ExpandMoreRounded
                 sx={{
@@ -1501,8 +1501,8 @@ export const UsersTable = ({
             getRowId={(row) => row.id}
             isLoading={isLoading}
             noRowsLabel={emptyMessage}
-            searchPlaceholder="Найти пользователя"
-            addButtonLabel="Добавить пользователя"
+            searchPlaceholder="Найти сотрудника"
+            addButtonLabel="Добавить сотрудника"
             onAddClick={onAddClick}
             minTableWidth={840}
             cardExpansionControl={{
@@ -1563,7 +1563,7 @@ export const UsersTable = ({
             {selectedUser ? (
               <Stack spacing={2}>
                 <Typography id="user-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
-                  Карточка пользователя
+                  Карточка сотрудника
                 </Typography>
 
                 <Box
@@ -1576,7 +1576,7 @@ export const UsersTable = ({
                   }}
                 >
                   <Stack spacing={1.2}>
-                    <SourceSection title="Пользователь" source="users">
+                    <SourceSection title="Сотрудник" source="users">
                       <Box
                         sx={{
                           display: 'grid',
@@ -1594,7 +1594,7 @@ export const UsersTable = ({
                       </Box>
                     </SourceSection>
 
-                    <SourceSection title="Профиль пользователя" source="profiles">
+                    <SourceSection title="Профиль сотрудника" source="profiles">
                       <Stack spacing={1.2}>
                         <InfoRow label="ФИО" value={selectedUser.full_name} />
                         <Box

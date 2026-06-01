@@ -7,6 +7,16 @@ import { AppHeader, MobileBottomNavigation, useHeaderConfig } from '@features/he
 import { AppFooter } from '@shared/components/AppFooter';
 import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
 import { MOBILE_BOTTOM_NAV_CONTENT_PADDING, useIsMobileViewport } from '@shared/lib/responsive';
+import { PageBreadcrumbActionsProvider, usePageBreadcrumbActionsState } from './PageBreadcrumbActions';
+
+const LayoutBreadcrumbs = ({
+  items,
+}: {
+  items: { key: string; label: string; onClick?: () => void }[];
+}) => {
+  const breadcrumbActions = usePageBreadcrumbActionsState();
+  return <BreadcrumbsNav items={items} trailing={breadcrumbActions} />;
+};
 
 export const AppLayout = () => {
   const theme = useTheme();
@@ -32,6 +42,7 @@ export const AppLayout = () => {
   if (isSidebarLayout) {
     if (isMobileViewport) {
       return (
+        <PageBreadcrumbActionsProvider>
         <Stack sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
           <Stack
             component="section"
@@ -46,7 +57,7 @@ export const AppLayout = () => {
               overflowX: 'hidden',
             }}
           >
-            {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
+            <LayoutBreadcrumbs items={breadcrumbItems} />
             <Box component="main" sx={{ minWidth: 0, pb: 0.5, flex: 1 }}>
               <Outlet />
             </Box>
@@ -56,10 +67,12 @@ export const AppLayout = () => {
 
           <MobileBottomNavigation config={headerConfig} onLogout={logout} />
         </Stack>
+        </PageBreadcrumbActionsProvider>
       );
     }
 
     return (
+      <PageBreadcrumbActionsProvider>
       <Stack
         sx={{
           minHeight: '100vh',
@@ -103,7 +116,7 @@ export const AppLayout = () => {
               isolation: ' isolate',
             }}
           >
-            {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
+            <LayoutBreadcrumbs items={breadcrumbItems} />
             <Box component="main" sx={{ minWidth: 0, pb: 0.5, flex: 1, position: 'relative', zIndex: 1 }}>
               <Outlet />
             </Box>
@@ -112,10 +125,12 @@ export const AppLayout = () => {
           </Stack>
         </Box>
       </Stack>
+      </PageBreadcrumbActionsProvider>
     );
   }
 
   return (
+    <PageBreadcrumbActionsProvider>
     <Stack sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
       <Box
         sx={{
@@ -124,7 +139,7 @@ export const AppLayout = () => {
         }}
       >
         {isHiddenHeader ? null : <AppHeader config={headerConfig} onLogout={logout} />}
-        {!isHiddenHeader && breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
+        {!isHiddenHeader ? <LayoutBreadcrumbs items={breadcrumbItems} /> : null}
 
         <Box component="main">
           <Outlet />
@@ -133,5 +148,6 @@ export const AppLayout = () => {
 
       <AppFooter />
     </Stack>
+    </PageBreadcrumbActionsProvider>
   );
 };

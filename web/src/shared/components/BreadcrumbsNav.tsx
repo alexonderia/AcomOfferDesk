@@ -3,6 +3,7 @@ import Breadcrumbs from '@mui/material/Breadcrumbs';
 import ButtonBase from '@mui/material/ButtonBase';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import type { ReactNode } from 'react';
 
 export type BreadcrumbItem = {
   key: string;
@@ -12,21 +13,29 @@ export type BreadcrumbItem = {
 
 type BreadcrumbsNavProps = {
   items: BreadcrumbItem[];
+  trailing?: ReactNode;
 };
 
-export const BreadcrumbsNav = ({ items }: BreadcrumbsNavProps) => {
-  if (items.length === 0) {
+export const BreadcrumbsNav = ({ items, trailing }: BreadcrumbsNavProps) => {
+  if (items.length === 0 && !trailing) {
     return null;
   }
 
   return (
     <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent="space-between"
+      spacing={1.5}
+      flexWrap="wrap"
       sx={{
         px: 0,
         py: 0.75,
+        gap: 1,
       }}
     >
-      <Breadcrumbs separator={<NavigateNextRounded sx={{ fontSize: 20 }} />} aria-label="breadcrumb">
+      {items.length > 0 ? (
+        <Breadcrumbs separator={<NavigateNextRounded sx={{ fontSize: 20 }} />} aria-label="breadcrumb">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
           if (!item.onClick || isLast) {
@@ -74,7 +83,15 @@ export const BreadcrumbsNav = ({ items }: BreadcrumbsNavProps) => {
             </ButtonBase>
           );
         })}
-      </Breadcrumbs>
+        </Breadcrumbs>
+      ) : (
+        <span />
+      )}
+      {trailing ? (
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ ml: 'auto' }}>
+          {trailing}
+        </Stack>
+      ) : null}
     </Stack>
   );
 };

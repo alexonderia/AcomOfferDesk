@@ -16,7 +16,7 @@ import { UsersTable } from '@features/admin/components/UsersTable';
 import { ROLE } from '@shared/constants/roles';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { formatRuPhone } from '@shared/lib/phone';
-import type { UserTab } from '../model/constants';
+import { employeePersonLabels, type UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
 
 const dialogPaperSx = (theme: Theme) => ({
@@ -89,6 +89,7 @@ export const AdminPageView = () => {
   } = form;
 
   const selectedRoleId = watch('role_id');
+  const isEmployeesTab = activeTab !== 'contractors';
 
   const handleRoleSelectChange = (event: SelectChangeEvent<UserTab>) => {
     handleTabChange(event.target.value as UserTab);
@@ -127,7 +128,7 @@ export const AdminPageView = () => {
       <UsersTable
         users={users}
         isLoading={isLoadingUsers}
-        emptyMessage="Список пользователей пока пуст."
+        emptyMessage={isEmployeesTab ? employeePersonLabels.emptyList : 'Список пользователей пока пуст.'}
         getRoleLabel={getRoleLabel}
         isContractorsTab={activeTab === 'contractors'}
         canViewRoleIds={canViewRoleIds}
@@ -149,10 +150,14 @@ export const AdminPageView = () => {
           <Box component="form" onSubmit={handleSubmit(onSubmit)}>
             <Stack spacing={2}>
               <Typography variant="h5" fontWeight={600} lineHeight={1}>
-                {isContractorRole ? 'Создание контрагента' : 'Создание нового пользователя'}
+                {isContractorRole
+                  ? 'Создание контрагента'
+                  : isEmployeesTab
+                    ? employeePersonLabels.createDialogTitle
+                    : 'Создание нового пользователя'}
               </Typography>
               <TextField
-                label="Роль пользователя"
+                label={isEmployeesTab && !isContractorRole ? employeePersonLabels.roleFieldLabel : 'Роль пользователя'}
                 select
                 error={Boolean(getFieldError('role_id'))}
                 helperText={getFieldError('role_id')}
@@ -311,7 +316,9 @@ export const AdminPageView = () => {
                   ? 'Сохранение...'
                   : isContractorRole
                     ? 'Создать контрагента'
-                    : 'Создать пользователя'}
+                    : isEmployeesTab
+                      ? employeePersonLabels.createSubmitLabel
+                      : 'Создать пользователя'}
               </Button>
             </Stack>
           </Box>

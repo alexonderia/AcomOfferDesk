@@ -1,5 +1,6 @@
 import { ListItemButton } from '@mui/material';
 import type { Notification } from '../model/types';
+import { NOTIFICATION_CENTER_CARD_BORDER_RADIUS_PX } from './notificationCenterLayout';
 import { NotificationCard } from './NotificationCard';
 
 type NotificationItemProps = {
@@ -24,7 +25,7 @@ export const NotificationItem = ({
       sx={{
         display: 'block',
         p: 0,
-        borderRadius: 2,
+        borderRadius: `${NOTIFICATION_CENTER_CARD_BORDER_RADIUS_PX}px`,
         '& + &': {
           mt: 0.9,
         },

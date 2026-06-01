@@ -45,7 +45,11 @@ export const useHeaderConfig = () => {
 
   const breadcrumbs = useMemo(() => {
     if (location.pathname === '/admin') {
-      return [{ key: 'users', label: 'Пользователи' }];
+      const isEmployeesPage =
+        session?.roleId === ROLE.PROJECT_MANAGER
+        || session?.roleId === ROLE.LEAD_ECONOMIST
+        || session?.roleId === ROLE.ECONOMIST;
+      return [{ key: 'users', label: isEmployeesPage ? 'Сотрудники' : 'Пользователи' }];
     }
 
     if (location.pathname === '/contractors') {
@@ -117,7 +121,7 @@ export const useHeaderConfig = () => {
     }
 
     return [];
-  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmPlan, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch]);
+  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmPlan, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch, session?.roleId]);
 
   return useMemo(
     () =>

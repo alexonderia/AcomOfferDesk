@@ -12,7 +12,7 @@ import { getUsers } from '@shared/api/users/getUsers';
 import { hasAnyPermission, hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { isValidRuPhone } from '@shared/lib/phone';
-import { addUserButtonSx, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
+import { addUserButtonSx, employeePersonLabels, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
 import { resolveUserTabFromParam } from './helpers';
 import { useSystemToasts } from '@shared/ui/toasts';
 
@@ -373,7 +373,13 @@ export const useAdminPage = () => {
       const response = await getUsers(roleByTab[activeTab]);
       setUsers(response.items);
     } catch (error) {
-      setUsersError(error instanceof Error ? error.message : 'Не удалось загрузить список пользователей');
+      setUsersError(
+        error instanceof Error
+          ? error.message
+          : activeTab === 'contractors'
+            ? 'Не удалось загрузить список пользователей'
+            : employeePersonLabels.loadListError
+      );
     } finally {
       setIsLoadingUsers(false);
     }
@@ -431,13 +437,19 @@ export const useAdminPage = () => {
           id_parent: values.id_parent?.trim() || undefined
         });
 
-        showSuccessToast(`Пользователь ${response.data.user_id} создан.`);
+        showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
       }
 
       resetForm();
       await Promise.all([loadUsers(), loadManagers()]);
     } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : 'Не удалось создать пользователя');
+      showErrorToast(
+        error instanceof Error
+          ? error.message
+          : values.role_id === ROLE.CONTRACTOR
+            ? 'Не удалось создать контрагента'
+            : employeePersonLabels.createError
+      );
     }
   };
 

@@ -572,7 +572,7 @@ class OfferService:
             contractor_user_id=current_user.user_id,
         )
         existing_offer_preview: ExistingOfferPreview | None = None
-        if existing_offer is not None and existing_offer.status != "deleted":
+        if existing_offer is not None:
             offer_files = await self._offers.list_offer_files(offer_id=existing_offer.id)
             existing_offer_preview = ExistingOfferPreview(
                 offer_id=existing_offer.id,

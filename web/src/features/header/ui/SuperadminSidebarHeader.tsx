@@ -255,7 +255,8 @@ export const SuperadminSidebarHeader = ({
 
           {config.showNormativeFiles ? (
             <SidebarMenuButton
-              label="Нормативные документы"
+              label={'Нормативные\nдокументы'}
+              compactLabel
               icon={getHeaderNavigationIcon('normative')}
               collapsed={collapsed}
               active={Boolean(config.normativeFilesActive)}

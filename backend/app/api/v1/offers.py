@@ -102,7 +102,10 @@ async def get_contractor_request_view(
         service = build_offer_service(uow)
         item = await service.get_request_view(current_user=current_user, request_id=request_id)
 
-    can_create_offer = item.status == "open" and item.existing_offer is None
+    can_create_offer = (
+        item.status == "open"
+        and (item.existing_offer is None or item.existing_offer.status == "deleted")
+    )
     return ContractorRequestViewResponse(
         data={
             "request_id": _request_id_as_str(item.request_id),

@@ -66,7 +66,10 @@ export const ContractorRequestDetailsPage = () => {
         if (!isMounted) {
           return;
         }
-        if (response.existing_offer?.actions.open_workspace) {
+        if (
+          response.existing_offer?.actions.open_workspace
+          && response.existing_offer.status !== 'deleted'
+        ) {
           navigate(`/offers/${response.existing_offer.offer_id}/workspace`, { replace: true });
           return;
         }
@@ -151,6 +154,8 @@ export const ContractorRequestDetailsPage = () => {
       </Stack>
     );
   }
+
+  const existingOffer = request.existing_offer;
 
   return (
     <Box>
@@ -247,6 +252,17 @@ export const ContractorRequestDetailsPage = () => {
               {isResponding ? 'Создаём отклик...' : 'Откликнуться'}
             </Button>
           </Stack>
+        </Box>
+      ) : null}
+
+      {existingOffer?.status === 'deleted' && existingOffer.actions.open_workspace ? (
+        <Box sx={{ mt: canCreateOffer ? 1.5 : 2 }}>
+          <Button
+            variant="text"
+            onClick={() => navigate(`/offers/${existingOffer.offer_id}/workspace`)}
+          >
+            Открыть удаленный отклик
+          </Button>
         </Box>
       ) : null}
     </Box>

@@ -1,5 +1,6 @@
 import { Alert, Button, Stack } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
 import { useAuth } from '@app/providers/AuthProvider';
 import { ContractorCreateDialog } from '@features/contractors/components/ContractorCreateDialog';
 import { ContractorInviteDialog } from '@features/contractors/components/ContractorInviteDialog';
@@ -37,6 +38,18 @@ export const ContractorsPage = () => {
     ? session.roleId === ROLE.ECONOMIST || session.roleId === ROLE.LEAD_ECONOMIST
     : false;
 
+  const breadcrumbActions = useMemo(
+    () =>
+      canManageContractors ? (
+        <Button variant="outlined" onClick={() => setIsInviteDialogOpen(true)} sx={{ textTransform: 'none' }}>
+          Пригласить контрагента
+        </Button>
+      ) : null,
+    [canManageContractors]
+  );
+
+  useSetPageBreadcrumbActions(breadcrumbActions);
+
   const loadContractors = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -58,21 +71,12 @@ export const ContractorsPage = () => {
   return (
     <Stack spacing={2}>
       {error ? <Alert severity="error">{error}</Alert> : null}
-      {canManageContractors ? (
-        <Stack direction="row" justifyContent="flex-end" spacing={1} flexWrap="wrap">
-          <Button variant="outlined" onClick={() => setIsCreateDialogOpen(true)}>
-            Добавить контрагента
-          </Button>
-          <Button variant="outlined" onClick={() => setIsInviteDialogOpen(true)}>
-            Пригласить контрагента
-          </Button>
-        </Stack>
-      ) : null}
       <ContractorsListView
         users={users}
         isLoading={isLoading}
         emptyMessage="Контрагенты не найдены"
         onStatusUpdated={loadContractors}
+        onAddClick={canManageContractors ? () => setIsCreateDialogOpen(true) : undefined}
         useContractorsStatusApi
       />
       <ContractorCreateDialog

@@ -9,12 +9,12 @@ import {
   Dialog,
   DialogContent,
   Stack,
-  TextField,
   Tooltip,
   Typography
 } from '@mui/material';
 import { alpha, type Theme, useTheme } from '@mui/material/styles';
-import { useForm } from 'react-hook-form';
+import { useLiveValidatedForm } from '@shared/lib/forms';
+import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor } from '@entities/unavailability';
@@ -157,7 +157,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
     handleSubmit: handlePasswordSubmit,
     formState: { errors: passwordErrors, isSubmitting: isSubmittingPassword },
     reset: resetPassword
-  } = useForm<PasswordFormValues>({
+  } = useLiveValidatedForm<PasswordFormValues>({
     resolver: zodResolver(passwordSchema),
     defaultValues: { oldPassword: '', password: '', confirmPassword: '' }
   });
@@ -167,7 +167,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
     handleSubmit: handleProfileSubmit,
     formState: { errors: profileErrors, isSubmitting: isSubmittingProfile },
     reset: resetProfile
-  } = useForm<ProfileFormValues>({
+  } = useLiveValidatedForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: { full_name: '', phone: '', mail: '' }
   });
@@ -177,7 +177,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
     handleSubmit: handleCompanySubmit,
     formState: { errors: companyErrors, isSubmitting: isSubmittingCompany },
     reset: resetCompany
-  } = useForm<CompanyFormValues>({
+  } = useLiveValidatedForm<CompanyFormValues>({
     resolver: zodResolver(companySchema),
     defaultValues: { inn: '', company_name: '', company_phone: '', company_mail: '', address: '', note: '' }
   });
@@ -189,7 +189,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
     setValue: setUnavailabilityValue,
     formState: { errors: unavailabilityErrors, isSubmitting: isSubmittingUnavailability },
     reset: resetUnavailability
-  } = useForm<UnavailabilityFormValues>({
+  } = useLiveValidatedForm<UnavailabilityFormValues>({
     resolver: zodResolver(unavailabilitySchema),
     defaultValues: { status: 'unavailable', started_at: '', ended_at: '' }
   });
@@ -519,26 +519,29 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
             <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Изменение пароля
             </Typography>
-            <TextField
+            <ValidatedTextField
               label="Старый пароль"
               type="password"
-              {...registerPassword('oldPassword')}
+              fieldName="oldPassword"
+              registration={registerPassword('oldPassword')}
               error={Boolean(passwordErrors.oldPassword)}
               helperText={passwordErrors.oldPassword?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Новый пароль"
               type="password"
-              {...registerPassword('password')}
+              fieldName="password"
+              registration={registerPassword('password')}
               error={Boolean(passwordErrors.password)}
               helperText={passwordErrors.password?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Повторите новый пароль"
               type="password"
-              {...registerPassword('confirmPassword')}
+              fieldName="confirmPassword"
+              registration={registerPassword('confirmPassword')}
               error={Boolean(passwordErrors.confirmPassword)}
               helperText={passwordErrors.confirmPassword?.message}
               sx={inputFieldSx}
@@ -562,23 +565,26 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
             <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Личные данные
             </Typography>
-            <TextField
+            <ValidatedTextField
               label="ФИО"
-              {...registerProfile('full_name')}
+              fieldName="full_name"
+              registration={registerProfile('full_name')}
               error={Boolean(profileErrors.full_name)}
               helperText={profileErrors.full_name?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Телефон"
-              {...registerProfile('phone')}
+              fieldName="phone"
+              registration={registerProfile('phone')}
               error={Boolean(profileErrors.phone)}
               helperText={profileErrors.phone?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Электронная почта"
-              {...registerProfile('mail')}
+              fieldName="mail"
+              registration={registerProfile('mail')}
               error={Boolean(profileErrors.mail)}
               helperText={profileErrors.mail?.message}
               sx={inputFieldSx}
@@ -602,46 +608,52 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
             <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Юридические данные компании
             </Typography>
-            <TextField
+            <ValidatedTextField
               label="ИНН"
-              {...registerCompany('inn')}
+              fieldName="inn"
+              registration={registerCompany('inn')}
               error={Boolean(companyErrors.inn)}
               helperText={companyErrors.inn?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Наименование"
-              {...registerCompany('company_name')}
+              fieldName="company_name"
+              registration={registerCompany('company_name')}
               error={Boolean(companyErrors.company_name)}
               helperText={companyErrors.company_name?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Телефон"
-              {...registerCompany('company_phone')}
+              fieldName="company_phone"
+              registration={registerCompany('company_phone')}
               error={Boolean(companyErrors.company_phone)}
               helperText={companyErrors.company_phone?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Электронная почта"
-              {...registerCompany('company_mail')}
+              fieldName="company_mail"
+              registration={registerCompany('company_mail')}
               error={Boolean(companyErrors.company_mail)}
               helperText={companyErrors.company_mail?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Адрес"
-              {...registerCompany('address')}
+              fieldName="address"
+              registration={registerCompany('address')}
               error={Boolean(companyErrors.address)}
               helperText={companyErrors.address?.message}
               sx={inputFieldSx}
             />
-            <TextField
+            <ValidatedTextField
               label="Дополнительная информация"
+              fieldName="note"
               multiline
               minRows={3}
-              {...registerCompany('note')}
+              registration={registerCompany('note')}
               error={Boolean(companyErrors.note)}
               helperText={companyErrors.note?.message}
               sx={inputFieldSx}

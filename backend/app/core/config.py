@@ -184,15 +184,15 @@ class Settings(BaseSettings):
         validation_alias="INVITATION_PORTAL_URL",
     )
     invitation_contact_name: str | None = Field(
-        default=None,
+        default="Владислав Хлистун",
         validation_alias="INVITATION_CONTACT_NAME",
     )
     invitation_contact_email: str | None = Field(
-        default=None,
+        default="VKhlistun@alabuga.ru",
         validation_alias="INVITATION_CONTACT_EMAIL",
     )
     invitation_contact_phone: str | None = Field(
-        default=None,
+        default="+7 927 455-80-89",
         validation_alias="INVITATION_CONTACT_PHONE",
     )
     invitation_contact_text: str | None = Field(
@@ -222,7 +222,7 @@ class Settings(BaseSettings):
     s3_bucket: str = Field(..., validation_alias="S3_BUCKET")
     s3_secure: bool = Field(default=False, validation_alias="S3_SECURE")
     s3_presigned_get_ttl_seconds: int = Field(default=300, validation_alias="S3_PRESIGNED_GET_TTL_SECONDS")
-    max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
+    max_upload_size_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
     tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
@@ -295,7 +295,7 @@ class Settings(BaseSettings):
         if self.s3_presigned_get_ttl_seconds <= 0:
             self.s3_presigned_get_ttl_seconds = 300
         if self.max_upload_size_bytes <= 0:
-            self.max_upload_size_bytes = 10 * 1024 * 1024
+            self.max_upload_size_bytes = 5 * 1024 * 1024
         if self.contractor_invite_max_emails_per_request <= 0:
             self.contractor_invite_max_emails_per_request = 50
         if self.invitation_portal_url is not None:

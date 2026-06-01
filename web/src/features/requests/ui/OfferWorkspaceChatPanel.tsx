@@ -8,7 +8,8 @@ import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import { alpha } from '@mui/material/styles';
 import { Box, Button, Chip, Divider, IconButton, Menu, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller } from 'react-hook-form';
+import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { OfferWorkspaceMessage } from '@shared/api/offers/offerWorkspaceActions';
 import { getFileKey, mergeUniqueFiles } from '@shared/lib/files';
@@ -188,7 +189,7 @@ export const OfferWorkspaceChatPanel = ({
     setValue,
     reset,
     formState: { errors }
-  } = useForm<ChatFormValues>({
+  } = useLiveValidatedForm<ChatFormValues>({
     resolver: zodResolver(chatSchema),
     defaultValues: { text: '', files: [] }
   });
@@ -592,6 +593,7 @@ export const OfferWorkspaceChatPanel = ({
                     disabled={isSending}
                     error={Boolean(errors.text)}
                     helperText={errors.text?.message}
+                    {...textFieldAutocompleteProps('text')}
                     InputProps={{ readOnly: !canSendMessage }}
                     name={field.name}
                     value={field.value}

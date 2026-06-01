@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import re
+
 from app.domain.exceptions import Conflict, NotFound
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.repositories.files import FileRepository
 from app.services.files import FileService
 from app.services.normative_files import NormativeFileService
+
+_PRESENTATION_FILE_PATTERN = re.compile(r"(презентац|presentation)", re.IGNORECASE)
 
 
 class NormativeEmailAttachmentService:
@@ -36,3 +40,21 @@ class NormativeEmailAttachmentService:
             content_bytes=content_bytes,
             mime_type=db_file.mime_type,
         )
+
+    async def resolve_presentation_normative_file_id(self) -> int | None:
+        normative_files = await self._files.list_normative_files(status="actual")
+        for normative_file in normative_files:
+            if _PRESENTATION_FILE_PATTERN.search(normative_file.original_name):
+                return normative_file.id
+        if normative_files:
+            return normative_files[0].id
+        return None
+
+    async def load_presentation_attachment(self) -> EmailAttachment | None:
+        normative_file_id = await self.resolve_presentation_normative_file_id()
+        if normative_file_id is None:
+            return None
+        try:
+            return await self.load_required_attachment(normative_file_id=normative_file_id)
+        except Conflict:
+            return None

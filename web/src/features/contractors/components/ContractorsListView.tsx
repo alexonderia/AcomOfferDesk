@@ -12,7 +12,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
 import {
@@ -71,7 +71,7 @@ export const ContractorsListView = ({
     handleSubmit,
     reset,
     formState: { isSubmitting },
-  } = useForm<StatusFormValues>({
+  } = useLiveValidatedForm<StatusFormValues>({
     resolver: zodResolver(statusSchema),
     defaultValues: { user_status: 'review' },
   });

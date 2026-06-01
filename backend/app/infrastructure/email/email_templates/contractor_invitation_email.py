@@ -3,6 +3,17 @@
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from app.infrastructure.email.email_templates.email_contact_blocks import (
+    EmailContactInfo,
+    build_contact_html_block,
+    build_contact_text_block,
+    build_primary_button_html,
+)
+from app.infrastructure.email.email_templates.email_invitation_content import (
+    PORTAL_BUTTON_LABEL,
+    build_invitation_intro_html,
+    build_invitation_intro_text_lines,
+)
 
 INVITATION_SUBJECT = "Приглашение в AcomOfferDesk"
 
@@ -16,21 +27,22 @@ def build_contractor_invitation_email_payload(
     contact_phone: str | None,
     contact_text: str | None,
 ) -> EmailMessagePayload:
+    contact = EmailContactInfo(
+        name=contact_name,
+        email=contact_email,
+        phone=contact_phone,
+    )
     return EmailMessagePayload(
         to_email=to_email,
         subject=INVITATION_SUBJECT,
         text_content=_build_invitation_text(
             portal_url=portal_url,
-            contact_name=contact_name,
-            contact_email=contact_email,
-            contact_phone=contact_phone,
+            contact=contact,
             contact_text=contact_text,
         ),
         html_content=_build_invitation_html(
             portal_url=portal_url,
-            contact_name=contact_name,
-            contact_email=contact_email,
-            contact_phone=contact_phone,
+            contact=contact,
             contact_text=contact_text,
         ),
     )
@@ -39,29 +51,27 @@ def build_contractor_invitation_email_payload(
 def _build_invitation_text(
     *,
     portal_url: str | None,
-    contact_name: str | None,
-    contact_email: str | None,
-    contact_phone: str | None,
+    contact: EmailContactInfo,
     contact_text: str | None,
 ) -> str:
     lines = [
         "AcomOfferDesk",
         "",
-        "Вы приглашены к работе в системе AcomOfferDesk.",
-        "Инструкция по подключению приложена к письму отдельным файлом.",
+        *build_invitation_intro_text_lines(),
     ]
     if portal_url:
-        lines.extend(["", f"Ссылка для входа/регистрации: {portal_url}"])
+        lines.append(f"{PORTAL_BUTTON_LABEL}: {portal_url}")
 
-    contact_block = _contact_lines(
-        contact_name=contact_name,
-        contact_email=contact_email,
-        contact_phone=contact_phone,
-        contact_text=contact_text,
+    contact_lines = build_contact_text_block(
+        contact=contact,
+        intro="Если удобнее, вы можете связаться с контактным лицом напрямую:",
     )
-    if contact_block:
-        lines.extend(["", "Контакты для связи:"])
-        lines.extend(contact_block)
+    if contact_lines:
+        lines.append("")
+        lines.extend(contact_lines)
+
+    if contact_text:
+        lines.extend(["", contact_text])
 
     lines.append("")
     return "\n".join(lines)
@@ -70,41 +80,33 @@ def _build_invitation_text(
 def _build_invitation_html(
     *,
     portal_url: str | None,
-    contact_name: str | None,
-    contact_email: str | None,
-    contact_phone: str | None,
+    contact: EmailContactInfo,
     contact_text: str | None,
 ) -> str:
-    escaped_portal_url = escape(portal_url) if portal_url else None
-    contact_lines = _contact_lines(
-        contact_name=contact_name,
-        contact_email=contact_email,
-        contact_phone=contact_phone,
-        contact_text=contact_text,
+    escaped_contact_text = escape(contact_text) if contact_text else ""
+    contact_html = build_contact_html_block(contact=contact)
+    button_html = build_primary_button_html(label=PORTAL_BUTTON_LABEL, url=portal_url) if portal_url else ""
+    portal_fallback_html = (
+        f"""
+            <tr>
+              <td style="padding:8px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                Ссылка для входа:<br/>
+                <a href="{escape(portal_url)}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escape(portal_url)}</a>
+              </td>
+            </tr>
+        """.rstrip()
+        if portal_url
+        else ""
     )
-    contact_html = "<br/>".join(escape(line) for line in contact_lines) if contact_lines else ""
-    portal_html = (
+    extra_text_html = (
         f"""
             <tr>
               <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
-                Ссылка для входа/регистрации:<br/>
-                <a href="{escaped_portal_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_portal_url}</a>
+                {escaped_contact_text}
               </td>
             </tr>
         """.rstrip()
-        if escaped_portal_url
-        else ""
-    )
-    contacts_section = (
-        f"""
-            <tr>
-              <td style="padding:12px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
-                <strong>Контакты для связи:</strong><br/>
-                {contact_html}
-              </td>
-            </tr>
-        """.rstrip()
-        if contact_html
+        if escaped_contact_text
         else ""
     )
 
@@ -123,12 +125,13 @@ def _build_invitation_html(
             </tr>
             <tr>
               <td style="padding:0 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
-                Вы приглашены к работе в системе AcomOfferDesk.<br/><br/>
-                Инструкция по подключению приложена к письму отдельным файлом.
+                {build_invitation_intro_html()}
               </td>
             </tr>
-            {portal_html}
-            {contacts_section}
+            {button_html}
+            {contact_html}
+            {extra_text_html}
+            {portal_fallback_html}
           </table>
         </td>
       </tr>
@@ -136,22 +139,3 @@ def _build_invitation_html(
   </body>
 </html>
 """.strip()
-
-
-def _contact_lines(
-    *,
-    contact_name: str | None,
-    contact_email: str | None,
-    contact_phone: str | None,
-    contact_text: str | None,
-) -> list[str]:
-    lines: list[str] = []
-    if contact_name:
-        lines.append(f"Контакт: {contact_name}")
-    if contact_email:
-        lines.append(f"Email: {contact_email}")
-    if contact_phone:
-        lines.append(f"Телефон: {contact_phone}")
-    if contact_text:
-        lines.append(contact_text)
-    return lines

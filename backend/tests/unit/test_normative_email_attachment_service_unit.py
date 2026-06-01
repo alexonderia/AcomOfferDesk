@@ -32,6 +32,25 @@ class _FakeFilesRepo:
             mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         )
 
+    async def list_normative_files(self, *, status: str | None = None):
+        _ = status
+        return [
+            SimpleNamespace(
+                id=7,
+                file_id=100,
+                original_name="Презентация.pptx",
+                status="actual",
+                created_at="2026-06-01T00:00:00Z",
+            ),
+            SimpleNamespace(
+                id=8,
+                file_id=101,
+                original_name="partner-card.pdf",
+                status="actual",
+                created_at="2026-06-01T00:00:00Z",
+            ),
+        ]
+
 
 class _FakeFileService:
     def __init__(self, *, raise_not_found: bool = False) -> None:
@@ -78,6 +97,18 @@ async def test_load_required_attachment_rejects_missing_normative_file_content()
 
     with pytest.raises(Conflict):
         await service.load_required_attachment(normative_file_id=5)
+
+
+@pytest.mark.asyncio
+async def test_resolve_presentation_normative_file_id_prefers_presentation_name() -> None:
+    service = NormativeEmailAttachmentService(
+        _FakeFilesRepo(),
+        file_service=_FakeFileService(),
+    )
+
+    normative_id = await service.resolve_presentation_normative_file_id()
+
+    assert normative_id == 7
 
 
 @pytest.mark.asyncio

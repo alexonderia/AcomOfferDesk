@@ -1,11 +1,12 @@
-﻿import { Alert, Button, Stack } from '@mui/material';
+import { Alert, Button, Stack } from '@mui/material';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
+import { ContractorCreateDialog } from '@features/contractors/components/ContractorCreateDialog';
 import { ContractorInviteDialog } from '@features/contractors/components/ContractorInviteDialog';
 import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
 import type { UserListItem } from '@entities/user';
 import { listContractors } from '@shared/api/contractors/listContractors';
-import { hasPermission } from '@shared/auth/permissions';
+import { ROLE } from '@shared/constants/roles';
 
 const mapContractorToUserListItem = (item: Awaited<ReturnType<typeof listContractors>>[number]): UserListItem => ({
   user_id: item.userId,
@@ -29,9 +30,12 @@ export const ContractorsPage = () => {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
 
-  const canInviteContractors = hasPermission(session, 'contractors.manual.create');
+  const canManageContractors = session
+    ? session.roleId === ROLE.ECONOMIST || session.roleId === ROLE.LEAD_ECONOMIST
+    : false;
 
   const loadContractors = useCallback(async () => {
     setIsLoading(true);
@@ -54,8 +58,11 @@ export const ContractorsPage = () => {
   return (
     <Stack spacing={2}>
       {error ? <Alert severity="error">{error}</Alert> : null}
-      {canInviteContractors ? (
-        <Stack direction="row" justifyContent="flex-end">
+      {canManageContractors ? (
+        <Stack direction="row" justifyContent="flex-end" spacing={1} flexWrap="wrap">
+          <Button variant="outlined" onClick={() => setIsCreateDialogOpen(true)}>
+            Добавить контрагента
+          </Button>
           <Button variant="outlined" onClick={() => setIsInviteDialogOpen(true)}>
             Пригласить контрагента
           </Button>
@@ -67,6 +74,11 @@ export const ContractorsPage = () => {
         emptyMessage="Контрагенты не найдены"
         onStatusUpdated={loadContractors}
         useContractorsStatusApi
+      />
+      <ContractorCreateDialog
+        open={isCreateDialogOpen}
+        onClose={() => setIsCreateDialogOpen(false)}
+        onCreated={loadContractors}
       />
       <ContractorInviteDialog
         open={isInviteDialogOpen}

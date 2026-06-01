@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useLiveValidatedForm } from '@shared/lib/forms';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -251,10 +251,8 @@ export const useAdminPage = () => {
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
   const { showErrorToast, showSuccessToast } = useSystemToasts();
 
-  const form = useForm<AdminUserFormValues>({
+  const form = useLiveValidatedForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
-    mode: 'onChange',
-    reValidateMode: 'onChange',
     defaultValues: {
       role_id: roleOptions[0]?.id ?? ROLE.CONTRACTOR,
       login: '',

@@ -53,7 +53,7 @@ export const SidebarMenuButton = ({
           </Stack>
           <Typography
             sx={{
-              maxWidth: collapsed ? 0 : 160,
+              maxWidth: collapsed ? 0 : 220,
               opacity: collapsed ? 0 : 1,
               transform: collapsed ? 'translateX(-4px)' : 'translateX(0)',
               overflow: 'hidden',

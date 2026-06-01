@@ -44,6 +44,10 @@ _MAX_ATTACHMENTS_PER_MESSAGE = 5
 _MAX_TOTAL_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024
 
 
+def _request_id_as_str(value: str | int) -> str:
+    return str(value)
+
+
 def _request_file_schema(file_item) -> RequestFileSchema:
     return RequestFileSchema(
         id=file_item.id,
@@ -101,7 +105,7 @@ async def get_contractor_request_view(
     can_create_offer = item.status == "open" and item.existing_offer is None
     return ContractorRequestViewResponse(
         data={
-            "request_id": item.request_id,
+            "request_id": _request_id_as_str(item.request_id),
             "description": item.description,
             "status": item.status,
             "status_label": item.status_label,
@@ -241,7 +245,7 @@ async def create_manual_offer(
     return ManualOfferCreateResponse(
         data={
             "offer_id": result.offer_id,
-            "request_id": result.request_id,
+            "request_id": _request_id_as_str(result.request_id),
             "contractor_user_id": result.contractor_user_id,
             "contractor_created": result.contractor_created,
         },
@@ -273,7 +277,7 @@ async def get_offer_workspace(
     return OfferWorkspaceResponse(
         data={
             "request": {
-                "request_id": item.request.request_id,
+                "request_id": _request_id_as_str(item.request.request_id),
                 "description": item.request.description,
                 "status": item.request.status,
                 "status_label": item.request.status_label,

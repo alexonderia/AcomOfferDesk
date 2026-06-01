@@ -16,6 +16,7 @@ import { normativeFileStatusLabels, type NormativeFileItem, type NormativeFileSt
 import { hasPermission } from '@shared/auth/permissions';
 import { DataTable, type DataTableColumn } from '@shared/components/DataTable';
 import { downloadFile } from '@shared/api/fileDownload';
+import { getUploadFileSizeError } from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { useNormativeFilesPage } from '../model/useNormativeFilesPage';
 
@@ -56,6 +57,12 @@ export const NormativeFilesPageView = () => {
   };
 
   const handleUpload = async (file: File) => {
+    const sizeError = getUploadFileSizeError(file);
+    if (sizeError) {
+      showErrorToast(sizeError);
+      return;
+    }
+
     setIsUploading(true);
     try {
       await uploadNormativeFile(file);

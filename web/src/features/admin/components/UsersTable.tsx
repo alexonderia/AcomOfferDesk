@@ -21,7 +21,7 @@ import {
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
 import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
@@ -838,7 +838,7 @@ export const UsersTable = ({
     handleSubmit,
     reset,
     formState: { isSubmitting }
-  } = useForm<StatusFormValues>({
+  } = useLiveValidatedForm<StatusFormValues>({
     resolver: zodResolver(statusSchema),
     defaultValues: {
       user_status: 'review'
@@ -860,7 +860,7 @@ export const UsersTable = ({
     setValue: setSubordinateUnavailabilityValue,
     formState: { errors: subordinateUnavailabilityErrors, isSubmitting: isSubmittingSubordinateUnavailability },
     reset: resetSubordinateUnavailability
-  } = useForm<SubordinateUnavailabilityFormValues>({
+  } = useLiveValidatedForm<SubordinateUnavailabilityFormValues>({
     resolver: zodResolver(subordinateUnavailabilitySchema),
     defaultValues: { status: 'unavailable', started_at: '', ended_at: '' }
   });
@@ -2075,6 +2075,7 @@ export const UsersTable = ({
                   >
                     <TextField
                       label="Логин"
+                      {...textFieldAutocompleteProps('login')}
                       value={manualContractorDraft.login}
                       onChange={(event) => updateManualContractorField('login', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.login)}
@@ -2083,6 +2084,7 @@ export const UsersTable = ({
                     <TextField
                       label="Новый пароль"
                       type="password"
+                      {...textFieldAutocompleteProps('password')}
                       placeholder="Оставьте пустым, если без смены"
                       value={manualContractorPassword}
                       onChange={(event) => handleManualContractorPasswordChange(event.target.value)}
@@ -2091,6 +2093,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="ФИО"
+                      {...textFieldAutocompleteProps('full_name')}
                       value={manualContractorDraft.full_name}
                       onChange={(event) => updateManualContractorField('full_name', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.full_name)}
@@ -2098,6 +2101,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Телефон"
+                      {...textFieldAutocompleteProps('phone')}
                       value={manualContractorDraft.phone}
                       onChange={(event) => updateManualContractorField('phone', formatRuPhone(event.target.value))}
                       placeholder="+7 (900) 999-88-77"
@@ -2106,6 +2110,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="E-mail"
+                      {...textFieldAutocompleteProps('mail')}
                       value={manualContractorDraft.mail}
                       onChange={(event) => updateManualContractorField('mail', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.mail)}
@@ -2113,6 +2118,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Компания"
+                      {...textFieldAutocompleteProps('company_name')}
                       value={manualContractorDraft.company_name}
                       onChange={(event) => updateManualContractorField('company_name', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.company_name)}
@@ -2120,6 +2126,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="ИНН"
+                      {...textFieldAutocompleteProps('inn')}
                       value={manualContractorDraft.inn}
                       onChange={(event) => updateManualContractorField('inn', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.inn)}
@@ -2127,6 +2134,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Телефон компании"
+                      {...textFieldAutocompleteProps('company_phone')}
                       value={manualContractorDraft.company_phone}
                       onChange={(event) => updateManualContractorField('company_phone', formatRuPhone(event.target.value))}
                       placeholder="+7 (900) 999-88-77"
@@ -2135,6 +2143,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="E-mail компании"
+                      {...textFieldAutocompleteProps('company_mail')}
                       value={manualContractorDraft.company_mail}
                       onChange={(event) => updateManualContractorField('company_mail', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.company_mail)}
@@ -2142,6 +2151,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Адрес"
+                      {...textFieldAutocompleteProps('address')}
                       value={manualContractorDraft.address}
                       onChange={(event) => updateManualContractorField('address', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.address)}
@@ -2150,6 +2160,7 @@ export const UsersTable = ({
                   </Box>
                   <TextField
                     label="Примечание"
+                    {...textFieldAutocompleteProps('note')}
                     value={manualContractorDraft.note}
                     onChange={(event) => updateManualContractorField('note', event.target.value)}
                     multiline

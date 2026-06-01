@@ -14,6 +14,7 @@ import {
 import { alpha, type Theme } from '@mui/material/styles';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { ROLE } from '@shared/constants/roles';
+import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { formatRuPhone } from '@shared/lib/phone';
 import type { UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
@@ -168,26 +169,31 @@ export const AdminPageView = () => {
 
               {isContractorRole ? (
                 <>
-                  <TextField
+                  <ValidatedTextField
                     label="Наименование компании"
+                    fieldName="company_name"
                     error={Boolean(getFieldError('company_name'))}
                     helperText={getFieldError('company_name')}
-                    {...register('company_name')}
+                    registration={register('company_name')}
                     sx={inputFieldSx}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="ИНН"
+                    fieldName="inn"
                     error={Boolean(getFieldError('inn'))}
                     helperText={getFieldError('inn')}
-                    {...register('inn')}
+                    registration={register('inn')}
                     sx={inputFieldSx}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="Телефон компании"
+                    fieldName="company_phone"
                     placeholder="+7 (900) 999-88-77"
                     error={Boolean(getFieldError('company_phone'))}
                     helperText={getFieldError('company_phone')}
-                    {...companyPhoneRegistration}
+                    name={companyPhoneRegistration.name}
+                    inputRef={companyPhoneRegistration.ref}
+                    onBlur={companyPhoneRegistration.onBlur}
                     onChange={(event) => {
                       const formatted = formatRuPhone(event.target.value);
                       setValue('company_phone', formatted, {
@@ -198,60 +204,67 @@ export const AdminPageView = () => {
                     }}
                     sx={inputFieldSx}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="E-mail компании"
+                    fieldName="company_mail"
                     error={Boolean(getFieldError('company_mail'))}
                     helperText={getFieldError('company_mail')}
-                    {...register('company_mail')}
+                    registration={register('company_mail')}
                     sx={inputFieldSx}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="Адрес"
+                    fieldName="address"
                     error={Boolean(getFieldError('address'))}
                     helperText={getFieldError('address')}
-                    {...register('address')}
+                    registration={register('address')}
                     sx={inputFieldSx}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="Дополнительная информация"
+                    fieldName="note"
                     multiline
                     minRows={2}
                     error={Boolean(getFieldError('note'))}
                     helperText={getFieldError('note')}
-                    {...register('note')}
+                    registration={register('note')}
                     sx={inputFieldSx}
                   />
                 </>
               ) : (
                 <>
-                  <TextField
+                  <ValidatedTextField
                     label="Логин"
+                    fieldName="login"
                     error={Boolean(getFieldError('login'))}
                     helperText={getFieldError('login')}
-                    {...register('login')}
+                    registration={register('login')}
                     sx={inputFieldSx}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="Пароль"
                     type="password"
+                    fieldName="password"
                     error={Boolean(getFieldError('password'))}
                     helperText={getFieldError('password')}
-                    {...register('password')}
+                    registration={register('password')}
                     sx={{ display: 'none' }}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="Повторите пароль"
                     type="password"
+                    fieldName="confirmPassword"
                     error={Boolean(getFieldError('confirmPassword'))}
                     helperText={getFieldError('confirmPassword')}
-                    {...register('confirmPassword')}
+                    registration={register('confirmPassword')}
                     sx={{ display: 'none' }}
                   />
-                  <TextField
+                  <ValidatedTextField
                     label="E-mail"
+                    fieldName="mail"
                     error={Boolean(getFieldError('mail'))}
                     helperText={getFieldError('mail')}
-                    {...register('mail')}
+                    registration={register('mail')}
                     sx={inputFieldSx}
                   />
 

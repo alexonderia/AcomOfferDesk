@@ -41,14 +41,14 @@ class _OfferRequestsRepo:
         _ = contractor_user_id
         if not self._visible_open:
             return None
-        if request_id != self._request_row.id:
+        if str(request_id) != str(self._request_row.id):
             return None
         if self._request_row.status != "open":
             return None
         return self._request_row
 
     async def get_by_id(self, *, request_id: str):
-        return self._request_row if request_id == self._request_row.id else None
+        return self._request_row if str(request_id) == str(self._request_row.id) else None
 
     async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
         _ = (request_id, contractor_user_id)
@@ -192,7 +192,7 @@ def test_contractor_can_create_offer_for_open_request(test_client, set_uow, set_
     response = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0})
 
     assert response.status_code == 200
-    assert response.json()["data"]["request_id"] == 10
+    assert response.json()["data"]["request_id"] == "10"
 
 
 def test_contractor_cannot_create_offer_when_request_is_not_visible(

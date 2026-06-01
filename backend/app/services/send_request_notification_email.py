@@ -8,6 +8,10 @@ from app.core.config import settings
 from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
 from app.domain.exceptions import NotFound
 from app.infrastructure.email.email_attachment import EmailAttachment
+from app.infrastructure.email.email_templates.email_contact_blocks import contact_info_from_invitation_settings
+from app.infrastructure.email.email_templates.request_invited_contractor_email import (
+    build_request_invited_contractor_email_payload,
+)
 from app.infrastructure.email.email_templates.request_notification_email import (
     build_request_notification_email_payload,
     build_request_registration_email_payload,
@@ -17,6 +21,7 @@ from app.infrastructure.email_service import SMTPEmailService
 from app.repositories.profiles import ActiveContractorEmailRecipient, ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.services.files import FileService
+from app.services.normative_email_attachment import NormativeEmailAttachmentService
 
 MAX_EMAIL_ATTACHMENT_SIZE_MB = 20
 
@@ -27,6 +32,7 @@ class NotificationRecipient:
     user_login: str | None
     tg_id: int | None
     is_verified_user: bool
+    has_economist_created_account: bool = False
 
 
 class SendRequestNotificationEmailUseCase:
@@ -38,12 +44,14 @@ class SendRequestNotificationEmailUseCase:
         email_service: SMTPEmailService,
         app_url: str,
         file_service: FileService | None = None,
+        presentation_attachment_service: NormativeEmailAttachmentService | None = None,
     ) -> None:
         self._request_repository = request_repository
         self._profile_repository = profile_repository
         self._email_service = email_service
         self._app_url = app_url.rstrip("/")
         self._file_service = file_service or FileService()
+        self._presentation_attachment_service = presentation_attachment_service
 
     async def execute(
         self,
@@ -62,11 +70,12 @@ class SendRequestNotificationEmailUseCase:
         active_contractors = await self._profile_repository.list_active_contractor_email_recipients(
             contractor_role_id=contractor_role_id,
         )
-        recipients = self._build_recipients(
+        recipients = await self._build_recipients(
             active_contractors=active_contractors,
             additional_emails=additional_emails or [],
             hidden_contractor_ids=hidden_contractor_ids or [],
             include_verified_contractors=include_verified_contractors,
+            contractor_role_id=contractor_role_id,
         )
         if not recipients:
             return
@@ -80,10 +89,16 @@ class SendRequestNotificationEmailUseCase:
             secret=settings.email_verification_secret,
             ttl_seconds=settings.tg_register_ttl_seconds,
         )
-        attachments, attachment_warning = await self._build_attachments(request_id=request_id)
+        request_attachments, attachment_warning = await self._build_request_attachments(request_id=request_id)
         request_url = f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}"
         tg_bot_url = settings.tg_bot_public_url if settings.telegram_legacy_enabled else None
         registration_base_url = (settings.public_backend_base_url or self._app_url).rstrip("/")
+        invitation_contact = contact_info_from_invitation_settings(
+            contact_name=settings.invitation_contact_name,
+            contact_email=settings.invitation_contact_email,
+            contact_phone=settings.invitation_contact_phone,
+        )
+        portal_url = self._resolve_portal_url()
 
         for recipient in recipients:
             reply_token: str | None = None
@@ -104,6 +119,21 @@ class SendRequestNotificationEmailUseCase:
                     reply_token=reply_token,
                     attachment_warning=attachment_warning,
                 )
+                attachments = request_attachments
+            elif recipient.has_economist_created_account and portal_url:
+                payload = build_request_invited_contractor_email_payload(
+                    to_email=recipient.email,
+                    request_id=request_id,
+                    description=request.description,
+                    deadline_at=request.deadline_at,
+                    portal_url=portal_url,
+                    contact=invitation_contact,
+                    attachment_warning=attachment_warning,
+                )
+                attachments = await self._build_attachments_with_presentation(
+                    request_attachments=request_attachments,
+                    attachment_warning=attachment_warning,
+                )
             else:
                 invite_token = invite_token_codec.create_token(email=recipient.email)
                 registration_url = (
@@ -118,8 +148,11 @@ class SendRequestNotificationEmailUseCase:
                     tg_bot_url=tg_bot_url,
                     registration_url=registration_url,
                     registration_ttl_seconds=settings.tg_register_ttl_seconds,
+                    contact=invitation_contact,
                     attachment_warning=attachment_warning,
                 )
+                attachments = request_attachments
+
             try:
                 # TODO(notification-center): worker-level SMTP delivery status is async.
                 # To emit precise `email.sent` / `email.failed` center notifications,
@@ -146,13 +179,14 @@ class SendRequestNotificationEmailUseCase:
             except smtplib.SMTPException:
                 continue
 
-    def _build_recipients(
+    async def _build_recipients(
         self,
         *,
         active_contractors: list[ActiveContractorEmailRecipient],
         additional_emails: list[str],
         hidden_contractor_ids: list[str],
         include_verified_contractors: bool,
+        contractor_role_id: int,
     ) -> list[NotificationRecipient]:
         recipients: list[NotificationRecipient] = []
         recipients_by_email: dict[str, NotificationRecipient] = {}
@@ -190,19 +224,32 @@ class SendRequestNotificationEmailUseCase:
                     recipients.append(matched_verified_recipient)
                     recipient_emails.add(matched_verified_recipient.email)
                 continue
+
+            contractor_user_id = await self._profile_repository.find_contractor_user_id_by_notification_email(
+                email=normalized_email,
+                contractor_role_id=contractor_role_id,
+            )
             recipients.append(
                 NotificationRecipient(
                     email=normalized_email,
-                    user_login=None,
+                    user_login=contractor_user_id,
                     tg_id=None,
                     is_verified_user=False,
+                    has_economist_created_account=contractor_user_id is not None,
                 )
             )
             recipient_emails.add(normalized_email)
 
         return recipients
 
-    async def _build_attachments(self, *, request_id: str) -> tuple[list[EmailAttachment], str | None]:
+    def _resolve_portal_url(self) -> str | None:
+        if settings.invitation_portal_url:
+            return settings.invitation_portal_url.rstrip("/")
+        if settings.web_base_url:
+            return f"{settings.web_base_url.rstrip('/')}/login"
+        return None
+
+    async def _build_request_attachments(self, *, request_id: str) -> tuple[list[EmailAttachment], str | None]:
         files = await self._request_repository.list_files_by_request_id(request_id=request_id)
         if not files:
             return [], None
@@ -233,3 +280,28 @@ class SendRequestNotificationEmailUseCase:
             )
 
         return attachment_items, None
+
+    async def _build_attachments_with_presentation(
+        self,
+        *,
+        request_attachments: list[EmailAttachment],
+        attachment_warning: str | None,
+    ) -> list[EmailAttachment]:
+        if self._presentation_attachment_service is None:
+            return request_attachments
+
+        presentation_attachment = await self._presentation_attachment_service.load_presentation_attachment()
+        if presentation_attachment is None:
+            return request_attachments
+
+        combined = [presentation_attachment, *request_attachments]
+        total_size_bytes = sum(len(item.content_bytes) for item in combined)
+        max_total_size_bytes = MAX_EMAIL_ATTACHMENT_SIZE_MB * 1024 * 1024
+        if total_size_bytes <= max_total_size_bytes:
+            return combined
+
+        presentation_only_size = len(presentation_attachment.content_bytes)
+        if presentation_only_size <= max_total_size_bytes:
+            return [presentation_attachment]
+
+        return request_attachments

@@ -52,7 +52,7 @@ describe('ContractorInviteDialog', () => {
     getNormativeFilesMock.mockResolvedValue(normativeItems);
   });
 
-  it('parses multiple delimiters, shows invalid emails, and sends only valid emails', async () => {
+  it('adds emails through shared additional-emails input and sends invite', async () => {
     inviteContractorsMock.mockResolvedValue({
       data: {
         sent: ['valid1@example.com', 'valid2@example.com'],
@@ -72,10 +72,9 @@ describe('ContractorInviteDialog', () => {
     });
 
     fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: 'valid1@example.com bad-email,\nvalid2@example.com' },
+      target: { value: 'valid1@example.com, valid2@example.com' },
     });
-
-    expect(screen.getByText('Некорректные адреса: 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Добавить email'));
     fireEvent.click(screen.getByRole('button', { name: 'Отправить' }));
 
     await waitFor(() => {
@@ -103,6 +102,7 @@ describe('ContractorInviteDialog', () => {
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: 'valid@example.com' },
     });
+    fireEvent.click(screen.getByLabelText('Добавить email'));
     fireEvent.click(screen.getByRole('button', { name: 'Отправить' }));
 
     expect(screen.getByRole('button', { name: 'Отправка...' })).toBeDisabled();
@@ -130,6 +130,7 @@ describe('ContractorInviteDialog', () => {
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: 'valid@example.com' },
     });
+    fireEvent.click(screen.getByLabelText('Добавить email'));
     fireEvent.click(screen.getByRole('button', { name: 'Отправить' }));
 
     await waitFor(() => {
@@ -137,5 +138,24 @@ describe('ContractorInviteDialog', () => {
       expect(screen.getByText('valid@example.com: queue failed')).toBeInTheDocument();
     });
     expect(showErrorToastMock).toHaveBeenCalled();
+  });
+
+  it('shows inline validation for invalid email token', async () => {
+    render(
+      <ThemeProvider theme={appTheme}>
+        <ContractorInviteDialog open onClose={vi.fn()} />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(getNormativeFilesMock).toHaveBeenCalledWith('actual');
+    });
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'bad-email' },
+    });
+    fireEvent.click(screen.getByLabelText('Добавить email'));
+
+    expect(screen.getByText('Некорректный email: bad-email')).toBeInTheDocument();
   });
 });

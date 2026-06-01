@@ -30,7 +30,7 @@ class _MutableRequestsRepo:
         self.accepted_offer_id = accepted_offer_id
 
     async def get_by_id(self, *, request_id: str):
-        return self.request_row if self.request_row.id == request_id else None
+        return self.request_row if str(self.request_row.id) == str(request_id) else None
 
     async def update_initial_amount(self, *, request, initial_amount: float) -> None:
         request.initial_amount = initial_amount
@@ -99,7 +99,7 @@ class _ContractorViewRequestsRepo:
 
     async def get_visible_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
-        if request_id != self._request_row.id:
+        if str(request_id) != str(self._request_row.id):
             return None
         return self._request_row
 

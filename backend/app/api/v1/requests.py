@@ -51,6 +51,10 @@ from app.services.staff_access_scope import StaffAccessScopeService
 router = APIRouter()
 
 
+def _request_id_as_str(value: str | int) -> str:
+    return str(value)
+
+
 def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:
     notifications_repo = getattr(uow, "notifications", None)
     if notifications_repo is None:
@@ -105,7 +109,7 @@ def _request_item_schema(
     can_change_owner_in_scope: bool,
 ) -> RequestItemSchema:
     return RequestItemSchema(
-        request_id=item.request_id,
+        request_id=_request_id_as_str(item.request_id),
         description=item.description,
         status=item.status,
         status_label=item.status_label,
@@ -148,7 +152,7 @@ def _open_request_item_schema(
         and item.latest_offer_status in {None, "deleted"}
     )
     return OpenRequestItemSchema(
-        request_id=item.request_id,
+        request_id=_request_id_as_str(item.request_id),
         description=item.description,
         status=item.status,
         status_label=item.status_label,
@@ -646,7 +650,7 @@ async def get_request_details(
     return RequestDetailsResponse(
         data=RequestDetailsResponseData(
             item=RequestDetailsSchema(
-                request_id=item.request_id,
+                request_id=_request_id_as_str(item.request_id),
                 description=item.description,
                 status=item.status,
                 status_label=item.status_label,
@@ -700,7 +704,7 @@ async def create_request(
     try:
         async with uow:
             request_file_service = FileService(uow.files)
-            email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+            email_notifications = EmailNotificationService(uow.profiles, uow.requests, uow.files)
             service = _build_request_service(
                 uow,
                 email_notifications=email_notifications,
@@ -724,7 +728,7 @@ async def create_request(
         raise
 
     return RequestCreateResponse(
-        data={"request_id": request_id, "file_ids": file_ids},
+        data={"request_id": _request_id_as_str(request_id), "file_ids": file_ids},
     )
 
 
@@ -752,7 +756,7 @@ async def update_request(
         )
 
     return RequestMutationResponse(
-        data={"request_id": request_id},
+        data={"request_id": _request_id_as_str(request_id)},
     )
 
 
@@ -764,7 +768,7 @@ async def send_request_email_notifications(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEmailNotificationResponse:
     async with uow:
-        email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+        email_notifications = EmailNotificationService(uow.profiles, uow.requests, uow.files)
         service = _build_request_service(
             uow,
             email_notifications=email_notifications,
@@ -776,7 +780,7 @@ async def send_request_email_notifications(
         )
 
     return RequestEmailNotificationResponse(
-        data={"request_id": result.request_id, "sent_to": result.sent_to},
+        data={"request_id": _request_id_as_str(result.request_id), "sent_to": result.sent_to},
     )
 
 
@@ -812,7 +816,7 @@ async def add_request_file(
         raise
 
     return RequestFileMutationResponse(
-        data={"request_id": request_id, "file_id": file_id},
+        data={"request_id": _request_id_as_str(request_id), "file_id": file_id},
     )
 
 
@@ -832,7 +836,7 @@ async def delete_request_file(
         )
 
     return RequestFileMutationResponse(
-        data={"request_id": request_id, "file_id": file_id},
+        data={"request_id": _request_id_as_str(request_id), "file_id": file_id},
     )
 
 
@@ -853,7 +857,7 @@ async def mark_deleted_alert_viewed(
         data={
             "status": "ok",
             "request_offer_stats": RequestOfferStatsSchema(
-                request_id=updated_stats.request_id,
+                request_id=_request_id_as_str(updated_stats.request_id),
                 count_deleted_alert=updated_stats.count_deleted_alert,
                 updated_at=updated_stats.updated_at,
             ),

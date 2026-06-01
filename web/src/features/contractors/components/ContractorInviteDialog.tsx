@@ -1,9 +1,8 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -14,7 +13,6 @@ import {
   MenuItem,
   Select,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
 import {
@@ -23,7 +21,7 @@ import {
 } from '@shared/api/contractors/inviteContractors';
 import { getNormativeFiles } from '@shared/api/normative/getNormativeFiles';
 import type { NormativeFileItem } from '@shared/api/normative/types';
-import { parseEmailList } from '@shared/lib/emailList';
+import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 type ContractorInviteDialogProps = {
@@ -55,15 +53,15 @@ export const ContractorInviteDialog = ({
   onClose,
 }: ContractorInviteDialogProps) => {
   const { showErrorToast, showSuccessToast } = useSystemToasts();
-  const [inputValue, setInputValue] = useState('');
+  const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
+  const [emails, setEmails] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<InviteResult | null>(null);
   const [normativeFiles, setNormativeFiles] = useState<NormativeFileItem[]>([]);
   const [isLoadingNormativeFiles, setIsLoadingNormativeFiles] = useState(false);
   const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
   const [selectedNormativeFileId, setSelectedNormativeFileId] = useState<number | null>(null);
-  const parsed = useMemo(() => parseEmailList(inputValue), [inputValue]);
-  const hasValidEmails = parsed.valid.length > 0;
+  const hasValidEmails = emails.length > 0;
   const hasNormativeSelection = selectedNormativeFileId !== null;
 
   useEffect(() => {
@@ -110,8 +108,12 @@ export const ContractorInviteDialog = ({
       showErrorToast('Выберите нормативный документ с презентацией');
       return;
     }
-    if (!hasValidEmails) {
-      showErrorToast('Добавьте хотя бы один корректный email');
+    const nextEmails = additionalEmailsFieldRef.current?.commitPendingInput();
+    if (nextEmails === null) {
+      return;
+    }
+    if (!nextEmails || nextEmails.length === 0) {
+      showErrorToast('Добавьте хотя бы один корректный e-mail');
       return;
     }
 
@@ -120,7 +122,7 @@ export const ContractorInviteDialog = ({
 
     try {
       const response = await inviteContractors({
-        emails: parsed.valid,
+        emails: nextEmails,
         normativeFileId: selectedNormativeFileId,
       });
       const nextResult: InviteResult = {
@@ -149,7 +151,7 @@ export const ContractorInviteDialog = ({
       return;
     }
 
-    setInputValue('');
+    setEmails([]);
     setResult(null);
     setNormativeFiles([]);
     setNormativeFilesError(null);
@@ -162,10 +164,6 @@ export const ContractorInviteDialog = ({
       <DialogTitle>Пригласить контрагента</DialogTitle>
       <DialogContent>
         <Stack spacing={2} mt={0.5}>
-          <Typography variant="body2" color="text.secondary">
-            Можно ввести несколько адресов через запятую, пробел или с новой строки.
-          </Typography>
-
           <FormControl fullWidth error={Boolean(normativeFilesError)}>
             <InputLabel id="contractor-invite-normative-file-label">Презентация-инструкция</InputLabel>
             <Select
@@ -195,41 +193,22 @@ export const ContractorInviteDialog = ({
 
           {normativeFilesError ? <Alert severity="error">{normativeFilesError}</Alert> : null}
 
-          <TextField
-            multiline
-            minRows={5}
-            value={inputValue}
-            onChange={(event) => {
-              setInputValue(event.target.value);
+          <AdditionalEmailsField
+            ref={additionalEmailsFieldRef}
+            emails={emails}
+            onChange={(nextEmails) => {
+              setEmails(nextEmails);
               if (result) {
                 setResult(null);
               }
             }}
-            placeholder="example1@company.com, example2@company.com"
-            fullWidth
+            hideHeader
+            addButtonVariant="icon"
+            placeholder="name@example.com"
+            helperText="Можно ввести несколько адресов через запятую, пробел или с новой строки."
+            disabled={isSubmitting}
+            containerSx={{ mt: 0 }}
           />
-
-          <Box>
-            <Typography variant="subtitle2" gutterBottom>
-              Корректные адреса: {parsed.valid.length}
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={1}>
-              {parsed.valid.map((email) => (
-                <Chip key={email} label={email} color="success" variant="outlined" />
-              ))}
-            </Stack>
-          </Box>
-
-          <Box>
-            <Typography variant="subtitle2" gutterBottom>
-              Некорректные адреса: {parsed.invalid.length}
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={1}>
-              {parsed.invalid.map((email) => (
-                <Chip key={email} label={email} color="error" variant="outlined" />
-              ))}
-            </Stack>
-          </Box>
 
           {result ? (
             <Alert severity={result.failed.length === 0 && result.invalid.length === 0 ? 'success' : 'info'}>

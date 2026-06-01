@@ -998,10 +998,10 @@ def test_request_file_upload_and_delete_contracts(
     delete_response = test_client.delete("/api/v1/requests/10/files/501")
 
     assert upload_response.status_code == 200
-    assert upload_response.json() == {"data": {"request_id": 10, "file_id": 501}}
-    assert request_repo.attached == [(10, 501)]
+    assert upload_response.json() == {"data": {"request_id": "10", "file_id": 501}}
+    assert request_repo.attached == [("10", 501)]
     assert delete_response.status_code == 200
-    assert delete_response.json() == {"data": {"request_id": 10, "file_id": 501}}
+    assert delete_response.json() == {"data": {"request_id": "10", "file_id": 501}}
 
 
 def test_request_file_upload_denies_forbidden_role(
@@ -1576,13 +1576,13 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
     assert response.status_code == 200
     assert response.json() == {
         "data": {
-            "request_id": 55,
+            "request_id": "55",
             "sent_to": ["user@example.com", "second@example.com"],
         }
     }
     assert fake_notifications is not None
     assert fake_notifications.calls == [
-        {"request_id": 55, "additional_emails": ["user@example.com", "second@example.com"]}
+        {"request_id": "55", "additional_emails": ["user@example.com", "second@example.com"]}
     ]
 
 

@@ -8,6 +8,7 @@ import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { ActionButton } from '@shared/components/ActionButton';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
+import { getUploadFileSizeError } from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 const dialogPaperSx = (theme: Theme) => ({
@@ -70,6 +71,13 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
       return;
     }
 
+    const sizeError = getUploadFileSizeError(selectedFile);
+    if (sizeError) {
+      setError(sizeError);
+      showErrorToast(sizeError);
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
     try {
@@ -117,7 +125,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
               <Stack spacing={0.15} sx={{ minWidth: 0, textAlign: 'left' }}>
                 <Typography
                   sx={{
-                    maxWidth: iconOnly ? 0 : 180,
+                    maxWidth: iconOnly ? 0 : 220,
                     opacity: iconOnly ? 0 : 1,
                     transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
                     overflow: 'hidden',
@@ -133,7 +141,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
                 </Typography>
                 <Typography
                   sx={{
-                    maxWidth: iconOnly ? 0 : 180,
+                    maxWidth: iconOnly ? 0 : 220,
                     opacity: iconOnly ? 0 : 1,
                     transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
                     overflow: 'hidden',

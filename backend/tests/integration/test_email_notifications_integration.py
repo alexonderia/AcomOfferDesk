@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
 from app.domain.exceptions import Conflict
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
+from app.infrastructure.email.email_attachment import EmailAttachment
 from app.repositories.profiles import ActiveContractorEmailRecipient
 from app.services.requests import RequestFileCreateInput, RequestService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
@@ -163,12 +164,27 @@ class _FakeRequestRepoForSendUseCase:
 
 
 class _FakeProfileRepoForSendUseCase:
-    def __init__(self, recipients: list[ActiveContractorEmailRecipient]) -> None:
+    def __init__(
+        self,
+        recipients: list[ActiveContractorEmailRecipient],
+        *,
+        economist_email_to_user_id: dict[str, str] | None = None,
+    ) -> None:
         self._recipients = recipients
+        self._economist_email_to_user_id = economist_email_to_user_id or {}
 
     async def list_active_contractor_email_recipients(self, *, contractor_role_id: int):
         _ = contractor_role_id
         return self._recipients
+
+    async def find_contractor_user_id_by_notification_email(
+        self,
+        *,
+        email: str,
+        contractor_role_id: int,
+    ) -> str | None:
+        _ = contractor_role_id
+        return self._economist_email_to_user_id.get(email.strip().lower())
 
 
 class _FakeFileServiceForSendUseCase:
@@ -407,5 +423,54 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
     assert event["attachments"] == []
     assert "Вложения не добавлены" in event["text_content"]
     assert "Вложения не добавлены" in (event["html_content"] or "")
+
+
+class _FakePresentationAttachmentService:
+    async def load_presentation_attachment(self) -> EmailAttachment:
+        return EmailAttachment(
+            filename="onboarding.pptx",
+            content_bytes=b"presentation-bytes",
+            mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+
+
+@pytest.mark.asyncio
+async def test_send_use_case_additional_email_with_economist_account_gets_invitation_content(monkeypatch):
+    monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
+    monkeypatch.setattr(settings, "email_verification_secret", "verify-secret")
+    request_row = SimpleNamespace(
+        id=50,
+        description="Поставка",
+        deadline_at=_future_dt().replace(tzinfo=None),
+    )
+    outbox = _FakeOutboxEmailService()
+    use_case = SendRequestNotificationEmailUseCase(
+        request_repository=_FakeRequestRepoForSendUseCase(request_row=request_row),
+        profile_repository=_FakeProfileRepoForSendUseCase(
+            recipients=[],
+            economist_email_to_user_id={"vendor@example.com": "vendor_login"},
+        ),
+        email_service=outbox,
+        app_url="https://web.acom.example",
+        presentation_attachment_service=_FakePresentationAttachmentService(),
+    )
+
+    await use_case.execute(
+        request_id=50,
+        contractor_role_id=settings.contractor_role_id,
+        additional_emails=["vendor@example.com"],
+        hidden_contractor_ids=[],
+        include_verified_contractors=False,
+    )
+
+    assert len(outbox.outbox) == 1
+    event = outbox.outbox[0]
+    assert event["to_email"] == "vendor@example.com"
+    assert "Вы приглашены к работе в системе AcomOfferDesk." in event["text_content"]
+    assert "Инструкция по получению доступа приложена к письму в виде презентации." in event["text_content"]
+    assert "Поступила новая заявка №50." in event["text_content"]
+    assert "Перейти к системе:" in event["text_content"]
+    assert "/api/v1/auth/oidc/register" not in event["text_content"]
+    assert event["attachments"][0].filename == "onboarding.pptx"
 
 

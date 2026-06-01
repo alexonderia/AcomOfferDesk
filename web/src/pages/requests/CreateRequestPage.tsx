@@ -23,7 +23,8 @@ import {
 } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller } from 'react-hook-form';
+import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -121,7 +122,7 @@ export const CreateRequestPage = () => {
     setError,
     clearErrors,
     formState: { errors },
-  } = useForm<FormValues>({
+  } = useLiveValidatedForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       requestNumber: '',
@@ -410,6 +411,7 @@ export const CreateRequestPage = () => {
                   errors.requestNumber?.message
                   ?? (isCheckingRequestId ? 'Проверяем номер заявки...' : undefined)
                 }
+                {...textFieldAutocompleteProps('requestNumber')}
                 {...register('requestNumber', {
                   onChange: () => {
                     clearErrors('requestNumber');
@@ -443,6 +445,7 @@ export const CreateRequestPage = () => {
                 fullWidth
                 error={Boolean(errors.description)}
                 helperText={errors.description?.message}
+                {...textFieldAutocompleteProps('description')}
                 {...register('description')}
                 sx={{
                   '& .MuiOutlinedInput-root': {
@@ -501,8 +504,9 @@ export const CreateRequestPage = () => {
                 fullWidth
                 error={Boolean(errors.initialAmount)}
                 helperText={errors.initialAmount?.message ?? 'Значение «Сумма по ТЗ» используется для расчета экономии по заявке.'}
+                {...textFieldAutocompleteProps('initialAmount')}
                 {...register('initialAmount')}
-                inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                inputProps={{ min: 0, step: '0.01', inputMode: 'decimal', autoComplete: 'off' }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1,

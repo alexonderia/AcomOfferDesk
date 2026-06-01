@@ -4,6 +4,12 @@ from datetime import datetime
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from app.infrastructure.email.email_templates.email_contact_blocks import (
+    EmailContactInfo,
+    build_contact_html_block,
+    build_contact_text_block,
+    build_primary_button_html,
+)
 
 
 def build_request_notification_email_payload(
@@ -49,6 +55,7 @@ def build_request_registration_email_payload(
     tg_bot_url: str | None,
     registration_url: str,
     registration_ttl_seconds: int,
+    contact: EmailContactInfo,
     attachment_warning: str | None = None,
 ) -> EmailMessagePayload:
     subject = f"AcomOfferDesk — новая заявка №{request_id}"
@@ -62,6 +69,7 @@ def build_request_registration_email_payload(
             tg_bot_url=tg_bot_url,
             registration_url=registration_url,
             registration_ttl_seconds=registration_ttl_seconds,
+            contact=contact,
             attachment_warning=attachment_warning,
         ),
         html_content=_build_registration_html(
@@ -71,6 +79,7 @@ def build_request_registration_email_payload(
             tg_bot_url=tg_bot_url,
             registration_url=registration_url,
             registration_ttl_seconds=registration_ttl_seconds,
+            contact=contact,
             attachment_warning=attachment_warning,
         ),
     )
@@ -153,6 +162,7 @@ def _build_registration_text(
     tg_bot_url: str | None,
     registration_url: str,
     registration_ttl_seconds: int,
+    contact: EmailContactInfo,
     attachment_warning: str | None,
 ) -> str:
     deadline_label, request_description = _request_header(
@@ -168,34 +178,28 @@ def _build_registration_text(
         f"Открыть legacy Telegram-бот: {tg_bot_url}"
     ) if tg_bot_url else ""
 
+    contact_lines = build_contact_text_block(
+        contact=contact,
+        intro="Если удобнее, вы можете связаться с контактным лицом напрямую:",
+    )
+    contact_block = ""
+    if contact_lines:
+        contact_block = "\n\n" + "\n".join(contact_lines)
+
     return (
         "AcomOfferDesk\n\n"
-        f"Новая заявка №{request_id}\n"
+        f"Поступила новая заявка №{request_id}.\n"
         f"Описание: {request_description}\n"
         f"Дедлайн: {deadline_label}\n\n"
-        "Чтобы пользоваться сервисом и оставлять отклики по заявкам, сначала пройдите регистрацию, либо свяжитесь с контактным лицом лично:\n"
-        "Владислав Хлистун\n"
-        "Тел. (MAX): +79274558089 \n"
-        "Эл. почта: VKhlistun@alabuga.ru \n"  
+        "Для доступа к заявке зарегистрируйтесь в сервисе по ссылке ниже.\n"
+        f"Перейти к регистрации: {registration_url}\n"
+        f"{contact_block}\n"
         f"Ссылка на регистрацию: {registration_url}\n"
         f"Срок действия ссылки: {ttl_label}.\n"
         f"{legacy_tg_block}"
         f"{warning_block}\n"
     )
 
-def _registration_contact_html() -> str:
-    return """
-            <tr>
-              <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
-                Если удобнее, вы можете связаться с контактным лицом напрямую:<br/><br/>
-                <strong>Владислав Хлистун</strong><br/>
-                Тел. (MAX):
-                <a href="tel:+79274558089" style="color:#0969da;text-decoration:underline;">+7 927 455-80-89</a><br/>
-                Эл. почта:
-                <a href="mailto:VKhlistun@alabuga.ru" style="color:#0969da;text-decoration:underline;">VKhlistun@alabuga.ru</a>
-              </td>
-            </tr>
-    """.rstrip()
 
 def _build_standard_html(
     *,
@@ -233,6 +237,7 @@ def _build_standard_html(
         else ""
     )
     reply_token_footer_html = _reply_token_mail_footer_html(reply_token=reply_token) if reply_token else ""
+    button_html = build_primary_button_html(label="Открыть заявку", url=request_url)
 
     return f"""
 <!DOCTYPE html>
@@ -261,19 +266,7 @@ def _build_standard_html(
                 {reply_block_html}
               </td>
             </tr>
-            <tr>
-              <td style="padding:24px 28px 8px 28px;">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                  <tr>
-                    <td bgcolor="#0969da" style="border-radius:6px;">
-                      <a href="{escaped_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
-                        Открыть заявку
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
+            {button_html}
             {warning_html}
             <tr>
               <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
@@ -299,6 +292,7 @@ def _build_registration_html(
     tg_bot_url: str | None,
     registration_url: str,
     registration_ttl_seconds: int,
+    contact: EmailContactInfo,
     attachment_warning: str | None,
 ) -> str:
     deadline_label, request_description = _request_header(
@@ -306,7 +300,7 @@ def _build_registration_html(
         description=description,
         deadline_at=deadline_at,
     )
-    contact_html = _registration_contact_html()
+    contact_html = build_contact_html_block(contact=contact)
     escaped_description = escape(request_description)
     escaped_bot_url = escape(tg_bot_url) if tg_bot_url else None
     escaped_registration_url = escape(registration_url)
@@ -344,6 +338,22 @@ def _build_registration_html(
         if escaped_bot_url
         else ""
     )
+    buttons_row_html = f"""
+            <tr>
+              <td style="padding:24px 28px 8px 28px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td bgcolor="#0969da" style="border-radius:6px;">
+                      <a href="{escaped_registration_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                        Перейти к регистрации
+                      </a>
+                    </td>
+                    {legacy_tg_button_html}
+                  </tr>
+                </table>
+              </td>
+            </tr>
+    """.rstrip()
 
     return f"""
 <!DOCTYPE html>
@@ -370,20 +380,7 @@ def _build_registration_html(
                 Для доступа к заявке зарегистрируйтесь в сервисе по ссылке ниже.
               </td>
             </tr>
-            <tr>
-              <td style="padding:24px 28px 8px 28px;">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                  <tr>
-                    <td bgcolor="#0969da" style="border-radius:6px;">
-                      <a href="{escaped_registration_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
-                        Перейти к регистрации
-                      </a>
-                    </td>
-                    {legacy_tg_button_html}
-                  </tr>
-                </table>
-              </td>
-            </tr>
+            {buttons_row_html}
             {contact_html}
             {warning_html}
             <tr>

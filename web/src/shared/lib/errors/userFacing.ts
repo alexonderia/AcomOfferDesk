@@ -63,7 +63,7 @@ export const fallbackByHttpStatus = (status: number): string | null => {
     case 409:
       return SAVE_ERROR_MESSAGE;
     case 413:
-      return 'Файл слишком большой. Уменьшите размер и повторите попытку.';
+      return 'Файл слишком большой. Размер одного файла не должен превышать 5 МБ.';
     case 422:
       return GENERIC_ERROR_MESSAGE;
     case 429:

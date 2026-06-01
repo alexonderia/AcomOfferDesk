@@ -21,6 +21,7 @@ import type {
   RootPlanFormValues,
   SubplanFormValues,
 } from './planDashboardForms';
+import { textFieldAutocompleteProps } from '@shared/lib/forms';
 
 type PlanDialogsProps = {
   isMutating: boolean;
@@ -90,6 +91,7 @@ export const PlanDialogs = ({
               size="small"
               error={Boolean(rootPlanForm.formState.errors.name)}
               helperText={rootPlanForm.formState.errors.name?.message}
+              {...textFieldAutocompleteProps('name')}
               {...rootPlanForm.register('name')}
             />
             <TextField
@@ -99,6 +101,7 @@ export const PlanDialogs = ({
               InputLabelProps={{ shrink: true }}
               error={Boolean(rootPlanForm.formState.errors.periodStart)}
               helperText={rootPlanForm.formState.errors.periodStart?.message}
+              {...textFieldAutocompleteProps('periodStart')}
               {...rootPlanForm.register('periodStart')}
             />
             <TextField
@@ -108,6 +111,7 @@ export const PlanDialogs = ({
               InputLabelProps={{ shrink: true }}
               error={Boolean(rootPlanForm.formState.errors.periodEnd)}
               helperText={rootPlanForm.formState.errors.periodEnd?.message}
+              {...textFieldAutocompleteProps('periodEnd')}
               {...rootPlanForm.register('periodEnd')}
             />
             <TextField
@@ -115,6 +119,7 @@ export const PlanDialogs = ({
               size="small"
               error={Boolean(rootPlanForm.formState.errors.planAmount)}
               helperText={rootPlanForm.formState.errors.planAmount?.message}
+              {...textFieldAutocompleteProps('planAmount')}
               {...rootPlanForm.register('planAmount')}
             />
             <Alert severity="info">
@@ -142,6 +147,7 @@ export const PlanDialogs = ({
               size="small"
               error={Boolean(subplanForm.formState.errors.name)}
               helperText={subplanForm.formState.errors.name?.message}
+              {...textFieldAutocompleteProps('name')}
               {...subplanForm.register('name')}
             />
             <FormControl fullWidth size="small" error={Boolean(subplanForm.formState.errors.childUserId)}>
@@ -174,7 +180,11 @@ export const PlanDialogs = ({
               label="Дата начала подплана"
               size="small"
               InputLabelProps={{ shrink: true }}
-              inputProps={{ min: subplanNode?.period_start, max: subplanNode?.period_end }}
+              inputProps={{
+                min: subplanNode?.period_start,
+                max: subplanNode?.period_end,
+                autoComplete: 'off',
+              }}
               error={Boolean(subplanForm.formState.errors.periodStart)}
               helperText={subplanForm.formState.errors.periodStart?.message}
               {...subplanForm.register('periodStart')}
@@ -184,7 +194,11 @@ export const PlanDialogs = ({
               label="Дата окончания подплана"
               size="small"
               InputLabelProps={{ shrink: true }}
-              inputProps={{ min: subplanNode?.period_start, max: subplanNode?.period_end }}
+              inputProps={{
+                min: subplanNode?.period_start,
+                max: subplanNode?.period_end,
+                autoComplete: 'off',
+              }}
               error={Boolean(subplanForm.formState.errors.periodEnd)}
               helperText={subplanForm.formState.errors.periodEnd?.message}
               {...subplanForm.register('periodEnd')}
@@ -194,6 +208,7 @@ export const PlanDialogs = ({
               size="small"
               error={Boolean(subplanForm.formState.errors.amount)}
               helperText={subplanForm.formState.errors.amount?.message}
+              {...textFieldAutocompleteProps('amount')}
               {...subplanForm.register('amount')}
             />
           </Stack>
@@ -241,7 +256,11 @@ export const PlanDialogs = ({
               label="Дата начала делегирования"
               size="small"
               InputLabelProps={{ shrink: true }}
-              inputProps={{ min: delegateNode?.period_start, max: delegateNode?.period_end }}
+              inputProps={{
+                min: delegateNode?.period_start,
+                max: delegateNode?.period_end,
+                autoComplete: 'off',
+              }}
               error={Boolean(delegateForm.formState.errors.childPeriodStart)}
               helperText={delegateForm.formState.errors.childPeriodStart?.message}
               {...delegateForm.register('childPeriodStart')}
@@ -251,6 +270,7 @@ export const PlanDialogs = ({
               size="small"
               error={Boolean(delegateForm.formState.errors.childPlanAmount)}
               helperText={delegateForm.formState.errors.childPlanAmount?.message}
+              {...textFieldAutocompleteProps('childPlanAmount')}
               {...delegateForm.register('childPlanAmount')}
             />
             {!isCandidatesLoading && delegateCandidates.length === 0 ? (
@@ -278,6 +298,7 @@ export const PlanDialogs = ({
               size="small"
               error={Boolean(editForm.formState.errors.name)}
               helperText={editForm.formState.errors.name?.message}
+              {...textFieldAutocompleteProps('name')}
               {...editForm.register('name')}
             />
             <TextField
@@ -285,6 +306,7 @@ export const PlanDialogs = ({
               size="small"
               error={Boolean(editForm.formState.errors.planAmount)}
               helperText={editForm.formState.errors.planAmount?.message}
+              {...textFieldAutocompleteProps('planAmount')}
               {...editForm.register('planAmount')}
             />
             <TextField
@@ -294,6 +316,7 @@ export const PlanDialogs = ({
               InputLabelProps={{ shrink: true }}
               error={Boolean(editForm.formState.errors.periodEnd)}
               helperText={editForm.formState.errors.periodEnd?.message}
+              {...textFieldAutocompleteProps('periodEnd')}
               {...editForm.register('periodEnd')}
             />
           </Stack>

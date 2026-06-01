@@ -464,7 +464,7 @@ async def test_handler_request_deadline_changed_notifies_responsible(monkeypatch
 async def test_handler_request_files_changed_notifies_responsible_and_submitted_accepted(monkeypatch):
     repo = _FakeNotificationsRepo()
     offers = {
-        77: [
+        "77": [
             SimpleNamespace(id=1, id_user="contractor-submitted", status="submitted"),
             SimpleNamespace(id=2, id_user="contractor-accepted", status="accepted"),
             SimpleNamespace(id=3, id_user="contractor-rejected", status="rejected"),

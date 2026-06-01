@@ -120,7 +120,6 @@ class SendRequestNotificationEmailUseCase:
                     registration_ttl_seconds=settings.tg_register_ttl_seconds,
                     attachment_warning=attachment_warning,
                 )
-
             try:
                 # TODO(notification-center): worker-level SMTP delivery status is async.
                 # To emit precise `email.sent` / `email.failed` center notifications,

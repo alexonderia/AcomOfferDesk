@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Body, Depends, Path
 
 from app.api.action_flags import ContractorActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
 from app.schemas.contractors import (
+    ContractorInviteData,
+    ContractorInviteRequest,
+    ContractorInviteResponse,
     ContractorListData,
     ContractorListItemSchema,
     ContractorListResponse,
@@ -18,7 +21,9 @@ from app.schemas.contractors import (
     ContractorStatusUpdateRequest,
     ContractorStatusUpdateResponse,
 )
+from app.services.contractor_invitations import ContractorInvitationService
 from app.services.contractors import ContractorService
+from app.services.normative_email_attachment import NormativeEmailAttachmentService
 from app.services.users import UserStatusService
 
 router = APIRouter()
@@ -110,5 +115,33 @@ async def update_contractor_status(
         data=ContractorStatusUpdateData(
             user_id=result.user_id,
             user_status=_ru_user_status(result.user_status),
+        ),
+    )
+
+
+@router.post("/contractors/invite", response_model=ContractorInviteResponse)
+async def invite_contractors(
+    payload: ContractorInviteRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ContractorInviteResponse:
+    async with uow:
+        service = ContractorInvitationService(
+            attachment_service=NormativeEmailAttachmentService(uow.files),
+        )
+        result = await service.invite_contractors(
+            current_user=current_user,
+            emails=payload.emails,
+            normative_file_id=payload.normative_file_id,
+        )
+
+    return ContractorInviteResponse(
+        data=ContractorInviteData(
+            sent=result.sent,
+            failed=[
+                {"email": item.email, "reason": item.reason}
+                for item in result.failed
+            ],
+            invalid=result.invalid,
         ),
     )

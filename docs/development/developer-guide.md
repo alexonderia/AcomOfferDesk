@@ -471,3 +471,22 @@ Frontend организован по feature-oriented структуре. Иск
 - не подключаться к реальному RabbitMQ/SMTP из unit/integration;
 - использовать fake outbox/fake transport/monkeypatch publisher;
 - не отправлять реальные письма из CI.
+
+### Contractor invite emails (unregistered recipients)
+
+- Manual invite API:
+  - `POST /api/v1/contractors/invite`
+  - request includes `emails` and `normative_file_id`
+  - backend validates/normalizes/deduplicates emails and returns `sent/failed/invalid`
+  - attachment is loaded from the selected **actual normative document** before queuing email
+  - permission: `contractors.manual.create`
+- Manual invite UI:
+  - loads `actual` normative documents from `/api/v1/normative-files?status=actual`
+  - allows selecting the attachment document before sending
+  - defaults to a document whose name matches presentation (`презентац` / `presentation`) when present
+- Invitation contact env:
+  - `INVITATION_PORTAL_URL`
+  - `INVITATION_CONTACT_NAME`
+  - `INVITATION_CONTACT_EMAIL`
+  - `INVITATION_CONTACT_PHONE`
+  - `INVITATION_CONTACT_TEXT`

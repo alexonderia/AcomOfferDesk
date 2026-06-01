@@ -59,3 +59,23 @@ class ContractorStatusUpdateData(BaseModel):
 
 class ContractorStatusUpdateResponse(BaseModel):
     data: ContractorStatusUpdateData
+
+
+class ContractorInviteRequest(BaseModel):
+    emails: list[str]
+    normative_file_id: int = Field(..., ge=1)
+
+
+class ContractorInviteFailure(BaseModel):
+    email: str
+    reason: str
+
+
+class ContractorInviteData(BaseModel):
+    sent: list[str]
+    failed: list[ContractorInviteFailure]
+    invalid: list[str]
+
+
+class ContractorInviteResponse(BaseModel):
+    data: ContractorInviteData

@@ -27,9 +27,9 @@ class _FakeRequestRepoForCreate:
         self.attached: list[tuple[int, int]] = []
         self.hidden: list[tuple[int, list[str]]] = []
 
-    async def create(self, *, id_user, deadline_at, description, initial_amount, id_plan):
+    async def create(self, *, request_id=None, id_user, deadline_at, description, initial_amount, id_plan):
         row = SimpleNamespace(
-            id=self._next_request_id,
+            id=request_id if request_id is not None else self._next_request_id,
             id_user=id_user,
             deadline_at=deadline_at,
             description=description,
@@ -38,8 +38,12 @@ class _FakeRequestRepoForCreate:
             status="open",
         )
         self.created_requests.append(row)
-        self._next_request_id += 1
+        if request_id is None:
+            self._next_request_id += 1
         return row
+
+    async def exists_by_id(self, *, request_id: str) -> bool:
+        return any(item.id == request_id for item in self.created_requests)
 
     async def attach_file(self, *, request_id: str, file_id: int) -> None:
         self.attached.append((request_id, file_id))
@@ -181,6 +185,7 @@ class _FakeOutboxEmailService:
 
     async def send_email(self, **kwargs) -> None:
         self.outbox.append(kwargs)
+
 
 
 @pytest.mark.asyncio
@@ -402,3 +407,5 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
     assert event["attachments"] == []
     assert "Вложения не добавлены" in event["text_content"]
     assert "Вложения не добавлены" in (event["html_content"] or "")
+
+

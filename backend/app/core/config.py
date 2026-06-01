@@ -175,6 +175,30 @@ class Settings(BaseSettings):
         default=604800,
         validation_alias=AliasChoices("REPLY_EMAIL_TTL_SECONDS", "EMAIL_REPLY_TTL_SECONDS"),
     )
+    contractor_invite_max_emails_per_request: int = Field(
+        default=50,
+        validation_alias="CONTRACTOR_INVITE_MAX_EMAILS_PER_REQUEST",
+    )
+    invitation_portal_url: str | None = Field(
+        default=None,
+        validation_alias="INVITATION_PORTAL_URL",
+    )
+    invitation_contact_name: str | None = Field(
+        default=None,
+        validation_alias="INVITATION_CONTACT_NAME",
+    )
+    invitation_contact_email: str | None = Field(
+        default=None,
+        validation_alias="INVITATION_CONTACT_EMAIL",
+    )
+    invitation_contact_phone: str | None = Field(
+        default=None,
+        validation_alias="INVITATION_CONTACT_PHONE",
+    )
+    invitation_contact_text: str | None = Field(
+        default=None,
+        validation_alias="INVITATION_CONTACT_TEXT",
+    )
     imap_host: str | None = Field(default=None, validation_alias="IMAP_HOST")
     imap_port: int = Field(default=993, validation_alias="IMAP_PORT")
     imap_username: str | None = Field(
@@ -272,6 +296,18 @@ class Settings(BaseSettings):
             self.s3_presigned_get_ttl_seconds = 300
         if self.max_upload_size_bytes <= 0:
             self.max_upload_size_bytes = 10 * 1024 * 1024
+        if self.contractor_invite_max_emails_per_request <= 0:
+            self.contractor_invite_max_emails_per_request = 50
+        if self.invitation_portal_url is not None:
+            self.invitation_portal_url = self.invitation_portal_url.strip() or None
+        if self.invitation_contact_name is not None:
+            self.invitation_contact_name = self.invitation_contact_name.strip() or None
+        if self.invitation_contact_email is not None:
+            self.invitation_contact_email = self.invitation_contact_email.strip() or None
+        if self.invitation_contact_phone is not None:
+            self.invitation_contact_phone = self.invitation_contact_phone.strip() or None
+        if self.invitation_contact_text is not None:
+            self.invitation_contact_text = self.invitation_contact_text.strip() or None
         if self.ws_ticket_ttl_seconds < 30:
             self.ws_ticket_ttl_seconds = 30
         if self.ws_ticket_ttl_seconds > 60:

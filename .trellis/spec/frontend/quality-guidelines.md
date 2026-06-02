@@ -57,6 +57,13 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - When a new primary destination is needed, prefer placing it inside `more` rather than pushing `more` off-screen.
 - If a new item must become top-level, update the slot budget and responsive layout together with tests so the change is intentional.
 
+### Convention: Scoped Admin Create Dialog Roles
+
+- When one admin create dialog is reused across employee and contractor tabs, scope the available create-role options to the active tab instead of exposing cross-tab creation paths.
+- On employee tabs, contractor creation must stay out of the employee role dropdown when there is a dedicated contractor entry point elsewhere in the UI.
+- If the active tab has no available create roles after scoping, hide the add action instead of opening a dialog with unrelated options.
+- Superadmin is the exception to tab scoping: keep the full role list available, but move the current tab's role to the first position when it is present.
+
 ---
 
 ## Forbidden Patterns

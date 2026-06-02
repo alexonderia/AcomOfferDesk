@@ -78,8 +78,10 @@ describe('ContractorInviteDialog', () => {
     expect(preview).toHaveAttribute('srcdoc');
     expect(preview.getAttribute('srcdoc')).toContain('<!DOCTYPE html>');
     expect(preview.getAttribute('srcdoc')).toContain('<html lang="ru">');
-    expect(preview.getAttribute('srcdoc')).toContain('<a href="{{PORTAL_URL}}"');
-    expect(preview.getAttribute('srcdoc')).toContain('{{CONTACT_EMAIL}}');
+    expect(preview.getAttribute('srcdoc')).toContain('https://acomofferdesk.example.com');
+    expect(preview.getAttribute('srcdoc')).toContain('VKhlistun@alabuga.ru');
+    expect(preview.getAttribute('srcdoc')).toContain('<span style="display:inline-block;padding:12px 20px;');
+    expect(preview.getAttribute('srcdoc')).not.toContain('href="{{PORTAL_URL}}"');
 
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: 'valid1@example.com, valid2@example.com' },

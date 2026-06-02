@@ -119,6 +119,12 @@ class _ScopedUsersRepo:
         ]
 
 
+class _EmptyUserStatusPeriodsRepo:
+    async def list_active_for_users(self, *, user_ids):
+        _ = user_ids
+        return {}
+
+
 def test_economist_users_list_defaults_to_module_scope(
     test_client,
     set_uow,
@@ -195,3 +201,53 @@ def test_project_manager_users_list_keeps_department_scope_and_leads(
     assert response.status_code == 200
     user_ids = {item["user_id"] for item in response.json()["data"]["items"]}
     assert user_ids == {"lead-1", "lead-2", "eco-1", "eco-2", "eco-3", "operator-1", "operator-2"}
+
+
+def test_request_economists_for_lead_default_to_descendants_only(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = DummyUow()
+    uow.users = _ScopedUsersRepo()
+    uow.user_status_periods = _EmptyUserStatusPeriodsRepo()
+    set_uow(uow)
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_OWNER_CHANGE},
+        )
+    )
+
+    response = test_client.get("/api/v1/users/request-economists")
+
+    assert response.status_code == 200
+    user_ids = {item["user_id"] for item in response.json()["data"]["items"]}
+    assert user_ids == {"lead-1", "eco-1", "eco-2"}
+
+
+def test_request_economists_for_lead_expand_to_department_scope_with_assign_delegation(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = DummyUow()
+    uow.users = _ScopedUsersRepo()
+    uow.user_status_periods = _EmptyUserStatusPeriodsRepo()
+    set_uow(uow)
+    set_current_user(
+        make_current_user(
+            user_id="lead-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN},
+        )
+    )
+
+    response = test_client.get("/api/v1/users/request-economists")
+
+    assert response.status_code == 200
+    user_ids = {item["user_id"] for item in response.json()["data"]["items"]}
+    assert user_ids == {"lead-1", "lead-2", "eco-1", "eco-2", "eco-3"}

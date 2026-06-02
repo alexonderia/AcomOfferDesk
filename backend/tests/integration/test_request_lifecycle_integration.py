@@ -605,6 +605,33 @@ def test_department_requests_update_without_department_assign_cannot_change_fore
     assert response.status_code == 403
 
 
+def test_lead_can_change_subordinate_request_owner_to_self_inside_management_scope(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", owner_user_id="econ-1")
+    set_uow(_RequestLifecycleUow(request_row, users_by_id=_department_users_tree()))
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_READ,
+            PermissionCodes.REQUESTS_OWNER_CHANGE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"owner_user_id": "lead-1"},
+    )
+
+    assert response.status_code == 200
+    assert request_row.id_user == "lead-1"
+
+
 def test_department_assign_allows_changing_foreign_request_owner_inside_department_scope(
     test_client,
     set_current_user,

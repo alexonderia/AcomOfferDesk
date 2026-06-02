@@ -14,6 +14,7 @@ import {
 import { alpha, type Theme } from '@mui/material/styles';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { ROLE } from '@shared/constants/roles';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { formatRuPhone } from '@shared/lib/phone';
 import { employeePersonLabels, type UserTab } from '../model/constants';
@@ -52,6 +53,14 @@ const roleNameById: Record<number, string> = {
   [ROLE.ECONOMIST]: 'Экономист',
 };
 
+const sectionTitleSx = {
+  fontSize: 13,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  color: 'text.secondary'
+} as const;
+
 export const AdminPageView = () => {
   const {
     isLeadLike,
@@ -85,10 +94,16 @@ export const AdminPageView = () => {
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isSubmitting, touchedFields, submitCount }
+    formState: { errors, isSubmitting, touchedFields, dirtyFields, submitCount }
   } = form;
 
   const selectedRoleId = watch('role_id');
+  const loginValue = watch('login');
+  const mailValue = watch('mail');
+  const parentIdValue = watch('id_parent');
+  const companyNameValue = watch('company_name');
+  const innValue = watch('inn');
+  const companyPhoneValue = watch('company_phone');
   const isEmployeesTab = activeTab !== 'contractors';
 
   const handleRoleSelectChange = (event: SelectChangeEvent<UserTab>) => {
@@ -96,15 +111,25 @@ export const AdminPageView = () => {
   };
 
   const companyPhoneRegistration = register('company_phone');
+  const phoneRegistration = register('phone');
   const touchedMap = touchedFields as Partial<Record<keyof AdminUserFormValues, unknown>>;
+  const dirtyMap = dirtyFields as Partial<Record<keyof AdminUserFormValues, unknown>>;
   const getFieldError = (field: keyof AdminUserFormValues) => {
-    const shouldShow = submitCount > 0 || Boolean(touchedMap[field]);
+    const shouldShow = submitCount > 0 || Boolean(touchedMap[field]) || Boolean(dirtyMap[field]);
     const message = errors[field]?.message;
     if (!shouldShow || typeof message !== 'string') {
       return undefined;
     }
     return message;
   };
+  const hasValue = (value: string | undefined) => Boolean(value?.trim());
+  const isRoleFieldValid = selectedRoleId > 0 && !errors.role_id;
+  const isLoginFieldValid = hasValue(loginValue) && !errors.login;
+  const isMailFieldValid = hasValue(mailValue) && !errors.mail;
+  const isCompanyNameFieldValid = hasValue(companyNameValue) && !errors.company_name;
+  const isInnFieldValid = hasValue(innValue) && !errors.inn;
+  const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
+  const isParentFieldValid = hasValue(parentIdValue) && !errors.id_parent;
 
   return (
     <Stack spacing={2}>
@@ -157,7 +182,12 @@ export const AdminPageView = () => {
                     : 'Создание нового пользователя'}
               </Typography>
               <TextField
-                label={isEmployeesTab && !isContractorRole ? employeePersonLabels.roleFieldLabel : 'Роль пользователя'}
+                label={
+                  <RequiredFieldLabel
+                    label={isEmployeesTab && !isContractorRole ? employeePersonLabels.roleFieldLabel : 'Роль пользователя'}
+                    isValid={isRoleFieldValid}
+                  />
+                }
                 select
                 error={Boolean(getFieldError('role_id'))}
                 helperText={getFieldError('role_id')}
@@ -174,8 +204,11 @@ export const AdminPageView = () => {
 
               {isContractorRole ? (
                 <>
+                  <Typography sx={sectionTitleSx}>
+                    Данные для регистрации
+                  </Typography>
                   <ValidatedTextField
-                    label="Наименование компании"
+                    label={<RequiredFieldLabel label="Наименование компании" isValid={isCompanyNameFieldValid} />}
                     fieldName="company_name"
                     error={Boolean(getFieldError('company_name'))}
                     helperText={getFieldError('company_name')}
@@ -183,7 +216,7 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
                   <ValidatedTextField
-                    label="ИНН"
+                    label={<RequiredFieldLabel label="ИНН" isValid={isInnFieldValid} />}
                     fieldName="inn"
                     error={Boolean(getFieldError('inn'))}
                     helperText={getFieldError('inn')}
@@ -191,7 +224,7 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
                   <ValidatedTextField
-                    label="Телефон компании"
+                    label={<RequiredFieldLabel label="Телефон компании" isValid={isCompanyPhoneFieldValid} />}
                     fieldName="company_phone"
                     placeholder="+7 (900) 999-88-77"
                     error={Boolean(getFieldError('company_phone'))}
@@ -238,8 +271,11 @@ export const AdminPageView = () => {
                 </>
               ) : (
                 <>
+                  <Typography sx={sectionTitleSx}>
+                    Данные для входа
+                  </Typography>
                   <ValidatedTextField
-                    label="Логин"
+                    label={<RequiredFieldLabel label="Логин" isValid={isLoginFieldValid} />}
                     fieldName="login"
                     error={Boolean(getFieldError('login'))}
                     helperText={getFieldError('login')}
@@ -265,7 +301,7 @@ export const AdminPageView = () => {
                     sx={{ display: 'none' }}
                   />
                   <ValidatedTextField
-                    label="E-mail"
+                    label={<RequiredFieldLabel label="E-mail" isValid={isMailFieldValid} />}
                     fieldName="mail"
                     error={Boolean(getFieldError('mail'))}
                     helperText={getFieldError('mail')}
@@ -273,14 +309,52 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
 
+                  <Typography sx={sectionTitleSx}>
+                    {employeePersonLabels.profileSectionTitle}
+                  </Typography>
+                  <ValidatedTextField
+                    label="ФИО"
+                    fieldName="full_name"
+                    error={Boolean(getFieldError('full_name'))}
+                    helperText={getFieldError('full_name')}
+                    registration={register('full_name')}
+                    sx={inputFieldSx}
+                  />
+                  <ValidatedTextField
+                    label="Телефон"
+                    fieldName="phone"
+                    placeholder="+7 (900) 999-88-77"
+                    error={Boolean(getFieldError('phone'))}
+                    helperText={getFieldError('phone')}
+                    name={phoneRegistration.name}
+                    inputRef={phoneRegistration.ref}
+                    onBlur={phoneRegistration.onBlur}
+                    onChange={(event) => {
+                      const formatted = formatRuPhone(event.target.value);
+                      setValue('phone', formatted, {
+                        shouldDirty: true,
+                        shouldTouch: true,
+                        shouldValidate: true
+                      });
+                    }}
+                    sx={inputFieldSx}
+                  />
+
                   {selectedRoleId === ROLE.PROJECT_MANAGER || requiresParent ? (
                     <TextField
                       label={
-                        selectedRoleId === ROLE.ECONOMIST
-                          ? 'Руководитель (ведущий экономист или экономист)'
-                          : selectedRoleId === ROLE.LEAD_ECONOMIST
-                            ? 'Руководитель (руководитель проекта или ведущий экономист)'
-                            : 'Руководитель (руководитель проекта)'
+                        requiresParent
+                          ? (
+                            <RequiredFieldLabel
+                              label={
+                                selectedRoleId === ROLE.ECONOMIST
+                                  ? 'Руководитель (ведущий экономист или экономист)'
+                                  : 'Руководитель (руководитель проекта или ведущий экономист)'
+                              }
+                              isValid={isParentFieldValid}
+                            />
+                          )
+                          : 'Руководитель (руководитель проекта)'
                       }
                       select
                       error={Boolean(getFieldError('id_parent'))}

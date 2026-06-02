@@ -37,6 +37,10 @@ type InviteResult = {
 
 const PRESENTATION_FILE_PATTERN = /(презентац|presentation)/i;
 const INVITATION_SUBJECT = 'Приглашение в AcomOfferDesk';
+const PREVIEW_PORTAL_URL = 'https://acomofferdesk.example.com';
+const PREVIEW_CONTACT_NAME = 'Владислав Хлистун';
+const PREVIEW_CONTACT_PHONE = '+7 927 455-80-89';
+const PREVIEW_CONTACT_EMAIL = 'VKhlistun@alabuga.ru';
 
 const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
 <html lang="ru">
@@ -61,9 +65,9 @@ const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
                     <td bgcolor="#0969da" style="border-radius:6px;">
-                      <a href="{{PORTAL_URL}}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                      <span style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;cursor:default;">
                         Перейти к системе
-                      </a>
+                      </span>
                     </td>
                   </tr>
                 </table>
@@ -72,15 +76,15 @@ const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
             <tr>
               <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Если удобнее, вы можете связаться с контактным лицом напрямую:<br/>
-                <strong>{{CONTACT_NAME}}</strong><br/>
-                Тел. (MAX): <a href="tel:{{CONTACT_PHONE}}" style="color:#0969da;text-decoration:underline;">{{CONTACT_PHONE}}</a><br/>
-                Эл. почта: <a href="mailto:{{CONTACT_EMAIL}}" style="color:#0969da;text-decoration:underline;">{{CONTACT_EMAIL}}</a>
+                <strong>${PREVIEW_CONTACT_NAME}</strong><br/>
+                Тел. (MAX): ${PREVIEW_CONTACT_PHONE}<br/>
+                Эл. почта: ${PREVIEW_CONTACT_EMAIL}
               </td>
             </tr>
             <tr>
               <td style="padding:8px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Ссылка для входа:<br/>
-                <a href="{{PORTAL_URL}}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{{PORTAL_URL}}</a>
+                ${PREVIEW_PORTAL_URL}
               </td>
             </tr>
           </table>
@@ -253,9 +257,6 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
           >
             <Stack spacing={0.75}>
               <Typography variant="subtitle2">Пример письма</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Ниже — визуальный preview письма, которое получит контрагент.
-              </Typography>
               <Typography variant="body2" fontWeight={600}>
                 Тема: {INVITATION_SUBJECT}
               </Typography>

@@ -4,6 +4,7 @@ import { Controller } from 'react-hook-form';
 import { z } from 'zod';
 import {
   Alert,
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -12,6 +13,7 @@ import {
   Stack,
 } from '@mui/material';
 import { createManualContractor } from '@shared/api/users/createManualContractor';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
@@ -70,11 +72,30 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
     control,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
+    watch,
+    formState: { errors, isSubmitting, touchedFields, dirtyFields, submitCount },
   } = useLiveValidatedForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues,
   });
+
+  const companyNameValue = watch('companyName');
+  const innValue = watch('inn');
+  const companyPhoneValue = watch('companyPhone');
+  const touchedMap = touchedFields as Partial<Record<keyof FormValues, unknown>>;
+  const dirtyMap = dirtyFields as Partial<Record<keyof FormValues, unknown>>;
+  const getFieldError = (field: keyof FormValues) => {
+    const shouldShow = submitCount > 0 || Boolean(touchedMap[field]) || Boolean(dirtyMap[field]);
+    const message = errors[field]?.message;
+    if (!shouldShow || typeof message !== 'string') {
+      return undefined;
+    }
+    return message;
+  };
+  const hasValue = (value: string | undefined) => Boolean(value?.trim());
+  const isCompanyNameValid = hasValue(companyNameValue) && !errors.companyName;
+  const isInnValid = hasValue(innValue) && !errors.inn;
+  const isCompanyPhoneValid = hasValue(companyPhoneValue) && !errors.companyPhone;
 
   useEffect(() => {
     if (!open) {
@@ -127,20 +148,23 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
             void handleSubmit(handleCreate)();
           }}
         >
+          <Box sx={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'text.secondary' }}>
+            Данные для регистрации
+          </Box>
           <ValidatedTextField
-            label="Наименование компании"
+            label={<RequiredFieldLabel label="Наименование компании" isValid={isCompanyNameValid} />}
             fieldName="companyName"
             registration={register('companyName')}
-            error={Boolean(errors.companyName)}
-            helperText={errors.companyName?.message}
+            error={Boolean(getFieldError('companyName'))}
+            helperText={getFieldError('companyName')}
             fullWidth
           />
           <ValidatedTextField
-            label="ИНН"
+            label={<RequiredFieldLabel label="ИНН" isValid={isInnValid} />}
             fieldName="inn"
             registration={register('inn')}
-            error={Boolean(errors.inn)}
-            helperText={errors.inn?.message}
+            error={Boolean(getFieldError('inn'))}
+            helperText={getFieldError('inn')}
             fullWidth
           />
           <Controller
@@ -148,7 +172,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
             name="companyPhone"
             render={({ field }) => (
               <ValidatedTextField
-                label="Телефон компании"
+                label={<RequiredFieldLabel label="Телефон компании" isValid={isCompanyPhoneValid} />}
                 fieldName="companyPhone"
                 name={field.name}
                 inputRef={field.ref}
@@ -157,8 +181,8 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
                   field.onChange(formatRuPhone(event.target.value));
                 }}
                 onBlur={field.onBlur}
-                error={Boolean(errors.companyPhone)}
-                helperText={errors.companyPhone?.message}
+                error={Boolean(getFieldError('companyPhone'))}
+                helperText={getFieldError('companyPhone')}
                 fullWidth
               />
             )}
@@ -167,24 +191,24 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
             label="E-mail компании"
             fieldName="companyMail"
             registration={register('companyMail')}
-            error={Boolean(errors.companyMail)}
-            helperText={errors.companyMail?.message}
+            error={Boolean(getFieldError('companyMail'))}
+            helperText={getFieldError('companyMail')}
             fullWidth
           />
           <ValidatedTextField
             label="Адрес"
             fieldName="address"
             registration={register('address')}
-            error={Boolean(errors.address)}
-            helperText={errors.address?.message}
+            error={Boolean(getFieldError('address'))}
+            helperText={getFieldError('address')}
             fullWidth
           />
           <ValidatedTextField
             label="Примечание"
             fieldName="note"
             registration={register('note')}
-            error={Boolean(errors.note)}
-            helperText={errors.note?.message}
+            error={Boolean(getFieldError('note'))}
+            helperText={getFieldError('note')}
             multiline
             minRows={3}
             fullWidth

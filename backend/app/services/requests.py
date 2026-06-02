@@ -1322,14 +1322,13 @@ class RequestService:
                 request_owner_user_id=request_owner_user_id,
             ):
                 raise Forbidden("Request is outside your management scope")
-            if new_owner_user_id == current_user.user_id:
-                raise Forbidden("Owner must be from current user's subordinates")
-            is_subordinate = await self._is_descendant(
-                ancestor_user_id=current_user.user_id,
-                target_user_id=new_owner_user_id,
-            )
-            if not is_subordinate:
-                raise Forbidden("Owner must be from current user's subordinates")
+            if new_owner_user_id != current_user.user_id:
+                is_subordinate = await self._is_descendant(
+                    ancestor_user_id=current_user.user_id,
+                    target_user_id=new_owner_user_id,
+                )
+                if not is_subordinate:
+                    raise Forbidden("Owner must be current user or current user's subordinate")
 
     async def _can_edit_department_requests(
         self,

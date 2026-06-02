@@ -953,13 +953,20 @@ class UserQueryService:
             settings.lead_economist_role_id,
             settings.project_manager_role_id,
         }:
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
+            if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN):
+                scoped_owner_ids = set(
+                    await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
+                        current_user=current_user,
+                    )
+                )
+            else:
+                scoped_owner_ids = _collect_descendant_user_ids(
+                    manager_user_id=current_user.user_id,
+                    rows=rows,
+                )
             rows = [
                 row for row in rows
-                if row[0].id in descendant_ids
+                if row[0].id in scoped_owner_ids
             ]
 
         user_ids = [user.id for user, _, _ in rows]

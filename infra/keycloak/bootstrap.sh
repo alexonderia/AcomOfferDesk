@@ -339,6 +339,8 @@ offers.contractor_info.read
 chat.read
 files.download
 users.read
+contractors.read
+contractors.profile.read
 users.status.update
 users.role.update_economy
 users.manager.update
@@ -381,6 +383,8 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 users.read
+contractors.read
+contractors.profile.read
 users.create
 users.status.update
 users.role.update_economy
@@ -429,6 +433,8 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 users.read
+contractors.read
+contractors.profile.read
 users.status.update
 users.manager.update
 normative_files.read

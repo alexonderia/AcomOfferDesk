@@ -33,6 +33,12 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Let the outer popover/drawer container own the responsive width and height, and keep the inner panel flexible with `width: 100%`, `height: 100%`, `minWidth: 0`, and `minHeight: 0`.
 - Re-clamp on window resize so the stored size never renders outside the available screen area.
 
+### Convention: Mobile Notification Center Sheet
+
+- On mobile, the notification center opens as a centered full-width fullscreen sheet instead of a corner-anchored popover.
+- Hide desktop resize affordances on the mobile sheet; let the viewport define the panel width and height.
+- Keep the overlay/modal container responsible for centering and backdrop behavior, not the inner panel.
+
 ---
 
 ## Forbidden Patterns

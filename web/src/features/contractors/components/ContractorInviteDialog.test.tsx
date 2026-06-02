@@ -71,6 +71,18 @@ describe('ContractorInviteDialog', () => {
       expect(getNormativeFilesMock).toHaveBeenCalledWith('actual');
     });
 
+    expect(screen.getByText('Пример письма')).toBeInTheDocument();
+    expect(screen.getByText('Тема: Приглашение в AcomOfferDesk')).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByText((_, element) =>
+          Boolean(element?.textContent?.includes('Ссылка для входа: [будет подставлена автоматически]'))
+        )
+        .some((element) =>
+          element.textContent?.includes('Ссылка для входа: [будет подставлена автоматически]')
+        )
+    ).toBe(true);
+
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: 'valid1@example.com, valid2@example.com' },
     });

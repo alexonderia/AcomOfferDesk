@@ -24,6 +24,7 @@ export type NotificationCenterPanelProps = {
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
   size: NotificationCenterSize;
+  showResizeHandle?: boolean;
   resizeHandleProps: {
     onPointerDown: (event: PointerEvent<HTMLElement>) => void;
     onPointerMove: (event: PointerEvent<HTMLElement>) => void;
@@ -49,6 +50,7 @@ export const NotificationCenterPanel = ({
   isLoadingMore = false,
   onLoadMore,
   size: _size,
+  showResizeHandle = true,
   resizeHandleProps,
 }: NotificationCenterPanelProps) => {
   return (
@@ -142,35 +144,37 @@ export const NotificationCenterPanel = ({
         )}
       </Box>
 
-      <Box
-        role="separator"
-        aria-label="Изменить размер окна уведомлений. Двойной щелчок — стандартный размер."
-        {...resizeHandleProps}
-        sx={(theme) => ({
-          position: 'absolute',
-          right: 4,
-          top: 4,
-          zIndex: 2,
-          width: 18,
-          height: 18,
-          cursor: 'nesw-resize',
-          touchAction: 'none',
-          borderRadius: 0.5,
-          '&::before': {
-            content: '""',
+      {showResizeHandle ? (
+        <Box
+          role="separator"
+          aria-label="Изменить размер окна уведомлений. Двойной щелчок — стандартный размер."
+          {...resizeHandleProps}
+          sx={(theme) => ({
             position: 'absolute',
-            right: 3,
-            top: 3,
-            width: 10,
-            height: 10,
-            borderRight: `2px solid ${alpha(theme.palette.text.secondary, 0.55)}`,
-            borderTop: `2px solid ${alpha(theme.palette.text.secondary, 0.55)}`,
-          },
-          '&:hover::before': {
-            borderColor: theme.palette.primary.main,
-          },
-        })}
-      />
+            right: 4,
+            top: 4,
+            zIndex: 2,
+            width: 18,
+            height: 18,
+            cursor: 'nesw-resize',
+            touchAction: 'none',
+            borderRadius: 0.5,
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              right: 3,
+              top: 3,
+              width: 10,
+              height: 10,
+              borderRight: `2px solid ${alpha(theme.palette.text.secondary, 0.55)}`,
+              borderTop: `2px solid ${alpha(theme.palette.text.secondary, 0.55)}`,
+            },
+            '&:hover::before': {
+              borderColor: theme.palette.primary.main,
+            },
+          })}
+        />
+      ) : null}
     </Box>
   );
 };

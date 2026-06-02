@@ -13,11 +13,11 @@ import {
   MenuItem,
   Select,
   Stack,
-  Typography,
+  Typography
 } from '@mui/material';
 import {
   inviteContractors,
-  type InviteContractorsFailure,
+  type InviteContractorsFailure
 } from '@shared/api/contractors/inviteContractors';
 import { getNormativeFiles } from '@shared/api/normative/getNormativeFiles';
 import type { NormativeFileItem } from '@shared/api/normative/types';
@@ -36,6 +36,23 @@ type InviteResult = {
 };
 
 const PRESENTATION_FILE_PATTERN = /(презентац|presentation)/i;
+const INVITATION_SUBJECT = 'Приглашение в AcomOfferDesk';
+const INVITATION_PREVIEW_TEXT = [
+  'AcomOfferDesk',
+  '',
+  'Вы приглашены к работе в системе AcomOfferDesk.',
+  'Инструкция по получению доступа приложена к письму в виде презентации.',
+  '',
+  'Кнопка письма: «Перейти к системе»',
+  'Ссылка для входа: [будет подставлена автоматически]',
+  '',
+  'Если удобнее, вы можете связаться с контактным лицом напрямую:',
+  '[имя контактного лица]',
+  'Тел. (MAX): [телефон]',
+  'Эл. почта: [email]',
+  '',
+  'Вложение: выбранный нормативный документ'
+].join('\n');
 
 const resolveDefaultNormativeFileId = (items: NormativeFileItem[]): number | null => {
   const preferred = items.find((item) => PRESENTATION_FILE_PATTERN.test(item.original_name));
@@ -48,10 +65,7 @@ const resolveDefaultNormativeFileId = (items: NormativeFileItem[]): number | nul
   return null;
 };
 
-export const ContractorInviteDialog = ({
-  open,
-  onClose,
-}: ContractorInviteDialogProps) => {
+export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialogProps) => {
   const { showErrorToast, showSuccessToast } = useSystemToasts();
   const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
   const [emails, setEmails] = useState<string[]>([]);
@@ -63,6 +77,11 @@ export const ContractorInviteDialog = ({
   const [selectedNormativeFileId, setSelectedNormativeFileId] = useState<number | null>(null);
   const hasValidEmails = emails.length > 0;
   const hasNormativeSelection = selectedNormativeFileId !== null;
+  const selectedNormativeFile = normativeFiles.find((item) => item.id === selectedNormativeFileId) ?? null;
+  const invitationPreview = INVITATION_PREVIEW_TEXT.replace(
+    'Вложение: выбранный нормативный документ',
+    `Вложение: ${selectedNormativeFile?.original_name ?? 'выбранный нормативный документ'}`
+  );
 
   useEffect(() => {
     if (!open) {
@@ -123,12 +142,12 @@ export const ContractorInviteDialog = ({
     try {
       const response = await inviteContractors({
         emails: nextEmails,
-        normativeFileId: selectedNormativeFileId,
+        normativeFileId: selectedNormativeFileId
       });
       const nextResult: InviteResult = {
         sent: response.data.sent,
         failed: response.data.failed,
-        invalid: response.data.invalid,
+        invalid: response.data.invalid
       };
       setResult(nextResult);
 
@@ -192,6 +211,38 @@ export const ContractorInviteDialog = ({
           </FormControl>
 
           {normativeFilesError ? <Alert severity="error">{normativeFilesError}</Alert> : null}
+
+          <Box
+            sx={(theme) => ({
+              border: `1px solid ${theme.palette.divider}`,
+              borderRadius: `${theme.acomShape.controlRadius}px`,
+              backgroundColor: theme.palette.background.default,
+              p: 2
+            })}
+          >
+            <Stack spacing={0.75}>
+              <Typography variant="subtitle2">Пример письма</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Это шаблон письма, который получит контрагент.
+              </Typography>
+              <Typography variant="body2" fontWeight={600}>
+                Тема: {INVITATION_SUBJECT}
+              </Typography>
+              <Box
+                component="pre"
+                sx={{
+                  m: 0,
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'inherit',
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: 'text.primary'
+                }}
+              >
+                {invitationPreview}
+              </Box>
+            </Stack>
+          </Box>
 
           <AdditionalEmailsField
             ref={additionalEmailsFieldRef}

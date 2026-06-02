@@ -1,3 +1,4 @@
+import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined';
 import { Alert, Button, Stack } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
@@ -41,8 +42,13 @@ export const ContractorsPage = () => {
   const breadcrumbActions = useMemo(
     () =>
       canManageContractors ? (
-        <Button variant="outlined" onClick={() => setIsInviteDialogOpen(true)} sx={{ textTransform: 'none' }}>
-          Пригласить контрагента
+        <Button
+          variant="outlined"
+          onClick={() => setIsInviteDialogOpen(true)}
+          startIcon={<ForwardToInboxOutlined fontSize="small" />}
+          sx={{ textTransform: 'none' }}
+        >
+          Пригласить
         </Button>
       ) : null,
     [canManageContractors]

@@ -149,3 +149,17 @@ def test_project_manager_role_is_read_only_for_requests_offers_and_chats() -> No
     assert PermissionCodes.REQUESTS_UPDATE not in pm_permissions
     assert PermissionCodes.OFFERS_STATUS_UPDATE not in pm_permissions
     assert PermissionCodes.CHAT_MESSAGE_SEND not in pm_permissions
+
+
+def test_staff_roles_can_read_contractors_without_status_update_rights() -> None:
+    role_map = get_role_permissions_map()
+
+    for role_id in (
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+        settings.economist_role_id,
+    ):
+        permissions = role_map[role_id]
+        assert PermissionCodes.CONTRACTORS_READ in permissions
+        assert PermissionCodes.CONTRACTORS_PROFILE_READ in permissions
+        assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE not in permissions

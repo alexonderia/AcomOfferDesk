@@ -185,6 +185,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | internal_request_read_permissions
             | {
                 PermissionCodes.USERS_READ,
+                PermissionCodes.CONTRACTORS_READ,
+                PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
                 PermissionCodes.USERS_MANAGER_UPDATE,
@@ -206,6 +208,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | internal_request_manage_permissions
             | management_permissions
             | {
+                PermissionCodes.CONTRACTORS_READ,
+                PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.NORMATIVE_FILES_MANAGE,
                 PermissionCodes.NORMATIVE_FILES_CREATE,
                 PermissionCodes.NORMATIVE_FILES_READ,
@@ -225,6 +229,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | internal_request_manage_permissions
             | {
                 PermissionCodes.USERS_READ,
+                PermissionCodes.CONTRACTORS_READ,
+                PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_MANAGER_UPDATE,
                 PermissionCodes.NORMATIVE_FILES_READ,

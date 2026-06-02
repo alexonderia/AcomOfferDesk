@@ -84,6 +84,20 @@ def test_build_current_user_from_keycloak_app_superadmin_only_uses_local_role_ce
     assert current_user.app_roles == frozenset({"app.superadmin"})
 
 
+def test_build_current_user_from_keycloak_app_project_manager_uses_contractor_read_ceiling():
+    current_user = build_current_user_from_keycloak(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        status="active",
+        api_roles=frozenset({"app.project_manager"}),
+    )
+
+    assert PermissionCodes.CONTRACTORS_READ in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_PROFILE_READ in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE not in current_user.permissions
+    assert current_user.app_roles == frozenset({"app.project_manager"})
+
+
 def test_build_current_user_from_keycloak_mismatched_app_role_does_not_use_ceiling_fallback():
     current_user = build_current_user_from_keycloak(
         user_id="u-mismatch",

@@ -15,7 +15,8 @@ vi.mock('@app/layouts/PageBreadcrumbActions', () => ({
 vi.mock('@app/providers/AuthProvider', () => ({
   useAuth: () => ({
     session: {
-      roleId: ROLE.ECONOMIST
+      roleId: ROLE.PROJECT_MANAGER,
+      permissions: ['contractors.manual.create']
     }
   })
 }));
@@ -64,6 +65,7 @@ describe('ContractorsPage', () => {
     const inviteButton = screen.getByRole('button', { name: 'Пригласить' });
     expect(inviteButton).toBeInTheDocument();
     expect(inviteButton).toHaveTextContent('');
+    expect(inviteButton).toHaveClass('MuiButton-outlined');
     expect(screen.queryByText('Пригласить')).not.toBeInTheDocument();
   });
 });

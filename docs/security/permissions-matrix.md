@@ -62,8 +62,8 @@ Legend: `Y` = granted, `N` = not granted.
 | `unavailability.manage_all` | Y | N | N | N | N | N | N |
 | `unavailability.manage_own` | Y | N | Y | Y | Y | N | N |
 | `unavailability.manage_subordinate` | Y | N | Y | Y | Y | N | N |
-| `contractors.read` | Y | N | N | N | N | N | N |
-| `contractors.profile.read` | Y | N | N | N | N | N | N |
+| `contractors.read` | Y | N | Y | Y | Y | N | N |
+| `contractors.profile.read` | Y | N | Y | Y | Y | N | N |
 | `contractors.profile.status.update` | Y | N | N | N | N | N | N |
 | `contractors.manual.create` | Y | Y | Y | Y | Y | N | N |
 | `contractors.manual.manage` | Y | Y | Y | Y | Y | N | N |
@@ -74,9 +74,9 @@ Legend: `Y` = granted, `N` = not granted.
 |---|---|---|
 | `superadmin` | `/admin`, `/requests`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/feedback` | Full management across users, requests, offers, contractors, dashboards, normative files and statuses |
 | `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
-| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Read requests/offers/chats across department; change request owner; manage users hierarchy, manual contractors, subordinate unavailability, economy-role changes for subordinates |
-| `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Full request/offer workflow, create manual offers, manage normative files, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
-| `economist` | `/pm-dashboard/plan`, `/requests`, `/admin` | Request/offers processing in scope, manual offers, subordinate unavailability, manual contractors create/manage, plan dashboard (only delegated branch and below) |
+| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Read requests/offers/chats across department; change request owner; read contractors and manage users hierarchy/manual contractors/subordinate unavailability/economy-role changes for subordinates |
+| `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Full request/offer workflow, create manual offers, manage normative files, read contractors, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
+| `economist` | `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Request/offers processing in scope, manual offers, subordinate unavailability, read contractors, manual contractors create/manage, plan dashboard (only delegated branch and below) |
 | `operator` | `/requests` | Own unassigned requests (owner still operator): create/read/update (pricing/deadline/status), view offer list on request details without workspace/chat, view normative files, no admin/dashboard |
 | `contractor` | `/requests` (tabs: open/my), `/requests/:id/contractor`, `/offers/:id/workspace` | Create offers, work in workspace, manage own company contacts, chat and files within own offer scope |
 

@@ -123,6 +123,11 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
       return;
     }
 
+    if (item.key === 'contractors') {
+      navigate('/contractors');
+      return;
+    }
+
     if (item.tabValue) {
       config.onTabChange?.(item.tabValue);
       return;

@@ -28,12 +28,13 @@ type BuildHeaderConfigArgs = {
   onNavigateToNormativeFiles: () => void;
   onNavigateToAdminCreate: () => void;
   onNavigateBackToRequests: () => void;
-  onSetContractorTab: (value: 'my' | 'open') => void;
-  onSetAdminUsersTab: (value: 'contractors' | 'economists' | 'admins') => void;
+  onSetContractorTab: (_value: 'my' | 'open') => void;
+  onSetAdminUsersTab: (_value: 'contractors' | 'economists' | 'admins') => void;
 };
 
 type MoreMenuOptions = {
   showProfile?: boolean;
+  showContractors?: boolean;
   showNormative?: boolean;
   showRoleGuide?: boolean;
   showFeedback?: boolean;
@@ -42,6 +43,7 @@ type MoreMenuOptions = {
 
 const buildMoreNavItem = ({
   showProfile = true,
+  showContractors = false,
   showNormative = false,
   showRoleGuide = true,
   showFeedback = true,
@@ -51,6 +53,9 @@ const buildMoreNavItem = ({
 
   if (showProfile) {
     children.push({ key: 'profile', label: 'Профиль' });
+  }
+  if (showContractors) {
+    children.push({ key: 'contractors', label: 'Контрагенты', to: '/contractors' });
   }
   if (showNormative) {
     children.push({ key: 'normative', label: 'Нормативные документы', to: '/normative-files' });
@@ -145,15 +150,13 @@ const buildProjectManagerMobileNavItems = (
   ];
 
   if (canOpenUsersPage) {
-    items.push({ key: 'employees', label: 'Штат сотрудников', to: '/admin' });
-  }
-  if (canOpenContractorsPage) {
-    items.push({ key: 'contractors', label: 'Контрагенты', to: '/contractors' });
+    items.push({ key: 'employees', label: 'Сотрудники', to: '/admin' });
   }
 
   items.push(
     buildMoreNavItem({
       showProfile: true,
+      showContractors: canOpenContractorsPage,
       showNormative,
       showRoleGuide: true,
       showFeedback: true,
@@ -182,23 +185,38 @@ const buildContractorMobileNavItems = (): HeaderMobileNavItem[] => [
   }),
 ];
 
-const buildLeadMobileNavItems = (canViewDashboardPlans: boolean): HeaderMobileNavItem[] => [
-  {
-    key: 'dashboard',
-    label: 'Дашборд',
-    to: canViewDashboardPlans ? '/pm-dashboard/plan' : '/requests',
-    children: canViewDashboardPlans ? [{ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' }] : [],
-  },
-  { key: 'requests', label: 'Заявки', to: '/requests' },
-  { key: 'economists', label: 'Экономисты', to: '/admin' },
-  buildMoreNavItem({
-    showProfile: true,
-    showNormative: false,
-    showRoleGuide: true,
-    showFeedback: true,
-    showLogout: true,
-  }),
-];
+const buildLeadMobileNavItems = (
+  canViewDashboardPlans: boolean,
+  canOpenUsersPage: boolean,
+  canOpenContractorsPage: boolean
+): HeaderMobileNavItem[] => {
+  const items: HeaderMobileNavItem[] = [
+    {
+      key: 'dashboard',
+      label: 'Дашборд',
+      to: canViewDashboardPlans ? '/pm-dashboard/plan' : '/requests',
+      children: canViewDashboardPlans ? [{ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' }] : [],
+    },
+    { key: 'requests', label: 'Заявки', to: '/requests' },
+  ];
+
+  if (canOpenUsersPage) {
+    items.push({ key: 'employees', label: 'Сотрудники', to: '/admin' });
+  }
+
+  items.push(
+    buildMoreNavItem({
+      showProfile: true,
+      showContractors: canOpenContractorsPage,
+      showNormative: false,
+      showRoleGuide: true,
+      showFeedback: true,
+      showLogout: true,
+    })
+  );
+
+  return items;
+};
 
 const buildEconomistMobileNavItems = (
   canViewDashboardPlans: boolean,
@@ -230,15 +248,13 @@ const buildEconomistMobileNavItems = (
   items.push({ key: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438', to: '/requests' });
 
   if (canOpenUsersPage) {
-    items.push({ key: 'economists', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u0441\u0442\u044b', to: '/admin' });
-  }
-  if (canOpenContractorsPage) {
-    items.push({ key: 'contractors', label: 'Контрагенты', to: '/contractors' });
+    items.push({ key: 'employees', label: 'Сотрудники', to: '/admin' });
   }
 
   items.push(
     buildMoreNavItem({
       showProfile: true,
+      showContractors: canOpenContractorsPage,
       showNormative: false,
       showRoleGuide: true,
       showFeedback: true,
@@ -369,7 +385,7 @@ const resolveDefaultMobileNavItems = ({
         canOpenContractorsPage
       );
     }
-    return buildLeadMobileNavItems(canViewDashboardPlans);
+    return buildLeadMobileNavItems(canViewDashboardPlans, canOpenUsersPage, canOpenContractorsPage);
   }
 
   if (isOperator) {
@@ -462,7 +478,7 @@ export const buildHeaderConfig = ({
     && hasEconomistDashboardNav
     && (canOpenUsersPage || isEconomist);
   const canUseEconomistTabs = isEconomist
-    && (pathname.startsWith('/requests') || pathname.startsWith('/admin') || isOfferWorkspacePage)
+    && (pathname.startsWith('/requests') || pathname.startsWith('/admin') || pathname.startsWith('/contractors') || isOfferWorkspacePage)
     && canOpenUsersPage;
   const canUseOperatorTabs = isOperator && pathname.startsWith('/requests');
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)

@@ -51,6 +51,12 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Keep the action accessible with an `aria-label` that matches the removed text.
 - Preserve the desktop text label on larger viewports when there is room for it.
 
+### Convention: Mobile Bottom Navigation Slot Budget
+
+- Keep the bottom navigation within its intended slot budget so the `more` entry remains visible on mobile.
+- When a new primary destination is needed, prefer placing it inside `more` rather than pushing `more` off-screen.
+- If a new item must become top-level, update the slot budget and responsive layout together with tests so the change is intentional.
+
 ---
 
 ## Forbidden Patterns

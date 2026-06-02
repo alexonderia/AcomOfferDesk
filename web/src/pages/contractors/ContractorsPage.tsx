@@ -1,5 +1,6 @@
 import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined';
 import { Alert, Button, Stack } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -8,7 +9,7 @@ import { ContractorInviteDialog } from '@features/contractors/components/Contrac
 import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
 import type { UserListItem } from '@entities/user';
 import { listContractors } from '@shared/api/contractors/listContractors';
-import { ROLE } from '@shared/constants/roles';
+import { hasPermission } from '@shared/auth/permissions';
 import { ActionButton } from '@shared/components/ActionButton';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 
@@ -31,6 +32,7 @@ const mapContractorToUserListItem = (item: Awaited<ReturnType<typeof listContrac
 
 export const ContractorsPage = () => {
   const { session } = useAuth();
+  const theme = useTheme();
   const isMobileViewport = useIsMobileViewport();
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,25 +40,25 @@ export const ContractorsPage = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
 
-  const canManageContractors = session
-    ? session.roleId === ROLE.ECONOMIST || session.roleId === ROLE.LEAD_ECONOMIST
-    : false;
+  const canManageContractors = hasPermission(session, 'contractors.manual.create');
 
   const breadcrumbActions = useMemo(
     () =>
       canManageContractors ? (
         isMobileViewport ? (
           <ActionButton
-            kind="filled"
+            kind="outlined"
             aria-label="Пригласить"
             onClick={() => setIsInviteDialogOpen(true)}
             sx={{
-              minHeight: 44,
-              width: 44,
-              minWidth: 44,
+              minHeight: 42,
+              height: 42,
+              width: 42,
+              minWidth: 42,
               px: 0,
-              borderRadius: 1.5,
-              boxShadow: 'none',
+              gap: 0,
+              justifyContent: 'center',
+              borderRadius: `${theme.acomShape.buttonRadius}px !important`,
               '& .MuiButton-startIcon': {
                 margin: 0
               }
@@ -75,7 +77,7 @@ export const ContractorsPage = () => {
           </Button>
         )
       ) : null,
-    [canManageContractors, isMobileViewport]
+    [canManageContractors, isMobileViewport, theme]
   );
 
   useSetPageBreadcrumbActions(breadcrumbActions);

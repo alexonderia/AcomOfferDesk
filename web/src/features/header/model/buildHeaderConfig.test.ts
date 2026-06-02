@@ -96,6 +96,7 @@ describe('buildHeaderConfig role navigation', () => {
     expect(tabKeys(config)).toEqual(['requests', 'economists']);
     expect(tabKeys(config)).not.toContain('dashboard');
     expect(mobileKeys(config)).not.toContain('dashboard');
+    expect(mobileKeys(config)).toContain('employees');
   });
 
   it('shows plan dashboard section for economist with plans permission', () => {
@@ -117,16 +118,23 @@ describe('buildHeaderConfig role navigation', () => {
       ...baseArgs(),
       roleId: ROLE.ECONOMIST,
       canOpenUsersPage: true,
+      canOpenContractorsPage: true,
       canViewDashboardProcess: true,
       canViewDashboardSavings: true,
       canViewDashboardPlans: true,
     });
 
-    expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'economists']);
+    expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'economists', 'contractors']);
     expect(mobileKeys(config)).toContain('dashboard');
+    expect(mobileKeys(config)).toContain('employees');
+    expect(mobileKeys(config)).not.toContain('contractors');
     const dashboardNav = config.mobileNavItems?.find((item) => item.key === 'dashboard');
     expect(dashboardNav?.children?.map((child) => child.key)).toEqual(
       expect.arrayContaining(['dashboard-process', 'dashboard-savings', 'dashboard-plan'])
+    );
+    const moreNav = config.mobileNavItems?.find((item) => item.key === 'more');
+    expect(moreNav?.children?.map((child) => child.key)).toEqual(
+      expect.arrayContaining(['contractors'])
     );
   });
 
@@ -139,7 +147,41 @@ describe('buildHeaderConfig role navigation', () => {
 
     expect(tabKeys(config)).toEqual([]);
     expect(mobileKeys(config)).not.toContain('economists');
-    expect(mobileKeys(config)).not.toContain('users');
+    expect(mobileKeys(config)).not.toContain('employees');
+  });
+
+  it('shows contractors as a top-level mobile item for project manager navigation', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.PROJECT_MANAGER,
+      canOpenUsersPage: true,
+      canOpenContractorsPage: true,
+      canManageNormativeFiles: true,
+      canViewDashboardProcess: true,
+      canViewDashboardSavings: true,
+      canViewDashboardPlans: true,
+    });
+
+    expect(mobileKeys(config)).toEqual(['dashboard', 'requests', 'employees', 'more']);
+    const moreNav = config.mobileNavItems?.find((item) => item.key === 'more');
+    expect(moreNav?.children?.map((child) => child.key)).toEqual(
+      expect.arrayContaining(['contractors', 'normative'])
+    );
+  });
+
+  it('shows a separate contractors tab for economist on the contractors page', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ECONOMIST,
+      pathname: '/contractors',
+      canOpenUsersPage: true,
+      canOpenContractorsPage: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['requests', 'economists', 'contractors']);
+    expect(config.activeTab).toBe('contractors');
+    expect(mobileKeys(config)).toContain('employees');
+    expect(mobileKeys(config)).toContain('more');
   });
 
   it('shows contractor-specific request/workspace tabs for contractor', () => {

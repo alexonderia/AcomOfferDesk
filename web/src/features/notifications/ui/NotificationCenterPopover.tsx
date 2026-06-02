@@ -1,7 +1,9 @@
 import { Box, ClickAwayListener, Portal } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import {
+  NOTIFICATION_CENTER_MIN_SIZE,
   NOTIFICATION_CENTER_PANEL_BORDER_RADIUS_PX,
+  NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET,
   type NotificationCenterAnchor,
 } from './notificationCenterLayout';
 import { NotificationCenterPanel, type NotificationCenterPanelProps } from './NotificationCenterPanel';
@@ -24,6 +26,11 @@ export const NotificationCenterPopover = ({
     return null;
   }
 
+  const viewportWidthLimit = `calc(100vw - ${anchorCorner.left}px - ${NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET}px)`;
+  const viewportHeightLimit = `calc(100vh - ${anchorCorner.bottom}px - ${NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET}px)`;
+  const minWidthLimit = `min(${NOTIFICATION_CENTER_MIN_SIZE.width}px, ${viewportWidthLimit})`;
+  const minHeightLimit = `min(${NOTIFICATION_CENTER_MIN_SIZE.height}px, ${viewportHeightLimit})`;
+
   return (
     <Portal>
       <ClickAwayListener onClickAway={panelProps.onClose} mouseEvent="onPointerDown" touchEvent="onTouchStart">
@@ -34,12 +41,12 @@ export const NotificationCenterPopover = ({
             position: 'fixed',
             left: anchorCorner.left,
             bottom: anchorCorner.bottom,
-            width: size.width,
-            height: size.height,
-            maxWidth: 'calc(100vw - 16px)',
-            maxHeight: `min(90vh, calc(100vh - ${anchorCorner.bottom}px - 16px))`,
-            minWidth: 320,
-            minHeight: 360,
+            width: `min(${size.width}px, ${viewportWidthLimit})`,
+            height: `min(${size.height}px, ${viewportHeightLimit})`,
+            maxWidth: viewportWidthLimit,
+            maxHeight: viewportHeightLimit,
+            minWidth: minWidthLimit,
+            minHeight: minHeightLimit,
             zIndex: theme.zIndex.modal,
             bgcolor: 'background.paper',
             borderRadius: `${NOTIFICATION_CENTER_PANEL_BORDER_RADIUS_PX}px`,

@@ -42,14 +42,31 @@ export const NOTIFICATION_CENTER_MAX_SIZE: NotificationCenterSize = {
 
 const clampDimension = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+const getViewportWidthLimit = () =>
+  typeof window === 'undefined'
+    ? NOTIFICATION_CENTER_MAX_SIZE.width
+    : Math.max(0, window.innerWidth - NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET * 2);
+
+const getViewportHeightLimit = () =>
+  typeof window === 'undefined'
+    ? NOTIFICATION_CENTER_MAX_SIZE.height
+    : Math.max(0, window.innerHeight - NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET * 2);
+
 export const getMaxNotificationCenterHeight = () =>
-  typeof window === 'undefined' ? 900 : Math.min(window.innerHeight * 0.9, 900);
+  Math.min(getViewportHeightLimit(), NOTIFICATION_CENTER_MAX_SIZE.height);
+
+export const getMaxNotificationCenterWidth = () =>
+  Math.min(getViewportWidthLimit(), NOTIFICATION_CENTER_MAX_SIZE.width);
 
 export const clampNotificationCenterSize = (size: NotificationCenterSize): NotificationCenterSize => ({
-  width: clampDimension(size.width, NOTIFICATION_CENTER_MIN_SIZE.width, NOTIFICATION_CENTER_MAX_SIZE.width),
+  width: clampDimension(
+    size.width,
+    Math.min(NOTIFICATION_CENTER_MIN_SIZE.width, getMaxNotificationCenterWidth()),
+    getMaxNotificationCenterWidth()
+  ),
   height: clampDimension(
     size.height,
-    NOTIFICATION_CENTER_MIN_SIZE.height,
+    Math.min(NOTIFICATION_CENTER_MIN_SIZE.height, getMaxNotificationCenterHeight()),
     getMaxNotificationCenterHeight()
   ),
 });

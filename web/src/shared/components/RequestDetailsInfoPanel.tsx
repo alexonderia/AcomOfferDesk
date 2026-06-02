@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
 import { Box, TextField, Typography } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
+import type { ReactNode } from 'react';
 import { DatePickerField } from './DatePickerField';
 import { formatDate } from '@shared/lib/formatters';
 
@@ -49,6 +49,7 @@ type RequestDetailsInfoValue = {
   onInitialAmountChange?: (value: string) => void;
   onFinalAmountChange?: (value: string) => void;
   responsibleContact?: ResponsibleContact | null;
+  responsibleContactHighlighted?: boolean;
 };
 
 type RequestDetailsInfoPanelProps = {
@@ -74,13 +75,16 @@ const DetailRow = ({ label, value, divider = true }: { label: string; value: Rea
   </Box>
 );
 
-const panelSx = (theme: Theme) => ({
-  border: `1px solid ${theme.palette.divider}`,
+const panelSx = (theme: Theme, highlighted = false) => ({
+  border: `1px solid ${highlighted ? theme.palette.primary.main : theme.palette.divider}`,
   borderRadius: `${theme.acomShape.controlRadius}px`,
   overflow: 'hidden',
   backgroundColor: theme.palette.background.paper,
   p: 0.8,
-  boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)'
+  boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)',
+  transition: theme.transitions.create(['border-color', 'box-shadow'], {
+    duration: theme.transitions.duration.shorter
+  })
 });
 
 export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps) => {
@@ -101,7 +105,8 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
     finalAmountInputValue = '',
     onInitialAmountChange,
     onFinalAmountChange,
-    responsibleContact
+    responsibleContact,
+    responsibleContactHighlighted = false
   } = value;
 
   const hasResponsibleContact = Boolean(
@@ -176,12 +181,10 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
       }}
     >
       {hasResponsibleContact ? (
-        <Box sx={panelSx}>
-          <Box sx={{ px: 1.25, pt: 0.9, pb: 0.4 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.2 }}>
-              Контакты ответственного
-            </Typography>
-          </Box>
+        <Box
+          data-highlighted={responsibleContactHighlighted ? 'true' : 'false'}
+          sx={(theme) => panelSx(theme, responsibleContactHighlighted)}
+        >
           <DetailRow
             label="ФИО"
             value={<Typography sx={detailValueTextSx}>{responsibleContact?.fullName || '-'}</Typography>}
@@ -197,7 +200,7 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
           />
         </Box>
       ) : null}
-      <Box sx={panelSx}>
+      <Box sx={(theme) => panelSx(theme)}>
         <DetailRow label="Создана" value={<Typography sx={detailValueTextSx}>{formatDate(createdAt)}</Typography>} />
         <DetailRow label="Закрыта" value={<Typography sx={detailValueTextSx}>{formatDate(closedAt)}</Typography>} />
         <DetailRow
@@ -208,7 +211,7 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
         {!canViewRequestAmounts && showOfferId ? <DetailRow label="Номер КП" value={offerField} divider={false} /> : null}
       </Box>
       {canViewRequestAmounts ? (
-        <Box sx={panelSx}>
+        <Box sx={(theme) => panelSx(theme)}>
           <DetailRow label="Сумма по ТЗ, руб." value={initialAmountField} />
           <DetailRow label="Итоговая сумма, руб." value={finalAmountField} />
           {showOfferId ? <DetailRow label="Номер КП" value={offerField} divider={false} /> : null}

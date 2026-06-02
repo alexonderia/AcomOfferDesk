@@ -1,20 +1,20 @@
 import { ThemeProvider } from '@mui/material/styles';
 import type { MutableRefObject } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RequestDetailsMainCard } from './RequestDetailsMainCard';
 import { appTheme } from '@shared/theme/appTheme';
 
 vi.mock('@shared/lib/responsive', () => ({
-  useIsMobileViewport: () => false,
+  useIsMobileViewport: () => false
 }));
 
 const statusOptions = [
   { value: 'open', label: 'Open' },
   { value: 'review', label: 'Review' },
   { value: 'closed', label: 'Closed' },
-  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'cancelled', label: 'Cancelled' }
 ] as const;
 
 const renderCard = (responsibleContact?: { fullName?: string | null; phone?: string | null; mail?: string | null }) =>
@@ -73,18 +73,36 @@ describe('RequestDetailsMainCard', () => {
     renderCard({
       fullName: 'Alice Example',
       phone: '+7 900 123-45-67',
-      mail: 'alice@example.com',
+      mail: 'alice@example.com'
     });
 
-    expect(screen.getByText('Контакты ответственного')).toBeInTheDocument();
+    expect(screen.queryByText('Контакты ответственного')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Показать контакты ответственного')).toBeInTheDocument();
     expect(screen.getByText('Alice Example')).toBeInTheDocument();
     expect(screen.getByText('+7 900 123-45-67')).toBeInTheDocument();
     expect(screen.getByText('alice@example.com')).toBeInTheDocument();
+
+    const contactPanel = screen.getByText('Alice Example').closest('[data-highlighted]');
+    expect(contactPanel).toHaveAttribute('data-highlighted', 'false');
+
+    const infoButton = screen.getByLabelText('Показать контакты ответственного');
+    fireEvent.mouseEnter(infoButton);
+    expect(screen.getByText('Alice Example').closest('[data-highlighted]')).toHaveAttribute(
+      'data-highlighted',
+      'true'
+    );
+
+    fireEvent.mouseLeave(infoButton);
+    expect(screen.getByText('Alice Example').closest('[data-highlighted]')).toHaveAttribute(
+      'data-highlighted',
+      'false'
+    );
   });
 
   it('keeps the contact block hidden when no contact data is provided', () => {
     renderCard();
 
-    expect(screen.queryByText('Контакты ответственного')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Показать контакты ответственного')).not.toBeInTheDocument();
+    expect(screen.queryByText('ФИО')).not.toBeInTheDocument();
   });
 });

@@ -25,6 +25,28 @@ describe('notificationCenterLayout', () => {
     ).toBe(720);
   });
 
+  it('clamps size to the current viewport when the viewport is narrow', () => {
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 500 });
+
+    try {
+      expect(
+        clampNotificationCenterSize({
+          width: 1000,
+          height: 1000,
+        })
+      ).toEqual({
+        width: 328,
+        height: 468,
+      });
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight });
+    }
+  });
+
   it('returns default size when storage is empty', () => {
     expect(loadNotificationCenterSize()).toEqual(NOTIFICATION_CENTER_DEFAULT_SIZE);
   });

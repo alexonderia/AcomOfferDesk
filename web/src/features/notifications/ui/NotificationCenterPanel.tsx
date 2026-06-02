@@ -59,8 +59,10 @@ export const NotificationCenterPanel = ({
         flexDirection: 'column',
         width: '100%',
         height: '100%',
-        minWidth: 320,
-        minHeight: 360,
+        minWidth: 0,
+        minHeight: 0,
+        maxWidth: '100%',
+        maxHeight: '100%',
         p: 1.25,
         boxSizing: 'border-box',
       }}

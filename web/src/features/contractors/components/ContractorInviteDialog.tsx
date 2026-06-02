@@ -254,25 +254,26 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
             <Stack spacing={0.75}>
               <Typography variant="subtitle2">Пример письма</Typography>
               <Typography variant="body2" color="text.secondary">
-                Это HTML-содержание письма, которое получит контрагент.
+                Ниже — визуальный preview письма, которое получит контрагент.
               </Typography>
               <Typography variant="body2" fontWeight={600}>
                 Тема: {INVITATION_SUBJECT}
               </Typography>
               <Box
-                component="pre"
+                component="iframe"
+                title="Предпросмотр письма"
+                sandbox=""
+                srcDoc={INVITATION_PREVIEW_HTML}
                 sx={{
-                  m: 0,
-                  whiteSpace: 'pre-wrap',
-                  fontFamily: 'SFMono-Regular, Consolas, Menlo, monospace',
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  color: 'text.primary',
-                  overflowX: 'auto'
+                  width: '100%',
+                  minHeight: { xs: 520, sm: 440 },
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1.5,
+                  backgroundColor: 'common.white',
+                  overflow: 'hidden'
                 }}
-              >
-                {INVITATION_PREVIEW_HTML}
-              </Box>
+              />
             </Stack>
           </Box>
 

@@ -41,8 +41,8 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 
 ### Convention: HTML Email Source Preview
 
-- When showing a generated email preview, prefer the actual HTML source markup in a monospaced block.
-- Keep the preview aligned with the backend template structure so the preview mirrors the sent email body rather than a prose summary.
+- When showing a generated email preview for users, render the HTML as an actual visual preview rather than a code block.
+- Keep the preview aligned with the backend template structure so the rendered content mirrors the sent email body.
 - Use placeholder tokens for environment-specific values that the frontend cannot know, instead of inventing fake runtime data.
 
 ### Convention: Mobile Breadcrumb Actions

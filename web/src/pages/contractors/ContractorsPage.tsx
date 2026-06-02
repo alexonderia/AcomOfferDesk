@@ -1,5 +1,5 @@
 import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined';
-import { Alert, Button, IconButton, Stack } from '@mui/material';
+import { Alert, Button, Stack } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -9,6 +9,7 @@ import { ContractorsListView } from '@features/contractors/components/Contractor
 import type { UserListItem } from '@entities/user';
 import { listContractors } from '@shared/api/contractors/listContractors';
 import { ROLE } from '@shared/constants/roles';
+import { ActionButton } from '@shared/components/ActionButton';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 
 const mapContractorToUserListItem = (item: Awaited<ReturnType<typeof listContractors>>[number]): UserListItem => ({
@@ -45,20 +46,24 @@ export const ContractorsPage = () => {
     () =>
       canManageContractors ? (
         isMobileViewport ? (
-          <IconButton
+          <ActionButton
+            kind="filled"
             aria-label="Пригласить"
             onClick={() => setIsInviteDialogOpen(true)}
-            size="small"
             sx={{
-              border: '1px solid',
-              borderColor: 'divider',
+              minHeight: 44,
+              width: 44,
+              minWidth: 44,
+              px: 0,
               borderRadius: 1.5,
-              color: 'primary.main',
-              backgroundColor: 'background.paper'
+              boxShadow: 'none',
+              '& .MuiButton-startIcon': {
+                margin: 0
+              }
             }}
-          >
-            <ForwardToInboxOutlined fontSize="small" />
-          </IconButton>
+            showNavigationIcons={false}
+            startIcon={<ForwardToInboxOutlined fontSize="small" />}
+          />
         ) : (
           <Button
             variant="outlined"

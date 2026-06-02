@@ -74,11 +74,12 @@ describe('ContractorInviteDialog', () => {
     expect(screen.getByText('Пример письма')).toBeInTheDocument();
     expect(screen.getByText('Тема: Приглашение в AcomOfferDesk')).toBeInTheDocument();
 
-    const preview = screen.getByText((_, element) => element?.tagName === 'PRE');
-    expect(preview).toHaveTextContent('<!DOCTYPE html>');
-    expect(preview).toHaveTextContent('<html lang="ru">');
-    expect(preview).toHaveTextContent('<a href="{{PORTAL_URL}}"');
-    expect(preview).toHaveTextContent('{{CONTACT_EMAIL}}');
+    const preview = screen.getByTitle('Предпросмотр письма');
+    expect(preview).toHaveAttribute('srcdoc');
+    expect(preview.getAttribute('srcdoc')).toContain('<!DOCTYPE html>');
+    expect(preview.getAttribute('srcdoc')).toContain('<html lang="ru">');
+    expect(preview.getAttribute('srcdoc')).toContain('<a href="{{PORTAL_URL}}"');
+    expect(preview.getAttribute('srcdoc')).toContain('{{CONTACT_EMAIL}}');
 
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: 'valid1@example.com, valid2@example.com' },

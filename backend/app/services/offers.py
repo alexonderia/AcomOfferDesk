@@ -160,6 +160,8 @@ class OfferWorkspaceRequest:
     deadline_at: datetime
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None
+    owner_mail: str | None
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
@@ -766,6 +768,8 @@ class OfferService:
                 deadline_at=request.deadline_at,
                 owner_user_id=request.id_user,
                 owner_full_name=(request_profile.full_name if request_profile else None),
+                owner_phone=request_profile.phone if request_profile else None,
+                owner_mail=request_profile.mail if request_profile else None,
                 created_at=request.created_at,
                 updated_at=request.updated_at,
                 closed_at=request.closed_at,

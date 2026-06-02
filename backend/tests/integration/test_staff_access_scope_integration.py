@@ -31,6 +31,8 @@ def _request_item(*, request_id: str, owner_user_id: str) -> RequestListItem:
         closed_at=None,
         owner_user_id=owner_user_id,
         owner_full_name=owner_user_id,
+        owner_phone=None,
+        owner_mail=None,
         chosen_offer_id=None,
         id_plan=None,
         count_submitted=0,

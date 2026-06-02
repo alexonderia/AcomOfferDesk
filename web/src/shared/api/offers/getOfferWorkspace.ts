@@ -24,6 +24,8 @@ export type OfferWorkspace = {
     id_offer?: number | null;
     owner_user_id?: string;
     owner_full_name?: string | null;
+    owner_phone?: string | null;
+    owner_mail?: string | null;
     initial_amount?: number | null;
     final_amount?: number | null;
     deadline_at: string;
@@ -68,6 +70,8 @@ type ApiOfferItem = Omit<WorkspaceOfferItem, 'actions' | 'files'> & {
 type ApiResponse = {
   data: {
     request: Omit<OfferWorkspace['request'], 'actions'> & {
+      owner_phone?: string | null;
+      owner_mail?: string | null;
       actions?: {
         can_view_details?: boolean;
         can_view_amounts?: boolean;

@@ -24,6 +24,12 @@ type RequestStatusOption = {
   label: string;
 };
 
+type ResponsibleContact = {
+  fullName?: string | null;
+  phone?: string | null;
+  mail?: string | null;
+};
+
 const requestStatusPillTone: Record<RequestStatus, StatusPillTone> = {
   open: 'success',
   review: 'warning',
@@ -46,6 +52,7 @@ type RequestDetailsMainCardProps = {
   isDescriptionExpanded: boolean;
   onToggleDescription: () => void;
   ownerField: ReactNode;
+  responsibleContact?: ResponsibleContact | null;
   existingFiles: RequestDetailsFile[];
   canDeleteRequestFiles: boolean;
   onDownloadFile: (downloadUrl: string, fileName: string) => void;
@@ -94,6 +101,7 @@ export const RequestDetailsMainCard = ({
   isDescriptionExpanded,
   onToggleDescription,
   ownerField,
+  responsibleContact,
   existingFiles,
   canDeleteRequestFiles,
   onDownloadFile,
@@ -327,7 +335,8 @@ export const RequestDetailsMainCard = ({
         initialAmountInputValue: initialAmount,
         finalAmountInputValue: finalAmount,
         onInitialAmountChange,
-        onFinalAmountChange
+        onFinalAmountChange,
+        responsibleContact
       }}
     />
 

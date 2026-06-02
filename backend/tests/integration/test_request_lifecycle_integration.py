@@ -746,6 +746,8 @@ def test_deleted_and_rejected_offers_do_not_break_request_stats_payload(
             closed_at=None,
             owner_user_id="owner-1",
             owner_full_name="Owner",
+            owner_phone=None,
+            owner_mail=None,
             chosen_offer_id=None,
             id_plan=None,
             count_submitted=3,

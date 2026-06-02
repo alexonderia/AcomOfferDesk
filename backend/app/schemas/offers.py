@@ -84,6 +84,8 @@ class OfferWorkspaceRequestSchema(BaseModel):
     deadline_at: datetime
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None = None
+    owner_mail: str | None = None
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None

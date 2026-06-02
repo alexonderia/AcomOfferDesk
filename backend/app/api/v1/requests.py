@@ -662,6 +662,8 @@ async def get_request_details(
                 closed_at=item.closed_at,
                 owner_user_id=item.owner_user_id,
                 owner_full_name=item.owner_full_name,
+                owner_phone=item.owner_phone,
+                owner_mail=item.owner_mail,
                 chosen_offer_id=item.chosen_offer_id,
                 id_plan=item.id_plan,
                 stats=_request_stats_schema(item),

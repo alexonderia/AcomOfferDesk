@@ -183,6 +183,8 @@ class RequestDetailItem:
     closed_at: datetime | None
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None
+    owner_mail: str | None
     chosen_offer_id: int | None
     id_plan: int | None
     count_submitted: int
@@ -1053,6 +1055,8 @@ class RequestService:
             closed_at=request.closed_at,
             owner_user_id=request.id_user,
             owner_full_name=owner_profile.full_name if owner_profile else None,
+            owner_phone=owner_profile.phone if owner_profile else None,
+            owner_mail=owner_profile.mail if owner_profile else None,
             chosen_offer_id=request.id_offer,
             id_plan=request.id_plan,
             count_submitted=stats.count_submitted if stats else 0,

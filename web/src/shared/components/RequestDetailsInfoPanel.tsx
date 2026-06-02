@@ -25,6 +25,12 @@ const detailValueTextSx = {
   lineHeight: 1.3
 } as const;
 
+type ResponsibleContact = {
+  fullName?: string | null;
+  phone?: string | null;
+  mail?: string | null;
+};
+
 type RequestDetailsInfoValue = {
   createdAt: string | null;
   closedAt: string | null;
@@ -42,6 +48,7 @@ type RequestDetailsInfoValue = {
   finalAmountInputValue?: string;
   onInitialAmountChange?: (value: string) => void;
   onFinalAmountChange?: (value: string) => void;
+  responsibleContact?: ResponsibleContact | null;
 };
 
 type RequestDetailsInfoPanelProps = {
@@ -93,8 +100,13 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
     initialAmountInputValue = '',
     finalAmountInputValue = '',
     onInitialAmountChange,
-    onFinalAmountChange
+    onFinalAmountChange,
+    responsibleContact
   } = value;
+
+  const hasResponsibleContact = Boolean(
+    responsibleContact?.fullName || responsibleContact?.phone || responsibleContact?.mail
+  );
 
   const offerField = (
     <TextField
@@ -157,9 +169,34 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
       sx={{
         display: 'grid',
         gap: 1.5,
-        gridTemplateColumns: { xs: '1fr', md: canViewRequestAmounts ? '1fr 1fr' : '1fr' }
+        gridTemplateColumns: {
+          xs: '1fr',
+          lg: canViewRequestAmounts ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'
+        }
       }}
     >
+      {hasResponsibleContact ? (
+        <Box sx={panelSx}>
+          <Box sx={{ px: 1.25, pt: 0.9, pb: 0.4 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.2 }}>
+              Контакты ответственного
+            </Typography>
+          </Box>
+          <DetailRow
+            label="ФИО"
+            value={<Typography sx={detailValueTextSx}>{responsibleContact?.fullName || '-'}</Typography>}
+          />
+          <DetailRow
+            label="Телефон"
+            value={<Typography sx={detailValueTextSx}>{responsibleContact?.phone || '-'}</Typography>}
+          />
+          <DetailRow
+            label="E-mail"
+            value={<Typography sx={detailValueTextSx}>{responsibleContact?.mail || '-'}</Typography>}
+            divider={false}
+          />
+        </Box>
+      ) : null}
       <Box sx={panelSx}>
         <DetailRow label="Создана" value={<Typography sx={detailValueTextSx}>{formatDate(createdAt)}</Typography>} />
         <DetailRow label="Закрыта" value={<Typography sx={detailValueTextSx}>{formatDate(closedAt)}</Typography>} />

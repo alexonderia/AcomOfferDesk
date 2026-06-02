@@ -65,6 +65,8 @@ class RequestItemSchema(BaseModel):
     closed_at: datetime | None
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None = None
+    owner_mail: str | None = None
     chosen_offer_id: int | None
     id_plan: int | None = None
     stats: RequestStatsSchema
@@ -94,6 +96,8 @@ class OpenRequestItemSchema(BaseModel):
     closed_at: datetime | None
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None = None
+    owner_mail: str | None = None
     chosen_offer_id: int | None
     id_plan: int | None = None
     files: list[RequestFileSchema]

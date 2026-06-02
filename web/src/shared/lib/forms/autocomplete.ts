@@ -1,4 +1,6 @@
 export type AutocompleteToken =
+  | 'given-name'
+  | 'family-name'
   | 'name'
   | 'email'
   | 'tel'
@@ -16,6 +18,8 @@ const AUTOCOMPLETE_BY_FIELD: Record<string, AutocompleteToken> = {
   password: 'new-password',
   password_confirm: 'new-password',
   confirmPassword: 'new-password',
+  firstName: 'given-name',
+  lastName: 'family-name',
   full_name: 'name',
   fullName: 'name',
   phone: 'tel',

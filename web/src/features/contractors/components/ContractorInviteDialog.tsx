@@ -108,6 +108,7 @@ const resolveDefaultNormativeFileId = (items: NormativeFileItem[]): number | nul
 export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialogProps) => {
   const { showErrorToast, showSuccessToast } = useSystemToasts();
   const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const [emails, setEmails] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<InviteResult | null>(null);
@@ -115,8 +116,31 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
   const [isLoadingNormativeFiles, setIsLoadingNormativeFiles] = useState(false);
   const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
   const [selectedNormativeFileId, setSelectedNormativeFileId] = useState<number | null>(null);
+  const [previewFrameHeight, setPreviewFrameHeight] = useState<number | null>(null);
   const hasValidEmails = emails.length > 0;
   const hasNormativeSelection = selectedNormativeFileId !== null;
+
+  const syncPreviewFrameHeight = () => {
+    const frame = previewFrameRef.current;
+    const frameDocument = frame?.contentWindow?.document;
+    if (!frameDocument) {
+      return;
+    }
+
+    const nextHeight = Math.max(
+      frameDocument.body?.scrollHeight ?? 0,
+      frameDocument.documentElement?.scrollHeight ?? 0
+    );
+    if (nextHeight > 0) {
+      setPreviewFrameHeight(nextHeight);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) {
+      setPreviewFrameHeight(null);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -264,15 +288,19 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
                 component="iframe"
                 title="Предпросмотр письма"
                 sandbox=""
+                ref={previewFrameRef}
                 srcDoc={INVITATION_PREVIEW_HTML}
+                scrolling="no"
+                onLoad={syncPreviewFrameHeight}
                 sx={{
+                  display: 'block',
                   width: '100%',
-                  minHeight: { xs: 520, sm: 440 },
+                  height: previewFrameHeight ? `${previewFrameHeight}px` : undefined,
+                  minHeight: previewFrameHeight ? undefined : { xs: 520, sm: 440 },
                   border: '1px solid',
                   borderColor: 'divider',
                   borderRadius: 1.5,
-                  backgroundColor: 'common.white',
-                  overflow: 'hidden'
+                  backgroundColor: 'common.white'
                 }}
               />
             </Stack>

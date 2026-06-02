@@ -35,6 +35,7 @@ class KeycloakAccessTokenClaims:
     full_name: str | None
     given_name: str | None
     family_name: str | None
+    middle_name: str | None
     email: str | None
     email_verified: bool
     realm_roles: frozenset[str]
@@ -300,6 +301,7 @@ async def decode_keycloak_access_token(token: str) -> KeycloakAccessTokenClaims:
         full_name=str(payload.get("name") or "").strip() or None,
         given_name=str(payload.get("given_name") or "").strip() or None,
         family_name=str(payload.get("family_name") or "").strip() or None,
+        middle_name=str(payload.get("middle_name") or "").strip() or None,
         email=str(payload.get("email") or "").strip() or None,
         email_verified=bool(payload.get("email_verified")),
         realm_roles=realm_roles,

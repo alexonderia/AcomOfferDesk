@@ -114,7 +114,7 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   const note = draft.note.trim();
 
   if (!fullName) {
-    errors.fullName = '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0424\u0418\u041e';
+    errors.fullName = 'Укажите ФИО';
   } else if (fullName.length > 256) {
     errors.fullName = 'Максимум 256 символов';
   }

@@ -104,15 +104,21 @@ export const NormativeFilesPageView = () => {
           renderRow={(row) => [
             row.original_name,
             canUpdateNormativeFileStatus ? (
-              <Stack key={`status-${row.id}`} direction="row" spacing={1} alignItems="center">
-                <FormControl size="small" sx={{ minWidth: 160 }}>
+              <Stack
+                key={`status-${row.id}`}
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                sx={{ width: '100%', minWidth: 0, flexWrap: 'wrap' }}
+              >
+                <FormControl size="small" sx={{ flex: '1 1 0', minWidth: 0, width: '100%', maxWidth: 180 }}>
                   <Select
                     value={row.status}
                     disabled={updatingIds.has(row.id)}
                     onChange={(event) => {
                       void handleStatusUpdate(row, event.target.value as NormativeFileStatus);
                     }}
-                    sx={{ borderRadius: 1, backgroundColor: 'background.paper' }}
+                    sx={{ width: '100%', borderRadius: 1, backgroundColor: 'background.paper' }}
                   >
                     {statusOptions.map((status) => (
                       <MenuItem key={status} value={status}>

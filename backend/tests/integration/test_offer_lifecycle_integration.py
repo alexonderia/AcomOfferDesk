@@ -34,6 +34,8 @@ class _OfferRequestsRepo:
             closed_at=None,
             id_offer=None,
             id_plan=None,
+            owner_phone=None,
+            owner_mail=None,
         )
         self._visible_open = visible_open
 
@@ -391,6 +393,8 @@ def test_department_request_update_without_department_offer_accept_cannot_accept
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[211] = SimpleNamespace(
@@ -439,6 +443,8 @@ def test_department_offer_accept_allows_accept_inside_department_scope(
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[212] = SimpleNamespace(
@@ -483,6 +489,8 @@ def test_department_request_update_without_department_offer_update_cannot_update
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[213] = SimpleNamespace(
@@ -575,6 +583,8 @@ def test_hierarchy_offer_update_requires_offers_update_without_department_delega
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[215] = SimpleNamespace(
@@ -638,6 +648,8 @@ def test_cannot_accept_offer_for_closed_or_cancelled_request(
         closed_at=_dt(),
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=closed_request)
     uow.offers._offers[230] = SimpleNamespace(
@@ -713,6 +725,8 @@ def test_workspace_access_is_restricted_to_allowed_users(
                     deadline_at=_dt(),
                     owner_user_id="owner-1",
                     owner_full_name="Owner",
+                    owner_phone=None,
+                    owner_mail=None,
                     created_at=_dt(),
                     updated_at=_dt(),
                     closed_at=None,

@@ -398,8 +398,8 @@ class _NormativeUow:
 
 
 class _ManualEmailNotifications:
-    def __init__(self, profiles, requests) -> None:
-        _ = (profiles, requests)
+    def __init__(self, profiles, requests, files=None) -> None:
+        _ = (profiles, requests, files)
         self.calls: list[dict] = []
 
     async def notify_request_to_additional_emails(self, *, request_id: str, additional_emails: list[str]) -> None:
@@ -1553,9 +1553,9 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
 ):
     fake_notifications: _ManualEmailNotifications | None = None
 
-    def _factory(profiles, requests):
+    def _factory(profiles, requests, files=None):
         nonlocal fake_notifications
-        fake_notifications = _ManualEmailNotifications(profiles, requests)
+        fake_notifications = _ManualEmailNotifications(profiles, requests, files)
         return fake_notifications
 
     monkeypatch.setattr(requests_api, "EmailNotificationService", _factory)

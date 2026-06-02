@@ -1,14 +1,14 @@
 ﻿import {
   Box,
-  Button,
   Menu,
   MenuItem,
   Paper,
   Stack,
   Typography,
 } from '@mui/material';
+import { Button } from '@mui/material';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ActionButton } from '@shared/components/ActionButton';
@@ -159,42 +159,67 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
     setSubmenuItems([]);
   };
 
+  const renderMoreActionButton = ({
+    icon,
+    label,
+    onClick,
+    multiline = false,
+  }: {
+    icon: ReactNode;
+    label: string;
+    onClick: () => void;
+    multiline?: boolean;
+  }) => (
+    <ActionButton
+      kind="custom"
+      showNavigationIcons={false}
+      onClick={onClick}
+      sx={{
+        width: '100%',
+        minHeight: 42,
+        minWidth: 0,
+        justifyContent: 'flex-start',
+        px: 1.75,
+        gap: 1.25,
+        borderRadius: (theme) => `${theme.acomShape.buttonRadius}px !important`,
+        fontSize: 14,
+        fontWeight: 500,
+        lineHeight: multiline ? 1.25 : 1.2,
+        textTransform: 'none'
+      }}
+    >
+      <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1, mt: multiline ? 0.15 : 0 }}>
+        {icon}
+      </Box>
+      <Typography
+        sx={{
+          fontSize: 14,
+          fontWeight: 500,
+          lineHeight: multiline ? 1.25 : 1.2,
+          whiteSpace: multiline ? 'pre-line' : 'nowrap',
+          textAlign: 'left'
+        }}
+      >
+        {label}
+      </Typography>
+    </ActionButton>
+  );
+
   const renderMoreAction = (item: HeaderMobileNavItem) => {
     if (item.key === 'profile') {
       return <ProfileButton sidebar />;
     }
 
     if (item.key === 'normative') {
-      return (
-        <ActionButton
-          kind="custom"
-          showNavigationIcons={false}
-          onClick={() => {
-            setMoreAnchorEl(null);
-            navigate('/normative-files');
-          }}
-          sx={{
-            width: '100%',
-            minHeight: 42,
-            minWidth: 0,
-            justifyContent: 'flex-start',
-            px: 1.75,
-            gap: 1.25,
-            borderRadius: (theme) => `${theme.acomShape.buttonRadius}px !important`,
-            fontSize: 14,
-            fontWeight: 500,
-            lineHeight: 1.25,
-            textTransform: 'none',
-            whiteSpace: 'pre-line',
-            textAlign: 'left'
-          }}
-        >
-          <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1, mt: 0.15 }}>
-            {getHeaderNavigationIcon('normative')}
-          </Box>
-          {'Нормативные\nдокументы'}
-        </ActionButton>
-      );
+      return renderMoreActionButton({
+        icon: getHeaderNavigationIcon('normative'),
+        label: 'Нормативные\nдокументы',
+        multiline: true,
+        onClick: () => {
+          setMoreAnchorEl(null);
+          navigate('/normative-files');
+        },
+      });
     }
 
     if (item.key === 'guide') {
@@ -206,48 +231,24 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
     }
 
     if (item.key === 'logout') {
-      return (
-        <ActionButton
-          kind="custom"
-          showNavigationIcons={false}
-          onClick={() => {
-            setMoreAnchorEl(null);
-            onLogout();
-          }}
-          sx={{
-            width: '100%',
-            minHeight: 42,
-            minWidth: 0,
-            justifyContent: 'flex-start',
-            px: 1.75,
-            gap: 1.25,
-            borderRadius: (theme) => `${theme.acomShape.buttonRadius}px !important`,
-            fontSize: 14,
-            fontWeight: 500,
-            lineHeight: 1.2,
-            textTransform: 'none'
-          }}
-        >
-          <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
-            <LogoutRounded fontSize="small" />
-          </Box>
-          Выйти
-        </ActionButton>
-      );
+      return renderMoreActionButton({
+        icon: <LogoutRounded fontSize="small" />,
+        label: 'Выйти',
+        onClick: () => {
+          setMoreAnchorEl(null);
+          onLogout();
+        },
+      });
     }
 
-    return (
-      <Button
-        variant="text"
-        onClick={() => {
-          setMoreAnchorEl(null);
-          executeNavItem(item);
-        }}
-        sx={{ width: '100%', justifyContent: 'flex-start', border: 'none', px: 1.25 }}
-      >
-        {item.label}
-      </Button>
-    );
+    return renderMoreActionButton({
+      icon: getHeaderNavigationIcon(item.key),
+      label: item.label,
+      onClick: () => {
+        setMoreAnchorEl(null);
+        executeNavItem(item);
+      },
+    });
   };
 
   return (

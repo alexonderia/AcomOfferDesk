@@ -79,12 +79,13 @@ def build_current_user_from_keycloak(
     role_ceiling = get_permissions_for_role(role_id)
     if role_ceiling:
         role_scoped_permissions = role_scoped_permissions & role_ceiling
-    permissions = role_scoped_permissions | department_permissions | contractor_permissions
     app_roles = frozenset(role for role in normalized_roles if role.startswith("app."))
-    if not permissions and role_ceiling:
-        expected_app_role = role_mapping_by_local_role_id().get(role_id)
-        if expected_app_role and expected_app_role in app_roles:
-            permissions = role_ceiling | department_permissions | contractor_permissions
+    expected_app_role = role_mapping_by_local_role_id().get(role_id)
+    has_matching_app_role = bool(expected_app_role and expected_app_role in app_roles)
+    if has_matching_app_role and role_ceiling:
+        permissions = role_ceiling | department_permissions | contractor_permissions
+    else:
+        permissions = role_scoped_permissions | department_permissions | contractor_permissions
     if (app_roles or delegation_roles) and not permissions:
         logger.warning(
             "keycloak_user_without_atomic_permissions user_id=%s app_roles=%s delegation_roles=%s keycloak_roles_count=%s",

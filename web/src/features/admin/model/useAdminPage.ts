@@ -370,7 +370,7 @@ export const useAdminPage = () => {
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      const response = await getUsers(roleByTab[activeTab]);
+      const response = await getUsers(isLeadLike ? undefined : roleByTab[activeTab]);
       setUsers(response.items);
     } catch (error) {
       setUsersError(
@@ -383,7 +383,7 @@ export const useAdminPage = () => {
     } finally {
       setIsLoadingUsers(false);
     }
-  }, [activeTab]);
+  }, [activeTab, isLeadLike]);
 
   useEffect(() => {
     void loadUsers();

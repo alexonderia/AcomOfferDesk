@@ -98,6 +98,25 @@ def test_build_current_user_from_keycloak_app_project_manager_uses_contractor_re
     assert current_user.app_roles == frozenset({"app.project_manager"})
 
 
+def test_build_current_user_from_keycloak_matching_app_role_restores_full_local_ceiling_even_with_stale_leaf_permissions():
+    current_user = build_current_user_from_keycloak(
+        user_id="pm-stale-token",
+        role_id=settings.project_manager_role_id,
+        status="active",
+        api_roles=frozenset(
+            {
+                "app.project_manager",
+                PermissionCodes.USERS_READ,
+            }
+        ),
+    )
+
+    assert PermissionCodes.USERS_READ in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_READ in current_user.permissions
+    assert PermissionCodes.CONTRACTORS_PROFILE_READ in current_user.permissions
+    assert PermissionCodes.REQUESTS_OWNER_CHANGE in current_user.permissions
+
+
 def test_build_current_user_from_keycloak_mismatched_app_role_does_not_use_ceiling_fallback():
     current_user = build_current_user_from_keycloak(
         user_id="u-mismatch",

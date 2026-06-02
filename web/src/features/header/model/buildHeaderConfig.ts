@@ -698,7 +698,7 @@ export const buildHeaderConfig = ({
         ...(canViewDashboardSavings ? [{ key: 'savings', value: 'savings', label: 'Экономия' as const }] : []),
         ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: 'План' as const }] : []),
         { key: 'requests', value: 'requests', label: 'Заявки' },
-        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Экономисты' }] : []),
+        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Сотрудники' }] : []),
         ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: 'Контрагенты' }] : []),
       ],
       activeTab: isResponsibilityDashboard
@@ -757,7 +757,7 @@ export const buildHeaderConfig = ({
       ),
       tabs: [
         { key: 'requests', value: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438' },
-        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u0441\u0442\u044b' }] : []),
+        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Сотрудники' }] : []),
         ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: 'Контрагенты' }] : []),
       ],
       activeTab: pathname.startsWith('/admin')

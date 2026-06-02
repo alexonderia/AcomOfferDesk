@@ -1,5 +1,5 @@
 import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined';
-import { Alert, Button, Stack } from '@mui/material';
+import { Alert, Button, IconButton, Stack } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -9,6 +9,7 @@ import { ContractorsListView } from '@features/contractors/components/Contractor
 import type { UserListItem } from '@entities/user';
 import { listContractors } from '@shared/api/contractors/listContractors';
 import { ROLE } from '@shared/constants/roles';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 
 const mapContractorToUserListItem = (item: Awaited<ReturnType<typeof listContractors>>[number]): UserListItem => ({
   user_id: item.userId,
@@ -29,6 +30,7 @@ const mapContractorToUserListItem = (item: Awaited<ReturnType<typeof listContrac
 
 export const ContractorsPage = () => {
   const { session } = useAuth();
+  const isMobileViewport = useIsMobileViewport();
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,16 +44,33 @@ export const ContractorsPage = () => {
   const breadcrumbActions = useMemo(
     () =>
       canManageContractors ? (
-        <Button
-          variant="outlined"
-          onClick={() => setIsInviteDialogOpen(true)}
-          startIcon={<ForwardToInboxOutlined fontSize="small" />}
-          sx={{ textTransform: 'none' }}
-        >
-          Пригласить
-        </Button>
+        isMobileViewport ? (
+          <IconButton
+            aria-label="Пригласить"
+            onClick={() => setIsInviteDialogOpen(true)}
+            size="small"
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1.5,
+              color: 'primary.main',
+              backgroundColor: 'background.paper'
+            }}
+          >
+            <ForwardToInboxOutlined fontSize="small" />
+          </IconButton>
+        ) : (
+          <Button
+            variant="outlined"
+            onClick={() => setIsInviteDialogOpen(true)}
+            startIcon={<ForwardToInboxOutlined fontSize="small" />}
+            sx={{ textTransform: 'none' }}
+          >
+            Пригласить
+          </Button>
+        )
       ) : null,
-    [canManageContractors]
+    [canManageContractors, isMobileViewport]
   );
 
   useSetPageBreadcrumbActions(breadcrumbActions);

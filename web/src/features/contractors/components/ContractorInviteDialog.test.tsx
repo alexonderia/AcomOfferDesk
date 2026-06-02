@@ -73,15 +73,12 @@ describe('ContractorInviteDialog', () => {
 
     expect(screen.getByText('Пример письма')).toBeInTheDocument();
     expect(screen.getByText('Тема: Приглашение в AcomOfferDesk')).toBeInTheDocument();
-    expect(
-      screen
-        .getAllByText((_, element) =>
-          Boolean(element?.textContent?.includes('Ссылка для входа: [будет подставлена автоматически]'))
-        )
-        .some((element) =>
-          element.textContent?.includes('Ссылка для входа: [будет подставлена автоматически]')
-        )
-    ).toBe(true);
+
+    const preview = screen.getByText((_, element) => element?.tagName === 'PRE');
+    expect(preview).toHaveTextContent('<!DOCTYPE html>');
+    expect(preview).toHaveTextContent('<html lang="ru">');
+    expect(preview).toHaveTextContent('<a href="{{PORTAL_URL}}"');
+    expect(preview).toHaveTextContent('{{CONTACT_EMAIL}}');
 
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: 'valid1@example.com, valid2@example.com' },

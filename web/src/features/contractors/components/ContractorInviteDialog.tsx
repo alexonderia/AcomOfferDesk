@@ -37,22 +37,58 @@ type InviteResult = {
 
 const PRESENTATION_FILE_PATTERN = /(презентац|presentation)/i;
 const INVITATION_SUBJECT = 'Приглашение в AcomOfferDesk';
-const INVITATION_PREVIEW_TEXT = [
-  'AcomOfferDesk',
-  '',
-  'Вы приглашены к работе в системе AcomOfferDesk.',
-  'Инструкция по получению доступа приложена к письму в виде презентации.',
-  '',
-  'Кнопка письма: «Перейти к системе»',
-  'Ссылка для входа: [будет подставлена автоматически]',
-  '',
-  'Если удобнее, вы можете связаться с контактным лицом напрямую:',
-  '[имя контактного лица]',
-  'Тел. (MAX): [телефон]',
-  'Эл. почта: [email]',
-  '',
-  'Вложение: выбранный нормативный документ'
-].join('\n');
+
+const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
+<html lang="ru">
+  <body style="margin:0;padding:0;background-color:#f6f8fb;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f6f8fb;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
+            <tr>
+              <td style="padding:24px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:22px;font-weight:700;">
+                AcomOfferDesk
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
+                Вы приглашены к работе в системе AcomOfferDesk.<br/><br/>
+                Инструкция по получению доступа приложена к письму в виде презентации.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 28px 8px 28px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td bgcolor="#0969da" style="border-radius:6px;">
+                      <a href="{{PORTAL_URL}}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                        Перейти к системе
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                Если удобнее, вы можете связаться с контактным лицом напрямую:<br/>
+                <strong>{{CONTACT_NAME}}</strong><br/>
+                Тел. (MAX): <a href="tel:{{CONTACT_PHONE}}" style="color:#0969da;text-decoration:underline;">{{CONTACT_PHONE}}</a><br/>
+                Эл. почта: <a href="mailto:{{CONTACT_EMAIL}}" style="color:#0969da;text-decoration:underline;">{{CONTACT_EMAIL}}</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                Ссылка для входа:<br/>
+                <a href="{{PORTAL_URL}}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{{PORTAL_URL}}</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 
 const resolveDefaultNormativeFileId = (items: NormativeFileItem[]): number | null => {
   const preferred = items.find((item) => PRESENTATION_FILE_PATTERN.test(item.original_name));
@@ -77,11 +113,6 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
   const [selectedNormativeFileId, setSelectedNormativeFileId] = useState<number | null>(null);
   const hasValidEmails = emails.length > 0;
   const hasNormativeSelection = selectedNormativeFileId !== null;
-  const selectedNormativeFile = normativeFiles.find((item) => item.id === selectedNormativeFileId) ?? null;
-  const invitationPreview = INVITATION_PREVIEW_TEXT.replace(
-    'Вложение: выбранный нормативный документ',
-    `Вложение: ${selectedNormativeFile?.original_name ?? 'выбранный нормативный документ'}`
-  );
 
   useEffect(() => {
     if (!open) {
@@ -223,7 +254,7 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
             <Stack spacing={0.75}>
               <Typography variant="subtitle2">Пример письма</Typography>
               <Typography variant="body2" color="text.secondary">
-                Это шаблон письма, который получит контрагент.
+                Это HTML-содержание письма, которое получит контрагент.
               </Typography>
               <Typography variant="body2" fontWeight={600}>
                 Тема: {INVITATION_SUBJECT}
@@ -233,13 +264,14 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
                 sx={{
                   m: 0,
                   whiteSpace: 'pre-wrap',
-                  fontFamily: 'inherit',
+                  fontFamily: 'SFMono-Regular, Consolas, Menlo, monospace',
                   fontSize: 14,
                   lineHeight: 1.6,
-                  color: 'text.primary'
+                  color: 'text.primary',
+                  overflowX: 'auto'
                 }}
               >
-                {invitationPreview}
+                {INVITATION_PREVIEW_HTML}
               </Box>
             </Stack>
           </Box>
@@ -275,9 +307,7 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
               ) : null}
               {result.invalid.length > 0 ? (
                 <Box mt={1}>
-                  <Typography variant="body2">
-                    Некорректные email: {result.invalid.join(', ')}
-                  </Typography>
+                  <Typography variant="body2">Некорректные email: {result.invalid.join(', ')}</Typography>
                 </Box>
               ) : null}
             </Alert>

@@ -39,6 +39,18 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Hide desktop resize affordances on the mobile sheet; let the viewport define the panel width and height.
 - Keep the overlay/modal container responsible for centering and backdrop behavior, not the inner panel.
 
+### Convention: HTML Email Source Preview
+
+- When showing a generated email preview, prefer the actual HTML source markup in a monospaced block.
+- Keep the preview aligned with the backend template structure so the preview mirrors the sent email body rather than a prose summary.
+- Use placeholder tokens for environment-specific values that the frontend cannot know, instead of inventing fake runtime data.
+
+### Convention: Mobile Breadcrumb Actions
+
+- Breadcrumb actions may collapse to icon-only controls on narrow viewports when text would waste space.
+- Keep the action accessible with an `aria-label` that matches the removed text.
+- Preserve the desktop text label on larger viewports when there is room for it.
+
 ---
 
 ## Forbidden Patterns

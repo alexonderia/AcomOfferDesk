@@ -250,7 +250,7 @@ export const RequestDetailsView = () => {
 
     const fetchRequest = useCallback(
         async (showLoading: boolean) => {
-            if (!Number.isFinite(requestId) || requestId <= 0) {
+            if (!requestId) {
                 return;
             }
             if (showLoading) {
@@ -775,6 +775,11 @@ export const RequestDetailsView = () => {
                 isDescriptionExpanded={isDescriptionExpanded}
                 onToggleDescription={() => setIsDescriptionExpanded((prev) => !prev)}
                 ownerField={ownerField}
+                responsibleContact={{
+                    fullName: requestDetails.owner_full_name ?? requestDetails.id_user ?? null,
+                    phone: requestDetails.owner_phone ?? null,
+                    mail: requestDetails.owner_mail ?? null
+                }}
                 existingFiles={existingFiles}
                 canDeleteRequestFiles={canDeleteRequestFiles}
                 onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}

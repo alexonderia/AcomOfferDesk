@@ -146,6 +146,116 @@ EOF
   echo "[realm] Applied mail/session settings (smtp host=${SMTP_HOST:-<none>} port=${SMTP_PORT:-<none>})"
 }
 
+apply_user_profile_configuration() {
+  USER_PROFILE_FILE="$(mktemp)"
+  cat >"$USER_PROFILE_FILE" <<'EOF'
+{
+  "attributes": [
+    {
+      "name": "username",
+      "displayName": "${username}",
+      "validations": {
+        "length": {
+          "min": 3,
+          "max": 255
+        },
+        "username-prohibited-characters": {},
+        "up-username-not-idn-homograph": {}
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "email",
+      "displayName": "${email}",
+      "validations": {
+        "email": {},
+        "length": {
+          "max": 255
+        }
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "firstName",
+      "displayName": "${firstName}",
+      "validations": {
+        "length": {
+          "max": 255
+        },
+        "person-name-prohibited-characters": {}
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "lastName",
+      "displayName": "${lastName}",
+      "validations": {
+        "length": {
+          "max": 255
+        },
+        "person-name-prohibited-characters": {}
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "middleName",
+      "displayName": "${middleName}",
+      "validations": {
+        "length": {
+          "max": 255
+        },
+        "person-name-prohibited-characters": {}
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    }
+  ],
+  "groups": [
+    {
+      "name": "user-metadata",
+      "displayHeader": "User metadata",
+      "displayDescription": "Attributes, which refer to user metadata"
+    }
+  ]
+}
+EOF
+
+  /opt/keycloak/bin/kcadm.sh update users/profile -r "$APP_REALM" -f "$USER_PROFILE_FILE"
+  rm -f "$USER_PROFILE_FILE"
+  echo "[realm] Applied user profile schema with middleName"
+}
+
 if [ -z "$ADMIN_SERVICE_CLIENT_SECRET" ] || is_weak_secret "$ADMIN_SERVICE_CLIENT_SECRET"; then
   if [ "$APP_ENV_NORMALIZED" = "production" ]; then
     echo "KEYCLOAK_ADMIN_CLIENT_SECRET must be set to a strong non-placeholder value"
@@ -212,22 +322,24 @@ dashboard.plans.read
 normative_files.read
 normative_files.create
 normative_files.manage
+normative_files.status.update
 files.download
 unavailability.manage_all
 unavailability.manage_own
 unavailability.manage_subordinate
+contractors.read
+contractors.profile.read
+contractors.profile.status.update
 contractors.manual.create
 contractors.manual.manage
 department.requests.read
 department.requests.update
 department.requests.status_update
 department.requests.assign
-department.offers.read
 department.offers.update
 department.offers.accept
 department.offers.reject
 department.chats.read
-department.chats.send_message
 department.files.read
 department.files.upload
 department.files.delete
@@ -248,17 +360,20 @@ app.contractor
 EOF
 )
 
+CONTRACTOR_DELEGATION_ROLE_NAMES=$(cat <<'EOF'
+delegation.contractors.profile.status.update
+EOF
+)
+
 DEPARTMENT_DELEGATION_ROLE_NAMES=$(cat <<'EOF'
 delegation.department.requests.read
 delegation.department.requests.update
 delegation.department.requests.status_update
 delegation.department.requests.assign
-delegation.department.offers.read
 delegation.department.offers.update
 delegation.department.offers.accept
 delegation.department.offers.reject
 delegation.department.chats.read
-delegation.department.chats.send_message
 delegation.department.files.read
 delegation.department.files.upload
 delegation.department.files.delete
@@ -271,6 +386,7 @@ EOF
 ALL_ROLE_NAMES=$(cat <<EOF
 $PERMISSION_ROLE_NAMES
 $APP_ROLE_NAMES
+$CONTRACTOR_DELEGATION_ROLE_NAMES
 $DEPARTMENT_DELEGATION_ROLE_NAMES
 EOF
 )
@@ -333,6 +449,8 @@ offers.contractor_info.read
 chat.read
 files.download
 users.read
+contractors.read
+contractors.profile.read
 users.status.update
 users.role.update_economy
 users.manager.update
@@ -375,6 +493,8 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 users.read
+contractors.read
+contractors.profile.read
 users.create
 users.status.update
 users.role.update_economy
@@ -387,6 +507,7 @@ dashboard.plans.read
 unavailability.manage_subordinate
 normative_files.manage
 normative_files.create
+normative_files.status.update
 profile.manage_any
 company_contacts.manage_any
 unavailability.manage_own
@@ -422,6 +543,8 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 users.read
+contractors.read
+contractors.profile.read
 users.status.update
 users.manager.update
 normative_files.read
@@ -445,7 +568,14 @@ requests.pricing.update
 requests.deadline.update
 requests.status.update
 requests.amounts.read
+offers.contractor_info.read
 normative_files.read
+EOF
+)
+ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE=$(cat <<'EOF'
+contractors.read
+contractors.profile.read
+contractors.profile.status.update
 EOF
 )
 ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ=$(cat <<'EOF'
@@ -464,10 +594,6 @@ ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN=$(cat <<'EOF'
 department.requests.assign
 EOF
 )
-ROLE_DELEGATION_DEPARTMENT_OFFERS_READ=$(cat <<'EOF'
-department.offers.read
-EOF
-)
 ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE=$(cat <<'EOF'
 department.offers.update
 EOF
@@ -482,10 +608,6 @@ EOF
 )
 ROLE_DELEGATION_DEPARTMENT_CHATS_READ=$(cat <<'EOF'
 department.chats.read
-EOF
-)
-ROLE_DELEGATION_DEPARTMENT_CHATS_SEND_MESSAGE=$(cat <<'EOF'
-department.chats.send_message
 EOF
 )
 ROLE_DELEGATION_DEPARTMENT_FILES_READ=$(cat <<'EOF'
@@ -545,6 +667,7 @@ if ! /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM" >/dev/null 2>&1; then
 fi
 
 apply_realm_mail_and_session_settings
+apply_user_profile_configuration
 
 _CACHED_API_CLIENT_UUID=""
 
@@ -676,6 +799,17 @@ ensure_composite_role_has_member() {
 
   payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
   /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null
+  rm -f "$payload_file"
+}
+
+ensure_composite_role_has_member_force() {
+  client_uuid="$1"
+  composite_role_name="$2"
+  member_role_name="$3"
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
+  # Force-add: ignore possible duplicates / already-present errors.
+  /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
   rm -f "$payload_file"
 }
 
@@ -906,17 +1040,24 @@ ensure_api_roles_model() {
     fi
   done
 
-  echo "[3/6] Ensuring delegation.department.* composite roles exist"
+  echo "[3/7] Ensuring delegation.contractors.* composite roles exist"
+  printf '%s\n' "$CONTRACTOR_DELEGATION_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -n "$role_name" ]; then
+      ensure_client_role "$api_client_uuid" "$role_name" "true"
+    fi
+  done
+
+  echo "[4/7] Ensuring delegation.department.* composite roles exist"
   printf '%s\n' "$DEPARTMENT_DELEGATION_ROLE_NAMES" | while IFS= read -r role_name; do
     if [ -n "$role_name" ]; then
       ensure_client_role "$api_client_uuid" "$role_name" "true"
     fi
   done
 
-  echo "[4/6] Enforcing atomic permission roles (no nested composites)"
+  echo "[5/7] Enforcing atomic permission roles (no nested composites)"
   enforce_atomic_permission_roles
 
-  echo "[5/6] Syncing composite membership for app.* and delegation.department.*"
+  echo "[6/7] Syncing composite membership for app.* and delegation.*"
   refresh_kcadm_credentials
   sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
   sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
@@ -925,16 +1066,15 @@ ensure_api_roles_model() {
   sync_composite_role "app.lead_economist" "$ROLE_APP_LEAD_ECONOMIST"
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
+  sync_composite_role "delegation.contractors.profile.status.update" "$ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE"
   sync_composite_role "delegation.department.requests.read" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ"
   sync_composite_role "delegation.department.requests.update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE"
   sync_composite_role "delegation.department.requests.status_update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE"
   sync_composite_role "delegation.department.requests.assign" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN"
-  sync_composite_role "delegation.department.offers.read" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_READ"
   sync_composite_role "delegation.department.offers.update" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE"
   sync_composite_role "delegation.department.offers.accept" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT"
   sync_composite_role "delegation.department.offers.reject" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_REJECT"
   sync_composite_role "delegation.department.chats.read" "$ROLE_DELEGATION_DEPARTMENT_CHATS_READ"
-  sync_composite_role "delegation.department.chats.send_message" "$ROLE_DELEGATION_DEPARTMENT_CHATS_SEND_MESSAGE"
   sync_composite_role "delegation.department.files.read" "$ROLE_DELEGATION_DEPARTMENT_FILES_READ"
   sync_composite_role "delegation.department.files.upload" "$ROLE_DELEGATION_DEPARTMENT_FILES_UPLOAD"
   sync_composite_role "delegation.department.files.delete" "$ROLE_DELEGATION_DEPARTMENT_FILES_DELETE"
@@ -942,12 +1082,20 @@ ensure_api_roles_model() {
   sync_composite_role "delegation.department.plans.read" "$ROLE_DELEGATION_DEPARTMENT_PLANS_READ"
   sync_composite_role "delegation.department.plans.manage" "$ROLE_DELEGATION_DEPARTMENT_PLANS_MANAGE"
 
+  # Force ensure direct membership for newly introduced contractor profile status permissions.
+  # Some environments may have pre-existing role composition artifacts; this makes the bootstrap idempotent.
+  api_client_uuid="$(resolve_api_client_uuid)"
+  ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.read"
+  ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.status.update"
+  ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.read"
+  ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.status.update"
+
   # Always re-apply after composite sync:
   # this keeps department.* and all other atomic permission roles strictly leaf.
   echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after composite sync"
   enforce_atomic_permission_roles
 
-  echo "[6/6] Verifying final Keycloak permission model"
+  echo "[7/7] Verifying final Keycloak permission model"
   verify_keycloak_permission_model
 }
 

@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import { normalizeOfferActions, normalizeRequestActions, type OfferActions, type RequestActions } from '../mappers';
 import type { FileEntity, RequestEntity } from '@entities/request';
 
@@ -35,9 +35,11 @@ export type RequestDetailsOffer = {
 };
 
 export type RequestDetails = {
-  id: number;
+  id: string;
   id_user: string;
   owner_full_name?: string | null;
+  owner_phone?: string | null;
+  owner_mail?: string | null;
   status: string;
   status_label: string;
   initial_amount: number | null;
@@ -59,6 +61,8 @@ export type RequestDetails = {
 };
 
 type ApiRequestItem = RequestEntity & {
+  owner_phone?: string | null;
+  owner_mail?: string | null;
   actions?: {
     can_view_details?: boolean;
     can_view_amounts?: boolean;
@@ -97,7 +101,7 @@ type ApiResponse = {
   };
 };
 
-export const getRequestDetails = async (requestId: number): Promise<RequestDetails> => {
+export const getRequestDetails = async (requestId: string): Promise<RequestDetails> => {
   const response = await fetchJson<ApiResponse>(
     `/api/v1/requests/${requestId}`,
     { method: 'GET' },
@@ -110,6 +114,8 @@ export const getRequestDetails = async (requestId: number): Promise<RequestDetai
     id: item.request_id,
     id_user: item.owner_user_id,
     owner_full_name: item.owner_full_name ?? null,
+    owner_phone: item.owner_phone ?? null,
+    owner_mail: item.owner_mail ?? null,
     status: item.status,
     status_label: item.status_label,
     initial_amount: item.initial_amount ?? null,

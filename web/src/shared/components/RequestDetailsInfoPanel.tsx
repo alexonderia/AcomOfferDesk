@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
 import { Box, TextField, Typography } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
+import type { ReactNode } from 'react';
 import { DatePickerField } from './DatePickerField';
 import { formatDate } from '@shared/lib/formatters';
 
@@ -25,6 +25,12 @@ const detailValueTextSx = {
   lineHeight: 1.3
 } as const;
 
+type ResponsibleContact = {
+  fullName?: string | null;
+  phone?: string | null;
+  mail?: string | null;
+};
+
 type RequestDetailsInfoValue = {
   createdAt: string | null;
   closedAt: string | null;
@@ -42,6 +48,8 @@ type RequestDetailsInfoValue = {
   finalAmountInputValue?: string;
   onInitialAmountChange?: (value: string) => void;
   onFinalAmountChange?: (value: string) => void;
+  responsibleContact?: ResponsibleContact | null;
+  responsibleContactHighlighted?: boolean;
 };
 
 type RequestDetailsInfoPanelProps = {
@@ -67,13 +75,16 @@ const DetailRow = ({ label, value, divider = true }: { label: string; value: Rea
   </Box>
 );
 
-const panelSx = (theme: Theme) => ({
-  border: `1px solid ${theme.palette.divider}`,
+const panelSx = (theme: Theme, highlighted = false) => ({
+  border: `1px solid ${highlighted ? theme.palette.primary.main : theme.palette.divider}`,
   borderRadius: `${theme.acomShape.controlRadius}px`,
   overflow: 'hidden',
   backgroundColor: theme.palette.background.paper,
   p: 0.8,
-  boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)'
+  boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)',
+  transition: theme.transitions.create(['border-color', 'box-shadow'], {
+    duration: theme.transitions.duration.shorter
+  })
 });
 
 export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps) => {
@@ -93,8 +104,14 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
     initialAmountInputValue = '',
     finalAmountInputValue = '',
     onInitialAmountChange,
-    onFinalAmountChange
+    onFinalAmountChange,
+    responsibleContact,
+    responsibleContactHighlighted = false
   } = value;
+
+  const hasResponsibleContact = Boolean(
+    responsibleContact?.fullName || responsibleContact?.phone || responsibleContact?.mail
+  );
 
   const offerField = (
     <TextField
@@ -157,10 +174,33 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
       sx={{
         display: 'grid',
         gap: 1.5,
-        gridTemplateColumns: { xs: '1fr', md: canViewRequestAmounts ? '1fr 1fr' : '1fr' }
+        gridTemplateColumns: {
+          xs: '1fr',
+          lg: canViewRequestAmounts ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'
+        }
       }}
     >
-      <Box sx={panelSx}>
+      {hasResponsibleContact ? (
+        <Box
+          data-highlighted={responsibleContactHighlighted ? 'true' : 'false'}
+          sx={(theme) => panelSx(theme, responsibleContactHighlighted)}
+        >
+          <DetailRow
+            label="ФИО"
+            value={<Typography sx={detailValueTextSx}>{responsibleContact?.fullName || '-'}</Typography>}
+          />
+          <DetailRow
+            label="Телефон"
+            value={<Typography sx={detailValueTextSx}>{responsibleContact?.phone || '-'}</Typography>}
+          />
+          <DetailRow
+            label="E-mail"
+            value={<Typography sx={detailValueTextSx}>{responsibleContact?.mail || '-'}</Typography>}
+            divider={false}
+          />
+        </Box>
+      ) : null}
+      <Box sx={(theme) => panelSx(theme)}>
         <DetailRow label="Создана" value={<Typography sx={detailValueTextSx}>{formatDate(createdAt)}</Typography>} />
         <DetailRow label="Закрыта" value={<Typography sx={detailValueTextSx}>{formatDate(closedAt)}</Typography>} />
         <DetailRow
@@ -171,7 +211,7 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
         {!canViewRequestAmounts && showOfferId ? <DetailRow label="Номер КП" value={offerField} divider={false} /> : null}
       </Box>
       {canViewRequestAmounts ? (
-        <Box sx={panelSx}>
+        <Box sx={(theme) => panelSx(theme)}>
           <DetailRow label="Сумма по ТЗ, руб." value={initialAmountField} />
           <DetailRow label="Итоговая сумма, руб." value={finalAmountField} />
           {showOfferId ? <DetailRow label="Номер КП" value={offerField} divider={false} /> : null}

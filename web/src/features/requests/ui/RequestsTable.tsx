@@ -20,7 +20,7 @@ type RequestsTableProps = {
     isLoading?: boolean;
     onRowClick?: (request: RequestWithOfferStats) => void;
     onAddClick?: () => void;
-    chatAlertsMap?: Record<number, number>;
+    chatAlertsMap?: Record<string, number>;
     ownerOptions?: OwnerOption[];
     canEditOwner?: boolean;
     onOwnerChange?: (request: RequestWithOfferStats, ownerUserId: string) => void;
@@ -403,7 +403,7 @@ export const RequestsTable = ({
     showContractorOffersColumn = true,
     showContractorNotificationColumn = true
 }: RequestsTableProps) => {
-    const [expandedCardsById, setExpandedCardsById] = useState<Record<number, boolean>>({});
+    const [expandedCardsById, setExpandedCardsById] = useState<Record<string, boolean>>({});
     const rows = requests.map((request) => ({
         ...request,
         __notificationLabel: request.unread_messages_count && request.unread_messages_count > 0 ? 'Есть уведомление' : 'Нет уведомления',
@@ -411,7 +411,7 @@ export const RequestsTable = ({
     }));
     const areAllCardsExpanded = rows.length > 0 && rows.every((row) => Boolean(expandedCardsById[row.id]));
 
-    const handleToggleCardExpand = (rowId: number) => {
+    const handleToggleCardExpand = (rowId: string) => {
         setExpandedCardsById((currentState) => ({
             ...currentState,
             [rowId]: !currentState[rowId]
@@ -420,7 +420,7 @@ export const RequestsTable = ({
 
     const handleToggleAllCards = (checked: boolean) => {
         setExpandedCardsById(
-            Object.fromEntries(rows.map((row) => [row.id, checked])) as Record<number, boolean>
+            Object.fromEntries(rows.map((row) => [row.id, checked])) as Record<string, boolean>
         );
     };
     const statusFilterOptions = Array.from(

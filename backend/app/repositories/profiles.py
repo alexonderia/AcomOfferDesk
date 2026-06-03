@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import BigInteger, and_, cast, select
+from sqlalchemy import BigInteger, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.auth_models import UserAuthAccount
-from app.models.orm_models import Profile, User
+from app.models.orm_models import CompanyContact, Profile, User
+
+_INVALID_NOTIFICATION_EMAILS = frozenset({"не указано", "none", "null"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +134,39 @@ class ProfileRepository:
                 )
             )
         return recipients
+
+    async def find_contractor_user_id_by_notification_email(
+        self,
+        *,
+        email: str,
+        contractor_role_id: int,
+    ) -> str | None:
+        normalized_email = email.strip().lower()
+        if not normalized_email or normalized_email in _INVALID_NOTIFICATION_EMAILS:
+            return None
+
+        stmt = (
+            select(User.id)
+            .outerjoin(Profile, Profile.id == User.id)
+            .outerjoin(CompanyContact, CompanyContact.id == User.id)
+            .join(
+                UserAuthAccount,
+                and_(
+                    UserAuthAccount.id_user == User.id,
+                    UserAuthAccount.provider == "keycloak",
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+            .where(
+                or_(
+                    func.lower(Profile.mail) == normalized_email,
+                    func.lower(CompanyContact.mail) == normalized_email,
+                )
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_active_contractor_by_mail(self, *, email: str, contractor_role_id: int) -> Profile | None:
         normalized_email = email.strip().lower()

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 
@@ -33,7 +33,7 @@ class SMTPEmailService:
         recipient_context: dict | None = None,
         correlation_id: str | None = None,
         recipient_user_id: str | None = None,
-        request_id: int | None = None,
+        request_id: str | None = None,
         offer_id: int | None = None,
         initiator_user_id: str | None = None,
         suppress_delivery_notification: bool = False,

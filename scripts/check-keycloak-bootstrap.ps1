@@ -123,7 +123,7 @@ $RoleNames = @(
   "offers.create","offers.manual.create","offers.workspace.read","offers.update","offers.amount.update","offers.details.update","offers.status.update","offers.files.upload","offers.files.delete","offers.contractor_info.read",
   "chat.read","chat.message.send","chat.message.attach","chat.receipts.mark_received","chat.receipts.mark_read",
   "feedback.read","feedback.create","dashboard.process.read","dashboard.savings.read","dashboard.plans.read",
-  "normative_files.read","normative_files.create","normative_files.manage","files.download",
+  "normative_files.read","normative_files.create","normative_files.manage","normative_files.status.update","files.download",
   "unavailability.manage_all","unavailability.manage_own","unavailability.manage_subordinate","contractors.manual.create","contractors.manual.manage",
   "app.superadmin","app.admin","app.project_manager","app.lead_economist","app.economist","app.operator","app.contractor"
 )

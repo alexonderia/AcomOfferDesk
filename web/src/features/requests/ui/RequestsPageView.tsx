@@ -8,8 +8,9 @@ import { useSystemToasts } from '@shared/ui/toasts';
 export const RequestsPageView = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { showErrorToast } = useSystemToasts();
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
   const lastErrorRef = useRef<string | null>(null);
+  const lastSuccessToastIdRef = useRef<number | null>(null);
   const {
     canCreateRequest,
     canEditOwner,
@@ -20,6 +21,7 @@ export const RequestsPageView = () => {
     isLoading,
     ownerOptions,
     requests,
+    successToastEvent,
     shouldLoadOpenRequests
   } = useRequestsPage();
 
@@ -34,6 +36,17 @@ export const RequestsPageView = () => {
     showErrorToast(errorMessage);
     lastErrorRef.current = errorMessage;
   }, [errorMessage, showErrorToast]);
+
+  useEffect(() => {
+    if (!successToastEvent) {
+      return;
+    }
+    if (lastSuccessToastIdRef.current === successToastEvent.id) {
+      return;
+    }
+    showSuccessToast(successToastEvent.message);
+    lastSuccessToastIdRef.current = successToastEvent.id;
+  }, [showSuccessToast, successToastEvent]);
 
   return (
     <Box>

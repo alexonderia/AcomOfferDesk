@@ -53,4 +53,7 @@ export type HeaderConfig = {
   showRoleGuide: boolean;
   showProfile: boolean;
   showLogout: boolean;
+  showNormativeFiles?: boolean;
+  normativeFilesActive?: boolean;
+  onNavigateToNormativeFiles?: () => void;
 };

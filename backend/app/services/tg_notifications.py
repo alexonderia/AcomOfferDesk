@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
@@ -49,7 +49,7 @@ async def notify_access_closed(tg_id: int) -> None:
         text="⛔ Доступ к Telegram-боту закрыт.",
     )
 
-async def notify_new_message(*, tg_id: int, request_id: int) -> None:
+async def notify_new_message(*, tg_id: int, request_id: str) -> None:
     link = _build_web_service_link(tg_id=tg_id)
     await _notify(
         tg_id=tg_id,
@@ -61,7 +61,7 @@ async def notify_new_message(*, tg_id: int, request_id: int) -> None:
 async def notify_new_request(
     *,
     tg_ids: Iterable[int],
-    request_id: int,
+    request_id: str,
     description: str | None,
     deadline_at: datetime,
 ) -> None:

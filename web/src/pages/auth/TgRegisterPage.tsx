@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded';
 import { Alert, Box, Button, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useLiveValidatedForm, textFieldAutocompleteProps } from '@shared/lib/forms';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { checkTgLoginAvailability, completeTgRegistration } from '@shared/api/auth/completeTgRegistration';
@@ -138,10 +138,8 @@ export const TgRegisterPage = () => {
         reset,
         setError,
         clearErrors
-    } = useForm<RegistrationFormValues>({
+    } = useLiveValidatedForm<RegistrationFormValues>({
         resolver: zodResolver(schema),
-        mode: 'onChange',
-        reValidateMode: 'onChange',
         defaultValues: {
             login: '',
             password: '',
@@ -341,6 +339,7 @@ export const TgRegisterPage = () => {
                                                 backgroundColor: theme.palette.primary.light
                                             })
                                         }}
+                                        {...textFieldAutocompleteProps(field.name)}
                                         name={registration.name}
                                         inputRef={registration.ref}
                                         onBlur={(event) => {

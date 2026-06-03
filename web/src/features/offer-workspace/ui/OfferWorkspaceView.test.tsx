@@ -26,7 +26,19 @@ vi.mock("@shared/api/fileDownload", () => ({
 }));
 
 vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
-  RequestDetailsMainCard: () => <div data-testid="workspace-request-card" />,
+  RequestDetailsMainCard: (props: {
+    responsibleContact?: {
+      fullName?: string | null;
+      phone?: string | null;
+      mail?: string | null;
+    } | null;
+  }) => (
+    <div data-testid="workspace-request-card">
+      <div data-testid="workspace-contact-name">{props.responsibleContact?.fullName ?? ""}</div>
+      <div data-testid="workspace-contact-phone">{props.responsibleContact?.phone ?? ""}</div>
+      <div data-testid="workspace-contact-mail">{props.responsibleContact?.mail ?? ""}</div>
+    </div>
+  ),
 }));
 
 vi.mock("@features/offer-workspace/ui/OfferWorkspaceChatDock", () => ({
@@ -104,6 +116,8 @@ const buildWorkspaceHookState = (overrides?:
         status: "open",
         status_label: "Open",
         owner_full_name: "Owner One",
+        owner_phone: "+7 900 222-33-44",
+        owner_mail: "workspace-owner@example.com",
         initial_amount: 150,
         final_amount: 120,
         deadline_at: "2026-05-31T00:00:00Z",
@@ -198,6 +212,9 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     renderWithTheme();
 
     expect(screen.getByRole("button", { name: "Новый отклик" })).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-contact-name")).toHaveTextContent("Owner One");
+    expect(screen.getByTestId("workspace-contact-phone")).toHaveTextContent("+7 900 222-33-44");
+    expect(screen.getByTestId("workspace-contact-mail")).toHaveTextContent("workspace-owner@example.com");
     expect(screen.getByTestId("chat-can-send-message")).toHaveTextContent("true");
     expect(screen.getByTestId("chat-can-attach")).toHaveTextContent("true");
 

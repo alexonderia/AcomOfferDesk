@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import hashlib
@@ -51,7 +51,7 @@ class TgShortcodePayload:
     purpose: str
     exp: int
     nonce: str
-    request_id: int | None = None
+    request_id: str | None = None
 
 
 class TgShortcodeCodec:
@@ -89,7 +89,7 @@ class TgShortcodeCodec:
             purpose=purpose,
             exp=exp,
             nonce=str(payload["nonce"]),
-            request_id=int(payload["request_id"]) if "request_id" in payload else None,
+            request_id=str(payload["request_id"]).strip() if payload.get("request_id") not in (None, "") else None,
         )
 
     @staticmethod
@@ -98,7 +98,7 @@ class TgShortcodeCodec:
         tg_id: int,
         purpose: str,
         ttl_seconds: int,
-        request_id: int | None = None,
+        request_id: str | None = None,
     ) -> TgShortcodePayload:
         exp = int(time.time()) + ttl_seconds
         return TgShortcodePayload(

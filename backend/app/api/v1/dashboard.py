@@ -21,6 +21,10 @@ from app.services.dashboard import DashboardEconomistNode, DashboardService
 router = APIRouter()
 
 
+def _request_id_as_str(value: str | int) -> str:
+    return str(value)
+
+
 def _map_node(node: DashboardEconomistNode) -> DashboardEconomistNodeSchema:
     return DashboardEconomistNodeSchema(
         user_id=node.user_id,
@@ -43,7 +47,7 @@ def _map_node(node: DashboardEconomistNode) -> DashboardEconomistNodeSchema:
 
 def _map_request_item(item) -> DashboardRequestItemSchema:
     return DashboardRequestItemSchema(
-        request_id=item.request_id,
+        request_id=_request_id_as_str(item.request_id),
         description=item.description,
         status=item.status,
         status_label=item.status_label,
@@ -98,7 +102,7 @@ async def get_responsibility_dashboard(
                 total_savings_amount=dashboard.savings.total_savings_amount,
                 closed_items=[
                     DashboardClosedRequestItemSchema(
-                        request_id=item.request_id,
+                        request_id=_request_id_as_str(item.request_id),
                         owner_user_id=item.owner_user_id,
                         owner_full_name=item.owner_full_name,
                         initial_amount=item.initial_amount,
@@ -113,7 +117,7 @@ async def get_responsibility_dashboard(
                 ],
                 items=[
                     DashboardSavingsItemSchema(
-                        request_id=item.request_id,
+                        request_id=_request_id_as_str(item.request_id),
                         owner_user_id=item.owner_user_id,
                         owner_full_name=item.owner_full_name,
                         initial_amount=item.initial_amount,

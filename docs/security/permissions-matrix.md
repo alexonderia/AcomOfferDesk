@@ -44,7 +44,7 @@ Legend: `Y` = granted, `N` = not granted.
 | `offers.status.update` | Y | N | N | Y | Y | N | Y |
 | `offers.files.upload` | Y | N | N | N | N | N | Y |
 | `offers.files.delete` | Y | N | N | N | N | N | Y |
-| `offers.contractor_info.read` | Y | N | Y | Y | Y | N | Y |
+| `offers.contractor_info.read` | Y | N | Y | Y | Y | Y | Y |
 | `chat.read` | Y | N | Y | Y | Y | N | Y |
 | `chat.message.send` | Y | N | N | Y | Y | N | Y |
 | `chat.message.attach` | Y | N | N | Y | Y | N | Y |
@@ -62,6 +62,9 @@ Legend: `Y` = granted, `N` = not granted.
 | `unavailability.manage_all` | Y | N | N | N | N | N | N |
 | `unavailability.manage_own` | Y | N | Y | Y | Y | N | N |
 | `unavailability.manage_subordinate` | Y | N | Y | Y | Y | N | N |
+| `contractors.read` | Y | N | Y | Y | Y | N | N |
+| `contractors.profile.read` | Y | N | Y | Y | Y | N | N |
+| `contractors.profile.status.update` | Y | N | N | N | N | N | N |
 | `contractors.manual.create` | Y | Y | Y | Y | Y | N | N |
 | `contractors.manual.manage` | Y | Y | Y | Y | Y | N | N |
 
@@ -71,10 +74,10 @@ Legend: `Y` = granted, `N` = not granted.
 |---|---|---|
 | `superadmin` | `/admin`, `/requests`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/feedback` | Full management across users, requests, offers, contractors, dashboards, normative files and statuses |
 | `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
-| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Read requests/offers/chats across department; change request owner; manage users hierarchy, manual contractors, subordinate unavailability, economy-role changes for subordinates |
-| `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin` | Full request/offer workflow, create manual offers, manage normative files, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
-| `economist` | `/pm-dashboard/plan`, `/requests`, `/admin` | Request/offers processing in scope, manual offers, subordinate unavailability, manual contractors create/manage, plan dashboard (only delegated branch and below) |
-| `operator` | `/requests` | Create/read/update requests (pricing/deadline/status), view normative files, no offer/chat/admin/dashboard features |
+| `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Read requests/offers/chats across department; change request owner; read contractors and manage users hierarchy/manual contractors/subordinate unavailability/economy-role changes for subordinates |
+| `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Full request/offer workflow, create manual offers, manage normative files, read contractors, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
+| `economist` | `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Request/offers processing in scope, manual offers, subordinate unavailability, read contractors, manual contractors create/manage, plan dashboard (only delegated branch and below) |
+| `operator` | `/requests` | Own unassigned requests (owner still operator): create/read/update (pricing/deadline/status), view offer list on request details without workspace/chat, view normative files, no admin/dashboard |
 | `contractor` | `/requests` (tabs: open/my), `/requests/:id/contractor`, `/offers/:id/workspace` | Create offers, work in workspace, manage own company contacts, chat and files within own offer scope |
 
 ## Special Rules
@@ -112,7 +115,6 @@ Atomic `department.*` permissions:
 - `department.offers.accept`
 - `department.offers.reject`
 - `department.chats.read`
-- `department.chats.send_message`
 - `department.files.read`
 - `department.files.upload`
 - `department.files.delete`
@@ -130,7 +132,6 @@ Keycloak composite delegation roles in client `acom-api`:
 - `delegation.department.offers.accept` -> `department.offers.accept`
 - `delegation.department.offers.reject` -> `department.offers.reject`
 - `delegation.department.chats.read` -> `department.chats.read`
-- `delegation.department.chats.send_message` -> `department.chats.send_message`
 - `delegation.department.files.read` -> `department.files.read`
 - `delegation.department.files.upload` -> `department.files.upload`
 - `delegation.department.files.delete` -> `department.files.delete`
@@ -146,6 +147,26 @@ Rules:
 4. No DB table is used as source of truth for delegation checklist state; source of truth is Keycloak client role mappings for `acom-api`.
 5. Frontend remains UX-only and uses backend-provided `permissions`/`actions`; backend remains enforcement layer.
 6. `department.requests.status_update` must be enforced independently for foreign department requests; `department.requests.update` is not a substitute for status transitions.
+
+## Contractor Delegation Model (2026-05)
+
+Atomic `contractors.*` permissions:
+
+- `contractors.read`
+- `contractors.profile.read`
+- `contractors.profile.status.update`
+
+Keycloak composite delegation role in client `acom-api`:
+
+- `delegation.contractors.profile.status.update` -> `contractors.read`, `contractors.profile.read`, `contractors.profile.status.update`
+
+Rules:
+
+1. `delegation.contractors.profile.status.update` is not included in any `app.*` role by default.
+2. Only `superadmin` can assign or revoke this delegation for users with role `lead_economist` (ВЭ).
+3. `contractors.*` permissions are granted only via `delegation.contractors.profile.status.update`, not via bare atomic codes in token claims.
+4. Frontend section `/contractors` is shown only when `contractors.read` is present; status changes require `contractors.profile.status.update`.
+5. `PATCH /api/v1/contractors/{id}/status` changes status only for users with role `contractor`.
 
 ## Business Scope Rules (2026-05)
 

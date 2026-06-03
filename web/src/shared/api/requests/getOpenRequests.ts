@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import type { GetRequestsResponse } from './getRequests';
 import type { FileEntity } from '@entities/request';
 import { normalizeRequestActions } from '../mappers';
@@ -6,7 +6,7 @@ import { normalizeRequestActions } from '../mappers';
 type ApiResponse = {
   data: {
     items: Array<{
-      request_id: number;
+      request_id: string;
       description: string | null;
       status: string;
       status_label: string;

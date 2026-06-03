@@ -1,9 +1,9 @@
-import { fetchEmpty, fetchJson } from '../client';
+﻿import { fetchEmpty, fetchJson } from '../client';
 
 export type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
 
 export type UpdateRequestDetailsPayload = {
-  requestId: number;
+  requestId: string;
   status?: RequestStatus;
   deadline_at?: string | null;
   owner_user_id?: string;
@@ -62,7 +62,7 @@ export const updateRequestDetails = async (
   );
 };
 
-export const deleteRequestFile = async (requestId: number, fileId: number) => {
+export const deleteRequestFile = async (requestId: string, fileId: number) => {
   await fetchEmpty(
     `/api/v1/requests/${requestId}/files/${fileId}`,
     {
@@ -72,7 +72,7 @@ export const deleteRequestFile = async (requestId: number, fileId: number) => {
   );
 };
 
-export const uploadRequestFile = async (requestId: number, file: File) => {
+export const uploadRequestFile = async (requestId: string, file: File) => {
   const formData = new FormData();
   formData.append('file', file, file.name);
 

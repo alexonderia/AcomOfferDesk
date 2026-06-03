@@ -1,0 +1,16 @@
+﻿python : Traceback (most recent call last):
+C:\Users\alexonderia\AppData\Local\Temp\ps-script-b2a8010d-08e8-45ff-9260-694dd16056c1.ps1:82 знак:1
++ python -c "
++ ~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 18, in <module>
+    print(i, repr(run.text), run.bold)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\encodings\cp1251.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 12: character maps to <undefined>
+0 '╨рчфхы: ' None
+1 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -25,7 +25,7 @@ class EmailDeliveryResultEvent:
     event_type: str
     correlation_id: str
     recipient_user_id: str | None
-    request_id: int | None
+    request_id: str | None
     offer_id: int | None
     to_email: str
     suppress_delivery_notification: bool

@@ -43,6 +43,36 @@ def _status_severity(status: str | None) -> str:
     return "info"
 
 
+_PROFILE_PLACEHOLDER_VALUES = frozenset({"не указано", "-"})
+
+
+def _is_missing_profile_value(value: str | None) -> bool:
+    normalized = _normalize_optional_str(value)
+    if normalized is None:
+        return True
+    return normalized.casefold() in _PROFILE_PLACEHOLDER_VALUES
+
+
+def _resolve_user_target_descriptor(
+    *,
+    target_user_id: str | None,
+    target_profile: Any | None = None,
+) -> str:
+    login = target_user_id or "-"
+    if target_profile is None:
+        return login
+
+    full_name = _normalize_optional_str(getattr(target_profile, "full_name", None))
+    if full_name is not None and not _is_missing_profile_value(full_name):
+        return full_name
+
+    mail = _normalize_optional_str(getattr(target_profile, "mail", None))
+    if mail is not None and not _is_missing_profile_value(mail):
+        return mail
+
+    return login
+
+
 class ProcessNotificationEventHandler:
     async def handle(self, *, payload: dict) -> None:
         try:
@@ -561,10 +591,11 @@ class ProcessNotificationEventHandler:
         if not filtered_recipients:
             return
 
-        target_descriptor = target_user_id or "-"
         target_profile = await uow.profiles.get_by_id(target_user_id) if target_user_id is not None else None
-        if target_profile is not None:
-            target_descriptor = target_profile.full_name or target_profile.mail or target_descriptor
+        target_descriptor = _resolve_user_target_descriptor(
+            target_user_id=target_user_id,
+            target_profile=target_profile,
+        )
 
         await service.create_many_for_users(
             user_ids=filtered_recipients,
@@ -620,10 +651,11 @@ class ProcessNotificationEventHandler:
         if not filtered_recipients:
             return
 
-        target_descriptor = target_user_id or "-"
         target_profile = await uow.profiles.get_by_id(target_user_id) if target_user_id is not None else None
-        if target_profile is not None:
-            target_descriptor = target_profile.full_name or target_profile.mail or target_descriptor
+        target_descriptor = _resolve_user_target_descriptor(
+            target_user_id=target_user_id,
+            target_profile=target_profile,
+        )
 
         await service.create_many_for_users(
             user_ids=filtered_recipients,
@@ -992,7 +1024,7 @@ class ProcessNotificationEventHandler:
         self,
         *,
         uow: UnitOfWork,
-        request_id: int,
+        request_id: str,
     ) -> list[str]:
         if uow.requests is None:
             return []

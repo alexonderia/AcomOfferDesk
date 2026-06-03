@@ -48,6 +48,8 @@ _DIRECT_PUBLIC_DETAIL_TRANSLATIONS = {
     "Forbidden": "Недостаточно прав для выполнения действия.",
     "Not found": "Данные не найдены или были удалены.",
     "Request not found": "Заявка не найдена.",
+    "Request id cannot be empty": "Укажите номер заявки",
+    "Request with this id already exists": "Заявка с таким номером уже существует",
     "Offer not found": "Коммерческое предложение не найдено.",
     "Notification not found": "Уведомление не найдено.",
     "Message not found": "Сообщение не найдено.",

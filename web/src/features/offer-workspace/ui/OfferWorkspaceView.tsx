@@ -293,6 +293,11 @@ export const OfferWorkspaceView = () => {
               InputProps={{ readOnly: true }}
             />
           }
+          responsibleContact={{
+            fullName: workspace.request.owner_full_name ?? workspace.request.owner_user_id ?? null,
+            phone: workspace.request.owner_phone ?? null,
+            mail: workspace.request.owner_mail ?? null
+          }}
           existingFiles={workspace.request.files}
           canDeleteRequestFiles={false}
           onDownloadFile={(downloadUrl, fileName) => {

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, Query, UploadFile
 from pydantic import ValidationError
@@ -42,6 +42,10 @@ router = APIRouter()
 
 _MAX_ATTACHMENTS_PER_MESSAGE = 5
 _MAX_TOTAL_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024
+
+
+def _request_id_as_str(value: str | int) -> str:
+    return str(value)
 
 
 def _request_file_schema(file_item) -> RequestFileSchema:
@@ -90,7 +94,7 @@ async def get_contractor_info(
 
 @router.get("/requests/{request_id}/contractor-view", response_model=ContractorRequestViewResponse)
 async def get_contractor_request_view(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorRequestViewResponse:
@@ -98,10 +102,13 @@ async def get_contractor_request_view(
         service = build_offer_service(uow)
         item = await service.get_request_view(current_user=current_user, request_id=request_id)
 
-    can_create_offer = item.status == "open" and item.existing_offer is None
+    can_create_offer = (
+        item.status == "open"
+        and (item.existing_offer is None or item.existing_offer.status == "deleted")
+    )
     return ContractorRequestViewResponse(
         data={
-            "request_id": item.request_id,
+            "request_id": _request_id_as_str(item.request_id),
             "description": item.description,
             "status": item.status,
             "status_label": item.status_label,
@@ -140,7 +147,7 @@ async def get_contractor_request_view(
 
 @router.post("/requests/{request_id}/offers", response_model=OfferCreateResponse)
 async def create_empty_offer(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     payload: OfferCreatePayload | None = Body(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
@@ -160,7 +167,7 @@ async def create_empty_offer(
 
 @router.post("/requests/{request_id}/offers/manual", response_model=ManualOfferCreateResponse)
 async def create_manual_offer(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     contractor_mode: str = Form(...),
     contractor_user_id: str | None = Form(default=None),
     company_name: str | None = Form(default=None),
@@ -241,7 +248,7 @@ async def create_manual_offer(
     return ManualOfferCreateResponse(
         data={
             "offer_id": result.offer_id,
-            "request_id": result.request_id,
+            "request_id": _request_id_as_str(result.request_id),
             "contractor_user_id": result.contractor_user_id,
             "contractor_created": result.contractor_created,
         },
@@ -273,7 +280,7 @@ async def get_offer_workspace(
     return OfferWorkspaceResponse(
         data={
             "request": {
-                "request_id": item.request.request_id,
+                "request_id": _request_id_as_str(item.request.request_id),
                 "description": item.request.description,
                 "status": item.request.status,
                 "status_label": item.request.status_label,
@@ -282,6 +289,8 @@ async def get_offer_workspace(
                 "deadline_at": item.request.deadline_at,
                 "owner_user_id": item.request.owner_user_id,
                 "owner_full_name": item.request.owner_full_name,
+                "owner_phone": item.request.owner_phone,
+                "owner_mail": item.request.owner_mail,
                 "created_at": item.request.created_at,
                 "updated_at": item.request.updated_at,
                 "closed_at": item.request.closed_at,

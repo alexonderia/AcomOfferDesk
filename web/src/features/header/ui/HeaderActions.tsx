@@ -1,6 +1,5 @@
 import { Box, Button, Stack } from '@mui/material';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
-import { NormativeFileButton } from '@shared/components/NormativeFileButton';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import type { HeaderAction } from '../model/types';
@@ -27,7 +26,6 @@ export const HeaderActions = ({
   const commonActions = (
     <>
       {showFeedback ? <FeedbackButton /> : null}
-      <NormativeFileButton />
       {showRoleGuide ? <RoleGuideButton /> : null}
       {showProfile ? <ProfileButton /> : null}
       {showLogout ? (
@@ -55,7 +53,6 @@ export const HeaderActions = ({
             <FeedbackButton />
           </Box>
         ) : null}
-        <NormativeFileButton />
         {showRoleGuide ? <RoleGuideButton /> : null}
         {showLogout ? (
           <Button className="sa-logout" variant="outlined" onClick={onLogout}>

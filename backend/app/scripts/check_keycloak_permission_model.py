@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.request import build_opener, ProxyHandler
 
+from app.domain.contractor_delegations import CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS
 from app.domain.department_delegations import (
     DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION,
     get_department_permission_codes,
@@ -610,16 +611,28 @@ def _check_api_client_roles(report: Report, admin_api: KeycloakAdminApi, api_cli
                     for item in composites
                     if isinstance(item, dict) and item.get("name")
                 }
-                expected_permission = DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION.get(delegation_role)
-                if expected_permission is not None:
-                    if expected_permission in composite_names:
-                        report.ok(f"{delegation_role}: grants expected permission '{expected_permission}'")
+                expected_contractor_permissions = CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS.get(delegation_role)
+                expected_department_permission = DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION.get(delegation_role)
+                if expected_contractor_permissions is not None:
+                    missing_permissions = sorted(expected_contractor_permissions - composite_names)
+                    if missing_permissions:
+                        report.fail(
+                            f"{delegation_role}: missing mapped permissions: {', '.join(missing_permissions)}"
+                        )
+                    else:
+                        report.ok(
+                            f"{delegation_role}: grants expected permissions "
+                            f"{', '.join(sorted(expected_contractor_permissions))}"
+                        )
+                elif expected_department_permission is not None:
+                    if expected_department_permission in composite_names:
+                        report.ok(f"{delegation_role}: grants expected permission '{expected_department_permission}'")
                     else:
                         report.fail(
-                            f"{delegation_role}: missing mapped permission '{expected_permission}'"
+                            f"{delegation_role}: missing mapped permission '{expected_department_permission}'"
                         )
                     unexpected_department_permissions = sorted(
-                        (composite_names & department_permissions) - {expected_permission}
+                        (composite_names & department_permissions) - {expected_department_permission}
                     )
                     if unexpected_department_permissions:
                         report.fail(

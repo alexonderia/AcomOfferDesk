@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 
@@ -58,7 +58,7 @@ class ExistingOfferPreviewSchema(BaseModel):
 
 
 class ContractorRequestViewSchema(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -75,7 +75,7 @@ class ContractorRequestViewResponse(BaseModel):
 
 
 class OfferWorkspaceRequestSchema(BaseModel):
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -84,6 +84,8 @@ class OfferWorkspaceRequestSchema(BaseModel):
     deadline_at: datetime
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None = None
+    owner_mail: str | None = None
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
@@ -127,7 +129,7 @@ class OfferWorkspaceResponse(BaseModel):
 
 class OfferCreateResponseData(BaseModel):
     offer_id: int
-    request_id: int
+    request_id: str
 
 
 class OfferCreateResponse(BaseModel):
@@ -254,7 +256,7 @@ class ManualContractorCreatePayload(BaseModel):
 
 class ManualOfferCreateResponseData(BaseModel):
     offer_id: int
-    request_id: int
+    request_id: str
     contractor_user_id: str
     contractor_created: bool
 

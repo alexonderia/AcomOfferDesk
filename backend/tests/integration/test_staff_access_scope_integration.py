@@ -1,4 +1,4 @@
-"""Integration tests for staff access scope and scope-aware request actions."""
+﻿"""Integration tests for staff access scope and scope-aware request actions."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _dt() -> datetime:
     return datetime(2026, 5, 7, 10, 0, tzinfo=timezone.utc)
 
 
-def _request_item(*, request_id: int, owner_user_id: str) -> RequestListItem:
+def _request_item(*, request_id: str, owner_user_id: str) -> RequestListItem:
     return RequestListItem(
         request_id=request_id,
         description=f"Request {request_id}",
@@ -250,7 +250,7 @@ def test_department_requests_update_does_not_grant_status_action_without_departm
     )
 
 
-def _request_detail_item(*, request_id: int, owner_user_id: str) -> RequestDetailItem:
+def _request_detail_item(*, request_id: str, owner_user_id: str) -> RequestDetailItem:
     return RequestDetailItem(
         request_id=request_id,
         description=f"Request {request_id}",
@@ -264,6 +264,8 @@ def _request_detail_item(*, request_id: int, owner_user_id: str) -> RequestDetai
         closed_at=None,
         owner_user_id=owner_user_id,
         owner_full_name=owner_user_id,
+        owner_phone=None,
+        owner_mail=None,
         chosen_offer_id=None,
         id_plan=None,
         count_submitted=1,

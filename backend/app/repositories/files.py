@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import delete, func, select, text
+from dataclasses import dataclass
+
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -10,9 +12,46 @@ from sqlalchemy.orm import joinedload
 from app.models.orm_models import File, MessageFile, NormativeFile, OfferFile, RequestFile, StorageObject
 
 
+@dataclass(frozen=True, slots=True)
+class NormativeFileListRow:
+    id: int
+    file_id: int
+    original_name: str
+    status: str
+    created_at: str
+
+
 class FileRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
+        self._normative_status_column_cache: bool | None = None
+
+    async def _normative_status_column_supported(self) -> bool:
+        if self._normative_status_column_cache is not None:
+            return self._normative_status_column_cache
+        result = await self._session.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'normative_files'
+                      AND column_name IN ('document_status', 'status')
+                )
+                """
+            )
+        )
+        self._normative_status_column_cache = bool(result.scalar_one())
+        return self._normative_status_column_cache
+
+    @staticmethod
+    def _normalize_normative_status(value: str | None) -> str:
+        if value in {"actual", "outdated"}:
+            return value
+        if value == "archived":
+            return "outdated"
+        return "actual"
 
     async def acquire_storage_object_lock(self, *, content_sha256: str) -> None:
         await self._session.execute(
@@ -80,6 +119,170 @@ class FileRepository:
         value = result.scalar_one_or_none()
         return int(value) if value is not None else None
 
+    async def get_normative_file_status(self, *, normative_id: int) -> str | None:
+        file_id = await self.get_normative_file_id(normative_id=normative_id)
+        if file_id is None:
+            return None
+        if not await self._normative_status_column_supported():
+            return "actual"
+
+        stmt = select(NormativeFile.status).where(NormativeFile.id == normative_id)
+        result = await self._session.execute(stmt)
+        value = result.scalar_one_or_none()
+        if value is None:
+            return None
+        return self._normalize_normative_status(str(value))
+
+    async def list_normative_files(self, *, status: str | None = None) -> list[NormativeFileListRow]:
+        normalized_status = self._normalize_normative_status(status) if status is not None else None
+        if not await self._normative_status_column_supported():
+            if normalized_status is not None and normalized_status != "actual":
+                return []
+            stmt = (
+                select(
+                    NormativeFile.id,
+                    NormativeFile.id_file,
+                    File.original_name,
+                    File.created_at,
+                )
+                .join(File, File.id == NormativeFile.id_file)
+                .order_by(NormativeFile.id.desc())
+            )
+            result = await self._session.execute(stmt)
+            return [
+                NormativeFileListRow(
+                    id=int(row.id),
+                    file_id=int(row.id_file),
+                    original_name=row.original_name,
+                    status="actual",
+                    created_at=str(row.created_at),
+                )
+                for row in result.all()
+            ]
+
+        stmt = (
+            select(
+                NormativeFile.id,
+                NormativeFile.id_file,
+                NormativeFile.status,
+                File.original_name,
+                File.created_at,
+            )
+            .join(File, File.id == NormativeFile.id_file)
+            .order_by(NormativeFile.id.desc())
+        )
+        if normalized_status is not None:
+            legacy_status = "archived" if normalized_status == "outdated" else normalized_status
+            stmt = stmt.where(NormativeFile.status.in_([normalized_status, legacy_status]))
+        result = await self._session.execute(stmt)
+        rows = [
+            NormativeFileListRow(
+                id=int(row.id),
+                file_id=int(row.id_file),
+                original_name=row.original_name,
+                status=self._normalize_normative_status(row.status),
+                created_at=str(row.created_at),
+            )
+            for row in result.all()
+        ]
+        if normalized_status is None:
+            return rows
+        return [row for row in rows if row.status == normalized_status]
+
+    async def supports_normative_status_column(self) -> bool:
+        return await self._normative_status_column_supported()
+
+    async def get_normative_file_row(self, *, normative_id: int) -> NormativeFileListRow | None:
+        if not await self._normative_status_column_supported():
+            stmt = (
+                select(
+                    NormativeFile.id,
+                    NormativeFile.id_file,
+                    File.original_name,
+                    File.created_at,
+                )
+                .join(File, File.id == NormativeFile.id_file)
+                .where(NormativeFile.id == normative_id)
+                .limit(1)
+            )
+            result = await self._session.execute(stmt)
+            row = result.first()
+            if row is None:
+                return None
+            return NormativeFileListRow(
+                id=int(row.id),
+                file_id=int(row.id_file),
+                original_name=row.original_name,
+                status="actual",
+                created_at=str(row.created_at),
+            )
+
+        stmt = (
+            select(
+                NormativeFile.id,
+                NormativeFile.id_file,
+                NormativeFile.status,
+                File.original_name,
+                File.created_at,
+            )
+            .join(File, File.id == NormativeFile.id_file)
+            .where(NormativeFile.id == normative_id)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return None
+        return NormativeFileListRow(
+            id=int(row.id),
+            file_id=int(row.id_file),
+            original_name=row.original_name,
+            status=self._normalize_normative_status(row.status),
+            created_at=str(row.created_at),
+        )
+
+    async def get_next_normative_file_id(self) -> int:
+        stmt = select(func.coalesce(func.max(NormativeFile.id), 0))
+        result = await self._session.execute(stmt)
+        current_max = int(result.scalar_one())
+        return current_max + 1
+
+    async def create_normative_file_record(
+        self,
+        *,
+        normative_id: int,
+        file_id: int,
+        status: str = "actual",
+    ) -> None:
+        normalized_status = self._normalize_normative_status(status)
+        if await self._normative_status_column_supported():
+            self._session.add(
+                NormativeFile(
+                    id=normative_id,
+                    id_file=file_id,
+                    status=normalized_status,
+                )
+            )
+        else:
+            await self._session.execute(
+                text("INSERT INTO normative_files (id, id_file) VALUES (:id, :file_id)"),
+                {"id": normative_id, "file_id": file_id},
+            )
+        await self._session.flush()
+
+    async def update_normative_file_status(self, *, normative_id: int, status: str) -> bool:
+        if not await self._normative_status_column_supported():
+            return False
+
+        normalized_status = self._normalize_normative_status(status)
+        stmt = (
+            update(NormativeFile)
+            .where(NormativeFile.id == normative_id)
+            .values(status=normalized_status)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
+
     async def get_normative_file(self, *, normative_id: int) -> File | None:
         stmt = (
             select(File)
@@ -90,14 +293,28 @@ class FileRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def upsert_normative_file(self, *, normative_id: int, file_id: int) -> None:
-        await self._session.execute(
-            pg_insert(NormativeFile)
-            .values(id=normative_id, id_file=file_id)
-            .on_conflict_do_update(
-                index_elements=[NormativeFile.id],
-                set_={"id_file": file_id},
+    async def upsert_normative_file(self, *, normative_id: int, file_id: int, status: str = "actual") -> None:
+        normalized_status = self._normalize_normative_status(status)
+        if await self._normative_status_column_supported():
+            await self._session.execute(
+                pg_insert(NormativeFile)
+                .values(id=normative_id, id_file=file_id, status=normalized_status)
+                .on_conflict_do_update(
+                    index_elements=[NormativeFile.id],
+                    set_={"id_file": file_id},
+                )
             )
+            return
+
+        await self._session.execute(
+            text(
+                """
+                INSERT INTO normative_files (id, id_file)
+                VALUES (:id, :file_id)
+                ON CONFLICT (id) DO UPDATE SET id_file = EXCLUDED.id_file
+                """
+            ),
+            {"id": normative_id, "file_id": file_id},
         )
 
     async def count_links(self, *, file_id: int) -> int:

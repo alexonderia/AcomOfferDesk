@@ -1,0 +1,534 @@
+[
+  {
+    "kind": "p",
+    "style": "Heading 1",
+    "numbered": false,
+    "text": "Ролевые памятки пользователей AcomOfferDesk"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Документ состоит из отдельных памяток по ролям. Каждая памятка рассчитана на конкретного пользователя и содержит только тот функционал, который нужен ему для работы."
+  },
+  {
+    "kind": "p",
+    "style": "Body Text",
+    "numbered": false,
+    "text": "Пользователю не нужно изучать все роли. Достаточно открыть раздел со своей ролью."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 1",
+    "numbered": false,
+    "text": "Памятка пользователя (контрагент)"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Вам предоставлен доступ к системе для эффективного взаимодействия компании с поставщиками."
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Вы работаете с открытыми заявками на закупку: просматриваете доступные заявки, оставляете коммерческие предложения, общаетесь с ответственными по заявке сотрудниками в чате и отслеживаете статус своих КП."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 2",
+    "numbered": false,
+    "text": "1. Функционал"
+  },
+  {
+    "kind": "tbl",
+    "headers": [
+      "Раздел",
+      "Что можно делать"
+    ],
+    "rows": [
+      [
+        "**Актуальные заявки**",
+        "Следить за новыми заявками и откликаться на них."
+      ],
+      [
+        "**Мои заявки**",
+        "Следить за заявками, по которым уже отправлено КП."
+      ],
+      [
+        "**КП**",
+        "Просматривать своё КП, прикреплять или удалять файлы, удалять отклик."
+      ],
+      [
+        "**Чат**",
+        "Общаться с ответственным сотрудником по конкретному КП."
+      ],
+      [
+        "**Профиль**",
+        "Обновлять личные данные и данные компании."
+      ],
+      [
+        "**Обратная связь**",
+        "Отправлять предложения и замечания по работе сервиса."
+      ]
+    ]
+  },
+  {
+    "kind": "p",
+    "style": "Heading 2",
+    "numbered": false,
+    "text": "2. Регистрация и вход"
+  },
+  {
+    "kind": "p",
+    "style": "Heading 3",
+    "numbered": false,
+    "text": "Самостоятельная регистрация"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Получите ссылку на регистрацию по email."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Перейдите по ссылке."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Заполните регистрационные данные."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Подтвердите электронную почту."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Дождитесь проверки данных."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "После одобрения получите доступ к системе."
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "До одобрения доступ может быть ограничен."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 3",
+    "numbered": false,
+    "text": "Если аккаунт создан нашим сотрудником"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "После получения логина или с помощью указанной в профиле почты:"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Откройте страницу авторизации."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Используйте **«Восстановить пароль»**."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Задайте пароль через письмо восстановления."
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "Войдите в систему стандартным способом."
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Ссылки из email не выполняют автоматический вход."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 2",
+    "numbered": false,
+    "text": "3. Просмотр заявок"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "У вас есть два основных режима работы."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 3",
+    "numbered": false,
+    "text": "Актуальные заявки"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Здесь отображаются открытые заявки, доступные для отклика."
+  },
+  {
+    "kind": "p",
+    "style": "Body Text",
+    "numbered": false,
+    "text": "Вы можете:"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "открыть карточку заявки;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "посмотреть описание, сроки и файлы;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "указать сумму КП (опционально);"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "нажать **«Откликнуться»**** **— будет создано КП, к которому можно приложить файл;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "указать сумму КП (опционально)."
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Если по заявке уже есть активный отклик, система откроет рабочее пространство этого КП."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 3",
+    "numbered": false,
+    "text": "Мои заявки"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Здесь отображаются заявки, по которым вы уже оставили КП."
+  },
+  {
+    "kind": "p",
+    "style": "Body Text",
+    "numbered": false,
+    "text": "В таблице могут быть видны:"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "ID заявки;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "описание;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "статус;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "дата открытия и закрытия;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "номер КП;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "ответственный сотрудник;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "последнее обновление;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "уведомления о новых сообщениях."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 2",
+    "numbered": false,
+    "text": "4. Работа со своим КП"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Раздел: **Мои заявки → выбрать заявку**."
+  },
+  {
+    "kind": "p",
+    "style": "Body Text",
+    "numbered": false,
+    "text": "В карточке доступны:"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "информация о заявке;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "прикреплённые файлы заявки;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "информация о вашем КП;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "статус КП;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "файлы КП;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "чат по КП."
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Вы можете:"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "прикреплять файлы к КП;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "устанавливать или изменять сумму КП;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "скачивать файлы;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "удалять свои файлы, если действие доступно;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "удалить отклик;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "писать сообщения в чат, если КП не удалено."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 2",
+    "numbered": false,
+    "text": "5. Статусы КП"
+  },
+  {
+    "kind": "tbl",
+    "headers": [
+      "Статус",
+      "Что означает"
+    ],
+    "rows": [
+      [
+        "**На рассмотрении**",
+        "КП отправлено и ожидает решения."
+      ],
+      [
+        "**Принято**",
+        "КП выбрано для сделки."
+      ],
+      [
+        "**Отказано**",
+        "КП отклонено."
+      ],
+      [
+        "**Удалено**",
+        "Отклик удалён контрагентом."
+      ]
+    ]
+  },
+  {
+    "kind": "p",
+    "style": "Body Text",
+    "numbered": false,
+    "text": "Если КП удалено, писать новые сообщения в чат нельзя, но история переписки сохраняется."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 2",
+    "numbered": false,
+    "text": "6. Чат по КП"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Чат привязан к конкретному КП, а не к заявке в целом."
+  },
+  {
+    "kind": "p",
+    "style": "Body Text",
+    "numbered": false,
+    "text": "В чате можно:"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "смотреть историю переписки;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "отправлять сообщения;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "прикреплять файлы к сообщениям."
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Сообщения доступны сотрудникам, которые работают с этим КП."
+  },
+  {
+    "kind": "p",
+    "style": "Heading 2",
+    "numbered": false,
+    "text": "7. Профиль и данные компании"
+  },
+  {
+    "kind": "p",
+    "style": "First Paragraph",
+    "numbered": false,
+    "text": "Раздел: **Профиль**."
+  },
+  {
+    "kind": "p",
+    "style": "Body Text",
+    "numbered": false,
+    "text": "Вы можете посмотреть и изменить:"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "ФИО;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "телефон;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "e-mail;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "ИНН;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "наименование компании;"
+  },
+  {
+    "kind": "p",
+    "style": "Compact",
+    "numbered": true,
+    "text": "телефон компании;"
+  }
+]

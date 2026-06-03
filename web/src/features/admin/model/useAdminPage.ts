@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useLiveValidatedForm } from '@shared/lib/forms';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -12,8 +12,8 @@ import { getUsers } from '@shared/api/users/getUsers';
 import { hasAnyPermission, hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { isValidRuPhone } from '@shared/lib/phone';
-import { addUserButtonSx, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
-import { resolveUserTabFromParam } from './helpers';
+import { addUserButtonSx, employeePersonLabels, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
+import { getScopedCreateRoleIds, resolveUserTabFromParam } from './helpers';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -26,6 +26,8 @@ const schema = z
     password: z.string().optional(),
     confirmPassword: z.string().optional(),
     mail: z.string().optional(),
+    full_name: z.string().optional(),
+    phone: z.string().optional(),
     id_parent: z.string().optional(),
     company_name: z.string().optional(),
     inn: z.string().optional(),
@@ -116,36 +118,14 @@ const schema = z
 
     const login = data.login?.trim() ?? '';
     const mail = data.mail?.trim() ?? '';
+    const fullName = data.full_name?.trim() ?? '';
+    const phone = data.phone?.trim() ?? '';
 
     if (login.length < 3) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Минимум 3 символа',
         path: ['login']
-      });
-    }
-
-    if (false) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Минимум 6 символов',
-        path: ['password']
-      });
-    }
-
-    if (false) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Минимум 6 символов',
-        path: ['confirmPassword']
-      });
-    }
-
-    if (false) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Пароли не совпадают',
-        path: ['confirmPassword']
       });
     }
 
@@ -160,6 +140,28 @@ const schema = z
         code: z.ZodIssueCode.custom,
         message: 'Некорректный формат e-mail',
         path: ['mail']
+      });
+    }
+
+    if (fullName && fullName.length > 256) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ФИО не должно превышать 256 символов',
+        path: ['full_name']
+      });
+    }
+
+    if (phone && !isValidRuPhone(phone)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Некорректный формат телефона',
+        path: ['phone']
+      });
+    } else if (phone.length > 64) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Телефон не должен превышать 64 символа',
+        path: ['phone']
       });
     }
 
@@ -183,11 +185,11 @@ export const useAdminPage = () => {
   const isLeadLike = isLeadEconomist || isProjectManager || isEconomist;
   const isAdmin = session?.roleId === ROLE.ADMIN;
   const canCreateManualContractor = hasPermission(session, 'contractors.manual.create');
+  const canCreateUser = hasPermission(session, 'users.create');
   const canUpdateRoleAny = hasPermission(session, 'users.role.update_any');
   const canUpdateRoleEconomy = hasPermission(session, 'users.role.update_economy');
   const canUpdateStatus = hasPermission(session, 'users.status.update');
   const canUpdateRole = canUpdateRoleAny || canUpdateRoleEconomy;
-  const canOpenCreateDialog = hasPermission(session, 'users.create') || canCreateManualContractor;
   const canViewRoleIds = hasAnyPermission(session, ['users.role.update_any', 'users.role.update_economy']);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<UserTab>(() =>
@@ -200,7 +202,7 @@ export const useAdminPage = () => {
   const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
   const [projectManagerRoleManagers, setProjectManagerRoleManagers] = useState<UserListItem[]>([]);
 
-  const roleOptions = useMemo(() => {
+  const baseCreateRoleIds = useMemo(() => {
     const roleIds: number[] = [];
     const addRole = (roleId: number) => {
       if (!roleIds.includes(roleId)) {
@@ -208,7 +210,7 @@ export const useAdminPage = () => {
       }
     };
 
-    if (hasPermission(session, 'users.create')) {
+    if (canCreateUser) {
       if (session?.roleId === ROLE.SUPERADMIN) {
         [ROLE.ADMIN, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
       } else if (session?.roleId === ROLE.ADMIN) {
@@ -222,8 +224,20 @@ export const useAdminPage = () => {
       addRole(ROLE.CONTRACTOR);
     }
 
-    return roleIds.map((roleId) => ({ id: roleId, label: roleLabelsById[roleId] }));
-  }, [canCreateManualContractor, session?.roleId]);
+    return roleIds;
+  }, [canCreateManualContractor, canCreateUser, session?.roleId]);
+
+  const roleOptions = useMemo(() => {
+    const scopedRoleIds = getScopedCreateRoleIds({
+      activeTab,
+      availableRoleIds: baseCreateRoleIds,
+      sessionRoleId: session?.roleId
+    });
+
+    return scopedRoleIds.map((roleId) => ({ id: roleId, label: roleLabelsById[roleId] }));
+  }, [activeTab, baseCreateRoleIds, session?.roleId]);
+
+  const canOpenCreateDialog = roleOptions.length > 0;
 
   const roleUpdateOptions = useMemo(() => {
     if (canUpdateRoleAny) {
@@ -247,20 +261,19 @@ export const useAdminPage = () => {
     return tabOptions.filter((tab) => tab.value === 'contractors' || tab.value === 'economists' || tab.value === 'admins');
   }, [isLeadLike, session?.roleId]);
 
-  const canCreateUser = hasPermission(session, 'users.create');
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
   const { showErrorToast, showSuccessToast } = useSystemToasts();
 
-  const form = useForm<AdminUserFormValues>({
+  const form = useLiveValidatedForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
-    mode: 'onChange',
-    reValidateMode: 'onChange',
     defaultValues: {
       role_id: roleOptions[0]?.id ?? ROLE.CONTRACTOR,
       login: '',
       password: '',
       confirmPassword: '',
       mail: '',
+      full_name: '',
+      phone: '',
       id_parent: '',
       company_name: '',
       inn: '',
@@ -372,14 +385,20 @@ export const useAdminPage = () => {
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      const response = await getUsers(roleByTab[activeTab]);
+      const response = await getUsers(isLeadLike ? undefined : roleByTab[activeTab]);
       setUsers(response.items);
     } catch (error) {
-      setUsersError(error instanceof Error ? error.message : 'Не удалось загрузить список пользователей');
+      setUsersError(
+        error instanceof Error
+          ? error.message
+          : activeTab === 'contractors'
+            ? 'Не удалось загрузить список пользователей'
+            : employeePersonLabels.loadListError
+      );
     } finally {
       setIsLoadingUsers(false);
     }
-  }, [activeTab]);
+  }, [activeTab, isLeadLike]);
 
   useEffect(() => {
     void loadUsers();
@@ -392,6 +411,8 @@ export const useAdminPage = () => {
       password: '',
       confirmPassword: '',
       mail: '',
+      full_name: '',
+      phone: '',
       id_parent: '',
       company_name: '',
       inn: '',
@@ -430,16 +451,24 @@ export const useAdminPage = () => {
           login: values.login?.trim() ?? '',
           role_id: values.role_id,
           mail: values.mail?.trim() || undefined,
+          full_name: values.full_name?.trim() || undefined,
+          phone: values.phone?.trim() || undefined,
           id_parent: values.id_parent?.trim() || undefined
         });
 
-        showSuccessToast(`Пользователь ${response.data.user_id} создан.`);
+        showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
       }
 
       resetForm();
       await Promise.all([loadUsers(), loadManagers()]);
     } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : 'Не удалось создать пользователя');
+      showErrorToast(
+        error instanceof Error
+          ? error.message
+          : values.role_id === ROLE.CONTRACTOR
+            ? 'Не удалось создать контрагента'
+            : employeePersonLabels.createError
+      );
     }
   };
 

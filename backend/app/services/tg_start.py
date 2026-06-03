@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,7 +15,7 @@ from app.services.tg_registration_links import build_keycloak_registration_link,
 
 @dataclass(frozen=True)
 class TgOpenRequestItem:
-    request_id: int
+    request_id: str
     description: str | None
     deadline_at: datetime
     link: str
@@ -95,7 +95,7 @@ class TgStartService:
         code = create_tg_registration_token(tg_id=tg_id)
         return build_keycloak_registration_link(token=code)
 
-    def _build_authorization_link(self, *, request_id: int) -> str:
+    def _build_authorization_link(self, *, request_id: str) -> str:
         if not settings.public_backend_base_url:
             raise Conflict("TG links are not configured")
         next_path = quote(f"/requests/{request_id}/contractor", safe="/")

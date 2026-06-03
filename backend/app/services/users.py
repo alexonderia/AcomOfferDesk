@@ -9,6 +9,7 @@ from typing import Awaitable, Callable
 from app.core.config import settings
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.authorization import has_permission
+from app.domain.department_delegations import get_department_permission_codes
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
 from app.models.auth_models import UserAuthAccount, UserContactChannel
@@ -32,6 +33,8 @@ from app.services.registration_admin_notify import (
     RegistrationNotifyContext,
     notify_new_user_registration,
 )
+from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
@@ -691,6 +694,36 @@ class UserQueryService:
             target_user_id=subordinate_user_id,
         )
 
+    async def _resolve_internal_staff_scope_user_ids(
+        self,
+        *,
+        current_user: CurrentUser,
+    ) -> set[str]:
+        if current_user.role_id == settings.project_manager_role_id:
+            return set(
+                await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
+                    current_user=current_user,
+                )
+            )
+
+        if current_user.role_id in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            if current_user.permissions & get_department_permission_codes():
+                return set(
+                    await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
+                        current_user=current_user,
+                    )
+                )
+            return set(
+                await StaffAccessScopeService(self._users).resolve_module_owner_ids(
+                    current_user=current_user,
+                )
+            )
+
+        return set()
+
     async def _ensure_accessible_subordinate(
         self,
         *,
@@ -730,18 +763,19 @@ class UserQueryService:
             settings.project_manager_role_id,
             settings.economist_role_id,
         }:
-            if role_id is not None and role_id != settings.economist_role_id:
-                raise Forbidden("Руководитель проекта, ведущий экономист и экономист могут просматривать только экономистов")
-            role_id = settings.economist_role_id
+            scoped_internal_role_ids = {
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+                settings.operator_role_id,
+            }
+            allowed_role_ids = scoped_internal_role_ids if role_id is None else {role_id}
+            if not allowed_role_ids.issubset(scoped_internal_role_ids):
+                raise Forbidden("Руководитель проекта, ведущий экономист и экономист могут просматривать только сотрудников своего контура")
 
-        if current_user.role_id == settings.economist_role_id:
             rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.economist_role_id],
+                role_ids=sorted(scoped_internal_role_ids),
             )
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
+            visible_scope_ids = await self._resolve_internal_staff_scope_user_ids(current_user=current_user)
             return [
                 UserListItem(
                     user_id=user.id,
@@ -753,51 +787,7 @@ class UserQueryService:
                     mail=profile.mail if profile else None,
                 )
                 for user, profile, _ in rows
-                if user.id in descendant_ids and user.id_role == settings.economist_role_id
-            ]
-
-        if current_user.role_id == settings.lead_economist_role_id:
-            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
-            )
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile, _ in rows
-                if user.id in descendant_ids and user.id_role == settings.economist_role_id
-            ]
-
-        if current_user.role_id == settings.project_manager_role_id:
-            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
-            )
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile, _ in rows
-                if user.id in descendant_ids
+                if user.id in visible_scope_ids and user.id_role in allowed_role_ids
             ]
 
         if role_id == settings.contractor_role_id:
@@ -929,6 +919,13 @@ class UserQueryService:
         UserPolicy.ensure_can_list_users(current_user)
 
         rows = await self._users.list_users_with_profiles(role_id=settings.economist_role_id)
+        visible_scope_ids: set[str] | None = None
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            visible_scope_ids = await self._resolve_internal_staff_scope_user_ids(current_user=current_user)
         return [
             EconomistListItem(
                 user_id=user.id,
@@ -938,6 +935,7 @@ class UserQueryService:
                 mail=profile.mail if profile else None,
             )
             for user, profile in rows
+            if visible_scope_ids is None or user.id in visible_scope_ids
         ]
     
     async def list_request_economists(self, current_user: CurrentUser) -> list[RequestEconomistListItem]:
@@ -955,13 +953,20 @@ class UserQueryService:
             settings.lead_economist_role_id,
             settings.project_manager_role_id,
         }:
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
+            if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN):
+                scoped_owner_ids = set(
+                    await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
+                        current_user=current_user,
+                    )
+                )
+            else:
+                scoped_owner_ids = _collect_descendant_user_ids(
+                    manager_user_id=current_user.user_id,
+                    rows=rows,
+                )
             rows = [
                 row for row in rows
-                if row[0].id in descendant_ids
+                if row[0].id in scoped_owner_ids
             ]
 
         user_ids = [user.id for user, _, _ in rows]
@@ -1598,8 +1603,12 @@ class UserStatusService:
         user_id: str,
         user_status: str,
         tg_status: str | None,
+        contractor_only: bool = False,
     ) -> UserStatusUpdateResult:
-        UserPolicy.ensure_can_update_user_status(current_user)
+        if contractor_only:
+            UserPolicy.ensure_can_update_contractor_profile_status(current_user)
+        else:
+            UserPolicy.ensure_can_update_user_status(current_user)
 
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Неподдерживаемое значение users.status")
@@ -1612,7 +1621,10 @@ class UserStatusService:
         if user is None:
             raise NotFound("Пользователь не найден")
 
-        if current_user.role_id in {
+        if contractor_only:
+            if user.id_role != settings.contractor_role_id:
+                raise Forbidden("Изменение статуса доступно только для контрагентов")
+        elif current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,

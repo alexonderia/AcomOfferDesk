@@ -100,6 +100,7 @@ dashboard.plans.read
 normative_files.read
 normative_files.create
 normative_files.manage
+normative_files.status.update
 files.download
 unavailability.manage_all
 unavailability.manage_own

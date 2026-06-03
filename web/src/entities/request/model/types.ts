@@ -1,4 +1,5 @@
 export type EntityId = number;
+export type RequestId = string;
 
 export type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
 
@@ -18,7 +19,7 @@ export type FileEntity = {
 };
 
 export type RequestEntity = {
-  request_id: EntityId;
+  request_id: RequestId;
   description: string | null;
   status: RequestStatus | string;
   status_label: string;

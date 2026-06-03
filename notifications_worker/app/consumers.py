@@ -28,6 +28,13 @@ def _as_optional_int(value) -> int | None:
         return None
 
 
+def _normalize_optional_str(value) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 async def handle_message(message: AbstractIncomingMessage) -> None:
     async with message.process(requeue=False):
         try:
@@ -53,7 +60,7 @@ async def handle_message(message: AbstractIncomingMessage) -> None:
                         event_type=event_type,
                         correlation_id=correlation_id,
                         recipient_user_id=str(payload.get("recipient_user_id") or payload.get("initiator_user_id") or "").strip() or None,
-                        request_id=_as_optional_int(payload.get("request_id")),
+                        request_id=_normalize_optional_str(payload.get("request_id")),
                         offer_id=_as_optional_int(payload.get("offer_id")),
                         to_email=str(payload.get("to_email") or "").strip(),
                         suppress_delivery_notification=bool(payload.get("suppress_delivery_notification")),

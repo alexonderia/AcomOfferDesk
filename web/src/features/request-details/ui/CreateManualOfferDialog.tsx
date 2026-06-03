@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import {
   Alert,
@@ -18,11 +18,12 @@ import { alpha, type Theme } from '@mui/material/styles';
 import { createManualOfferForRequest } from '@shared/api/offers/createManualOfferForRequest';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { getFileKey } from '@shared/lib/files';
+import { useLiveFieldVisibility, textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 
 type Props = {
   open: boolean;
-  requestId: number;
+  requestId: string;
   onClose: () => void;
   onCreated: (workspacePath: string) => void;
 };
@@ -65,8 +66,8 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
 
   const [isLoadingContractors, setIsLoadingContractors] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitAttempted, setIsSubmitAttempted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { markTouched, shouldShowError, markSubmitAttempted, resetVisibility } = useLiveFieldVisibility();
 
   useEffect(() => {
     if (!open) {
@@ -108,7 +109,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     setNote('');
     setOfferAmount('');
     setFiles([]);
-    setIsSubmitAttempted(false);
+    resetVisibility();
     setErrorMessage(null);
   };
 
@@ -133,21 +134,21 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
 
   const companyNameError = contractorMode === 'new'
     ? (
-        (isSubmitAttempted && !trimmedCompanyName)
+        !trimmedCompanyName
           ? 'Наименование компании обязательно'
           : (trimmedCompanyName.length > 256 ? 'Наименование компании не должно превышать 256 символов' : null)
       )
     : null;
   const innError = contractorMode === 'new'
     ? (
-        (isSubmitAttempted && !trimmedInn)
+        !trimmedInn
           ? 'ИНН обязателен'
           : (trimmedInn && !/^\d{10}$|^\d{12}$/.test(trimmedInn) ? 'ИНН должен содержать 10 или 12 цифр' : null)
       )
     : null;
   const companyPhoneError = contractorMode === 'new'
     ? (
-        (isSubmitAttempted && !trimmedCompanyPhone)
+        !trimmedCompanyPhone
           ? 'Телефон компании обязателен'
           : (trimmedCompanyPhone && !isValidRuPhone(trimmedCompanyPhone) ? 'Некорректный формат телефона компании' : null)
       )
@@ -236,8 +237,11 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     handleFilesAdded(Array.from(event.dataTransfer.files ?? []));
   };
 
+  const resolveVisibleError = (field: string, error: string | null) =>
+    shouldShowError(field, error) ? error : null;
+
   const handleSubmit = async () => {
-    setIsSubmitAttempted(true);
+    markSubmitAttempted();
     setErrorMessage(null);
     if (!canSubmit) {
       setErrorMessage(submitBlockReason ?? 'Проверьте условия создания КП');
@@ -349,47 +353,71 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
               <TextField
                 label="Наименование компании"
                 value={companyName}
-                onChange={(event) => setCompanyName(event.target.value)}
-                error={Boolean(companyNameError)}
-                helperText={companyNameError ?? undefined}
+                onChange={(event) => {
+                  setCompanyName(event.target.value);
+                  markTouched('companyName');
+                }}
+                {...textFieldAutocompleteProps('companyName')}
+                error={Boolean(resolveVisibleError('companyName', companyNameError))}
+                helperText={resolveVisibleError('companyName', companyNameError) ?? undefined}
               />
               <TextField
                 label="ИНН"
                 value={inn}
-                onChange={(event) => setInn(event.target.value)}
-                error={Boolean(innError)}
-                helperText={innError ?? undefined}
+                onChange={(event) => {
+                  setInn(event.target.value);
+                  markTouched('inn');
+                }}
+                {...textFieldAutocompleteProps('inn')}
+                error={Boolean(resolveVisibleError('inn', innError))}
+                helperText={resolveVisibleError('inn', innError) ?? undefined}
               />
               <TextField
                 label="Телефон компании"
                 value={companyPhone}
-                onChange={(event) => setCompanyPhone(formatRuPhone(event.target.value))}
+                onChange={(event) => {
+                  setCompanyPhone(formatRuPhone(event.target.value));
+                  markTouched('companyPhone');
+                }}
                 placeholder="+7 (900) 999-88-77"
-                error={Boolean(companyPhoneError)}
-                helperText={companyPhoneError ?? undefined}
+                {...textFieldAutocompleteProps('companyPhone')}
+                error={Boolean(resolveVisibleError('companyPhone', companyPhoneError))}
+                helperText={resolveVisibleError('companyPhone', companyPhoneError) ?? undefined}
               />
               <TextField
                 label="E-mail компании"
                 value={companyMail}
-                onChange={(event) => setCompanyMail(event.target.value)}
-                error={Boolean(companyMailError)}
-                helperText={companyMailError ?? undefined}
+                onChange={(event) => {
+                  setCompanyMail(event.target.value);
+                  markTouched('companyMail');
+                }}
+                {...textFieldAutocompleteProps('companyMail')}
+                error={Boolean(resolveVisibleError('companyMail', companyMailError))}
+                helperText={resolveVisibleError('companyMail', companyMailError) ?? undefined}
               />
               <TextField
                 label="Адрес"
                 value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                error={Boolean(addressError)}
-                helperText={addressError ?? undefined}
+                onChange={(event) => {
+                  setAddress(event.target.value);
+                  markTouched('address');
+                }}
+                {...textFieldAutocompleteProps('address')}
+                error={Boolean(resolveVisibleError('address', addressError))}
+                helperText={resolveVisibleError('address', addressError) ?? undefined}
               />
               <TextField
                 label="Дополнительная информация"
                 value={note}
-                onChange={(event) => setNote(event.target.value)}
+                onChange={(event) => {
+                  setNote(event.target.value);
+                  markTouched('note');
+                }}
                 multiline
                 minRows={2}
-                error={Boolean(noteError)}
-                helperText={noteError ?? undefined}
+                {...textFieldAutocompleteProps('note')}
+                error={Boolean(resolveVisibleError('note', noteError))}
+                helperText={resolveVisibleError('note', noteError) ?? undefined}
               />
             </Stack>
           )}
@@ -397,10 +425,13 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
           <TextField
             label="Сумма КП, руб. (необязательно)"
             value={offerAmount}
-            onChange={(event) => setOfferAmount(event.target.value)}
-            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-            error={Boolean(amountError)}
-            helperText={amountError ?? undefined}
+            onChange={(event) => {
+              setOfferAmount(event.target.value);
+              markTouched('offerAmount');
+            }}
+            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal', autoComplete: 'off' }}
+            error={Boolean(resolveVisibleError('offerAmount', amountError))}
+            helperText={resolveVisibleError('offerAmount', amountError) ?? undefined}
           />
 
           <Stack spacing={0.75}>

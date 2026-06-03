@@ -1,25 +1,37 @@
 ﻿import { zodResolver } from '@hookform/resolvers/zod';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
+  Alert,
   Autocomplete,
   Box,
   Button,
   Chip,
   Dialog,
   DialogContent,
+  FormControl,
+  FormHelperText,
+  InputAdornment,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller } from 'react-hook-form';
+import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
+import { checkRequestIdAvailability } from '@shared/api/requests/checkRequestIdAvailability';
 import { createRequest } from '@shared/api/requests/createRequest';
+import { getNormativeFiles } from '@shared/api/normative/getNormativeFiles';
+import type { NormativeFileItem } from '@shared/api/normative/types';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
@@ -41,10 +53,16 @@ const isValidAmountValue = (value: string) => {
 };
 
 const schema = z.object({
+  requestNumber: z
+    .string()
+    .trim()
+    .min(1, 'Укажите номер заявки')
+    .refine((value) => value.trim().length > 0, 'Укажите номер заявки'),
   initialAmount: z.string().trim().min(1, 'Укажите сумму по ТЗ').refine(isValidAmountValue, 'Укажите корректную сумму'),
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
-  files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
+  normativeFileId: z.number({ required_error: 'Выберите нормативный документ' }).int().positive('Выберите нормативный документ'),
+  files: z.array(z.instanceof(File)).min(1, 'Прикрепите файл заявки'),
   additionalEmails: z.array(z.string().email('Введите корректный email')).default([]),
   hiddenContractorIds: z.array(z.string().min(1)).default([]),
 });
@@ -81,8 +99,13 @@ export const CreateRequestPage = () => {
     return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
   }, []);
 
+  const [isLoadingNormativeFiles, setIsLoadingNormativeFiles] = useState(true);
+  const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
+  const [actualNormativeFiles, setActualNormativeFiles] = useState<NormativeFileItem[]>([]);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requestIdStatus, setRequestIdStatus] = useState<{ available: boolean; detail: string } | null>(null);
+  const [isCheckingRequestId, setIsCheckingRequestId] = useState(false);
   const [contractorOptions, setContractorOptions] = useState<RequestContractorItem[]>([]);
   const [isLoadingContractors, setIsLoadingContractors] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -96,19 +119,25 @@ export const CreateRequestPage = () => {
     handleSubmit,
     watch,
     setValue,
+    setError,
+    clearErrors,
     formState: { errors },
-  } = useForm<FormValues>({
+  } = useLiveValidatedForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
+      requestNumber: '',
       initialAmount: '',
       description: '',
       deadlineAt: todayDate,
+      normativeFileId: undefined,
       files: [],
       additionalEmails: [],
       hiddenContractorIds: [],
     },
   });
 
+  const requestNumberValue = watch('requestNumber');
+  const normativeFileId = watch('normativeFileId');
   const files = watch('files');
   const additionalEmails = watch('additionalEmails');
   const hiddenContractorIds = watch('hiddenContractorIds');
@@ -116,6 +145,108 @@ export const CreateRequestPage = () => {
     () => contractorOptions.filter((contractor) => hiddenContractorIds.includes(contractor.user_id)),
     [contractorOptions, hiddenContractorIds]
   );
+
+  const requestNumberRef = useRef(requestNumberValue);
+  requestNumberRef.current = requestNumberValue;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadNormativeFiles = async () => {
+      setIsLoadingNormativeFiles(true);
+      setNormativeFilesError(null);
+      try {
+        const items = await getNormativeFiles('actual');
+        if (!isMounted) {
+          return;
+        }
+        setActualNormativeFiles(items);
+        if (items.length === 1) {
+          setValue('normativeFileId', items[0].id, { shouldValidate: true });
+        }
+      } catch (error) {
+        if (isMounted) {
+          setNormativeFilesError(
+            error instanceof Error ? error.message : 'Не удалось загрузить нормативные документы'
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingNormativeFiles(false);
+        }
+      }
+    };
+
+    void loadNormativeFiles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [setValue]);
+
+  useEffect(() => {
+    const normalizedRequestNumber = requestNumberValue.trim();
+    if (!normalizedRequestNumber) {
+      setRequestIdStatus(null);
+      setIsCheckingRequestId(false);
+      return;
+    }
+
+    setIsCheckingRequestId(true);
+    setRequestIdStatus(null);
+
+    const timer = setTimeout(async () => {
+      const checkedValue = normalizedRequestNumber;
+      try {
+        const result = await checkRequestIdAvailability(checkedValue);
+        if (requestNumberRef.current.trim() !== checkedValue) {
+          return;
+        }
+        setRequestIdStatus({
+          available: result.available,
+          detail: result.detail ?? (result.available ? 'Номер заявки свободен' : 'Заявка с таким номером уже существует'),
+        });
+      } catch {
+        if (requestNumberRef.current.trim() !== checkedValue) {
+          return;
+        }
+        setRequestIdStatus({
+          available: false,
+          detail: 'Не удалось проверить номер заявки. Повторите позже.',
+        });
+      } finally {
+        if (requestNumberRef.current.trim() === checkedValue) {
+          setIsCheckingRequestId(false);
+        }
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [requestNumberValue]);
+
+  useEffect(() => {
+    if (!requestIdStatus) {
+      return;
+    }
+
+    if (requestIdStatus.available) {
+      clearErrors('requestNumber');
+      return;
+    }
+
+    if (requestNumberValue.trim().length > 0) {
+      setError('requestNumber', { type: 'manual', message: requestIdStatus.detail });
+    }
+  }, [requestIdStatus, requestNumberValue, clearErrors, setError]);
+
+  const isRequestNumberBlocked =
+    !requestNumberValue.trim()
+    || isCheckingRequestId
+    || !requestIdStatus
+    || !requestIdStatus.available;
+
+  const isRequestNumberAvailable =
+    Boolean(requestNumberValue.trim()) && Boolean(requestIdStatus?.available) && !isCheckingRequestId;
 
   useEffect(() => {
     let isMounted = true;
@@ -163,7 +294,35 @@ export const CreateRequestPage = () => {
     handleFilesAdded(Array.from(event.dataTransfer.files ?? []));
   };
 
+  const hasActualNormativeFiles = actualNormativeFiles.length > 0;
+  const isSubmitBlocked =
+    isRequestNumberBlocked
+    || !hasActualNormativeFiles
+    || isLoadingNormativeFiles
+    || !normativeFileId;
+
   const handleSubmitForm = async (values: FormValues) => {
+    if (!values.normativeFileId) {
+      setError('normativeFileId', { type: 'manual', message: 'Выберите нормативный документ' });
+      return;
+    }
+
+    if (!values.files.length) {
+      setError('files', { type: 'manual', message: 'Прикрепите файл заявки' });
+      return;
+    }
+
+    const normalizedRequestNumber = values.requestNumber.trim();
+    if (!normalizedRequestNumber) {
+      setError('requestNumber', { type: 'manual', message: 'Укажите номер заявки' });
+      return;
+    }
+
+    if (requestIdStatus && !requestIdStatus.available) {
+      setError('requestNumber', { type: 'manual', message: requestIdStatus.detail });
+      return;
+    }
+
     const nextAdditionalEmails = additionalEmailsEnabled
       ? additionalEmailsFieldRef.current?.commitPendingInput()
       : [];
@@ -177,6 +336,8 @@ export const CreateRequestPage = () => {
 
     try {
       await createRequest({
+        id: normalizedRequestNumber,
+        normative_file_id: values.normativeFileId,
         description: values.description?.trim() || null,
         deadline_at: `${values.deadlineAt}T23:59:59`,
         initial_amount: normalizeAmountValue(values.initialAmount),
@@ -188,6 +349,10 @@ export const CreateRequestPage = () => {
       navigate('/requests');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось создать заявку';
+      if (message.includes('Заявка с таким номером уже существует') || message.toLowerCase().includes('already exists')) {
+        setError('requestNumber', { type: 'manual', message: 'Заявка с таким номером уже существует' });
+        setRequestIdStatus({ available: false, detail: 'Заявка с таким номером уже существует' });
+      }
       setErrorMessage(message);
       showErrorToast(message);
     } finally {
@@ -236,6 +401,41 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
+                Номер заявки
+              </Typography>
+              <TextField
+                placeholder="Например: 2026-001"
+                fullWidth
+                error={Boolean(errors.requestNumber)}
+                helperText={
+                  errors.requestNumber?.message
+                  ?? (isCheckingRequestId ? 'Проверяем номер заявки...' : undefined)
+                }
+                {...textFieldAutocompleteProps('requestNumber')}
+                {...register('requestNumber', {
+                  onChange: () => {
+                    clearErrors('requestNumber');
+                    setRequestIdStatus(null);
+                  },
+                })}
+                InputProps={{
+                  endAdornment: isRequestNumberAvailable ? (
+                    <InputAdornment position="end">
+                      <CheckCircleOutlineIcon color="success" fontSize="small" />
+                    </InputAdornment>
+                  ) : undefined,
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1,
+                    backgroundColor: 'background.paper',
+                  },
+                }}
+              />
+            </Stack>
+
+            <Stack spacing={1}>
+              <Typography variant="subtitle1" fontWeight={600}>
                 Описание
               </Typography>
               <TextField
@@ -245,6 +445,7 @@ export const CreateRequestPage = () => {
                 fullWidth
                 error={Boolean(errors.description)}
                 helperText={errors.description?.message}
+                {...textFieldAutocompleteProps('description')}
                 {...register('description')}
                 sx={{
                   '& .MuiOutlinedInput-root': {
@@ -303,8 +504,9 @@ export const CreateRequestPage = () => {
                 fullWidth
                 error={Boolean(errors.initialAmount)}
                 helperText={errors.initialAmount?.message ?? 'Значение «Сумма по ТЗ» используется для расчета экономии по заявке.'}
+                {...textFieldAutocompleteProps('initialAmount')}
                 {...register('initialAmount')}
-                inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                inputProps={{ min: 0, step: '0.01', inputMode: 'decimal', autoComplete: 'off' }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1,
@@ -316,7 +518,56 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Загрузить документы
+                Нормативный документ
+              </Typography>
+              <FormControl fullWidth error={Boolean(errors.normativeFileId)}>
+                <InputLabel id="normative-file-label">Нормативный документ</InputLabel>
+                <Controller
+                  control={control}
+                  name="normativeFileId"
+                  render={({ field }) => (
+                    <Select
+                      labelId="normative-file-label"
+                      label="Нормативный документ"
+                      value={field.value ?? ''}
+                      disabled={isLoadingNormativeFiles || !hasActualNormativeFiles}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        field.onChange(Number.isFinite(value) ? value : undefined);
+                      }}
+                      sx={{
+                        borderRadius: 1,
+                        backgroundColor: 'background.paper',
+                      }}
+                    >
+                      {actualNormativeFiles.map((item) => (
+                        <MenuItem key={item.id} value={item.id}>
+                          {item.original_name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
+                />
+                <FormHelperText>
+                  {errors.normativeFileId?.message
+                    ?? (isLoadingNormativeFiles
+                      ? 'Загружаем список нормативных документов...'
+                      : !hasActualNormativeFiles
+                        ? 'Нет актуальных нормативных документов. Создание заявки недоступно.'
+                        : 'Выберите актуальный нормативный документ')}
+                </FormHelperText>
+              </FormControl>
+              {normativeFilesError ? <Alert severity="error">{normativeFilesError}</Alert> : null}
+              {!hasActualNormativeFiles && !isLoadingNormativeFiles ? (
+                <Alert severity="warning">
+                  Нет актуальных нормативных документов. Обратитесь к ведущему экономисту.
+                </Alert>
+              ) : null}
+            </Stack>
+
+            <Stack spacing={1}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Файл заявки
               </Typography>
 
                 <Stack direction="row" spacing={1} alignItems="center">
@@ -324,7 +575,7 @@ export const CreateRequestPage = () => {
                   <InfoOutlinedIcon fontSize="small" />
                 </Box>
                 <Typography variant="body1" lineHeight={1.3}>
-                  Карта партнера будет прикреплена к заявке автоматически.
+                  Прикрепите дополнительный файл заявки от экономиста.
                 </Typography>
               </Stack>
 
@@ -522,7 +773,7 @@ export const CreateRequestPage = () => {
               variant="contained"
               fullWidth
               type="submit"
-              disabled={isSubmittingRequest}
+              disabled={isSubmittingRequest || isSubmitBlocked}
               sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 18, fontWeight: 700, boxShadow: 'none' }}
             >
               {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}

@@ -1,4 +1,4 @@
-"""P1 backend contract coverage for existing API surface.
+﻿"""P1 backend contract coverage for existing API surface.
 
 These tests keep the integration contour in-memory: no SMTP, S3/MinIO,
 Keycloak, or external database is contacted.
@@ -145,7 +145,7 @@ class _PreparedFileService:
             mime_type=mime_type or "text/plain",
         )
 
-    async def create_request_file(self, *, request_id: int, upload):
+    async def create_request_file(self, *, request_id: str, upload):
         self.created_request_files.append({"request_id": request_id, "name": upload.original_name})
         return SimpleNamespace(id=501)
 
@@ -169,13 +169,13 @@ class _RequestFilesRepo:
         self.attached: list[tuple[int, int]] = []
         self.detached = detached
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 
-    async def attach_file(self, *, request_id: int, file_id: int) -> None:
+    async def attach_file(self, *, request_id: str, file_id: int) -> None:
         self.attached.append((request_id, file_id))
 
-    async def detach_file(self, *, request_id: int, file_id: int) -> bool:
+    async def detach_file(self, *, request_id: str, file_id: int) -> bool:
         _ = (request_id, file_id)
         return self.detached
 
@@ -300,7 +300,7 @@ class _OfferFilesOffersRepo:
         self.detached = detached
 
     async def get_by_id(self, *, offer_id: int):
-        return SimpleNamespace(id=offer_id, id_request=10, id_user="contractor-1", status="submitted")
+        return SimpleNamespace(id=offer_id, id_request="10", id_user="contractor-1", status="submitted")
 
     async def attach_file(self, *, offer_id: int, file_id: int) -> None:
         self.attached.append((offer_id, file_id))
@@ -311,10 +311,10 @@ class _OfferFilesOffersRepo:
 
 
 class _OfferFilesRequestsRepo:
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 
-    async def is_hidden_for_contractor(self, *, request_id: int, contractor_user_id: str) -> bool:
+    async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
         _ = (request_id, contractor_user_id)
         return False
 
@@ -357,13 +357,33 @@ class _NormativeFilesRepo:
     def __init__(self, *, existing_file_id: int | None = None) -> None:
         self.existing_file_id = existing_file_id
         self.upserts: list[tuple[int, int]] = []
+        self.created: list[tuple[int, int, str]] = []
 
     async def get_normative_file_id(self, *, normative_id: int):
         _ = normative_id
         return self.existing_file_id
 
-    async def upsert_normative_file(self, *, normative_id: int, file_id: int) -> None:
+    async def supports_normative_status_column(self):
+        return True
+
+    async def get_next_normative_file_id(self):
+        return 1 if self.existing_file_id is None else 2
+
+    async def create_normative_file_record(self, *, normative_id: int, file_id: int, status: str = "actual") -> None:
+        self.created.append((normative_id, file_id, status))
+
+    async def upsert_normative_file(self, *, normative_id: int, file_id: int, status: str = "actual") -> None:
         self.upserts.append((normative_id, file_id))
+
+    async def list_normative_files(self, *, status: str | None = None):
+        return []
+
+    async def get_normative_file_row(self, *, normative_id: int):
+        return None
+
+    async def update_normative_file_status(self, *, normative_id: int, status: str) -> bool:
+        _ = (normative_id, status)
+        return False
 
 
 class _NormativeUow:
@@ -378,16 +398,16 @@ class _NormativeUow:
 
 
 class _ManualEmailNotifications:
-    def __init__(self, profiles, requests) -> None:
-        _ = (profiles, requests)
+    def __init__(self, profiles, requests, files=None) -> None:
+        _ = (profiles, requests, files)
         self.calls: list[dict] = []
 
-    async def notify_request_to_additional_emails(self, *, request_id: int, additional_emails: list[str]) -> None:
+    async def notify_request_to_additional_emails(self, *, request_id: str, additional_emails: list[str]) -> None:
         self.calls.append({"request_id": request_id, "additional_emails": additional_emails})
 
 
 class _ManualEmailRequestsRepo:
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 
 
@@ -879,13 +899,13 @@ def test_normative_file_upload_allows_create_permission(
     set_uow(_NormativeUow(files_repo))
 
     response = test_client.post(
-        "/api/v1/normative-files/1",
+        "/api/v1/normative-files",
         files={"file": ("norm.txt", b"normative text", "text/plain")},
     )
 
     assert response.status_code == 200
     assert response.json() == {"data": {"normative_id": 1, "file_id": 701}}
-    assert files_repo.upserts == [(1, 701)]
+    assert files_repo.created == [(1, 701, "actual")]
 
 
 @pytest.mark.parametrize(
@@ -978,10 +998,10 @@ def test_request_file_upload_and_delete_contracts(
     delete_response = test_client.delete("/api/v1/requests/10/files/501")
 
     assert upload_response.status_code == 200
-    assert upload_response.json() == {"data": {"request_id": 10, "file_id": 501}}
-    assert request_repo.attached == [(10, 501)]
+    assert upload_response.json() == {"data": {"request_id": "10", "file_id": 501}}
+    assert request_repo.attached == [("10", 501)]
     assert delete_response.status_code == 200
-    assert delete_response.json() == {"data": {"request_id": 10, "file_id": 501}}
+    assert delete_response.json() == {"data": {"request_id": "10", "file_id": 501}}
 
 
 def test_request_file_upload_denies_forbidden_role(
@@ -1533,9 +1553,9 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
 ):
     fake_notifications: _ManualEmailNotifications | None = None
 
-    def _factory(profiles, requests):
+    def _factory(profiles, requests, files=None):
         nonlocal fake_notifications
-        fake_notifications = _ManualEmailNotifications(profiles, requests)
+        fake_notifications = _ManualEmailNotifications(profiles, requests, files)
         return fake_notifications
 
     monkeypatch.setattr(requests_api, "EmailNotificationService", _factory)
@@ -1556,13 +1576,13 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
     assert response.status_code == 200
     assert response.json() == {
         "data": {
-            "request_id": 55,
+            "request_id": "55",
             "sent_to": ["user@example.com", "second@example.com"],
         }
     }
     assert fake_notifications is not None
     assert fake_notifications.calls == [
-        {"request_id": 55, "additional_emails": ["user@example.com", "second@example.com"]}
+        {"request_id": "55", "additional_emails": ["user@example.com", "second@example.com"]}
     ]
 
 

@@ -53,6 +53,18 @@ class UserPolicy:
         )
 
     @staticmethod
+    def can_update_normative_file_status(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.NORMATIVE_FILES_STATUS_UPDATE)
+
+    @staticmethod
+    def ensure_can_update_normative_file_status(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.NORMATIVE_FILES_STATUS_UPDATE,
+            message="Недостаточно прав для смены статуса нормативного документа",
+        )
+
+    @staticmethod
     def can_view_feedback(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.FEEDBACK_READ)
 
@@ -131,6 +143,42 @@ class UserPolicy:
             current_user,
             PermissionCodes.USERS_STATUS_UPDATE,
             message="Только администратор, суперадминистратор, руководитель проекта, ведущий экономист и экономист могут обновлять статус пользователя",
+        )
+
+    @staticmethod
+    def can_list_contractors(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.CONTRACTORS_READ)
+
+    @staticmethod
+    def ensure_can_list_contractors(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.CONTRACTORS_READ,
+            message="Недостаточно прав для просмотра контрагентов",
+        )
+
+    @staticmethod
+    def can_read_contractor_profile(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_READ)
+
+    @staticmethod
+    def ensure_can_read_contractor_profile(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.CONTRACTORS_PROFILE_READ,
+            message="Недостаточно прав для просмотра профиля контрагента",
+        )
+
+    @staticmethod
+    def can_update_contractor_profile_status(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE)
+
+    @staticmethod
+    def ensure_can_update_contractor_profile_status(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            message="Недостаточно прав для изменения статуса профиля контрагента",
         )
 
     @staticmethod

@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import { normalizeOfferActions, normalizeRequestActions, type OfferActions, type RequestActions } from '../mappers';
 
 export type ContractorRequestViewFile = {
@@ -17,7 +17,7 @@ export type ContractorExistingOffer = {
 };
 
 export type ContractorRequestView = {
-  id: number;
+  id: string;
   description: string | null;
   status: string;
   status_label: string;
@@ -32,7 +32,7 @@ export type ContractorRequestView = {
 
 type ApiResponse = {
   data: {
-    request_id: number;
+    request_id: string;
     description: string | null;
     status: string;
     status_label: string;
@@ -73,7 +73,7 @@ type ApiResponse = {
   };
 };
 
-export const getContractorRequestView = async (requestId: number): Promise<ContractorRequestView> => {
+export const getContractorRequestView = async (requestId: string): Promise<ContractorRequestView> => {
   const response = await fetchJson<ApiResponse>(
     `/api/v1/requests/${requestId}/contractor-view`,
     { method: 'GET' },

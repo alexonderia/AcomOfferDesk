@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.action_flags import OfferActionBuilder, RequestActionBuilder
@@ -25,6 +25,7 @@ from app.schemas.requests import (
     OpenRequestListData,
     OpenRequestListResponse,
     RequestCreateResponse,
+    RequestIdAvailabilityResponse,
     RequestDetailsResponse,
     RequestDetailsResponseData,
     RequestDetailsSchema,
@@ -48,6 +49,10 @@ from app.services.requests import RequestEditInput, RequestFileCreateInput, Requ
 from app.services.staff_access_scope import StaffAccessScopeService
 
 router = APIRouter()
+
+
+def _request_id_as_str(value: str | int) -> str:
+    return str(value)
 
 
 def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:
@@ -104,7 +109,7 @@ def _request_item_schema(
     can_change_owner_in_scope: bool,
 ) -> RequestItemSchema:
     return RequestItemSchema(
-        request_id=item.request_id,
+        request_id=_request_id_as_str(item.request_id),
         description=item.description,
         status=item.status,
         status_label=item.status_label,
@@ -147,7 +152,7 @@ def _open_request_item_schema(
         and item.latest_offer_status in {None, "deleted"}
     )
     return OpenRequestItemSchema(
-        request_id=item.request_id,
+        request_id=_request_id_as_str(item.request_id),
         description=item.description,
         status=item.status,
         status_label=item.status_label,
@@ -510,10 +515,37 @@ async def list_offered_requests(
     )
 
 
+@router.get("/requests/check-id", response_model=RequestIdAvailabilityResponse)
+@router.get("/requests/check-id/", response_model=RequestIdAvailabilityResponse, include_in_schema=False)
+async def check_request_id_availability(
+    id: str = Query(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestIdAvailabilityResponse:
+    UserPolicy.ensure_can_create_request(current_user)
+    normalized_id = id.strip()
+    if not normalized_id:
+        return RequestIdAvailabilityResponse(available=False, detail="Укажите номер заявки", reason="empty")
+
+    async with uow:
+        service = _build_request_service(uow)
+        available, reason = await service.check_request_id_available(request_id=normalized_id)
+
+    if available:
+        return RequestIdAvailabilityResponse(available=True, detail="Номер заявки свободен")
+    if reason == "already_exists":
+        return RequestIdAvailabilityResponse(
+            available=False,
+            detail="Заявка с таким номером уже существует",
+            reason="already_exists",
+        )
+    return RequestIdAvailabilityResponse(available=False, detail="Укажите номер заявки", reason=reason)
+
+
 @router.get("/requests/{request_id}", response_model=RequestDetailsResponse)
 @router.get("/requests/{request_id}/", response_model=RequestDetailsResponse, include_in_schema=False)
 async def get_request_details(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestDetailsResponse:
@@ -618,7 +650,7 @@ async def get_request_details(
     return RequestDetailsResponse(
         data=RequestDetailsResponseData(
             item=RequestDetailsSchema(
-                request_id=item.request_id,
+                request_id=_request_id_as_str(item.request_id),
                 description=item.description,
                 status=item.status,
                 status_label=item.status_label,
@@ -630,6 +662,8 @@ async def get_request_details(
                 closed_at=item.closed_at,
                 owner_user_id=item.owner_user_id,
                 owner_full_name=item.owner_full_name,
+                owner_phone=item.owner_phone,
+                owner_mail=item.owner_mail,
                 chosen_offer_id=item.chosen_offer_id,
                 id_plan=item.id_plan,
                 stats=_request_stats_schema(item),
@@ -644,7 +678,9 @@ async def get_request_details(
 
 @router.post("/requests", response_model=RequestCreateResponse)
 async def create_request(
+    id: str = Form(...),
     deadline_at: datetime = Form(...),
+    normative_file_id: int = Form(...),
     description: str | None = Form(default=None),
     initial_amount: float | None = Form(default=None),
     id_plan: int | None = Form(default=None),
@@ -670,7 +706,7 @@ async def create_request(
     try:
         async with uow:
             request_file_service = FileService(uow.files)
-            email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+            email_notifications = EmailNotificationService(uow.profiles, uow.requests, uow.files)
             service = _build_request_service(
                 uow,
                 email_notifications=email_notifications,
@@ -678,10 +714,12 @@ async def create_request(
             )
             request_id, file_ids = await service.create_request(
                 current_user=current_user,
+                request_id=id,
                 deadline_at=deadline_at,
                 description=description,
                 initial_amount=initial_amount,
                 id_plan=id_plan,
+                normative_file_id=normative_file_id,
                 files=file_inputs,
                 additional_emails=additional_emails,
                 hidden_contractor_ids=hidden_contractor_ids,
@@ -692,14 +730,14 @@ async def create_request(
         raise
 
     return RequestCreateResponse(
-        data={"request_id": request_id, "file_ids": file_ids},
+        data={"request_id": _request_id_as_str(request_id), "file_ids": file_ids},
     )
 
 
 @router.patch("/requests/{request_id}", response_model=RequestMutationResponse)
 async def update_request(
     payload: RequestEditPayload = Body(...),
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestMutationResponse:
@@ -720,19 +758,19 @@ async def update_request(
         )
 
     return RequestMutationResponse(
-        data={"request_id": request_id},
+        data={"request_id": _request_id_as_str(request_id)},
     )
 
 
 @router.post("/requests/{request_id}/email-notifications", response_model=RequestEmailNotificationResponse)
 async def send_request_email_notifications(
     payload: RequestEmailNotificationPayload = Body(...),
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEmailNotificationResponse:
     async with uow:
-        email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+        email_notifications = EmailNotificationService(uow.profiles, uow.requests, uow.files)
         service = _build_request_service(
             uow,
             email_notifications=email_notifications,
@@ -744,13 +782,13 @@ async def send_request_email_notifications(
         )
 
     return RequestEmailNotificationResponse(
-        data={"request_id": result.request_id, "sent_to": result.sent_to},
+        data={"request_id": _request_id_as_str(result.request_id), "sent_to": result.sent_to},
     )
 
 
 @router.post("/requests/{request_id}/files", response_model=RequestFileMutationResponse)
 async def add_request_file(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     file: UploadFile = File(...),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
@@ -780,13 +818,13 @@ async def add_request_file(
         raise
 
     return RequestFileMutationResponse(
-        data={"request_id": request_id, "file_id": file_id},
+        data={"request_id": _request_id_as_str(request_id), "file_id": file_id},
     )
 
 
 @router.delete("/requests/{request_id}/files/{file_id}", response_model=RequestFileMutationResponse)
 async def delete_request_file(
-    request_id: int = PathParam(..., ge=1),
+    request_id: str = PathParam(..., min_length=1),
     file_id: int = PathParam(..., ge=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
@@ -800,7 +838,7 @@ async def delete_request_file(
         )
 
     return RequestFileMutationResponse(
-        data={"request_id": request_id, "file_id": file_id},
+        data={"request_id": _request_id_as_str(request_id), "file_id": file_id},
     )
 
 
@@ -821,7 +859,7 @@ async def mark_deleted_alert_viewed(
         data={
             "status": "ok",
             "request_offer_stats": RequestOfferStatsSchema(
-                request_id=updated_stats.request_id,
+                request_id=_request_id_as_str(updated_stats.request_id),
                 count_deleted_alert=updated_stats.count_deleted_alert,
                 updated_at=updated_stats.updated_at,
             ),

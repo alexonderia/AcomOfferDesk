@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Sequence
 
@@ -14,7 +14,7 @@ class OfferRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    async def create(self, *, request_id: int, contractor_user_id: str, offer_amount: float | None = None) -> Offer:
+    async def create(self, *, request_id: str, contractor_user_id: str, offer_amount: float | None = None) -> Offer:
         offer = Offer(id_request=request_id, id_user=contractor_user_id, offer_amount=offer_amount)
         self._session.add(offer)
         await self._session.flush()
@@ -31,7 +31,7 @@ class OfferRepository:
     async def update_amount(self, *, offer: Offer, offer_amount: float) -> None:
         offer.offer_amount = offer_amount
 
-    async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str) -> Offer | None:
+    async def get_contractor_offer_for_request(self, *, request_id: str, contractor_user_id: str) -> Offer | None:
         stmt: Select[tuple[Offer]] = (
             select(Offer)
             .where(Offer.id_request == request_id, Offer.id_user == contractor_user_id)
@@ -44,7 +44,7 @@ class OfferRepository:
         self,
         *,
         contractor_user_id: str,
-        request_ids: Sequence[int],
+        request_ids: Sequence[str],
     ) -> list[Offer]:
         if not request_ids:
             return []
@@ -56,12 +56,12 @@ class OfferRepository:
         )
         result = await self._session.execute(stmt)
 
-        latest_by_request_id: dict[int, Offer] = {}
+        latest_by_request_id: dict[str, Offer] = {}
         for offer in result.scalars().all():
             latest_by_request_id.setdefault(offer.id_request, offer)
         return list(latest_by_request_id.values())
 
-    async def list_by_request(self, *, request_id: int) -> list[Offer]:
+    async def list_by_request(self, *, request_id: str) -> list[Offer]:
         stmt: Select[tuple[Offer]] = (
             select(Offer)
             .where(Offer.id_request == request_id)
@@ -108,7 +108,7 @@ class OfferRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_contractor_tg_ids_for_request(self, *, request_id: int, contractor_role_id: int) -> list[int]:
+    async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int) -> list[int]:
         stmt = (
             select(cast(UserAuthAccount.external_subject_id, BigInteger))
             .select_from(Offer)

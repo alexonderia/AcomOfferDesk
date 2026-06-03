@@ -55,6 +55,11 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
     canDeleteRequestFiles: boolean;
     canUploadRequestFiles: boolean;
     canEnterEditMode: boolean;
+    responsibleContact?: {
+      fullName?: string | null;
+      phone?: string | null;
+      mail?: string | null;
+    } | null;
   }) => (
     <div data-testid="request-details-main-card">
       <div data-testid="main-can-edit-request">{String(props.canEditRequest)}</div>
@@ -62,6 +67,9 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
       <div data-testid="main-can-delete-request-files">{String(props.canDeleteRequestFiles)}</div>
       <div data-testid="main-can-upload-request-files">{String(props.canUploadRequestFiles)}</div>
       <div data-testid="main-can-enter-edit-mode">{String(props.canEnterEditMode)}</div>
+      <div data-testid="main-contact-name">{props.responsibleContact?.fullName ?? ""}</div>
+      <div data-testid="main-contact-phone">{props.responsibleContact?.phone ?? ""}</div>
+      <div data-testid="main-contact-mail">{props.responsibleContact?.mail ?? ""}</div>
     </div>
   ),
 }));
@@ -105,6 +113,8 @@ const buildRequestDetails = (overrides?:
   id: 17,
   id_user: "owner-1",
   owner_full_name: "Owner One",
+  owner_phone: "+7 900 111-22-33",
+  owner_mail: "owner@example.com",
   status: "open",
   status_label: "Open",
   initial_amount: 100,
@@ -182,6 +192,9 @@ describe("RequestDetailsView action-driven CTAs", () => {
     expect(screen.getByTestId("main-can-delete-request-files")).toHaveTextContent("true");
     expect(screen.getByTestId("main-can-upload-request-files")).toHaveTextContent("true");
     expect(screen.getByTestId("main-can-enter-edit-mode")).toHaveTextContent("true");
+    expect(screen.getByTestId("main-contact-name")).toHaveTextContent("Owner One");
+    expect(screen.getByTestId("main-contact-phone")).toHaveTextContent("+7 900 111-22-33");
+    expect(screen.getByTestId("main-contact-mail")).toHaveTextContent("owner@example.com");
     expect(screen.getByTestId("offers-can-change-status")).toHaveTextContent("true");
     expect(screen.getByTestId("offers-has-add-click")).toHaveTextContent("true");
 

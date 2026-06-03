@@ -1047,16 +1047,14 @@ class UserQueryService:
             unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
         )
     
-    async def get_me(self, current_user: CurrentUser) -> MeResult:
-        UserPolicy.ensure_can_manage_own_profile(current_user)
-
-        row = await self._users.get_with_profile_and_company_contacts(user_id=current_user.user_id)
+    async def _get_me_result(self, *, user_id: str) -> MeResult:
+        row = await self._users.get_with_profile_and_company_contacts(user_id=user_id)
         if row is None:
             raise NotFound("Пользователь не найден")
 
         user, profile, company_contact = row
-        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=current_user.user_id)
-        unavailable_periods = await self._user_status_periods.list_for_user(user_id=current_user.user_id)
+        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=user_id)
+        unavailable_periods = await self._user_status_periods.list_for_user(user_id=user_id)
 
         return MeResult(
             user_id=user.id,
@@ -1075,6 +1073,14 @@ class UserQueryService:
             unavailable_period=self._period_to_data(unavailable_period) if unavailable_period is not None else None,
             unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
         )
+
+    async def get_me(self, current_user: CurrentUser) -> MeResult:
+        UserPolicy.ensure_can_manage_own_profile(current_user)
+        return await self._get_me_result(user_id=current_user.user_id)
+
+    async def get_me_for_review_onboarding(self, current_user: CurrentUser) -> MeResult:
+        UserPolicy.ensure_can_manage_review_onboarding(current_user)
+        return await self._get_me_result(user_id=current_user.user_id)
 
 @dataclass(frozen=True)
 class UserRoleUpdateResult:
@@ -1817,21 +1823,19 @@ class UserSelfService:
         UserPolicy.ensure_can_manage_own_profile(current_user)
         raise Forbidden("Пароль управляется провайдером аутентификации")
 
-    async def update_my_profile(
+    async def _apply_my_profile_update(
         self,
-        current_user: CurrentUser,
         *,
+        user_id: str,
         full_name: str | None,
         phone: str | None,
         mail: str | None,
     ) -> None:
-        UserPolicy.ensure_can_manage_own_profile(current_user)
-
-        profile = await self._profiles.get_by_id(current_user.user_id)
+        profile = await self._profiles.get_by_id(user_id)
         if profile is None:
             await self._profiles.add(
                 Profile(
-                    id=current_user.user_id,
+                    id=user_id,
                     full_name=full_name or "Не указано",
                     phone=phone or "Не указано",
                     mail=mail or "Не указано",
@@ -1846,10 +1850,42 @@ class UserSelfService:
         if mail is not None:
             profile.mail = mail
 
-    async def update_my_company_contacts(
+    async def update_my_profile(
         self,
         current_user: CurrentUser,
         *,
+        full_name: str | None,
+        phone: str | None,
+        mail: str | None,
+    ) -> None:
+        UserPolicy.ensure_can_manage_own_profile(current_user)
+        await self._apply_my_profile_update(
+            user_id=current_user.user_id,
+            full_name=full_name,
+            phone=phone,
+            mail=mail,
+        )
+
+    async def update_my_profile_for_review_onboarding(
+        self,
+        current_user: CurrentUser,
+        *,
+        full_name: str | None,
+        phone: str | None,
+        mail: str | None,
+    ) -> None:
+        UserPolicy.ensure_can_manage_review_onboarding(current_user)
+        await self._apply_my_profile_update(
+            user_id=current_user.user_id,
+            full_name=full_name,
+            phone=phone,
+            mail=mail,
+        )
+
+    async def _apply_my_company_contacts_update(
+        self,
+        *,
+        user_id: str,
         company_name: str | None,
         inn: str | None,
         company_phone: str | None,
@@ -1857,15 +1893,13 @@ class UserSelfService:
         address: str | None,
         note: str | None,
     ) -> None:
-        UserPolicy.ensure_can_manage_own_company_contacts(current_user)
-
-        company_contacts = await self._company_contacts.get_by_id(current_user.user_id)
+        company_contacts = await self._company_contacts.get_by_id(user_id)
         if company_contacts is None:
             if company_name is None or inn is None:
                 raise NotFound("Контакты компании не найдены")
             await self._company_contacts.add(
                 CompanyContact(
-                    id=current_user.user_id,
+                    id=user_id,
                     company_name=company_name,
                     inn=inn,
                     phone=company_phone or PLACEHOLDER_TEXT,
@@ -1888,6 +1922,50 @@ class UserSelfService:
             company_contacts.address = address
         if note is not None:
             company_contacts.note = note
+
+    async def update_my_company_contacts(
+        self,
+        current_user: CurrentUser,
+        *,
+        company_name: str | None,
+        inn: str | None,
+        company_phone: str | None,
+        company_mail: str | None,
+        address: str | None,
+        note: str | None,
+    ) -> None:
+        UserPolicy.ensure_can_manage_own_company_contacts(current_user)
+        await self._apply_my_company_contacts_update(
+            user_id=current_user.user_id,
+            company_name=company_name,
+            inn=inn,
+            company_phone=company_phone,
+            company_mail=company_mail,
+            address=address,
+            note=note,
+        )
+
+    async def update_my_company_contacts_for_review_onboarding(
+        self,
+        current_user: CurrentUser,
+        *,
+        company_name: str | None,
+        inn: str | None,
+        company_phone: str | None,
+        company_mail: str | None,
+        address: str | None,
+        note: str | None,
+    ) -> None:
+        UserPolicy.ensure_can_manage_review_onboarding(current_user)
+        await self._apply_my_company_contacts_update(
+            user_id=current_user.user_id,
+            company_name=company_name,
+            inn=inn,
+            company_phone=company_phone,
+            company_mail=company_mail,
+            address=address,
+            note=note,
+        )
 
     async def set_subordinate_unavailability_period(
         self,

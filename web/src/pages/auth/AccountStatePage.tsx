@@ -3,28 +3,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import {
-  getCurrentUserProfile,
-  updateMyCompanyContacts,
-  updateMyProfile,
-  type CurrentUserProfile
+  getRegistrationCurrentUserProfile,
+  updateMyRegistrationCompanyContacts,
+  updateMyRegistrationProfile,
 } from '@shared/api/users/getCurrentUserProfile';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ROLE } from '@shared/constants/roles';
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
 import { useSystemToasts } from '@shared/ui/toasts';
-
-type ProfileDraft = {
-  fullName: string;
-  phone: string;
-  mail: string;
-  companyName: string;
-  inn: string;
-  companyPhone: string;
-  companyMail: string;
-  address: string;
-  note: string;
-};
+import { buildDraft, emptyDraft, type ProfileDraft } from './accountStateDraft';
 
 type DraftErrors = Partial<Record<keyof ProfileDraft, string>>;
 
@@ -34,49 +23,14 @@ type StatusContent = {
   severity: 'info' | 'warning' | 'error';
 };
 
-const emptyDraft: ProfileDraft = {
-  fullName: '',
-  phone: '',
-  mail: '',
-  companyName: '',
-  inn: '',
-  companyPhone: '',
-  companyMail: '',
-  address: '',
-  note: ''
-};
-
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const innRegex = /^\d{10}$|^\d{12}$/;
-
-const normalizeDraftValue = (value: string | null | undefined) => {
-  const normalized = (value ?? '').trim();
-  if (!normalized) {
-    return '';
-  }
-  if (['не указано', 'none', 'null'].includes(normalized.toLowerCase())) {
-    return '';
-  }
-  return normalized;
-};
-
-const buildDraft = (profile: CurrentUserProfile | null): ProfileDraft => ({
-  fullName: normalizeDraftValue(profile?.fullName),
-  phone: formatRuPhone(normalizeDraftValue(profile?.phone)),
-  mail: normalizeDraftValue(profile?.mail),
-  companyName: normalizeDraftValue(profile?.company.companyName),
-  inn: normalizeDraftValue(profile?.company.inn),
-  companyPhone: formatRuPhone(normalizeDraftValue(profile?.company.phone)),
-  companyMail: normalizeDraftValue(profile?.company.mail),
-  address: normalizeDraftValue(profile?.company.address),
-  note: normalizeDraftValue(profile?.company.note)
-});
 
 const getStatusContent = (status: string): StatusContent => {
   if (status === 'review') {
     return {
       title: 'Проверяем данные',
-      description: 'Заполните личные данные и данные компании. После проверки мы уведомим о выдаче доступа по электронной почте.',
+      description: '',
       severity: 'info'
     };
   }
@@ -144,9 +98,9 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   }
 
   if (!inn) {
-    errors.inn = '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0418\u041d\u041d';
+    errors.inn = 'Укажите ИНН';
   } else if (!innRegex.test(inn)) {
-    errors.inn = '\u0418\u041d\u041d \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c 10 \u0438\u043b\u0438 12 \u0446\u0438\u0444\u0440';
+    errors.inn = 'ИНН должен содержать 10 или 12 цифр';
   }
 
   if (!companyPhone) {
@@ -182,8 +136,13 @@ export const AccountStatePage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showValidation, setShowValidation] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Partial<Record<keyof ProfileDraft, boolean>>>({});
 
+  const sessionUserId = session?.userId ?? null;
+  const hasBusinessAccess = Boolean(session?.businessAccess);
+  const sessionRoleId = session?.roleId ?? null;
+  const sessionPermissionsKey = (session?.permissions ?? []).join('|');
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
   const isReview = session?.status === 'review';
   const isBlocked = session?.status === 'inactive' || session?.status === 'blacklist';
@@ -193,14 +152,14 @@ export const AccountStatePage = () => {
       navigate('/login', { replace: true });
       return;
     }
-    if (session.businessAccess) {
+    if (hasBusinessAccess) {
       navigate(resolveAuthenticatedPath('/', session), { replace: true });
       return;
     }
 
     let cancelled = false;
     setIsLoading(true);
-    void getCurrentUserProfile()
+    void getRegistrationCurrentUserProfile()
       .then((data) => {
         if (cancelled) {
           return;
@@ -208,6 +167,7 @@ export const AccountStatePage = () => {
         setDraft(buildDraft(data));
         setTouchedFields({});
         setShowValidation(false);
+        setIsSubmitted(false);
       })
       .catch((error) => {
         if (!cancelled) {
@@ -223,7 +183,7 @@ export const AccountStatePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [navigate, session]);
+  }, [hasBusinessAccess, navigate, sessionPermissionsKey, sessionRoleId, sessionUserId]);
 
   const canEditCompany = useMemo(() => isContractor && isReview, [isContractor, isReview]);
   const statusContent = useMemo(() => getStatusContent(session?.status ?? ''), [session?.status]);
@@ -231,6 +191,12 @@ export const AccountStatePage = () => {
     () => validateDraft(draft, { requireCompany: canEditCompany }),
     [canEditCompany, draft]
   );
+  const hasValue = (value: string) => Boolean(value.trim());
+  const isFullNameFieldValid = hasValue(draft.fullName) && !validationErrors.fullName;
+  const isPhoneFieldValid = hasValue(draft.phone) && !validationErrors.phone;
+  const isCompanyNameFieldValid = hasValue(draft.companyName) && !validationErrors.companyName;
+  const isInnFieldValid = hasValue(draft.inn) && !validationErrors.inn;
+  const isCompanyPhoneFieldValid = hasValue(draft.companyPhone) && !validationErrors.companyPhone;
 
   const shouldShowFieldError = (field: keyof ProfileDraft) => {
     if (!validationErrors[field]) {
@@ -260,13 +226,13 @@ export const AccountStatePage = () => {
 
     setIsSaving(true);
     try {
-      const nextProfile = await updateMyProfile({
+      const nextProfile = await updateMyRegistrationProfile({
         full_name: draft.fullName.trim(),
         phone: draft.phone.trim(),
         mail: draft.mail.trim() || undefined
       });
       if (canEditCompany) {
-        const nextWithCompany = await updateMyCompanyContacts({
+        const nextWithCompany = await updateMyRegistrationCompanyContacts({
           company_name: draft.companyName.trim(),
           inn: draft.inn.trim(),
           company_phone: draft.companyPhone.trim(),
@@ -278,6 +244,7 @@ export const AccountStatePage = () => {
       } else {
         setDraft(buildDraft(nextProfile));
       }
+      setIsSubmitted(true);
       showSuccessToast('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось сохранить данные';
@@ -299,7 +266,7 @@ export const AccountStatePage = () => {
           <Stack alignItems="center" spacing={2}>
             <CircularProgress size={28} />
             <Typography variant="body2" color="text.secondary">
-              {'\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c \u0434\u0430\u043d\u043d\u044b\u0435.'}
+              {'Загружаем данные.'}
             </Typography>
           </Stack>
         ) : (
@@ -316,16 +283,16 @@ export const AccountStatePage = () => {
             </Stack>
 
             {!isBlocked ? (
-              <Alert severity={statusContent.severity}>{'\u0421\u0442\u0430\u0442\u0443\u0441'}: {statusContent.title.toLowerCase()}.</Alert>
+              <Alert severity={statusContent.severity}>{'Статус'}: {statusContent.title.toLowerCase()}.</Alert>
             ) : null}
             {!isBlocked && errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
 
-            {!isBlocked ? (
+            {!isBlocked && !isSubmitted ? (
               <>
                 <Stack spacing={1.5}>
-                  <Typography variant="subtitle1" fontWeight={600}>{'\u041b\u0438\u0447\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435'}</Typography>
+                  <Typography variant="subtitle1" fontWeight={600}>{'Личные данные'}</Typography>
                   <TextField
-                    label="\u0424\u0418\u041e"
+                    label={<RequiredFieldLabel label="ФИО" isValid={isFullNameFieldValid} />}
                     value={draft.fullName}
                     {...textFieldAutocompleteProps('fullName')}
                     onBlur={() => markFieldTouched('fullName')}
@@ -337,7 +304,7 @@ export const AccountStatePage = () => {
                     helperText={getFieldHelperText('fullName')}
                   />
                   <TextField
-                    label="Телефон"
+                    label={<RequiredFieldLabel label="Телефон" isValid={isPhoneFieldValid} />}
                     value={draft.phone}
                     {...textFieldAutocompleteProps('phone')}
                     onBlur={() => markFieldTouched('phone')}
@@ -364,9 +331,9 @@ export const AccountStatePage = () => {
 
                 {canEditCompany ? (
                   <Stack spacing={1.5}>
-                    <Typography variant="subtitle1" fontWeight={600}>{'\u0414\u0430\u043d\u043d\u044b\u0435 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438'}</Typography>
+                    <Typography variant="subtitle1" fontWeight={600}>{'Данные компании'}</Typography>
                     <TextField
-                      label="Компания"
+                      label={<RequiredFieldLabel label="Компания" isValid={isCompanyNameFieldValid} />}
                       value={draft.companyName}
                       {...textFieldAutocompleteProps('companyName')}
                       onBlur={() => markFieldTouched('companyName')}
@@ -378,7 +345,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyName')}
                     />
                     <TextField
-                      label="\u0418\u041d\u041d"
+                      label={<RequiredFieldLabel label="ИНН" isValid={isInnFieldValid} />}
                       value={draft.inn}
                       {...textFieldAutocompleteProps('inn')}
                       onBlur={() => markFieldTouched('inn')}
@@ -390,7 +357,7 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('inn')}
                     />
                     <TextField
-                      label="Телефон компании"
+                      label={<RequiredFieldLabel label="Телефон компании" isValid={isCompanyPhoneFieldValid} />}
                       value={draft.companyPhone}
                       {...textFieldAutocompleteProps('companyPhone')}
                       onBlur={() => markFieldTouched('companyPhone')}
@@ -455,7 +422,7 @@ export const AccountStatePage = () => {
 
             <Stack direction="row" spacing={1.5}>
               <Button variant="outlined" onClick={logout} sx={{ textTransform: 'none' }}>
-                {'\u0412\u044b\u0439\u0442\u0438'}
+                {'Выйти'}
               </Button>
             </Stack>
           </Stack>

@@ -119,6 +119,15 @@ def _me_data(current_user: CurrentUser, item) -> MeData:
     return MeData(**data)
 
 
+def _registration_onboarding_me_data(current_user: CurrentUser, item) -> MeData:
+    data = _me_data(current_user, item).model_dump()
+    actions = data.get("actions") or {}
+    actions["can_manage_own_profile"] = True
+    actions["can_manage_company_contacts"] = True
+    data["actions"] = actions
+    return MeData(**data)
+
+
 def _subordinate_profile_data(current_user: CurrentUser, item) -> SubordinateProfileData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
@@ -256,6 +265,20 @@ async def get_me(
     )
 
 
+@router.get("/users/me/registration-profile", response_model=MeResponse)
+async def get_my_registration_profile(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> MeResponse:
+    async with uow:
+        service = UserQueryService(uow.users, uow.user_status_periods)
+        me = await service.get_me_for_review_onboarding(current_user)
+
+    return MeResponse(
+        data=_registration_onboarding_me_data(current_user, me),
+    )
+
+
 @router.patch("/users/me/credentials", response_model=MeResponse)
 async def update_my_credentials(
     payload: UpdateMyCredentialsRequest,
@@ -327,6 +350,29 @@ async def update_my_profile(
     )
 
 
+@router.patch("/users/me/registration-profile", response_model=MeResponse)
+async def update_my_registration_profile(
+    payload: UpdateMyProfileRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> MeResponse:
+    async with uow:
+        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        await self_service.update_my_profile_for_review_onboarding(
+            current_user,
+            full_name=payload.full_name,
+            phone=payload.phone,
+            mail=payload.mail,
+        )
+
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
+        me = await query_service.get_me_for_review_onboarding(current_user)
+
+    return MeResponse(
+        data=_registration_onboarding_me_data(current_user, me),
+    )
+
+
 @router.patch("/users/me/company-contacts", response_model=MeResponse)
 async def update_my_company_contacts(
     payload: UpdateMyCompanyContactsRequest,
@@ -350,6 +396,32 @@ async def update_my_company_contacts(
 
     return MeResponse(
         data=_me_data(current_user, me),
+    )
+
+
+@router.patch("/users/me/registration-company-contacts", response_model=MeResponse)
+async def update_my_registration_company_contacts(
+    payload: UpdateMyCompanyContactsRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> MeResponse:
+    async with uow:
+        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        await self_service.update_my_company_contacts_for_review_onboarding(
+            current_user,
+            company_name=payload.company_name,
+            inn=payload.inn,
+            company_phone=payload.company_phone,
+            company_mail=payload.company_mail,
+            address=payload.address,
+            note=payload.note,
+        )
+
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
+        me = await query_service.get_me_for_review_onboarding(current_user)
+
+    return MeResponse(
+        data=_registration_onboarding_me_data(current_user, me),
     )
 
 

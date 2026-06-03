@@ -179,6 +179,16 @@ export const getCurrentUserProfile = async (): Promise<CurrentUserProfile> => {
   return mapCurrentUserProfile(response);
 };
 
+export const getRegistrationCurrentUserProfile = async (): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/registration-profile',
+    { method: 'GET' },
+    'РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё РґР°РЅРЅС‹С… СЂРµРіРёСЃС‚СЂР°С†РёРё'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
 export const updateMyCredentials = async (payload: UpdateCredentialsPayload): Promise<CurrentUserProfile> => {
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me/credentials',
@@ -199,11 +209,33 @@ export const updateMyProfile = async (payload: UpdateProfilePayload): Promise<Cu
   return mapCurrentUserProfile(response);
 };
 
+export const updateMyRegistrationProfile = async (payload: UpdateProfilePayload): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/registration-profile',
+    { method: 'PATCH', body: JSON.stringify(payload) },
+    'РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РґР°РЅРЅС‹С… СЂРµРіРёСЃС‚СЂР°С†РёРё'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
 export const updateMyCompanyContacts = async (payload: UpdateCompanyContactsPayload): Promise<CurrentUserProfile> => {
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me/company-contacts',
     { method: 'PATCH', body: JSON.stringify(payload) },
     'Ошибка обновления данных компании'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
+export const updateMyRegistrationCompanyContacts = async (
+  payload: UpdateCompanyContactsPayload
+): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/registration-company-contacts',
+    { method: 'PATCH', body: JSON.stringify(payload) },
+    'РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РґР°РЅРЅС‹С… РµРіРёСЃС‚СЂР°С†РёРё'
   );
 
   return mapCurrentUserProfile(response);

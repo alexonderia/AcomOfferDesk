@@ -20,6 +20,7 @@ Backend changes must preserve the current FastAPI + async SQLAlchemy + Clean Arc
 - When a service receives runtime URLs or adapters through its constructor, keep helper branches aligned with those injected values instead of re-reading equivalent global settings only. This preserves direct service tests and non-HTTP entrypoints.
 - Use backend permissions/action flags as the source of truth for allowed actions.
 - Keep Keycloak-backed E2E provisioning aligned with the realm user-profile schema. If Keycloak makes a profile attribute required (for example `middleName`), populate it during smoke-user creation so tests do not stall on required-action forms before the SPA loads.
+- Review-stage contractor onboarding must use dedicated registration-only self-profile endpoints. Do not weaken the normal `/users/me*` permission gates for already-authenticated pages.
 - Keep in-memory integration fixtures aligned with current dataclass constructors and service factory signatures; when request/offer schemas gain or lose fields, update the test factories in the same change.
 - Preserve legacy Telegram functionality unless removal is explicitly requested.
 - For DB changes, include SQL/migration patch and rollout notes.
@@ -73,6 +74,51 @@ python -m pytest
 ```
 
 If checks cannot be run, state why and list the residual risk.
+
+## Scenario: Review Contractor Registration-Only Self-Profile Access
+
+### 1. Scope / Trigger
+- Trigger: contractor onboarding uses `/api/v1/users/me`, `/api/v1/users/me/profile`, and `/api/v1/users/me/company-contacts` before the user has full system access.
+
+### 2. Signatures
+- Read registration onboarding state: `GET /api/v1/users/me/registration-profile`
+- Update registration onboarding profile: `PATCH /api/v1/users/me/registration-profile`
+- Update registration onboarding company contacts: `PATCH /api/v1/users/me/registration-company-contacts`
+- Regular authenticated self-profile endpoints stay permission-gated:
+  `GET /api/v1/users/me`
+  `PATCH /api/v1/users/me/profile`
+  `PATCH /api/v1/users/me/company-contacts`
+
+### 3. Contracts
+- Request fields:
+  standard self-profile and self-company payloads from the SPA registration form.
+- Response fields:
+  same `MeResponse` contract as regular self-profile endpoints, including `actions`.
+
+### 4. Validation & Error Matrix
+- `role=contractor` and `status=review` -> allow access only through the dedicated registration endpoints even if atomic profile/company permissions are absent.
+- same user on regular `/users/me*` endpoints -> keep standard permission enforcement.
+- `status=inactive|blacklist` -> keep blocking protected actions.
+- non-contractor `review` users -> do not inherit the contractor onboarding bypass.
+
+### 5. Good/Base/Bad Cases
+- Good: new review contractor opens the registration form, reads/saves through dedicated onboarding endpoints, and other pages stay on normal rights checks.
+- Base: active users and ordinary profile pages still rely on normal permission-based self-profile behavior.
+- Bad: weakening `/users/me*` globally so any post-login self-profile screen bypasses rights just because the user is in review.
+
+### 6. Tests Required
+- Integration: review contractor without `profile.manage_own` gets `403` on regular `GET /api/v1/users/me`.
+- Integration: same user can `GET /api/v1/users/me/registration-profile`.
+- Integration: same user can `PATCH /api/v1/users/me/registration-profile`.
+- Integration: same user can `PATCH /api/v1/users/me/registration-company-contacts`.
+- Contract: returned `actions` should reflect onboarding editability for that review contractor.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Reuse the regular `/users/me*` endpoints for registration onboarding and weaken their permission checks for all self-profile traffic.
+
+#### Correct
+- Keep registration onboarding on dedicated endpoints and leave the regular authenticated self-profile endpoints permission-gated.
 
 ---
 

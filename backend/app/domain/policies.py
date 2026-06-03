@@ -17,6 +17,16 @@ def _is_allowed(checker) -> bool:
 
 class UserPolicy:
     @staticmethod
+    def can_manage_review_onboarding(current_user: CurrentUser) -> bool:
+        return current_user.role_id == settings.contractor_role_id and current_user.status == "review"
+
+    @staticmethod
+    def ensure_can_manage_review_onboarding(current_user: CurrentUser) -> None:
+        if UserPolicy.can_manage_review_onboarding(current_user):
+            return
+        raise Forbidden("Недостаточно прав для заполнения регистрационной формы")
+
+    @staticmethod
     def can_view_normative_files(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.NORMATIVE_FILES_READ)
 

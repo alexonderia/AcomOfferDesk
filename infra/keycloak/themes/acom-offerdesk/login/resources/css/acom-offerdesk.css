@@ -300,10 +300,19 @@ body#keycloak-bg.aod-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  align-items: center;
 }
 
 .aod-card .pf-v5-c-input-group__item {
   display: flex;
+  align-items: center;
+}
+
+.aod-card .pf-v5-c-input-group__item:not(.pf-m-fill) {
+  width: 48px;
+  height: 48px;
+  align-self: center;
+  justify-content: center;
 }
 
 .aod-card .pf-v5-c-form-control {

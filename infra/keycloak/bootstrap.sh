@@ -187,24 +187,6 @@ apply_user_profile_configuration() {
       "multivalued": false
     },
     {
-      "name": "firstName",
-      "displayName": "${firstName}",
-      "validations": {
-        "length": {
-          "max": 255
-        },
-        "person-name-prohibited-characters": {}
-      },
-      "required": {
-        "roles": ["user"]
-      },
-      "permissions": {
-        "view": ["admin", "user"],
-        "edit": ["admin", "user"]
-      },
-      "multivalued": false
-    },
-    {
       "name": "lastName",
       "displayName": "${lastName}",
       "validations": {
@@ -223,8 +205,26 @@ apply_user_profile_configuration() {
       "multivalued": false
     },
     {
+      "name": "firstName",
+      "displayName": "${firstName}",
+      "validations": {
+        "length": {
+          "max": 255
+        },
+        "person-name-prohibited-characters": {}
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
       "name": "middleName",
-      "displayName": "${middleName}",
+      "displayName": "Отчество",
       "validations": {
         "length": {
           "max": 255

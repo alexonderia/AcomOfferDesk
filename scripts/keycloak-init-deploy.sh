@@ -71,6 +71,10 @@ should_skip_bootstrap() {
   return 0
 }
 
+chmod +x "$ROOT_DIR/scripts/keycloak-refresh-theme.sh"
+echo "KEYCLOAK_BOOTSTRAP: refresh login theme from mounted themes-src"
+"$ROOT_DIR/scripts/keycloak-refresh-theme.sh" "$COMPOSE_ENV_FILE"
+
 docker rm -f keycloak_db_prepare keycloak_bootstrap keycloak_user_role_sync >/dev/null 2>&1 || true
 
 if ! run_compose_init keycloak_db_prepare keycloak_db_prepare_run; then

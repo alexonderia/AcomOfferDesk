@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import unicodedata
@@ -137,7 +137,7 @@ class ExistingOfferPreview:
 
 @dataclass(frozen=True)
 class ContractorRequestView:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -151,7 +151,7 @@ class ContractorRequestView:
 
 @dataclass(frozen=True)
 class OfferWorkspaceRequest:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -160,6 +160,8 @@ class OfferWorkspaceRequest:
     deadline_at: datetime
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None
+    owner_mail: str | None
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
@@ -211,7 +213,7 @@ class OfferMessageReader:
 class OfferMessageMutationResult:
     offer_id: int
     chat_id: int
-    request_id: int
+    request_id: str
     message_id: int
 
 
@@ -240,7 +242,7 @@ class ManualContractorCreateInput:
 @dataclass(frozen=True)
 class ManualOfferCreateResult:
     offer_id: int
-    request_id: int
+    request_id: str
     contractor_user_id: str
     contractor_created: bool
 
@@ -300,7 +302,7 @@ class OfferService:
             is_archived=False,
         )
 
-    async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: int) -> None:
+    async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: str) -> None:
         if current_user.role_id != settings.contractor_role_id:
             return
         is_hidden = await self._requests.is_hidden_for_contractor(
@@ -550,7 +552,7 @@ class OfferService:
             )
         return login
 
-    async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:
+    async def get_request_view(self, *, current_user: CurrentUser, request_id: str) -> ContractorRequestView:
         require_permission(
             current_user,
             PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ,
@@ -572,7 +574,7 @@ class OfferService:
             contractor_user_id=current_user.user_id,
         )
         existing_offer_preview: ExistingOfferPreview | None = None
-        if existing_offer is not None and existing_offer.status != "deleted":
+        if existing_offer is not None:
             offer_files = await self._offers.list_offer_files(offer_id=existing_offer.id)
             existing_offer_preview = ExistingOfferPreview(
                 offer_id=existing_offer.id,
@@ -598,7 +600,7 @@ class OfferService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         offer_amount: float | None = None,
     ) -> int:
         UserPolicy.ensure_can_create_offer(current_user)
@@ -647,7 +649,7 @@ class OfferService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         contractor_user_id: str | None,
         contractor_data: ManualContractorCreateInput | None,
         offer_amount: float | None = None,
@@ -766,6 +768,8 @@ class OfferService:
                 deadline_at=request.deadline_at,
                 owner_user_id=request.id_user,
                 owner_full_name=(request_profile.full_name if request_profile else None),
+                owner_phone=request_profile.phone if request_profile else None,
+                owner_mail=request_profile.mail if request_profile else None,
                 created_at=request.created_at,
                 updated_at=request.updated_at,
                 closed_at=request.closed_at,

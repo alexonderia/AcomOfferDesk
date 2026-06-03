@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import { mapContractorOfferSummary, type GetRequestsResponse } from './getRequests';
 import type { FileEntity } from '@entities/request';
 import { normalizeRequestActions } from '../mappers';
@@ -23,7 +23,7 @@ type ApiContractorRequestOffer = {
 type ApiResponse = {
   data: {
     items: Array<{
-      request_id: number;
+      request_id: string;
       description: string | null;
       status: string;
       status_label: string;

@@ -3,6 +3,7 @@ import { Box, IconButton, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { formatDate } from '@shared/lib/formatters';
 import type { Notification } from '../model/types';
+import { NOTIFICATION_CENTER_CARD_BORDER_RADIUS_PX } from './notificationCenterLayout';
 import { getNotificationSeverityColor, getNotificationTypeIcon } from './notificationVisuals';
 
 type NotificationCardProps = {
@@ -54,11 +55,15 @@ export const NotificationCard = ({
           py: compact ? 1 : 1.15,
           pl: 1.1,
           pr: hasCloseButton ? 0.55 : 1.1,
-          borderRadius: 2,
+          borderRadius:
+            variant === 'center' ? `${NOTIFICATION_CENTER_CARD_BORDER_RADIUS_PX}px` : 2,
           border: '1px solid',
           borderColor: alpha(severityColor, 0.24),
           bgcolor: alpha(theme.palette.background.paper, 0.96),
-          boxShadow: '0 9px 22px rgba(16, 24, 40, 0.16)',
+          boxShadow:
+            variant === 'center'
+              ? '0 1px 3px rgba(16, 24, 40, 0.06)'
+              : 'none',
           alignItems: 'flex-start',
           cursor: onClick ? 'pointer' : 'default',
           opacity: disabled ? 0.55 : 1,

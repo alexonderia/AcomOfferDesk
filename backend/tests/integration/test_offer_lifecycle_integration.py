@@ -1,4 +1,4 @@
-"""Integration-style tests for offer lifecycle business scenarios."""
+﻿"""Integration-style tests for offer lifecycle business scenarios."""
 
 from __future__ import annotations
 
@@ -34,43 +34,44 @@ class _OfferRequestsRepo:
             closed_at=None,
             id_offer=None,
             id_plan=None,
+            owner_phone=None,
+            owner_mail=None,
         )
         self._visible_open = visible_open
 
-    async def get_visible_open_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str):
+    async def get_visible_open_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
         if not self._visible_open:
             return None
-        if request_id != self._request_row.id:
+        if str(request_id) != str(self._request_row.id):
             return None
         if self._request_row.status != "open":
             return None
         return self._request_row
 
-    async def get_by_id(self, *, request_id: int):
-        return self._request_row if request_id == self._request_row.id else None
+    async def get_by_id(self, *, request_id: str):
+        return self._request_row if str(request_id) == str(self._request_row.id) else None
 
-    async def is_hidden_for_contractor(self, *, request_id: int, contractor_user_id: str) -> bool:
+    async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
         _ = (request_id, contractor_user_id)
         return False
 
 
 class _OfferRepo:
     def __init__(self) -> None:
-        self._offers: dict[int, SimpleNamespace] = {}
+        self._offers: dict[str, SimpleNamespace] = {}
         self._next_id = 100
 
-    async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str):
+    async def get_contractor_offer_for_request(self, *, request_id: str, contractor_user_id: str):
         for offer in self._offers.values():
             if offer.id_request == request_id and offer.id_user == contractor_user_id:
                 return offer
         return None
 
-    async def create(self, *, request_id: int, contractor_user_id: str, offer_amount: float | None = None):
+    async def create(self, *, request_id: str, contractor_user_id: str, offer_amount: float | None = None):
         offer = SimpleNamespace(
             id=self._next_id,
-            id_request=request_id,
-            id_user=contractor_user_id,
+            id_request=str(request_id), id_user=contractor_user_id,
             status="submitted",
             offer_amount=offer_amount,
             created_at=_dt(),
@@ -97,7 +98,7 @@ class _OfferRepo:
         _ = offer_ids
         return []
 
-    async def list_by_request(self, *, request_id: int):
+    async def list_by_request(self, *, request_id: str):
         return [offer for offer in self._offers.values() if offer.id_request == request_id]
 
     async def get_chat(self, *, offer_id: int):
@@ -193,7 +194,7 @@ def test_contractor_can_create_offer_for_open_request(test_client, set_uow, set_
     response = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0})
 
     assert response.status_code == 200
-    assert response.json()["data"]["request_id"] == 10
+    assert response.json()["data"]["request_id"] == "10"
 
 
 def test_contractor_cannot_create_offer_when_request_is_not_visible(
@@ -226,7 +227,7 @@ def test_contractor_can_edit_only_own_offer_amount(
     # Seed offer owned by another contractor.
     uow.offers._offers[200] = SimpleNamespace(
         id=200,
-        id_request=10,
+        id_request="10",
         id_user="contractor-2",
         status="submitted",
         offer_amount=100.0,
@@ -341,7 +342,7 @@ def test_accept_offer_requires_status_update_permission(
     uow = _OfferLifecycleUow()
     uow.offers._offers[210] = SimpleNamespace(
         id=210,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -392,11 +393,13 @@ def test_department_request_update_without_department_offer_accept_cannot_accept
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[211] = SimpleNamespace(
         id=211,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -440,11 +443,13 @@ def test_department_offer_accept_allows_accept_inside_department_scope(
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[212] = SimpleNamespace(
         id=212,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -484,11 +489,13 @@ def test_department_request_update_without_department_offer_update_cannot_update
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[213] = SimpleNamespace(
         id=213,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -536,7 +543,7 @@ def test_department_offer_update_allows_updating_offer_amount_inside_department_
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[214] = SimpleNamespace(
         id=214,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -576,11 +583,13 @@ def test_hierarchy_offer_update_requires_offers_update_without_department_delega
         closed_at=None,
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=request_row)
     uow.offers._offers[215] = SimpleNamespace(
         id=215,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -639,11 +648,13 @@ def test_cannot_accept_offer_for_closed_or_cancelled_request(
         closed_at=_dt(),
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=closed_request)
     uow.offers._offers[230] = SimpleNamespace(
         id=230,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -672,7 +683,7 @@ def test_contractor_cannot_edit_finalized_offer_amount(
     uow = _OfferLifecycleUow()
     uow.offers._offers[240] = SimpleNamespace(
         id=240,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="accepted",
         offer_amount=100.0,
@@ -714,6 +725,8 @@ def test_workspace_access_is_restricted_to_allowed_users(
                     deadline_at=_dt(),
                     owner_user_id="owner-1",
                     owner_full_name="Owner",
+                    owner_phone=None,
+                    owner_mail=None,
                     created_at=_dt(),
                     updated_at=_dt(),
                     closed_at=None,

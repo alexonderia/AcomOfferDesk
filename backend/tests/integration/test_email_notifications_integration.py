@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
 from app.domain.exceptions import Conflict
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
+from app.infrastructure.email.email_attachment import EmailAttachment
 from app.repositories.profiles import ActiveContractorEmailRecipient
 from app.services.requests import RequestFileCreateInput, RequestService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
@@ -27,9 +28,9 @@ class _FakeRequestRepoForCreate:
         self.attached: list[tuple[int, int]] = []
         self.hidden: list[tuple[int, list[str]]] = []
 
-    async def create(self, *, id_user, deadline_at, description, initial_amount, id_plan):
+    async def create(self, *, request_id=None, id_user, deadline_at, description, initial_amount, id_plan):
         row = SimpleNamespace(
-            id=self._next_request_id,
+            id=request_id if request_id is not None else self._next_request_id,
             id_user=id_user,
             deadline_at=deadline_at,
             description=description,
@@ -38,20 +39,24 @@ class _FakeRequestRepoForCreate:
             status="open",
         )
         self.created_requests.append(row)
-        self._next_request_id += 1
+        if request_id is None:
+            self._next_request_id += 1
         return row
 
-    async def attach_file(self, *, request_id: int, file_id: int) -> None:
+    async def exists_by_id(self, *, request_id: str) -> bool:
+        return any(item.id == request_id for item in self.created_requests)
+
+    async def attach_file(self, *, request_id: str, file_id: int) -> None:
         self.attached.append((request_id, file_id))
 
-    async def hide_from_contractors(self, *, request_id: int, contractor_user_ids: list[str]) -> None:
+    async def hide_from_contractors(self, *, request_id: str, contractor_user_ids: list[str]) -> None:
         self.hidden.append((request_id, contractor_user_ids))
 
     async def get_economy_plan_owner_user_id(self, *, plan_id: int):
         _ = plan_id
         return "plan-owner"
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         for item in self.created_requests:
             if item.id == request_id:
                 return item
@@ -59,6 +64,10 @@ class _FakeRequestRepoForCreate:
 
 
 class _FakeFilesRepo:
+    async def get_normative_file_status(self, *, normative_id: int):
+        _ = normative_id
+        return "actual"
+
     async def get_normative_file(self, *, normative_id: int):
         _ = normative_id
         return SimpleNamespace(id_storage_object=501, original_name="partner-card.pdf")
@@ -81,7 +90,7 @@ class _FakeUsersRepo:
 
 
 class _FakeOffersRepo:
-    async def list_contractor_tg_ids_for_request(self, *, request_id: int, contractor_role_id: int):
+    async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int):
         _ = (request_id, contractor_role_id)
         return []
 
@@ -104,7 +113,7 @@ class _FakeFileServiceForCreate:
             mime_type=mime_type,
         )
 
-    async def create_request_file(self, *, request_id: int, upload):
+    async def create_request_file(self, *, request_id: str, upload):
         _ = (request_id, upload)
         return SimpleNamespace(id=901)
 
@@ -116,7 +125,7 @@ class _FakeEmailNotificationService:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    async def notify_new_request(self, *, request_id: int, additional_emails: list[str] | None, hidden_contractor_ids: list[str] | None):
+    async def notify_new_request(self, *, request_id: str, additional_emails: list[str] | None, hidden_contractor_ids: list[str] | None):
         self.calls.append(
             {
                 "request_id": request_id,
@@ -128,7 +137,7 @@ class _FakeEmailNotificationService:
     async def notify_request_to_additional_emails(
         self,
         *,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str],
         initiator_user_id: str | None = None,
     ) -> None:
@@ -146,21 +155,36 @@ class _FakeRequestRepoForSendUseCase:
         self._request_row = request_row
         self._files = files or []
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return self._request_row if self._request_row.id == request_id else None
 
-    async def list_files_by_request_id(self, *, request_id: int):
+    async def list_files_by_request_id(self, *, request_id: str):
         _ = request_id
         return self._files
 
 
 class _FakeProfileRepoForSendUseCase:
-    def __init__(self, recipients: list[ActiveContractorEmailRecipient]) -> None:
+    def __init__(
+        self,
+        recipients: list[ActiveContractorEmailRecipient],
+        *,
+        economist_email_to_user_id: dict[str, str] | None = None,
+    ) -> None:
         self._recipients = recipients
+        self._economist_email_to_user_id = economist_email_to_user_id or {}
 
     async def list_active_contractor_email_recipients(self, *, contractor_role_id: int):
         _ = contractor_role_id
         return self._recipients
+
+    async def find_contractor_user_id_by_notification_email(
+        self,
+        *,
+        email: str,
+        contractor_role_id: int,
+    ) -> str | None:
+        _ = contractor_role_id
+        return self._economist_email_to_user_id.get(email.strip().lower())
 
 
 class _FakeFileServiceForSendUseCase:
@@ -177,6 +201,7 @@ class _FakeOutboxEmailService:
 
     async def send_email(self, **kwargs) -> None:
         self.outbox.append(kwargs)
+
 
 
 @pytest.mark.asyncio
@@ -204,6 +229,7 @@ async def test_create_request_triggers_email_notification_event(make_current_use
         description="Новая заявка",
         initial_amount=None,
         id_plan=None,
+        normative_file_id=1,
         files=[
             RequestFileCreateInput(
                 original_name="spec.pdf",
@@ -397,3 +423,54 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
     assert event["attachments"] == []
     assert "Вложения не добавлены" in event["text_content"]
     assert "Вложения не добавлены" in (event["html_content"] or "")
+
+
+class _FakePresentationAttachmentService:
+    async def load_presentation_attachment(self) -> EmailAttachment:
+        return EmailAttachment(
+            filename="onboarding.pptx",
+            content_bytes=b"presentation-bytes",
+            mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+
+
+@pytest.mark.asyncio
+async def test_send_use_case_additional_email_with_economist_account_gets_invitation_content(monkeypatch):
+    monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
+    monkeypatch.setattr(settings, "email_verification_secret", "verify-secret")
+    request_row = SimpleNamespace(
+        id=50,
+        description="Поставка",
+        deadline_at=_future_dt().replace(tzinfo=None),
+    )
+    outbox = _FakeOutboxEmailService()
+    use_case = SendRequestNotificationEmailUseCase(
+        request_repository=_FakeRequestRepoForSendUseCase(request_row=request_row),
+        profile_repository=_FakeProfileRepoForSendUseCase(
+            recipients=[],
+            economist_email_to_user_id={"vendor@example.com": "vendor_login"},
+        ),
+        email_service=outbox,
+        app_url="https://web.acom.example",
+        presentation_attachment_service=_FakePresentationAttachmentService(),
+    )
+
+    await use_case.execute(
+        request_id=50,
+        contractor_role_id=settings.contractor_role_id,
+        additional_emails=["vendor@example.com"],
+        hidden_contractor_ids=[],
+        include_verified_contractors=False,
+    )
+
+    assert len(outbox.outbox) == 1
+    event = outbox.outbox[0]
+    assert event["to_email"] == "vendor@example.com"
+    assert "Вы приглашены к работе в системе AcomOfferDesk." in event["text_content"]
+    assert "Инструкция по получению доступа приложена к письму в виде презентации." in event["text_content"]
+    assert "Поступила новая заявка №50." in event["text_content"]
+    assert "Перейти к системе:" in event["text_content"]
+    assert "/api/v1/auth/oidc/register" not in event["text_content"]
+    assert event["attachments"][0].filename == "onboarding.pptx"
+
+

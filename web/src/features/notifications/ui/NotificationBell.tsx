@@ -13,6 +13,7 @@ import { NOTIFICATION_PAGE_SIZE } from '../model/constants';
 import type { Notification } from '../model/types';
 import { NotificationCenterDrawer } from './NotificationCenterDrawer';
 import { NotificationCenterPopover } from './NotificationCenterPopover';
+import { captureNotificationCenterAnchor, type NotificationCenterAnchor } from './notificationCenterLayout';
 
 type NotificationBellProps = {
   collapsed?: boolean;
@@ -47,7 +48,10 @@ const buildGroupedTypeBody = (type: string, count: number): string => {
   return `У вас ${count} новых уведомлений этого типа.`;
 };
 
-const buildCenterDisplayNotifications = (items: Notification[]) => {
+const buildCenterDisplayNotifications = (
+  items: Notification[],
+  expandedGroupTypes: ReadonlySet<string>,
+) => {
   const groupedUnreadByType = new Map<string, { displayIndex: number; ids: number[] }>();
   const displayNotifications: Notification[] = [];
   const sourceIdsByDisplayId = new Map<number, number[]>();
@@ -89,7 +93,36 @@ const buildCenterDisplayNotifications = (items: Notification[]) => {
     sourceIdsByDisplayId.set(groupedNotification.id, [...ids]);
   });
 
-  return { displayNotifications, sourceIdsByDisplayId };
+  const expandedTypesRendered = new Set<string>();
+  const finalDisplayNotifications: Notification[] = [];
+  const finalSourceIdsByDisplayId = new Map<number, number[]>();
+
+  displayNotifications.forEach((notification) => {
+    const sourceIds = sourceIdsByDisplayId.get(notification.id) ?? [notification.id];
+    const isGroupedSummary = sourceIds.length > 1;
+
+    if (isGroupedSummary && expandedGroupTypes.has(notification.type)) {
+      if (expandedTypesRendered.has(notification.type)) {
+        return;
+      }
+      expandedTypesRendered.add(notification.type);
+      items
+        .filter((item) => item.type === notification.type && item.read_at === null)
+        .forEach((item) => {
+          finalDisplayNotifications.push(item);
+          finalSourceIdsByDisplayId.set(item.id, [item.id]);
+        });
+      return;
+    }
+
+    finalDisplayNotifications.push(notification);
+    finalSourceIdsByDisplayId.set(notification.id, sourceIds);
+  });
+
+  return {
+    displayNotifications: finalDisplayNotifications,
+    sourceIdsByDisplayId: finalSourceIdsByDisplayId,
+  };
 };
 
 export const NotificationBell = ({
@@ -101,8 +134,10 @@ export const NotificationBell = ({
   const { isAuthenticated } = useAuth();
   const isMobileViewport = useIsMobileViewport();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [anchorCorner, setAnchorCorner] = useState<NotificationCenterAnchor | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
+  const [expandedGroupTypes, setExpandedGroupTypes] = useState<Set<string>>(() => new Set());
 
   const {
     items,
@@ -120,8 +155,8 @@ export const NotificationBell = ({
   } = useNotificationsState();
 
   const { displayNotifications, sourceIdsByDisplayId } = useMemo(
-    () => buildCenterDisplayNotifications(items),
-    [items]
+    () => buildCenterDisplayNotifications(items, expandedGroupTypes),
+    [expandedGroupTypes, items]
   );
 
   const filteredDisplayNotifications = useMemo(() => {
@@ -164,10 +199,14 @@ export const NotificationBell = ({
 
   const closeCenter = () => {
     setAnchorEl(null);
+    setAnchorCorner(null);
     setIsDrawerOpen(false);
+    setExpandedGroupTypes(new Set());
   };
 
   const openCenter = async (event: MouseEvent<HTMLElement>) => {
+    setAnchorCorner(captureNotificationCenterAnchor(event.currentTarget));
+
     if (isMobileViewport) {
       setIsDrawerOpen(true);
     } else {
@@ -180,8 +219,19 @@ export const NotificationBell = ({
   };
 
   const handleNotificationClick = async (notification: Notification) => {
-    closeCenter();
     const sourceIds = sourceIdsByDisplayId.get(notification.id) ?? [notification.id];
+    const isGroupedSummary = sourceIds.length > 1;
+
+    if (isGroupedSummary) {
+      setExpandedGroupTypes((current) => {
+        const next = new Set(current);
+        next.add(notification.type);
+        return next;
+      });
+      return;
+    }
+
+    closeCenter();
 
     try {
       if (notification.read_at === null) {
@@ -310,6 +360,7 @@ export const NotificationBell = ({
       {isMobileViewport ? (
         <NotificationCenterDrawer
           open={open}
+          anchorCorner={anchorCorner}
           notifications={filteredDisplayNotifications}
           hasUnread={hasUnread}
           isLoading={isLoadingList}
@@ -329,7 +380,7 @@ export const NotificationBell = ({
         />
       ) : (
         <NotificationCenterPopover
-          anchorEl={anchorEl}
+          anchorCorner={anchorCorner}
           open={open}
           notifications={filteredDisplayNotifications}
           hasUnread={hasUnread}

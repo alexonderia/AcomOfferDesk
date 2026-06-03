@@ -96,7 +96,7 @@ class RequestFileItem:
 
 @dataclass(frozen=True)
 class RequestListItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -118,7 +118,7 @@ class RequestListItem:
 
 @dataclass(frozen=True)
 class OpenRequestListItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -171,7 +171,7 @@ class OfferItem:
 
 @dataclass(frozen=True)
 class RequestDetailItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -183,6 +183,8 @@ class RequestDetailItem:
     closed_at: datetime | None
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None
+    owner_mail: str | None
     chosen_offer_id: int | None
     id_plan: int | None
     count_submitted: int
@@ -196,14 +198,14 @@ class RequestDetailItem:
 
 @dataclass(frozen=True)
 class DeletedAlertViewedResult:
-    request_id: int
+    request_id: str
     count_deleted_alert: int
     updated_at: datetime
 
 
 @dataclass(frozen=True)
 class RequestEmailNotificationResult:
-    request_id: int
+    request_id: str
     sent_to: list[str]
 
 
@@ -242,24 +244,36 @@ class RequestService:
         )
         return True
 
+    async def check_request_id_available(self, *, request_id: str) -> tuple[bool, str | None]:
+        normalized_id = request_id.strip()
+        if not normalized_id:
+            return False, "empty"
+        if await self._requests.exists_by_id(request_id=normalized_id):
+            return False, "already_exists"
+        return True, None
+
     async def create_request(
         self,
         *,
         current_user: CurrentUser,
+        request_id: str | None = None,
         deadline_at: datetime,
         description: str | None,
         initial_amount: float | None,
         id_plan: int | None = None,
+        normative_file_id: int | None = None,
         files: list[RequestFileCreateInput],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
-    ) -> tuple[int, list[int]]:
+    ) -> tuple[str, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
+        if normative_file_id is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
+        if not files:
+            raise Conflict("Прикрепите файл заявки")
         if _normalize_to_utc(deadline_at) < _utcnow():
             raise Conflict("Deadline cannot be in the past")
-        if not files:
-            raise Conflict("At least one file is required")
         self._validate_amount(value=initial_amount, field_name="Initial amount")
         await self._ensure_plan_assignment_allowed(
             current_user=current_user,
@@ -268,7 +282,16 @@ class RequestService:
         normalized_additional_emails = self._normalize_additional_emails(additional_emails)
         normalized_hidden_contractor_ids = await self._normalize_hidden_contractor_ids(hidden_contractor_ids)
 
+        normalized_request_id: str | None = None
+        if request_id is not None:
+            normalized_request_id = request_id.strip()
+            if not normalized_request_id:
+                raise Conflict("Request id cannot be empty")
+            if await self._requests.exists_by_id(request_id=normalized_request_id):
+                raise Conflict("Request with this id already exists")
+
         request = await self._requests.create(
+            request_id=normalized_request_id,
             id_user=current_user.user_id,
             deadline_at=deadline_at,
             description=description,
@@ -277,10 +300,11 @@ class RequestService:
         )
 
         file_ids: list[int] = []
-        # TEMP: partner card is not auto-attached to requests.
-        # All request files must be attached by the user manually.
-        # partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
-        # file_ids.append(partner_card_file_id)
+        normative_file_id_value = await self._attach_normative_file_copy(
+            request_id=request.id,
+            normative_file_id=normative_file_id,
+        )
+        file_ids.append(normative_file_id_value)
         for file_item in files:
             prepared = await self._file_service.prepare_bytes(
                 original_name=file_item.original_name,
@@ -337,7 +361,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str] | None,
     ) -> RequestEmailNotificationResult:
         require_permission(
@@ -422,7 +446,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         data: RequestEditInput,
     ) -> None:
         request = await self._requests.get_by_id(request_id=request_id)
@@ -669,7 +693,7 @@ class RequestService:
         if final_amount != initial_amount and final_amount != offer_amount:
             raise Conflict("Final amount must match initial amount or accepted offer amount")
     
-    async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: int) -> DeletedAlertViewedResult:
+    async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: str) -> DeletedAlertViewedResult:
         require_permission(
             current_user,
             PermissionCodes.REQUESTS_DELETED_ALERTS_MARK_VIEWED,
@@ -698,7 +722,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         file_data: RequestFileCreateInput,
     ) -> int:
         request = await self._requests.get_by_id(request_id=request_id)
@@ -745,7 +769,7 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         file_id: int,
     ) -> None:
         request = await self._requests.get_by_id(request_id=request_id)
@@ -780,17 +804,29 @@ class RequestService:
             )
         )
 
-    async def _attach_partner_card_file(self, *, request_id: int) -> int:
-        partner_card = await self._files.get_normative_file(normative_id=PARTNER_CARD_NORMATIVE_ID)
-        if partner_card is None:
-            raise Conflict("Partner card file is not configured")
+    async def _attach_normative_file_copy(self, *, request_id: str, normative_file_id: int) -> int:
+        normative_status = await self._files.get_normative_file_status(normative_id=normative_file_id)
+        if normative_status is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
+        if normative_status != "actual":
+            raise Conflict("Выбранный нормативный документ больше не актуален")
+
+        normative_file = await self._files.get_normative_file(normative_id=normative_file_id)
+        if normative_file is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
 
         db_file = await self._files.create(
-            storage_object_id=partner_card.id_storage_object,
-            original_name=partner_card.original_name,
+            storage_object_id=normative_file.id_storage_object,
+            original_name=normative_file.original_name,
         )
         await self._requests.attach_file(request_id=request_id, file_id=db_file.id)
         return db_file.id
+
+    async def _attach_partner_card_file(self, *, request_id: str) -> int:
+        return await self._attach_normative_file_copy(
+            request_id=request_id,
+            normative_file_id=PARTNER_CARD_NORMATIVE_ID,
+        )
 
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
@@ -868,8 +904,8 @@ class RequestService:
         UserPolicy.ensure_can_view_offered_requests(current_user)
         rows = await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id)
 
-        grouped: dict[int, OpenRequestListItem] = {}
-        request_offer_ids: dict[int, set[int]] = {}
+        grouped: dict[str, OpenRequestListItem] = {}
+        request_offer_ids: dict[str, set[int]] = {}
         for request, offer, profile, unread_messages_count in rows:
             existing = grouped.get(request.id)
             
@@ -942,7 +978,7 @@ class RequestService:
         ]
 
 
-    async def get_request_details(self, *, current_user: CurrentUser, request_id: int) -> RequestDetailItem:
+    async def get_request_details(self, *, current_user: CurrentUser, request_id: str) -> RequestDetailItem:
         if not (
             UserPolicy.can_view_requests(current_user)
             or has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ)
@@ -954,10 +990,10 @@ class RequestService:
             raise NotFound("Request not found")
 
         request, stats, owner_profile = request_row
-        allowed_owner_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
-        if allowed_owner_ids is not None:
-            if request.id_user not in set(allowed_owner_ids):
-                raise Forbidden("Request is outside your management scope")
+        await self._ensure_can_view_request_in_staff_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
         request_files = await self._requests.list_files(request_id=request_id)
         request_file_items = [
             RequestFileItem(id=file.id, path=file.path, name=file.name)
@@ -1019,6 +1055,8 @@ class RequestService:
             closed_at=request.closed_at,
             owner_user_id=request.id_user,
             owner_full_name=owner_profile.full_name if owner_profile else None,
+            owner_phone=owner_profile.phone if owner_profile else None,
+            owner_mail=owner_profile.mail if owner_profile else None,
             chosen_offer_id=request.id_offer,
             id_plan=request.id_plan,
             count_submitted=stats.count_submitted if stats else 0,
@@ -1033,6 +1071,9 @@ class RequestService:
     async def _resolve_visible_owner_ids_for_staff_scope(self, *, current_user: CurrentUser) -> list[str] | None:
         if current_user.role_id == settings.superadmin_role_id:
             return None
+        if current_user.role_id == settings.operator_role_id:
+            # Operator sees only own requests that are still unassigned (owner role is operator).
+            return [current_user.user_id]
         if current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
@@ -1053,6 +1094,22 @@ class RequestService:
             return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=lead_root_user_id)
         # Non-hierarchy roles must not receive implicit global request visibility.
         return []
+
+    async def _ensure_can_view_request_in_staff_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
+        allowed_owner_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
+        if allowed_owner_ids is None:
+            return
+        if request_owner_user_id not in set(allowed_owner_ids):
+            raise Forbidden("Request is outside your management scope")
+        if current_user.role_id != settings.operator_role_id:
+            return
+        if not await self._is_request_owned_by_operator(request_owner_user_id=request_owner_user_id):
+            raise Forbidden("Request is no longer available for operator")
 
     async def _ensure_can_manage_request_files(
         self,
@@ -1265,14 +1322,13 @@ class RequestService:
                 request_owner_user_id=request_owner_user_id,
             ):
                 raise Forbidden("Request is outside your management scope")
-            if new_owner_user_id == current_user.user_id:
-                raise Forbidden("Owner must be from current user's subordinates")
-            is_subordinate = await self._is_descendant(
-                ancestor_user_id=current_user.user_id,
-                target_user_id=new_owner_user_id,
-            )
-            if not is_subordinate:
-                raise Forbidden("Owner must be from current user's subordinates")
+            if new_owner_user_id != current_user.user_id:
+                is_subordinate = await self._is_descendant(
+                    ancestor_user_id=current_user.user_id,
+                    target_user_id=new_owner_user_id,
+                )
+                if not is_subordinate:
+                    raise Forbidden("Owner must be current user or current user's subordinate")
 
     async def _can_edit_department_requests(
         self,

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -45,18 +45,18 @@ class _FakeRequestsRepo:
         self,
         *,
         owner_id: str = "owner-1",
-        visible_contractors_by_request: dict[int, list[str]] | None = None,
+        visible_contractors_by_request: dict[str, list[str]] | None = None,
     ) -> None:
         self._owner_id = owner_id
         self._visible_contractors_by_request = visible_contractors_by_request or {}
 
-    async def get_by_id(self, *, request_id: int):
+    async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user=self._owner_id)
 
     async def list_active_keycloak_visible_contractor_user_ids(
         self,
         *,
-        request_id: int,
+        request_id: str,
         contractor_role_id: int,
     ) -> list[str]:
         _ = contractor_role_id
@@ -73,10 +73,10 @@ class _FakeChatsRepo:
 
 
 class _FakeOffersRepo:
-    def __init__(self, *, offers_by_request: dict[int, list[SimpleNamespace]] | None = None) -> None:
+    def __init__(self, *, offers_by_request: dict[str, list[SimpleNamespace]] | None = None) -> None:
         self._offers_by_request = offers_by_request or {}
 
-    async def list_by_request(self, *, request_id: int):
+    async def list_by_request(self, *, request_id: str):
         return list(self._offers_by_request.get(request_id, []))
 
     async def get_by_id(self, *, offer_id: int):
@@ -136,8 +136,17 @@ class _FakeUserAuthAccountsRepo:
 
 
 class _FakeProfilesRepo:
+    def __init__(
+        self,
+        *,
+        full_name: str = "Target User",
+        mail: str = "target@example.com",
+    ) -> None:
+        self._full_name = full_name
+        self._mail = mail
+
     async def get_by_id(self, user_id: str):
-        return SimpleNamespace(full_name="Target User", mail="target@example.com", id=user_id)
+        return SimpleNamespace(full_name=self._full_name, mail=self._mail, id=user_id)
 
 
 class _FakeUow:
@@ -147,10 +156,11 @@ class _FakeUow:
         *,
         owner_id: str = "owner-1",
         chat_recipients: list[str] | None = None,
-        offers_by_request: dict[int, list[SimpleNamespace]] | None = None,
+        offers_by_request: dict[str, list[SimpleNamespace]] | None = None,
         role_by_user_id: dict[str, int] | None = None,
         keycloak_user_ids: set[str] | None = None,
-        visible_contractors_by_request: dict[int, list[str]] | None = None,
+        visible_contractors_by_request: dict[str, list[str]] | None = None,
+        profiles_repo: _FakeProfilesRepo | None = None,
     ) -> None:
         if role_by_user_id is None:
             role_by_user_id = {
@@ -190,7 +200,7 @@ class _FakeUow:
         self.offers = _FakeOffersRepo(offers_by_request=offers_by_request)
         self.users = _FakeUsersRepo(role_by_user_id=role_by_user_id)
         self.user_auth_accounts = _FakeUserAuthAccountsRepo(keycloak_user_ids=keycloak_user_ids)
-        self.profiles = _FakeProfilesRepo()
+        self.profiles = profiles_repo or _FakeProfilesRepo()
 
     async def __aenter__(self):
         return self
@@ -464,7 +474,7 @@ async def test_handler_request_deadline_changed_notifies_responsible(monkeypatch
 async def test_handler_request_files_changed_notifies_responsible_and_submitted_accepted(monkeypatch):
     repo = _FakeNotificationsRepo()
     offers = {
-        77: [
+        "77": [
             SimpleNamespace(id=1, id_user="contractor-submitted", status="submitted"),
             SimpleNamespace(id=2, id_user="contractor-accepted", status="accepted"),
             SimpleNamespace(id=3, id_user="contractor-rejected", status="rejected"),
@@ -508,6 +518,34 @@ async def test_handler_user_status_changed_notifies_admins_except_actor(monkeypa
     assert len(repo.created) == 1
     assert repo.created[0].user_id == "admin-2"
     assert repo.created[0].type == "user.status_changed"
+
+
+@pytest.mark.asyncio
+async def test_handler_user_status_changed_uses_login_when_profile_name_missing(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(
+        module,
+        "UnitOfWork",
+        lambda: _FakeUow(
+            repo,
+            profiles_repo=_FakeProfilesRepo(full_name="Не указано", mail="Не указано"),
+        ),
+    )
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="user.status_changed",
+        actor_user_id="admin-1",
+        dedupe_key="user.status_changed:contractor-login:review:active",
+        payload={
+            "target_user_id": "contractor-login",
+            "old_status": "review",
+            "new_status": "active",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert repo.created[0].body == "Изменен статус пользователя contractor-login."
 
 
 @pytest.mark.asyncio

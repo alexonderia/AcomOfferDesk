@@ -12,7 +12,7 @@ export type ContractorRequestOffer = {
 };
 
 export type RequestWithOfferStats = {
-  id: number;
+  id: string;
   id_user: string;
   owner_full_name?: string | null;
   status: string;

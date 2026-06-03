@@ -22,8 +22,9 @@ export const useHeaderConfig = () => {
   const canLoadOpenRequests = hasPermission(session, 'requests.open.read');
   const canLoadOfferedRequests = hasPermission(session, 'requests.offered.read');
   const canOpenUsersPage = hasPermission(session, 'users.read');
+  const canOpenContractorsPage = hasPermission(session, 'contractors.read');
   const canRegisterUser = hasPermission(session, 'users.create');
-  const canCreateNormativeFile = hasPermission(session, 'normative_files.create');
+  const canManageNormativeFiles = hasPermission(session, 'normative_files.manage');
   const canViewFeedback = hasPermission(session, 'feedback.read');
   const canViewDashboardProcess = hasPermission(session, 'dashboard.process.read')
     || hasPermission(session, 'department.dashboard.read');
@@ -44,7 +45,15 @@ export const useHeaderConfig = () => {
 
   const breadcrumbs = useMemo(() => {
     if (location.pathname === '/admin') {
-      return [{ key: 'users', label: 'Пользователи' }];
+      const isEmployeesPage =
+        session?.roleId === ROLE.PROJECT_MANAGER
+        || session?.roleId === ROLE.LEAD_ECONOMIST
+        || session?.roleId === ROLE.ECONOMIST;
+      return [{ key: 'users', label: isEmployeesPage ? 'Сотрудники' : 'Пользователи' }];
+    }
+
+    if (location.pathname === '/contractors') {
+      return [{ key: 'contractors', label: 'Контрагенты' }];
     }
 
     if (location.pathname === '/requests') {
@@ -56,6 +65,10 @@ export const useHeaderConfig = () => {
         { key: 'requests', label: 'Заявки', to: '/requests' },
         { key: 'request-create', label: 'Создание заявки' },
       ];
+    }
+
+    if (location.pathname === '/normative-files') {
+      return [{ key: 'normative-files', label: 'Нормативные документы' }];
     }
 
     if (isPmDashboard) {
@@ -108,7 +121,7 @@ export const useHeaderConfig = () => {
     }
 
     return [];
-  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmPlan, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch]);
+  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmPlan, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch, session?.roleId]);
 
   return useMemo(
     () =>
@@ -120,7 +133,8 @@ export const useHeaderConfig = () => {
         canLoadOpenRequests,
         canLoadOfferedRequests,
         canOpenUsersPage,
-        canCreateNormativeFile,
+        canOpenContractorsPage,
+        canManageNormativeFiles,
         canViewFeedback,
         canViewDashboardProcess,
         canViewDashboardSavings,
@@ -134,6 +148,8 @@ export const useHeaderConfig = () => {
         onNavigateToRequests: () => navigate('/requests'),
         onNavigateToRequestCreate: () => navigate('/requests/create', { state: { backgroundLocation: location } }),
         onNavigateToAdmin: () => navigate('/admin'),
+        onNavigateToContractors: () => navigate('/contractors'),
+        onNavigateToNormativeFiles: () => navigate('/normative-files'),
         onNavigateToAdminCreate: () => {
           const params = new URLSearchParams(searchParams);
           if (location.pathname.startsWith('/admin')) {
@@ -168,7 +184,8 @@ export const useHeaderConfig = () => {
       canLoadOfferedRequests,
       canLoadOpenRequests,
       canOpenUsersPage,
-      canCreateNormativeFile,
+      canOpenContractorsPage,
+      canManageNormativeFiles,
       canViewFeedback,
       canViewDashboardProcess,
       canViewDashboardSavings,

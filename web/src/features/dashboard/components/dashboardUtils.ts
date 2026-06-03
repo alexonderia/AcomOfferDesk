@@ -10,7 +10,7 @@ export const STATUS_LABELS: Record<string, string> = {
   review: 'Анализ КП'
 };
 
-export type AssignmentState = Record<number, string>;
+export type AssignmentState = Record<string, string>;
 export type ExpandedState = Record<string, boolean>;
 export type StatusTotals = Record<string, number>;
 

@@ -1,13 +1,13 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 
 export type MarkDeletedAlertViewedPayload = {
-  request_id: number;
+  request_id: string;
 };
 
 export type MarkDeletedAlertViewedResponse = {
   status: 'ok';
   request_offer_stats: {
-    request_id: number;
+    request_id: string;
     count_deleted_alert: number;
     updated_at: string;
   };
@@ -16,17 +16,17 @@ export type MarkDeletedAlertViewedResponse = {
 type ApiResponse = {
   status?: 'ok';
   request_offer_stats?: {
-    request_id?: number;
+    request_id?: string;
     count_deleted_alert?: number;
     updated_at?: string;
   };
   data?: {
     request_offer_stats?: {
-      request_id?: number;
+      request_id?: string;
       count_deleted_alert?: number;
       updated_at?: string;
     };
-    request_id?: number;
+    request_id?: string;
     count_deleted_alert?: number;
     updated_at?: string;
   };
@@ -54,7 +54,7 @@ export const markDeletedAlertViewed = async (
   return {
     status: response.status ?? 'ok',
     request_offer_stats: {
-      request_id: stats.request_id ?? payload.request_id,
+      request_id: String(stats.request_id ?? payload.request_id),
       count_deleted_alert: stats.count_deleted_alert ?? 0,
       updated_at: stats.updated_at ?? new Date().toISOString()
     }

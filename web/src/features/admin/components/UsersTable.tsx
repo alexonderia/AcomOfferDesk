@@ -21,7 +21,7 @@ import {
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
 import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
@@ -54,6 +54,12 @@ import {
   updateDepartmentDelegations,
   type UserDepartmentDelegations,
 } from '@shared/api/users/getDepartmentDelegations';
+import {
+  getContractorDelegations,
+  updateContractorDelegations,
+  type UserContractorDelegations,
+} from '@shared/api/users/getContractorDelegations';
+import { useAuth } from '@app/providers/AuthProvider';
 
 const statusSchema = z.object({
   user_status: z.enum(['review', 'active', 'inactive', 'blacklist'])
@@ -278,7 +284,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                   color: 'primary.main'
                 }}
               >
-                Детали пользователя
+                Детали сотрудника
               </Typography>
               <ExpandMoreRounded
                 sx={{
@@ -819,6 +825,11 @@ export const UsersTable = ({
   const [departmentDelegationsError, setDepartmentDelegationsError] = useState<string | null>(null);
   const [isLoadingDepartmentDelegations, setIsLoadingDepartmentDelegations] = useState(false);
   const [isSavingDepartmentDelegations, setIsSavingDepartmentDelegations] = useState(false);
+  const [contractorDelegations, setContractorDelegations] = useState<UserContractorDelegations | null>(null);
+  const [contractorDelegationsError, setContractorDelegationsError] = useState<string | null>(null);
+  const [isLoadingContractorDelegations, setIsLoadingContractorDelegations] = useState(false);
+  const [isSavingContractorDelegations, setIsSavingContractorDelegations] = useState(false);
+  const { session } = useAuth();
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const lastDelegationToastRef = useRef<string | null>(null);
 
@@ -827,7 +838,7 @@ export const UsersTable = ({
     handleSubmit,
     reset,
     formState: { isSubmitting }
-  } = useForm<StatusFormValues>({
+  } = useLiveValidatedForm<StatusFormValues>({
     resolver: zodResolver(statusSchema),
     defaultValues: {
       user_status: 'review'
@@ -849,7 +860,7 @@ export const UsersTable = ({
     setValue: setSubordinateUnavailabilityValue,
     formState: { errors: subordinateUnavailabilityErrors, isSubmitting: isSubmittingSubordinateUnavailability },
     reset: resetSubordinateUnavailability
-  } = useForm<SubordinateUnavailabilityFormValues>({
+  } = useLiveValidatedForm<SubordinateUnavailabilityFormValues>({
     resolver: zodResolver(subordinateUnavailabilitySchema),
     defaultValues: { status: 'unavailable', started_at: '', ended_at: '' }
   });
@@ -995,6 +1006,49 @@ export const UsersTable = ({
       isCancelled = true;
     };
   }, [isContractorsTab, selectedUser?.user_id]);
+
+  const shouldLoadContractorDelegations = Boolean(
+    selectedUser
+    && !isContractorsTab
+    && selectedUser.role_id === ROLE.LEAD_ECONOMIST
+    && session?.roleId === ROLE.SUPERADMIN
+  );
+
+  useEffect(() => {
+    if (!shouldLoadContractorDelegations || !selectedUser) {
+      setContractorDelegations(null);
+      setContractorDelegationsError(null);
+      setIsLoadingContractorDelegations(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsLoadingContractorDelegations(true);
+    setContractorDelegationsError(null);
+    void getContractorDelegations(selectedUser.user_id)
+      .then((result) => {
+        if (!isCancelled) {
+          setContractorDelegations(result);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setContractorDelegations(null);
+          setContractorDelegationsError(
+            error instanceof Error ? error.message : 'Не удалось загрузить доступы к контрагентам'
+          );
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingContractorDelegations(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedUser?.user_id, shouldLoadContractorDelegations]);
 
   const rows: UserRow[] = useMemo(
     () =>
@@ -1231,6 +1285,48 @@ export const UsersTable = ({
     }
   };
 
+  const handleContractorDelegationToggle = (code: string, enabled: boolean) => {
+    setContractorDelegations((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return {
+        ...prev,
+        accesses: prev.accesses.map((item) =>
+          item.code === code ? { ...item, enabled } : item
+        ),
+      };
+    });
+  };
+
+  const handleSaveContractorDelegations = async () => {
+    if (!selectedUser || !contractorDelegations || !contractorDelegations.canManage) {
+      return;
+    }
+
+    setIsSavingContractorDelegations(true);
+    setContractorDelegationsError(null);
+    try {
+      const nextState = await updateContractorDelegations(
+        selectedUser.user_id,
+        contractorDelegations.accesses.filter((item) => item.enabled).map((item) => item.code)
+      );
+      setContractorDelegations(nextState);
+      showSystemToast({
+        severity: 'success',
+        message: 'Доступ к контрагентам обновлён.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось сохранить доступы';
+      setContractorDelegationsError(message);
+      void getContractorDelegations(selectedUser.user_id)
+        .then((state) => setContractorDelegations(state))
+        .catch(() => undefined);
+    } finally {
+      setIsSavingContractorDelegations(false);
+    }
+  };
+
   const openUserDetails = (clickedUser: UserListItem) => {
     setSelectedUser(clickedUser);
     setSubordinateProfile(null);
@@ -1405,8 +1501,8 @@ export const UsersTable = ({
             getRowId={(row) => row.id}
             isLoading={isLoading}
             noRowsLabel={emptyMessage}
-            searchPlaceholder="Найти пользователя"
-            addButtonLabel="Добавить пользователя"
+            searchPlaceholder="Найти сотрудника"
+            addButtonLabel="Добавить сотрудника"
             onAddClick={onAddClick}
             minTableWidth={840}
             cardExpansionControl={{
@@ -1467,7 +1563,7 @@ export const UsersTable = ({
             {selectedUser ? (
               <Stack spacing={2}>
                 <Typography id="user-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
-                  Карточка пользователя
+                  Карточка сотрудника
                 </Typography>
 
                 <Box
@@ -1480,7 +1576,7 @@ export const UsersTable = ({
                   }}
                 >
                   <Stack spacing={1.2}>
-                    <SourceSection title="Пользователь" source="users">
+                    <SourceSection title="Сотрудник" source="users">
                       <Box
                         sx={{
                           display: 'grid',
@@ -1498,7 +1594,7 @@ export const UsersTable = ({
                       </Box>
                     </SourceSection>
 
-                    <SourceSection title="Профиль пользователя" source="profiles">
+                    <SourceSection title="Профиль сотрудника" source="profiles">
                       <Stack spacing={1.2}>
                         <InfoRow label="ФИО" value={selectedUser.full_name} />
                         <Box
@@ -1717,6 +1813,60 @@ export const UsersTable = ({
                   </Stack>
                 ) : null}
 
+                {isLoadingContractorDelegations ? (
+                  <Alert severity="info">Загрузка доступов к контрагентам...</Alert>
+                ) : null}
+                {contractorDelegations ? (
+                  <Stack
+                    spacing={1.2}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: { xs: 1.4, sm: 1.8 },
+                      backgroundColor: 'background.paper'
+                    }}
+                  >
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                      Управление контрагентами
+                    </Typography>
+                    <Stack spacing={1}>
+                      {contractorDelegations.accesses.map((item) => (
+                        <FormControlLabel
+                          key={item.code}
+                          control={(
+                            <Checkbox
+                              checked={item.enabled}
+                              onChange={(event) => handleContractorDelegationToggle(item.code, event.target.checked)}
+                              disabled={!contractorDelegations.canManage || isSavingContractorDelegations}
+                            />
+                          )}
+                          label={(
+                            <Stack spacing={0.2}>
+                              <Typography variant="body2">{item.label}</Typography>
+                              <Typography variant="caption" color="text.secondary">{item.description}</Typography>
+                            </Stack>
+                          )}
+                        />
+                      ))}
+                    </Stack>
+                    {contractorDelegationsError ? <Alert severity="error">{contractorDelegationsError}</Alert> : null}
+                    {contractorDelegations.canManage ? (
+                      <Stack direction="row" justifyContent="flex-end">
+                        <Button
+                          variant="outlined"
+                          onClick={() => void handleSaveContractorDelegations()}
+                          disabled={isSavingContractorDelegations}
+                          sx={{ borderRadius: 1, textTransform: 'none' }}
+                        >
+                          {isSavingContractorDelegations ? 'Сохранение...' : 'Сохранить доступ'}
+                        </Button>
+                      </Stack>
+                    ) : (
+                      <Alert severity="info">У вас нет прав на изменение этого доступа.</Alert>
+                    )}
+                  </Stack>
+                ) : null}
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
                   <Button
@@ -1925,6 +2075,7 @@ export const UsersTable = ({
                   >
                     <TextField
                       label="Логин"
+                      {...textFieldAutocompleteProps('login')}
                       value={manualContractorDraft.login}
                       onChange={(event) => updateManualContractorField('login', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.login)}
@@ -1933,6 +2084,7 @@ export const UsersTable = ({
                     <TextField
                       label="Новый пароль"
                       type="password"
+                      {...textFieldAutocompleteProps('password')}
                       placeholder="Оставьте пустым, если без смены"
                       value={manualContractorPassword}
                       onChange={(event) => handleManualContractorPasswordChange(event.target.value)}
@@ -1941,6 +2093,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="ФИО"
+                      {...textFieldAutocompleteProps('full_name')}
                       value={manualContractorDraft.full_name}
                       onChange={(event) => updateManualContractorField('full_name', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.full_name)}
@@ -1948,6 +2101,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Телефон"
+                      {...textFieldAutocompleteProps('phone')}
                       value={manualContractorDraft.phone}
                       onChange={(event) => updateManualContractorField('phone', formatRuPhone(event.target.value))}
                       placeholder="+7 (900) 999-88-77"
@@ -1956,6 +2110,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="E-mail"
+                      {...textFieldAutocompleteProps('mail')}
                       value={manualContractorDraft.mail}
                       onChange={(event) => updateManualContractorField('mail', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.mail)}
@@ -1963,6 +2118,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Компания"
+                      {...textFieldAutocompleteProps('company_name')}
                       value={manualContractorDraft.company_name}
                       onChange={(event) => updateManualContractorField('company_name', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.company_name)}
@@ -1970,6 +2126,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="ИНН"
+                      {...textFieldAutocompleteProps('inn')}
                       value={manualContractorDraft.inn}
                       onChange={(event) => updateManualContractorField('inn', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.inn)}
@@ -1977,6 +2134,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Телефон компании"
+                      {...textFieldAutocompleteProps('company_phone')}
                       value={manualContractorDraft.company_phone}
                       onChange={(event) => updateManualContractorField('company_phone', formatRuPhone(event.target.value))}
                       placeholder="+7 (900) 999-88-77"
@@ -1985,6 +2143,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="E-mail компании"
+                      {...textFieldAutocompleteProps('company_mail')}
                       value={manualContractorDraft.company_mail}
                       onChange={(event) => updateManualContractorField('company_mail', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.company_mail)}
@@ -1992,6 +2151,7 @@ export const UsersTable = ({
                     />
                     <TextField
                       label="Адрес"
+                      {...textFieldAutocompleteProps('address')}
                       value={manualContractorDraft.address}
                       onChange={(event) => updateManualContractorField('address', event.target.value)}
                       error={Boolean(manualContractorFieldErrors.address)}
@@ -2000,6 +2160,7 @@ export const UsersTable = ({
                   </Box>
                   <TextField
                     label="Примечание"
+                    {...textFieldAutocompleteProps('note')}
                     value={manualContractorDraft.note}
                     onChange={(event) => updateManualContractorField('note', event.target.value)}
                     multiline

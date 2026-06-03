@@ -145,6 +145,8 @@ def test_request_details_contract_contains_actions_and_hides_amounts_without_per
             closed_at=None,
             owner_user_id="owner-3",
             owner_full_name="Owner 3",
+            owner_phone="+7 900 333-44-55",
+            owner_mail="owner3@example.com",
             chosen_offer_id=None,
             id_plan=None,
             count_submitted=1,
@@ -197,6 +199,8 @@ def test_request_details_contract_contains_actions_and_hides_amounts_without_per
     item = response.json()["data"]["item"]
     assert item["initial_amount"] is None
     assert item["final_amount"] is None
+    assert item["owner_phone"] == "+7 900 333-44-55"
+    assert item["owner_mail"] == "owner3@example.com"
     assert "actions" in item
     assert item["offers"]
     assert "actions" in item["offers"][0]
@@ -228,6 +232,8 @@ def test_offer_workspace_contract_contains_request_offer_chat_actions(
                     deadline_at=_dt(),
                     owner_user_id="owner-11",
                     owner_full_name="Owner",
+                    owner_phone="+7 900 444-55-66",
+                    owner_mail="owner11@example.com",
                     created_at=_dt(),
                     updated_at=_dt(),
                     closed_at=None,
@@ -293,6 +299,8 @@ def test_offer_workspace_contract_contains_request_offer_chat_actions(
     assert "actions" in data["request"]
     assert "actions" in data["offer"]
     assert "chat_actions" in data
+    assert data["request"]["owner_phone"] == "+7 900 444-55-66"
+    assert data["request"]["owner_mail"] == "owner11@example.com"
 
 
 def test_negative_authorization_file_download_forbidden_without_access(

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import hashlib
@@ -28,7 +28,7 @@ class TgLinkPayload:
     purpose: str
     exp: int
     nonce: str
-    request_id: int | None = None
+    request_id: str | None = None
 
     def to_token(self, secret: str) -> str:
         payload = {
@@ -67,7 +67,7 @@ def decode_token(token: str, secret: str) -> TgLinkPayload:
             purpose=str(payload["purpose"]),
             exp=int(payload["exp"]),
             nonce=str(payload["nonce"]),
-            request_id=int(payload["request_id"]) if "request_id" in payload else None,
+            request_id=str(payload["request_id"]).strip() if payload.get("request_id") not in (None, "") else None,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("Invalid token payload") from exc
@@ -78,7 +78,7 @@ def build_link_payload(
     tg_id: int,
     purpose: str,
     ttl_seconds: int,
-    request_id: int | None = None,
+    request_id: str | None = None,
 ) -> TgLinkPayload:
     exp = int(time.time()) + ttl_seconds
     return TgLinkPayload(

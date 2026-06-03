@@ -211,6 +211,31 @@ class UserDepartmentDelegationsUpdateRequest(BaseModel):
     access_codes: list[str] = Field(default_factory=list)
 
 
+class ContractorDelegationAccessSchema(BaseModel):
+    code: str
+    label: str
+    description: str
+    enabled: bool
+
+
+class UserContractorDelegationsData(BaseModel):
+    user_id: str
+    role_id: int
+    full_name: str | None = None
+    can_manage: bool
+    accesses: list[ContractorDelegationAccessSchema] = Field(default_factory=list)
+    token_refresh_required: bool = False
+    warning: str | None = None
+
+
+class UserContractorDelegationsResponse(BaseModel):
+    data: UserContractorDelegationsData
+
+
+class UserContractorDelegationsUpdateRequest(BaseModel):
+    access_codes: list[str] = Field(default_factory=list)
+
+
 class UpdateMyCredentialsRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=255)
     new_password: str = Field(min_length=8, max_length=255)

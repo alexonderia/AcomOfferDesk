@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import hashlib
@@ -16,7 +16,7 @@ from app.domain.exceptions import Unauthorized
 
 @dataclass(frozen=True)
 class ReplyTokenClaims:
-    request_id: int
+    request_id: str
     user_id: str
     exp: int
 
@@ -29,7 +29,7 @@ class ReplyTokenCodec:
     def __init__(self, *, secret: str) -> None:
         self._secret = secret.encode("utf-8")
 
-    async def create_token(self, *, request_id: int, user_id: str, ttl_seconds: int) -> str:
+    async def create_token(self, *, request_id: str, user_id: str, ttl_seconds: int) -> str:
         exp = int((datetime.now(timezone.utc) + timedelta(seconds=max(1, ttl_seconds))).timestamp())
         payload = {
             "purpose": self.PURPOSE,

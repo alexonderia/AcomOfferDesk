@@ -7,13 +7,13 @@ import {
   Dialog,
   DialogContent,
   Stack,
-  TextField,
   Tooltip,
   Typography
 } from '@mui/material';
 import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
+import { useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import { createFeedback } from '@shared/api/feedback/createFeedback';
 import { ActionButton } from '@shared/components/ActionButton';
@@ -63,7 +63,7 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
     reset,
     watch,
     formState: { errors, isSubmitting }
-  } = useForm<FormValues>({
+  } = useLiveValidatedForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       text: ''
@@ -178,14 +178,15 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
 
               {error ? <Alert severity="error">{error}</Alert> : null}
 
-              <TextField
+              <ValidatedTextField
                 label="Ваш отзыв"
+                fieldName="text"
                 multiline
                 minRows={4}
                 inputProps={{ maxLength: 3000 }}
                 error={Boolean(errors.text)}
                 helperText={errors.text ? `${errors.text.message} · ${currentTextLength}/3000` : `${currentTextLength}/3000`}
-                {...register('text')}
+                registration={register('text')}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1,

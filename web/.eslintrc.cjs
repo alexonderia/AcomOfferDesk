@@ -16,6 +16,8 @@ module.exports = {
   plugins: ["@typescript-eslint", "react-hooks", "react-refresh"],
   extends: ["eslint:recommended", "plugin:react-hooks/recommended"],
   rules: {
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
     "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     "no-undef": "off",
   },

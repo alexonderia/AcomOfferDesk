@@ -1,4 +1,4 @@
-import {
+﻿import {
   Alert,
   Box,
   Button,
@@ -133,7 +133,7 @@ export const ProjectManagerDashboard = () => {
   const inProgressTotal = useMemo(() => sumTotals(globalTotals), [globalTotals]);
 
   const pendingAssignmentIds = useMemo(
-    () => Object.entries(assignmentState).filter(([, ownerId]) => Boolean(ownerId)).map(([requestId]) => Number(requestId)),
+    () => Object.entries(assignmentState).filter(([, ownerId]) => Boolean(ownerId)).map(([requestId]) => requestId),
     [assignmentState]
   );
 
@@ -220,7 +220,7 @@ export const ProjectManagerDashboard = () => {
     return assignedRequests;
   }, [assignedRequests, myRequests, requestsTab, unassignedRequests]);
 
-  const handleAssigneeChange = (requestId: number, ownerId: string) => {
+  const handleAssigneeChange = (requestId: string, ownerId: string) => {
     if (ownerId) {
       const active = getActiveUnavailability(ownerId, activeUnavailability);
 
@@ -239,10 +239,10 @@ export const ProjectManagerDashboard = () => {
     setExpandedNodes((prev) => ({ ...prev, [userId]: !(prev[userId] ?? false) }));
   };
 
-  const applyAssignments = async (requestIds: number[]) => {
+  const applyAssignments = async (requestIds: string[]) => {
     const prepared = requestIds
       .map((requestId) => ({ requestId, ownerUserId: assignmentState[requestId] }))
-      .filter((item): item is { requestId: number; ownerUserId: string } => Boolean(item.ownerUserId));
+      .filter((item): item is { requestId: string; ownerUserId: string } => Boolean(item.ownerUserId));
 
     if (prepared.length === 0) {
       setErrorMessage('Выберите ответственного хотя бы для одной заявки');
@@ -281,7 +281,7 @@ export const ProjectManagerDashboard = () => {
     }
   };
 
-  const handleAssignSingle = async (requestId: number) => {
+  const handleAssignSingle = async (requestId: string) => {
     await applyAssignments([requestId]);
   };
 

@@ -9,7 +9,8 @@ type BuildHeaderConfigArgs = {
   canLoadOpenRequests: boolean;
   canLoadOfferedRequests: boolean;
   canOpenUsersPage: boolean;
-  canCreateNormativeFile: boolean;
+  canOpenContractorsPage: boolean;
+  canManageNormativeFiles: boolean;
   canViewFeedback: boolean;
   canViewDashboardProcess: boolean;
   canViewDashboardSavings: boolean;
@@ -23,14 +24,17 @@ type BuildHeaderConfigArgs = {
   onNavigateToRequests: () => void;
   onNavigateToRequestCreate: () => void;
   onNavigateToAdmin: () => void;
+  onNavigateToContractors: () => void;
+  onNavigateToNormativeFiles: () => void;
   onNavigateToAdminCreate: () => void;
   onNavigateBackToRequests: () => void;
-  onSetContractorTab: (value: 'my' | 'open') => void;
-  onSetAdminUsersTab: (value: 'contractors' | 'economists' | 'admins') => void;
+  onSetContractorTab: (_value: 'my' | 'open') => void;
+  onSetAdminUsersTab: (_value: 'contractors' | 'economists' | 'admins') => void;
 };
 
 type MoreMenuOptions = {
   showProfile?: boolean;
+  showContractors?: boolean;
   showNormative?: boolean;
   showRoleGuide?: boolean;
   showFeedback?: boolean;
@@ -39,6 +43,7 @@ type MoreMenuOptions = {
 
 const buildMoreNavItem = ({
   showProfile = true,
+  showContractors = false,
   showNormative = false,
   showRoleGuide = true,
   showFeedback = true,
@@ -49,8 +54,11 @@ const buildMoreNavItem = ({
   if (showProfile) {
     children.push({ key: 'profile', label: 'Профиль' });
   }
+  if (showContractors) {
+    children.push({ key: 'contractors', label: 'Контрагенты', to: '/contractors' });
+  }
   if (showNormative) {
-    children.push({ key: 'normative', label: 'Нормативные документы' });
+    children.push({ key: 'normative', label: 'Нормативные документы', to: '/normative-files' });
   }
   if (showRoleGuide) {
     children.push({ key: 'guide', label: 'Памятка' });
@@ -115,6 +123,7 @@ const buildSuperadminMobileNavItems = (
 const buildProjectManagerMobileNavItems = (
   showNormative: boolean,
   canOpenUsersPage: boolean,
+  canOpenContractorsPage: boolean,
   canViewDashboardProcess: boolean,
   canViewDashboardSavings: boolean,
   canViewDashboardPlans: boolean
@@ -141,12 +150,13 @@ const buildProjectManagerMobileNavItems = (
   ];
 
   if (canOpenUsersPage) {
-    items.push({ key: 'employees', label: 'Штат сотрудников', to: '/admin' });
+    items.push({ key: 'employees', label: 'Сотрудники', to: '/admin' });
   }
 
   items.push(
     buildMoreNavItem({
       showProfile: true,
+      showContractors: canOpenContractorsPage,
       showNormative,
       showRoleGuide: true,
       showFeedback: true,
@@ -175,29 +185,45 @@ const buildContractorMobileNavItems = (): HeaderMobileNavItem[] => [
   }),
 ];
 
-const buildLeadMobileNavItems = (canViewDashboardPlans: boolean): HeaderMobileNavItem[] => [
-  {
-    key: 'dashboard',
-    label: 'Дашборд',
-    to: canViewDashboardPlans ? '/pm-dashboard/plan' : '/requests',
-    children: canViewDashboardPlans ? [{ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' }] : [],
-  },
-  { key: 'requests', label: 'Заявки', to: '/requests' },
-  { key: 'economists', label: 'Экономисты', to: '/admin' },
-  buildMoreNavItem({
-    showProfile: true,
-    showNormative: false,
-    showRoleGuide: true,
-    showFeedback: true,
-    showLogout: true,
-  }),
-];
+const buildLeadMobileNavItems = (
+  canViewDashboardPlans: boolean,
+  canOpenUsersPage: boolean,
+  canOpenContractorsPage: boolean
+): HeaderMobileNavItem[] => {
+  const items: HeaderMobileNavItem[] = [
+    {
+      key: 'dashboard',
+      label: 'Дашборд',
+      to: canViewDashboardPlans ? '/pm-dashboard/plan' : '/requests',
+      children: canViewDashboardPlans ? [{ key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' }] : [],
+    },
+    { key: 'requests', label: 'Заявки', to: '/requests' },
+  ];
+
+  if (canOpenUsersPage) {
+    items.push({ key: 'employees', label: 'Сотрудники', to: '/admin' });
+  }
+
+  items.push(
+    buildMoreNavItem({
+      showProfile: true,
+      showContractors: canOpenContractorsPage,
+      showNormative: false,
+      showRoleGuide: true,
+      showFeedback: true,
+      showLogout: true,
+    })
+  );
+
+  return items;
+};
 
 const buildEconomistMobileNavItems = (
   canViewDashboardPlans: boolean,
   canViewDashboardProcess: boolean,
   canViewDashboardSavings: boolean,
-  canOpenUsersPage: boolean
+  canOpenUsersPage: boolean,
+  canOpenContractorsPage: boolean
 ): HeaderMobileNavItem[] => {
   const items: HeaderMobileNavItem[] = [];
   const dashboardChildren: HeaderMobileNavItem[] = [];
@@ -222,12 +248,13 @@ const buildEconomistMobileNavItems = (
   items.push({ key: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438', to: '/requests' });
 
   if (canOpenUsersPage) {
-    items.push({ key: 'economists', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u0441\u0442\u044b', to: '/admin' });
+    items.push({ key: 'employees', label: 'Сотрудники', to: '/admin' });
   }
 
   items.push(
     buildMoreNavItem({
       showProfile: true,
+      showContractors: canOpenContractorsPage,
       showNormative: false,
       showRoleGuide: true,
       showFeedback: true,
@@ -299,7 +326,8 @@ const resolveDefaultMobileNavItems = ({
   isOperator,
   isAdmin,
   canOpenUsersPage,
-  canCreateNormativeFile,
+  canOpenContractorsPage,
+  canManageNormativeFiles,
   canViewFeedback,
   canViewDashboardProcess,
   canViewDashboardSavings,
@@ -314,7 +342,8 @@ const resolveDefaultMobileNavItems = ({
   isOperator: boolean;
   isAdmin: boolean;
   canOpenUsersPage: boolean;
-  canCreateNormativeFile: boolean;
+  canOpenContractorsPage: boolean;
+  canManageNormativeFiles: boolean;
   canViewFeedback: boolean;
   canViewDashboardProcess: boolean;
   canViewDashboardSavings: boolean;
@@ -322,7 +351,7 @@ const resolveDefaultMobileNavItems = ({
 }): HeaderMobileNavItem[] => {
   if (isSuperadmin) {
     return buildSuperadminMobileNavItems(
-      canCreateNormativeFile,
+      canManageNormativeFiles,
       canOpenUsersPage,
       canViewFeedback,
       canViewDashboardProcess,
@@ -333,8 +362,9 @@ const resolveDefaultMobileNavItems = ({
 
   if (isProjectManager || isLeadEconomist) {
     return buildProjectManagerMobileNavItems(
-      canCreateNormativeFile,
+      canManageNormativeFiles,
       canOpenUsersPage,
+      canOpenContractorsPage,
       canViewDashboardProcess,
       canViewDashboardSavings,
       canViewDashboardPlans
@@ -351,10 +381,11 @@ const resolveDefaultMobileNavItems = ({
         canViewDashboardPlans,
         canViewDashboardProcess,
         canViewDashboardSavings,
-        canOpenUsersPage
+        canOpenUsersPage,
+        canOpenContractorsPage
       );
     }
-    return buildLeadMobileNavItems(canViewDashboardPlans);
+    return buildLeadMobileNavItems(canViewDashboardPlans, canOpenUsersPage, canOpenContractorsPage);
   }
 
   if (isOperator) {
@@ -372,7 +403,8 @@ export const buildHeaderConfig = ({
   canLoadOpenRequests,
   canLoadOfferedRequests,
   canOpenUsersPage,
-  canCreateNormativeFile,
+  canOpenContractorsPage,
+  canManageNormativeFiles,
   canViewFeedback,
   canViewDashboardProcess,
   canViewDashboardSavings,
@@ -386,6 +418,8 @@ export const buildHeaderConfig = ({
   onNavigateToRequests,
   onNavigateToRequestCreate: _onNavigateToRequestCreate,
   onNavigateToAdmin,
+  onNavigateToContractors,
+  onNavigateToNormativeFiles,
   onNavigateToAdminCreate: _onNavigateToAdminCreate,
   onNavigateBackToRequests,
   onSetContractorTab,
@@ -400,6 +434,13 @@ export const buildHeaderConfig = ({
   const isOperator = roleId === ROLE.OPERATOR;
   const isLeadLike = isLeadEconomist || isProjectManager || isEconomist;
 
+  const isNormativeFilesPage = pathname === '/normative-files';
+  const normativeNavProps = {
+    showNormativeFiles: canManageNormativeFiles,
+    normativeFilesActive: isNormativeFilesPage,
+    onNavigateToNormativeFiles,
+  };
+
   const isRequestsListPage = pathname === '/requests';
   const isRequestDetailsPage = /^\/requests\/\d+$/.test(pathname);
   const isContractorRequestDetailsPage = /^\/requests\/\d+\/contractor$/.test(pathname);
@@ -412,6 +453,7 @@ export const buildHeaderConfig = ({
   const isResponsibilityRequestsPage =
     (isProjectManager || isLeadEconomist) && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/admin');
+  const isResponsibilityContractorsPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/contractors');
   const isSuperadminDashboard = isSuperadmin && canViewDashboardProcess && pathname === '/pm-dashboard';
   const isSuperadminSavings = isSuperadmin && canViewDashboardSavings && pathname === '/pm-dashboard/savings';
   const isSuperadminPlan = isSuperadmin && canViewDashboardPlans && pathname === '/pm-dashboard/plan';
@@ -436,16 +478,24 @@ export const buildHeaderConfig = ({
     && hasEconomistDashboardNav
     && (canOpenUsersPage || isEconomist);
   const canUseEconomistTabs = isEconomist
-    && (pathname.startsWith('/requests') || pathname.startsWith('/admin') || isOfferWorkspacePage)
+    && (pathname.startsWith('/requests') || pathname.startsWith('/admin') || pathname.startsWith('/contractors') || isOfferWorkspacePage)
     && canOpenUsersPage;
   const canUseOperatorTabs = isOperator && pathname.startsWith('/requests');
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
-    && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans)
-    && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityPlan || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
-    && canOpenUsersPage;
+    && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans || canOpenContractorsPage)
+    && (
+      isResponsibilityDashboard
+      || isResponsibilitySavings
+      || isResponsibilityPlan
+      || isResponsibilityRequestsPage
+      || isResponsibilityEmployeesPage
+      || isResponsibilityContractorsPage
+      || isNormativeFilesPage
+    )
+    && (canOpenUsersPage || canOpenContractorsPage);
   const canUseSuperadminTabs = isSuperadmin
     && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans || canOpenUsersPage)
-    && (isSuperadminDashboard || isSuperadminSavings || isSuperadminPlan || isSuperadminRequestsPage || isSuperadminUsersPage);
+    && (isSuperadminDashboard || isSuperadminSavings || isSuperadminPlan || isSuperadminRequestsPage || isSuperadminUsersPage || isNormativeFilesPage);
 
   const defaultMobileNavItems = resolveDefaultMobileNavItems({
     isSuperadmin,
@@ -457,7 +507,8 @@ export const buildHeaderConfig = ({
     isOperator,
     isAdmin,
     canOpenUsersPage,
-    canCreateNormativeFile,
+    canOpenContractorsPage,
+    canManageNormativeFiles,
     canViewFeedback,
     canViewDashboardProcess,
     canViewDashboardSavings,
@@ -485,7 +536,9 @@ export const buildHeaderConfig = ({
             ? 'plan'
             : isSuperadminUsersPage
               ? 'users'
-              : 'requests',
+              : isNormativeFilesPage
+                ? 'normative'
+                : 'requests',
       onTabChange: canUseSuperadminTabs
         ? (value) => {
           if (value === 'dashboard' && canViewDashboardProcess) {
@@ -510,7 +563,7 @@ export const buildHeaderConfig = ({
       actions: [],
       breadcrumbs,
       mobileNavItems: buildSuperadminMobileNavItems(
-        canCreateNormativeFile,
+        canManageNormativeFiles,
         canOpenUsersPage,
         canViewFeedback,
         canViewDashboardProcess,
@@ -520,7 +573,8 @@ export const buildHeaderConfig = ({
       showFeedback: true,
       showRoleGuide: true,
       showProfile: false,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -529,8 +583,9 @@ export const buildHeaderConfig = ({
       mode: 'sidebar',
       breadcrumbs,
       mobileNavItems: buildProjectManagerMobileNavItems(
-        canCreateNormativeFile,
+        canManageNormativeFiles,
         canOpenUsersPage,
+        canOpenContractorsPage,
         canViewDashboardProcess,
         canViewDashboardSavings,
         canViewDashboardPlans
@@ -540,7 +595,8 @@ export const buildHeaderConfig = ({
         ...(canViewDashboardSavings ? [{ key: 'savings', value: 'savings', label: 'Экономия' as const }] : []),
         ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: 'План' as const }] : []),
         { key: 'requests', value: 'requests', label: 'Заявки' },
-        { key: 'employees', value: 'employees', label: 'Сотрудники' }
+        ...(canOpenUsersPage ? [{ key: 'employees', value: 'employees', label: 'Сотрудники' as const }] : []),
+        ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: 'Контрагенты' as const }] : []),
       ],
       activeTab: isResponsibilityDashboard
         ? 'dashboard'
@@ -550,6 +606,10 @@ export const buildHeaderConfig = ({
             ? 'plan'
           : isResponsibilityEmployeesPage
             ? 'employees'
+            : isResponsibilityContractorsPage
+              ? 'contractors'
+            : isNormativeFilesPage
+              ? 'normative'
             : 'requests',
       onTabChange: (value) => {
         if (value === 'dashboard' && canViewDashboardProcess) {
@@ -564,8 +624,12 @@ export const buildHeaderConfig = ({
           onNavigateToPlan();
           return;
         }
-        if (value === 'employees') {
+        if (value === 'employees' && canOpenUsersPage) {
           onNavigateToAdmin();
+          return;
+        }
+        if (value === 'contractors' && canOpenContractorsPage) {
+          onNavigateToContractors();
           return;
         }
         onNavigateToRequests();
@@ -574,7 +638,8 @@ export const buildHeaderConfig = ({
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -592,7 +657,8 @@ export const buildHeaderConfig = ({
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -611,7 +677,8 @@ export const buildHeaderConfig = ({
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -623,14 +690,16 @@ export const buildHeaderConfig = ({
         canViewDashboardPlans,
         canViewDashboardProcess,
         canViewDashboardSavings,
-        canOpenUsersPage
+        canOpenUsersPage,
+        canOpenContractorsPage
       ),
       tabs: [
         ...(canViewDashboardProcess ? [{ key: 'dashboard', value: 'dashboard', label: 'Дашборд' as const }] : []),
         ...(canViewDashboardSavings ? [{ key: 'savings', value: 'savings', label: 'Экономия' as const }] : []),
         ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: 'План' as const }] : []),
         { key: 'requests', value: 'requests', label: 'Заявки' },
-        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Экономисты' }] : []),
+        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Сотрудники' }] : []),
+        ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: 'Контрагенты' }] : []),
       ],
       activeTab: isResponsibilityDashboard
         ? 'dashboard'
@@ -640,6 +709,8 @@ export const buildHeaderConfig = ({
             ? 'plan'
             : pathname === '/admin'
               ? 'economists'
+              : pathname.startsWith('/contractors')
+                ? 'contractors'
               : 'requests',
       onTabChange: (value) => {
         if (value === 'dashboard' && canViewDashboardProcess) {
@@ -658,13 +729,18 @@ export const buildHeaderConfig = ({
           onNavigateToAdmin();
           return;
         }
+        if (value === 'contractors' && canOpenContractorsPage) {
+          onNavigateToContractors();
+          return;
+        }
         onNavigateToRequests();
       },
       actions: [],
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -676,16 +752,26 @@ export const buildHeaderConfig = ({
         canViewDashboardPlans,
         canViewDashboardProcess,
         canViewDashboardSavings,
-        canOpenUsersPage
+        canOpenUsersPage,
+        canOpenContractorsPage
       ),
       tabs: [
         { key: 'requests', value: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438' },
-        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: '\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u0441\u0442\u044b' }] : []),
+        ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Сотрудники' }] : []),
+        ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: 'Контрагенты' }] : []),
       ],
-      activeTab: pathname.startsWith('/admin') ? 'economists' : 'requests',
+      activeTab: pathname.startsWith('/admin')
+        ? 'economists'
+        : pathname.startsWith('/contractors')
+          ? 'contractors'
+          : 'requests',
       onTabChange: (value) => {
         if (value === 'economists' && canOpenUsersPage) {
           onNavigateToAdmin();
+          return;
+        }
+        if (value === 'contractors' && canOpenContractorsPage) {
+          onNavigateToContractors();
           return;
         }
         onNavigateToRequests();
@@ -694,7 +780,8 @@ export const buildHeaderConfig = ({
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -712,7 +799,8 @@ export const buildHeaderConfig = ({
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -732,7 +820,8 @@ export const buildHeaderConfig = ({
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
-      showLogout: true
+      showLogout: true,
+      ...normativeNavProps,
     };
   }
 
@@ -745,6 +834,7 @@ export const buildHeaderConfig = ({
     showFeedback: true,
     showRoleGuide: true,
     showProfile: true,
-    showLogout: true
+    showLogout: true,
+    ...normativeNavProps,
   };
 };

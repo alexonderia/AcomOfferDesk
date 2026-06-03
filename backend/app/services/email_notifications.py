@@ -1,16 +1,24 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from app.core.config import settings
 from app.infrastructure.email_service import SMTPEmailService
+from app.repositories.files import FileRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
+from app.services.normative_email_attachment import NormativeEmailAttachmentService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
 
 
 class EmailNotificationService:
-    def __init__(self, profiles: ProfileRepository, requests: RequestRepository) -> None:
+    def __init__(
+        self,
+        profiles: ProfileRepository,
+        requests: RequestRepository,
+        files: FileRepository | None = None,
+    ) -> None:
         self._profiles = profiles
         self._requests = requests
+        self._files = files
         self._email_service = SMTPEmailService(
             smtp_host=settings.smtp_host,
             smtp_port=settings.smtp_port,
@@ -23,7 +31,7 @@ class EmailNotificationService:
     async def notify_new_request(
         self,
         *,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
     ) -> None:
@@ -35,6 +43,7 @@ class EmailNotificationService:
             profile_repository=self._profiles,
             email_service=self._email_service,
             app_url=settings.web_base_url,
+            presentation_attachment_service=self._presentation_attachment_service(),
         )
         await use_case.execute(
             request_id=request_id,
@@ -46,7 +55,7 @@ class EmailNotificationService:
     async def notify_request_to_additional_emails(
         self,
         *,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str],
         initiator_user_id: str | None = None,
     ) -> None:
@@ -58,6 +67,7 @@ class EmailNotificationService:
             profile_repository=self._profiles,
             email_service=self._email_service,
             app_url=settings.web_base_url,
+            presentation_attachment_service=self._presentation_attachment_service(),
         )
         await use_case.execute(
             request_id=request_id,
@@ -67,3 +77,8 @@ class EmailNotificationService:
             hidden_contractor_ids=[],
             include_verified_contractors=False,
         )
+
+    def _presentation_attachment_service(self) -> NormativeEmailAttachmentService | None:
+        if self._files is None:
+            return None
+        return NormativeEmailAttachmentService(self._files)

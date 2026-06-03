@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -38,7 +38,7 @@ class DashboardEconomistNode:
 
 @dataclass(frozen=True)
 class DashboardRequestItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -51,7 +51,7 @@ class DashboardRequestItem:
 
 @dataclass(frozen=True)
 class DashboardSavingsItem:
-    request_id: int
+    request_id: str
     owner_user_id: str
     owner_full_name: str | None
     initial_amount: float
@@ -65,7 +65,7 @@ class DashboardSavingsItem:
 
 @dataclass(frozen=True)
 class DashboardClosedRequestItem:
-    request_id: int
+    request_id: str
     owner_user_id: str
     owner_full_name: str | None
     initial_amount: float | None

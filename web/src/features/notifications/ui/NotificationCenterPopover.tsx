@@ -1,130 +1,63 @@
-import CloseRounded from '@mui/icons-material/CloseRounded';
-import { Alert, Box, CircularProgress, IconButton, List, Popover, Stack, Typography } from '@mui/material';
-import { ActionButton } from '@shared/components/ActionButton';
-import type { ReactNode } from 'react';
-import type { Notification } from '../model/types';
-import { NotificationEmptyState } from './NotificationEmptyState';
-import { NotificationItem } from './NotificationItem';
+import { Box, ClickAwayListener, Portal } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import {
+  NOTIFICATION_CENTER_MIN_SIZE,
+  NOTIFICATION_CENTER_PANEL_BORDER_RADIUS_PX,
+  NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET,
+  type NotificationCenterAnchor,
+} from './notificationCenterLayout';
+import { NotificationCenterPanel, type NotificationCenterPanelProps } from './NotificationCenterPanel';
+import { useNotificationCenterSize } from './useNotificationCenterSize';
 
-type NotificationCenterPopoverProps = {
-  anchorEl: HTMLElement | null;
+type NotificationCenterPopoverProps = Omit<NotificationCenterPanelProps, 'size' | 'resizeHandleProps'> & {
+  anchorCorner: NotificationCenterAnchor | null;
   open: boolean;
-  notifications: Notification[];
-  hasUnread: boolean;
-  isLoading: boolean;
-  isMarkAllPending: boolean;
-  error: string | null;
-  markingIds: Set<number>;
-  onClose: () => void;
-  onRetry: () => void;
-  onMarkAll: () => void;
-  filterControls?: ReactNode;
-  onNotificationClick: (notification: Notification) => void;
-  canLoadMore?: boolean;
-  isLoadingMore?: boolean;
-  onLoadMore?: () => void;
 };
 
 export const NotificationCenterPopover = ({
-  anchorEl,
+  anchorCorner,
   open,
-  notifications,
-  hasUnread,
-  isLoading,
-  isMarkAllPending,
-  error,
-  markingIds,
-  onClose,
-  onRetry,
-  onMarkAll,
-  filterControls,
-  onNotificationClick,
-  canLoadMore = false,
-  isLoadingMore = false,
-  onLoadMore,
-}: NotificationCenterPopoverProps) => (
-  <Popover
-    open={open}
-    anchorEl={anchorEl}
-    onClose={onClose}
-    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-    PaperProps={{
-      sx: {
-        width: 420,
-        maxWidth: 'calc(100vw - 20px)',
-        maxHeight: 520,
-        p: 1.25,
-      },
-    }}
-  >
-    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 0.5, pb: 1 }}>
-      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-        Уведомления
-      </Typography>
-      <Stack direction="row" alignItems="center" spacing={0.8}>
-        <ActionButton
-          kind="custom"
-          showNavigationIcons={false}
-          disabled={!hasUnread || isMarkAllPending}
-          onClick={onMarkAll}
-          sx={{ minHeight: 32, px: 1.4, fontSize: 13, textTransform: 'none' }}
+  ...panelProps
+}: NotificationCenterPopoverProps) => {
+  const theme = useTheme();
+  const { size, resizeHandleProps } = useNotificationCenterSize();
+
+  if (!open || anchorCorner === null) {
+    return null;
+  }
+
+  const viewportWidthLimit = `calc(100vw - ${anchorCorner.left}px - ${NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET}px)`;
+  const viewportHeightLimit = `calc(100vh - ${anchorCorner.bottom}px - ${NOTIFICATION_CENTER_VIEWPORT_BOTTOM_INSET}px)`;
+  const minWidthLimit = `min(${NOTIFICATION_CENTER_MIN_SIZE.width}px, ${viewportWidthLimit})`;
+  const minHeightLimit = `min(${NOTIFICATION_CENTER_MIN_SIZE.height}px, ${viewportHeightLimit})`;
+
+  return (
+    <Portal>
+      <ClickAwayListener onClickAway={panelProps.onClose} mouseEvent="onPointerDown" touchEvent="onTouchStart">
+        <Box
+          role="dialog"
+          aria-label="Уведомления"
+          sx={{
+            position: 'fixed',
+            left: anchorCorner.left,
+            bottom: anchorCorner.bottom,
+            width: `min(${size.width}px, ${viewportWidthLimit})`,
+            height: `min(${size.height}px, ${viewportHeightLimit})`,
+            maxWidth: viewportWidthLimit,
+            maxHeight: viewportHeightLimit,
+            minWidth: minWidthLimit,
+            minHeight: minHeightLimit,
+            zIndex: theme.zIndex.modal,
+            bgcolor: 'background.paper',
+            borderRadius: `${NOTIFICATION_CENTER_PANEL_BORDER_RADIUS_PX}px`,
+            boxShadow: theme.shadows[8],
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+          }}
         >
-          Прочитать все
-        </ActionButton>
-        <IconButton size="small" onClick={onClose} aria-label="Закрыть уведомления">
-          <CloseRounded fontSize="small" />
-        </IconButton>
-      </Stack>
-    </Stack>
-
-    {filterControls ? <Box sx={{ pb: 1 }}>{filterControls}</Box> : null}
-
-    {isLoading ? (
-      <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 180 }}>
-        <CircularProgress size={24} />
-      </Stack>
-    ) : error ? (
-      <Stack spacing={1} sx={{ px: 0.5, pb: 0.5 }}>
-        <Alert severity="error">{error}</Alert>
-        <ActionButton
-          kind="outlined"
-          showNavigationIcons={false}
-          onClick={onRetry}
-          sx={{ minHeight: 36, textTransform: 'none' }}
-        >
-          Повторить
-        </ActionButton>
-      </Stack>
-    ) : notifications.length === 0 ? (
-      <NotificationEmptyState />
-    ) : (
-      <Box sx={{ overflowY: 'auto', pr: 0.5, pb: 0.5 }}>
-        <List disablePadding>
-          {notifications.map((notification) => (
-            <NotificationItem
-              key={notification.id}
-              notification={notification}
-              disabled={markingIds.has(notification.id)}
-              onClick={onNotificationClick}
-            />
-          ))}
-        </List>
-        {canLoadMore ? (
-          <Stack alignItems="center" sx={{ pt: 1.1 }}>
-            <ActionButton
-              kind="outlined"
-              showNavigationIcons={false}
-              disabled={isLoadingMore}
-              onClick={onLoadMore}
-              sx={{ minHeight: 34, textTransform: 'none' }}
-            >
-              {isLoadingMore ? 'Загрузка...' : 'Показать еще'}
-            </ActionButton>
-          </Stack>
-        ) : null}
-      </Box>
-    )}
-  </Popover>
-);
-
+          <NotificationCenterPanel {...panelProps} size={size} resizeHandleProps={resizeHandleProps} />
+        </Box>
+      </ClickAwayListener>
+    </Portal>
+  );
+};

@@ -40,6 +40,15 @@ def _normalize_email(email: str | None) -> str | None:
 
 
 def _normalize_full_name(claims: KeycloakAccessTokenClaims) -> str | None:
+    if claims.middle_name and (claims.family_name or claims.given_name):
+        parts = [
+            part.strip()
+            for part in (claims.family_name, claims.given_name, claims.middle_name)
+            if part and part.strip()
+        ]
+        if parts:
+            return " ".join(parts)
+
     explicit = (claims.full_name or "").strip()
     if explicit:
         return explicit

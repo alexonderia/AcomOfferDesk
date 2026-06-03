@@ -9,6 +9,7 @@ import {
   type CurrentUserProfile
 } from '@shared/api/users/getCurrentUserProfile';
 import { ROLE } from '@shared/constants/roles';
+import { textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
 import { useSystemToasts } from '@shared/ui/toasts';
@@ -113,7 +114,7 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   const note = draft.note.trim();
 
   if (!fullName) {
-    errors.fullName = '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0424\u0418\u041e';
+    errors.fullName = 'Укажите ФИО';
   } else if (fullName.length > 256) {
     errors.fullName = 'Максимум 256 символов';
   }
@@ -326,6 +327,7 @@ export const AccountStatePage = () => {
                   <TextField
                     label="\u0424\u0418\u041e"
                     value={draft.fullName}
+                    {...textFieldAutocompleteProps('fullName')}
                     onBlur={() => markFieldTouched('fullName')}
                     onChange={(event) => {
                       setDraft((prev) => ({ ...prev, fullName: event.target.value }));
@@ -337,6 +339,7 @@ export const AccountStatePage = () => {
                   <TextField
                     label="Телефон"
                     value={draft.phone}
+                    {...textFieldAutocompleteProps('phone')}
                     onBlur={() => markFieldTouched('phone')}
                     onChange={(event) => {
                       setDraft((prev) => ({ ...prev, phone: formatRuPhone(event.target.value) }));
@@ -348,6 +351,7 @@ export const AccountStatePage = () => {
                   <TextField
                     label="E-mail"
                     value={draft.mail}
+                    {...textFieldAutocompleteProps('mail')}
                     onBlur={() => markFieldTouched('mail')}
                     onChange={(event) => {
                       setDraft((prev) => ({ ...prev, mail: event.target.value }));
@@ -364,6 +368,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="Компания"
                       value={draft.companyName}
+                      {...textFieldAutocompleteProps('companyName')}
                       onBlur={() => markFieldTouched('companyName')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, companyName: event.target.value }));
@@ -375,6 +380,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="\u0418\u041d\u041d"
                       value={draft.inn}
+                      {...textFieldAutocompleteProps('inn')}
                       onBlur={() => markFieldTouched('inn')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, inn: event.target.value.replace(/\D/g, '') }));
@@ -386,6 +392,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="Телефон компании"
                       value={draft.companyPhone}
+                      {...textFieldAutocompleteProps('companyPhone')}
                       onBlur={() => markFieldTouched('companyPhone')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, companyPhone: formatRuPhone(event.target.value) }));
@@ -397,6 +404,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="E-mail компании"
                       value={draft.companyMail}
+                      {...textFieldAutocompleteProps('companyMail')}
                       onBlur={() => markFieldTouched('companyMail')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, companyMail: event.target.value }));
@@ -408,6 +416,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="Адрес"
                       value={draft.address}
+                      {...textFieldAutocompleteProps('address')}
                       onBlur={() => markFieldTouched('address')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, address: event.target.value }));
@@ -421,6 +430,7 @@ export const AccountStatePage = () => {
                       value={draft.note}
                       multiline
                       minRows={3}
+                      {...textFieldAutocompleteProps('note')}
                       onBlur={() => markFieldTouched('note')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, note: event.target.value }));

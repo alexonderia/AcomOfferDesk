@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from types import SimpleNamespace
 
@@ -48,7 +48,7 @@ class _FakeProcessUow:
         )
         self.user_auth_accounts = SimpleNamespace(get_by_user_provider=self._get_auth_by_user_provider)
 
-    async def _get_request_by_id(self, *, request_id: int):
+    async def _get_request_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1")
 
     async def _list_chat_participants(self, *, chat_id: int):

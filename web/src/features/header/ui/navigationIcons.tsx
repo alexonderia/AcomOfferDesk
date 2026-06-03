@@ -4,6 +4,7 @@ import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined';
 import FeedbackOutlined from '@mui/icons-material/FeedbackOutlined';
 import FilePresentOutlinedIcon from '@mui/icons-material/FilePresentOutlined';
 import GroupOutlined from '@mui/icons-material/GroupOutlined';
+import HandshakeOutlined from '@mui/icons-material/HandshakeOutlined';
 import HelpOutline from '@mui/icons-material/HelpOutline';
 import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
 import InsertInvitationOutlined from '@mui/icons-material/InsertInvitationOutlined';
@@ -27,7 +28,7 @@ const iconByKey: Record<string, ReactNode> = {
   plan: <InsertInvitationOutlined fontSize="small" />,
   employees: <GroupOutlined fontSize="small" />,
   economists: <GroupOutlined fontSize="small" />,
-  contractors: <GroupOutlined fontSize="small" />,
+  contractors: <HandshakeOutlined fontSize="small" />,
   admins: <PersonOutline fontSize="small" />,
   my: <FilePresentOutlinedIcon fontSize="small" />,
   open: <InsertDriveFileOutlined fontSize="small" />,

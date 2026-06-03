@@ -1,4 +1,4 @@
-"""Integration-style tests for request lifecycle auth/enforcement scenarios."""
+﻿"""Integration-style tests for request lifecycle auth/enforcement scenarios."""
 
 from __future__ import annotations
 
@@ -29,8 +29,8 @@ class _MutableRequestsRepo:
         self.request_row = request_row
         self.accepted_offer_id = accepted_offer_id
 
-    async def get_by_id(self, *, request_id: int):
-        return self.request_row if self.request_row.id == request_id else None
+    async def get_by_id(self, *, request_id: str):
+        return self.request_row if str(self.request_row.id) == str(request_id) else None
 
     async def update_initial_amount(self, *, request, initial_amount: float) -> None:
         request.initial_amount = initial_amount
@@ -43,7 +43,7 @@ class _MutableRequestsRepo:
         request.closed_at = closed_at
         request.id_offer = chosen_offer_id
 
-    async def get_latest_accepted_offer_id(self, *, request_id: int):
+    async def get_latest_accepted_offer_id(self, *, request_id: str):
         _ = request_id
         return self.accepted_offer_id
 
@@ -62,13 +62,13 @@ class _MutableRequestsRepo:
 
 
 class _OffersRepo:
-    def __init__(self, offers_by_id: dict[int, SimpleNamespace] | None = None) -> None:
+    def __init__(self, offers_by_id: dict[str, SimpleNamespace] | None = None) -> None:
         self._offers_by_id = offers_by_id or {}
 
     async def get_by_id(self, *, offer_id: int):
         return self._offers_by_id.get(offer_id)
 
-    async def list_contractor_tg_ids_for_request(self, *, request_id: int, contractor_role_id: int):
+    async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int):
         _ = (request_id, contractor_role_id)
         return []
 
@@ -97,19 +97,19 @@ class _ContractorViewRequestsRepo:
     def __init__(self, request_row: SimpleNamespace) -> None:
         self._request_row = request_row
 
-    async def get_visible_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str):
+    async def get_visible_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
-        if request_id != self._request_row.id:
+        if str(request_id) != str(self._request_row.id):
             return None
         return self._request_row
 
-    async def list_files(self, *, request_id: int):
+    async def list_files(self, *, request_id: str):
         _ = request_id
         return []
 
 
 class _ContractorViewOffersRepo:
-    async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str):
+    async def get_contractor_offer_for_request(self, *, request_id: str, contractor_user_id: str):
         _ = (request_id, contractor_user_id)
         return None
 
@@ -241,29 +241,36 @@ def test_allowed_roles_can_create_request(test_client, monkeypatch, set_current_
         self,
         *,
         current_user,
+        request_id,
         deadline_at,
         description,
         initial_amount,
         id_plan,
+        normative_file_id,
         files,
         additional_emails,
         hidden_contractor_ids,
     ):
-        _ = (self, deadline_at, description, initial_amount, id_plan, files, additional_emails, hidden_contractor_ids)
+        _ = (self, request_id, deadline_at, description, initial_amount, id_plan, normative_file_id, files, additional_emails, hidden_contractor_ids)
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
-        return 700, [701]
+        return "700", [701]
 
     monkeypatch.setattr(requests_api.RequestService, "create_request", _guarded_create_request)
 
     response = test_client.post(
         "/api/v1/requests",
-        data={"deadline_at": _future_dt().isoformat(), "description": "Created in test"},
+        data={
+            "id": "REQ-700",
+            "deadline_at": _future_dt().isoformat(),
+            "description": "Created in test",
+            "normative_file_id": "1",
+        },
         files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
     )
 
     assert response.status_code == 200
-    assert response.json()["data"]["request_id"] == 700
+    assert response.json()["data"]["request_id"] == "700"
 
 
 @pytest.mark.parametrize(
@@ -282,24 +289,31 @@ def test_forbidden_roles_cannot_create_request(test_client, monkeypatch, set_cur
         self,
         *,
         current_user,
+        request_id,
         deadline_at,
         description,
         initial_amount,
         id_plan,
+        normative_file_id,
         files,
         additional_emails,
         hidden_contractor_ids,
     ):
-        _ = (self, deadline_at, description, initial_amount, id_plan, files, additional_emails, hidden_contractor_ids)
+        _ = (self, request_id, deadline_at, description, initial_amount, id_plan, normative_file_id, files, additional_emails, hidden_contractor_ids)
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
-        return 700, [701]
+        return "700", [701]
 
     monkeypatch.setattr(requests_api.RequestService, "create_request", _guarded_create_request)
 
     response = test_client.post(
         "/api/v1/requests",
-        data={"deadline_at": _future_dt().isoformat(), "description": "Created in test"},
+        data={
+            "id": "REQ-700",
+            "deadline_at": _future_dt().isoformat(),
+            "description": "Created in test",
+            "normative_file_id": "1",
+        },
         files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
     )
 
@@ -591,6 +605,33 @@ def test_department_requests_update_without_department_assign_cannot_change_fore
     assert response.status_code == 403
 
 
+def test_lead_can_change_subordinate_request_owner_to_self_inside_management_scope(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", owner_user_id="econ-1")
+    set_uow(_RequestLifecycleUow(request_row, users_by_id=_department_users_tree()))
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_READ,
+            PermissionCodes.REQUESTS_OWNER_CHANGE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch(
+        "/api/v1/requests/1",
+        json={"owner_user_id": "lead-1"},
+    )
+
+    assert response.status_code == 200
+    assert request_row.id_user == "lead-1"
+
+
 def test_department_assign_allows_changing_foreign_request_owner_inside_department_scope(
     test_client,
     set_current_user,
@@ -732,6 +773,8 @@ def test_deleted_and_rejected_offers_do_not_break_request_stats_payload(
             closed_at=None,
             owner_user_id="owner-1",
             owner_full_name="Owner",
+            owner_phone=None,
+            owner_mail=None,
             chosen_offer_id=None,
             id_plan=None,
             count_submitted=3,

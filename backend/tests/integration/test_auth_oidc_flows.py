@@ -59,6 +59,7 @@ def _build_keycloak_claims(*, subject: str = "kc-subject", email: str | None = N
         full_name="User Name",
         given_name="User",
         family_name="Name",
+        middle_name=None,
         email=email,
         email_verified=True,
         realm_roles=frozenset(),

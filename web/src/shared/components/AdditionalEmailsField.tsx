@@ -13,6 +13,7 @@ import {
   type Theme,
 } from '@mui/material';
 import { isValidAdditionalEmail, mergeAdditionalEmails, splitAdditionalEmails } from '@shared/lib/additionalEmails';
+import { textFieldAutocompleteProps } from '@shared/lib/forms';
 
 export type AdditionalEmailsFieldHandle = {
   commitPendingInput: () => string[] | null;
@@ -104,6 +105,7 @@ export const AdditionalEmailsField = forwardRef<AdditionalEmailsFieldHandle, Add
             placeholder={placeholder}
             value={inputValue}
             disabled={disabled}
+            {...textFieldAutocompleteProps('mail')}
             error={Boolean(errorMessage)}
             helperText={errorMessage ?? helperText}
             InputProps={

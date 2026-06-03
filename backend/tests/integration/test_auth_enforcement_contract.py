@@ -233,7 +233,6 @@ def test_department_atomic_permission_without_delegation_role_is_ignored(
         status="active",
         api_roles=frozenset(
             {
-                "app.lead_economist",
                 PermissionCodes.FILES_DOWNLOAD,
                 PermissionCodes.DEPARTMENT_FILES_READ,
             }

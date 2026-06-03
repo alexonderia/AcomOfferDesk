@@ -3,6 +3,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from app.domain.contractor_delegations import (
+    CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS,
+    get_contractor_delegation_permission_codes,
+)
 from app.domain.department_delegations import (
     DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION,
     get_department_permission_codes,
@@ -57,20 +61,31 @@ def build_current_user_from_keycloak(
         for role_code in delegation_roles
         if role_code in DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION
     )
+    delegated_contractor_permissions = frozenset(
+        permission
+        for role_code in delegation_roles
+        if role_code in CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS
+        for permission in CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS[role_code]
+    )
     department_permissions_from_token = known_permissions_from_token & get_department_permission_codes()
-    # Department scope extensions are granted only via delegation.* roles.
-    # Bare department.* atomic codes from token claims are ignored.
+    contractor_permissions_from_token = known_permissions_from_token & get_contractor_delegation_permission_codes()
+    # Department and contractor scope extensions are granted only via delegation.* roles.
+    # Bare department.* / contractors.* atomic codes from token claims are ignored.
     department_permissions = delegated_department_permissions
-    role_scoped_permissions = known_permissions_from_token - department_permissions_from_token
+    contractor_permissions = delegated_contractor_permissions
+    role_scoped_permissions = (
+        known_permissions_from_token - department_permissions_from_token - contractor_permissions_from_token
+    )
     role_ceiling = get_permissions_for_role(role_id)
     if role_ceiling:
         role_scoped_permissions = role_scoped_permissions & role_ceiling
-    permissions = role_scoped_permissions | department_permissions
     app_roles = frozenset(role for role in normalized_roles if role.startswith("app."))
-    if not permissions and role_ceiling:
-        expected_app_role = role_mapping_by_local_role_id().get(role_id)
-        if expected_app_role and expected_app_role in app_roles:
-            permissions = role_ceiling | department_permissions
+    expected_app_role = role_mapping_by_local_role_id().get(role_id)
+    has_matching_app_role = bool(expected_app_role and expected_app_role in app_roles)
+    if has_matching_app_role and role_ceiling:
+        permissions = role_ceiling | department_permissions | contractor_permissions
+    else:
+        permissions = role_scoped_permissions | department_permissions | contractor_permissions
     if (app_roles or delegation_roles) and not permissions:
         logger.warning(
             "keycloak_user_without_atomic_permissions user_id=%s app_roles=%s delegation_roles=%s keycloak_roles_count=%s",

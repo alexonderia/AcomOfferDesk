@@ -18,7 +18,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useLiveValidatedForm } from "@shared/lib/forms";
 import { usePlanDashboard } from "../model/usePlanDashboard";
 import { PlanDialogs } from "./plan/PlanDialogs";
 import { PlanHierarchySection } from "./plan/PlanHierarchySection";
@@ -228,7 +228,7 @@ export const ProjectManagerPlanDashboard = () => {
   const [selectedPlanRequestStats, setSelectedPlanRequestStats] = useState<PlanRequestStats | null>(null);
   const [scopedRequestStats, setScopedRequestStats] = useState<PlanRequestStats | null>(null);
 
-  const rootPlanForm = useForm<RootPlanFormValues>({
+  const rootPlanForm = useLiveValidatedForm<RootPlanFormValues>({
     resolver: zodResolver(rootPlanSchema),
     defaultValues: {
       name: "",
@@ -237,7 +237,7 @@ export const ProjectManagerPlanDashboard = () => {
       planAmount: "",
     },
   });
-  const subplanForm = useForm<SubplanFormValues>({
+  const subplanForm = useLiveValidatedForm<SubplanFormValues>({
     resolver: zodResolver(subplanSchema),
     defaultValues: {
       name: "",
@@ -247,7 +247,7 @@ export const ProjectManagerPlanDashboard = () => {
       amount: "",
     },
   });
-  const delegateForm = useForm<DelegateFormValues>({
+  const delegateForm = useLiveValidatedForm<DelegateFormValues>({
     resolver: zodResolver(delegateSchema),
     defaultValues: {
       childUserId: "",
@@ -255,7 +255,7 @@ export const ProjectManagerPlanDashboard = () => {
       childPlanAmount: "",
     },
   });
-  const editForm = useForm<EditFormValues>({
+  const editForm = useLiveValidatedForm<EditFormValues>({
     resolver: zodResolver(editSchema),
     defaultValues: { name: "", periodEnd: "", planAmount: "" },
   });

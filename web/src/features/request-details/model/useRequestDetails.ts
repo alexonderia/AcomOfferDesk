@@ -6,7 +6,7 @@ export const useRequestDetails = () => {
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const requestFromLocation = (location.state as { request?: RequestWithOfferStats } | null)?.request;
-  const requestId = Number(id ?? requestFromLocation?.id ?? 0);
+  const requestId = (id ?? requestFromLocation?.id ?? '').trim();
 
   return {
     navigate,

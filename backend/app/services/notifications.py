@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import logging
@@ -144,7 +144,7 @@ class NotificationService:
         *,
         actor_user_id: str,
         recipient_user_id: str,
-        request_id: int,
+        request_id: str,
         offer_id: int,
     ) -> UserNotification | None:
         if actor_user_id == recipient_user_id:
@@ -171,7 +171,7 @@ class NotificationService:
         *,
         author_user_id: str,
         recipient_user_ids: Sequence[str],
-        request_id: int,
+        request_id: str,
         offer_id: int,
         chat_id: int,
         message_id: int,
@@ -246,7 +246,7 @@ class NotificationService:
         *,
         actor_user_id: str,
         recipient_user_id: str,
-        request_id: int,
+        request_id: str,
         previous_status: str,
         new_status: str,
     ) -> UserNotification | None:

@@ -91,6 +91,13 @@ class _UsersRepo:
             rows.append((user, self._profiles.get(user.id), None, None))
         return rows
 
+    async def list_active_user_parent_pairs(self):
+        return [
+            (user.id, user.id_parent)
+            for user in self._users.values()
+            if user.status == "active"
+        ]
+
 
 class _ProfilesRepo:
     def __init__(self, users_repo: _UsersRepo) -> None:
@@ -555,8 +562,10 @@ def test_economist_users_list_is_limited_to_own_contour(test_client, set_uow, se
 
     assert response.status_code == 200
     user_ids = {item["user_id"] for item in response.json()["data"]["items"]}
+    assert "lead-1" in user_ids
     assert "eco-2" in user_ids
-    assert "lead-1" not in user_ids
+    assert "eco-3" in user_ids
+    assert "operator-1" in user_ids
     assert "admin-1" not in user_ids
 
 

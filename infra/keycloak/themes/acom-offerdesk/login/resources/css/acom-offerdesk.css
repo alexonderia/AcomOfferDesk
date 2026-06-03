@@ -361,6 +361,7 @@ body#keycloak-bg.aod-body {
   width: 48px;
   height: 48px;
   min-width: 48px;
+  --pf-v5-c-button--after--BorderColor: transparent transparent transparent transparent;
   padding: 0;
   border: none;
   border-radius: 999px;

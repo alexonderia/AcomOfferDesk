@@ -193,7 +193,7 @@ jobs:
 
             # Keycloak: skip 20–30 min bootstrap when model OK + bootstrap.sh unchanged; repair on verify fail.
             # Force full bootstrap: KEYCLOAK_BOOTSTRAP_FORCE=1 on VPS before deploy (workflow_dispatch).
-            chmod +x ./scripts/keycloak-init-deploy.sh ./scripts/run-keycloak-check-backend.sh ./scripts/post-deploy-verify.sh
+            chmod +x ./scripts/keycloak-init-deploy.sh ./scripts/keycloak-refresh-theme.sh ./scripts/run-keycloak-check-backend.sh ./scripts/post-deploy-verify.sh
             if ! ./scripts/keycloak-init-deploy.sh "$COMPOSE_ENV_FILE"; then
               echo "=== keycloak-init-deploy failed ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true

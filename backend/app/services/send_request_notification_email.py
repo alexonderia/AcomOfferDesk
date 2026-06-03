@@ -247,7 +247,7 @@ class SendRequestNotificationEmailUseCase:
             return settings.invitation_portal_url.rstrip("/")
         if settings.web_base_url:
             return f"{settings.web_base_url.rstrip('/')}/login"
-        return None
+        return f"{self._app_url}/login"
 
     async def _build_request_attachments(self, *, request_id: str) -> tuple[list[EmailAttachment], str | None]:
         files = await self._request_repository.list_files_by_request_id(request_id=request_id)

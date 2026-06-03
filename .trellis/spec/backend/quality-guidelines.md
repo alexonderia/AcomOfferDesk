@@ -19,6 +19,7 @@ Backend changes must preserve the current FastAPI + async SQLAlchemy + Clean Arc
 - Use `UnitOfWork` for transaction boundaries.
 - When a service receives runtime URLs or adapters through its constructor, keep helper branches aligned with those injected values instead of re-reading equivalent global settings only. This preserves direct service tests and non-HTTP entrypoints.
 - Use backend permissions/action flags as the source of truth for allowed actions.
+- Keep Keycloak-backed E2E provisioning aligned with the realm user-profile schema. If Keycloak makes a profile attribute required (for example `middleName`), populate it during smoke-user creation so tests do not stall on required-action forms before the SPA loads.
 - Keep in-memory integration fixtures aligned with current dataclass constructors and service factory signatures; when request/offer schemas gain or lose fields, update the test factories in the same change.
 - Preserve legacy Telegram functionality unless removal is explicitly requested.
 - For DB changes, include SQL/migration patch and rollout notes.

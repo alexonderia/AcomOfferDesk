@@ -185,15 +185,16 @@ def test_decode_keycloak_access_token_extracts_roles_from_top_level_permissions(
 
 
 def test_build_current_user_from_keycloak_filters_known_permissions():
+    # Economist (role_id=6): token has one known atomic code; no matching app.* so we do
+    # not take the full role ceiling path (admin + app.admin would grant entire ceiling).
     current_user = build_current_user_from_keycloak(
         user_id="user-1",
-        role_id=2,
+        role_id=6,
         status="active",
         api_roles=frozenset(
             {
                 PermissionCodes.USERS_READ,
                 "unknown.permission",
-                "app.admin",
                 "delegation.user-manager",
             }
         ),

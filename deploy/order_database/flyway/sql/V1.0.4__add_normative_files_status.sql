@@ -1,7 +1,5 @@
 -- Normative document lifecycle status (actual / outdated).
 -- Column name matches order_database V1.0.4: document_status.
--- NOTE: canonical order_database V1.0.4 also converts requests.id to TEXT;
--- that part is in V1.0.5__request_id_text.sql (deploy snapshot was truncated before 2026-06).
 
 ALTER TABLE normative_files
     ADD COLUMN IF NOT EXISTS document_status TEXT NOT NULL DEFAULT 'actual';

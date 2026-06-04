@@ -102,6 +102,7 @@ async def update_contractor_status(
             uow.users,
             uow.tg_users,
             uow.profiles,
+            uow.user_auth_accounts,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await contractor_service.update_contractor_status(

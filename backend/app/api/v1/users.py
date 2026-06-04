@@ -286,7 +286,13 @@ async def update_my_credentials(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        self_service = UserSelfService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_status_periods,
+            uow.user_auth_accounts,
+        )
         await self_service.update_my_credentials(
             current_user,
             current_password=payload.current_password,
@@ -321,7 +327,13 @@ async def update_my_profile(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        self_service = UserSelfService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_status_periods,
+            uow.user_auth_accounts,
+        )
         await self_service.update_my_profile(
             current_user,
             full_name=payload.full_name,
@@ -357,7 +369,13 @@ async def update_my_registration_profile(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        self_service = UserSelfService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_status_periods,
+            uow.user_auth_accounts,
+        )
         await self_service.update_my_profile_for_review_onboarding(
             current_user,
             full_name=payload.full_name,
@@ -380,7 +398,13 @@ async def update_my_company_contacts(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        self_service = UserSelfService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_status_periods,
+            uow.user_auth_accounts,
+        )
         await self_service.update_my_company_contacts(
             current_user,
             company_name=payload.company_name,
@@ -406,7 +430,13 @@ async def update_my_registration_company_contacts(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        self_service = UserSelfService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_status_periods,
+            uow.user_auth_accounts,
+        )
         await self_service.update_my_company_contacts_for_review_onboarding(
             current_user,
             company_name=payload.company_name,
@@ -432,7 +462,13 @@ async def set_my_unavailability_period(
     uow: UnitOfWork = Depends(get_uow),
 ) -> SetMyUnavailabilityPeriodResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        self_service = UserSelfService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_status_periods,
+            uow.user_auth_accounts,
+        )
         await self_service.set_my_unavailability_period(
             current_user,
             status=payload.status,
@@ -579,7 +615,13 @@ async def set_subordinate_unavailability_period(
     uow: UnitOfWork = Depends(get_uow),
 ) -> SetSubordinateUnavailabilityPeriodResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        self_service = UserSelfService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_status_periods,
+            uow.user_auth_accounts,
+        )
         await self_service.set_subordinate_unavailability_period(
             current_user=current_user,
             subordinate_user_id=user_id,
@@ -711,6 +753,7 @@ async def update_user_status(
             uow.users,
             uow.tg_users,
             uow.profiles,
+            uow.user_auth_accounts,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.update_statuses(

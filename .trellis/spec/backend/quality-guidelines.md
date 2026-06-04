@@ -120,6 +120,107 @@ If checks cannot be run, state why and list the residual risk.
 #### Correct
 - Keep registration onboarding on dedicated endpoints and leave the regular authenticated self-profile endpoints permission-gated.
 
+## Scenario: Keycloak Name Sync For Linked Local Profiles
+
+### 1. Scope / Trigger
+- Trigger: any change that creates, updates, or synchronizes a Keycloak-linked user whose local profile stores one combined `full_name` while Keycloak stores separate profile fields.
+
+### 2. Signatures
+- Backend self-profile writes:
+  `PATCH /api/v1/users/me/profile`
+  `PATCH /api/v1/users/me/registration-profile`
+- Backend admin/manual writes:
+  user creation/update flows in `backend/app/services/users.py`
+- Keycloak admin sync entrypoint:
+  `KeycloakAdminService.ensure_user(...)`
+
+### 3. Contracts
+- Local source of truth:
+  `profiles.full_name` stores one combined FIO string.
+- Keycloak target fields:
+  `lastName`
+  `firstName`
+  `attributes.middleName[]`
+- Mapping contract from local `full_name` to Keycloak fields:
+  - token order is `Фамилия Имя Отчество`
+  - first token -> `lastName`
+  - last token -> `middleName` when there are 3+ tokens
+  - middle token span -> `firstName`, so first name may contain multiple words
+  - hyphenated surname stays inside the first token
+- Reverse mapping from Keycloak claims to local profile:
+  combine `family_name`, `given_name`, and `middle_name` back into one `full_name`.
+
+### 4. Validation & Error Matrix
+- local profile updated and linked Keycloak account exists -> push latest FIO/email to Keycloak in the same service flow
+- Keycloak callback returns edited profile claims -> overwrite local `profiles.full_name` / `profiles.mail` with those latest submitted values
+- local `full_name` missing/placeholder -> do not invent synthetic Keycloak names
+- local profile not linked to Keycloak yet -> update only the local profile; sync resumes after binding
+
+### 5. Good/Base/Bad Cases
+- Good: local DB already has `Иванов-Сидоров Анна Мария Петровна`; Keycloak gets `lastName=Иванов-Сидоров`, `firstName=Анна Мария`, `middleName=Петровна`, and the user does not re-enter FIO.
+- Base: user enters FIO in Keycloak first; callback stores the submitted values into the local profile.
+- Bad: only copying Keycloak names into blank local profiles while never pushing local onboarding/admin edits back to Keycloak; this leaves required-action forms empty on first login.
+
+### 6. Tests Required
+- Unit: tokenized full-name mapping preserves hyphenated surname and multi-word first name.
+- Unit: linked self-profile update calls `ensure_user()` with parsed Keycloak name fields.
+- Unit/Integration: Keycloak callback sync overwrites stale local `full_name` with the latest claims.
+- Integration: admin/manual user flows that mock `ensure_user()` must accept the name-sync kwargs.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Treat local `full_name` as opaque text everywhere and sync only username/email into Keycloak.
+
+#### Correct
+- Keep one `full_name` in the local DB, but always map it explicitly into Keycloak `lastName` / `firstName` / `middleName` when a linked account is created or updated.
+
+## Scenario: Self-Registered Contractor Keycloak Access On Activation
+
+### 1. Scope / Trigger
+- Trigger: a contractor creates a Keycloak-linked account through self-registration, stays in local `users.status=review`, and later an internal user approves the account by changing status to `active`.
+
+### 2. Signatures
+- Status transition entrypoints:
+  `PATCH /api/v1/users/{user_id}/status`
+  `PATCH /api/v1/contractors/{contractor_id}/status`
+- Backend service hook:
+  `UserStatusService.update_statuses(...)`
+
+### 3. Contracts
+- Local source of truth for approval remains `users.status`.
+- Self-registered contractor may already have:
+  - local `user_auth_accounts(provider='keycloak')`
+  - Keycloak account without `acom-api` `app.contractor`
+- On contractor transition to `active`, backend must:
+  - resolve the active Keycloak binding from `user_auth_accounts`
+  - assign the app role matching local `id_role` through `sync_keycloak_app_role_for_user(...)`
+  - best-effort terminate Keycloak sessions so the next login/refresh picks up new claims
+
+### 4. Validation & Error Matrix
+- contractor status changes to `active` and active Keycloak binding exists -> sync `acom-api` app role for the linked Keycloak subject
+- contractor status changes to `active` and no Keycloak binding exists -> keep local activation; skip Keycloak role sync
+- non-contractor status changes to `active` -> do not run contractor Keycloak access sync
+- contractor status changes away from `active` -> this activation hook does not assign app roles
+- Keycloak role sync succeeds but session logout fails -> keep status change and role assignment; do not roll back local approval
+
+### 5. Good/Base/Bad Cases
+- Good: self-registered contractor is approved from `review` to `active`, receives `app.contractor` in `acom-api`, and next session refresh/login has business-access claims.
+- Base: admin-created/manual contractor flows may still assign the same role earlier during explicit provisioning.
+- Bad: rely on first successful login after approval to assign app roles lazily; this leaves approved contractors with linked Keycloak accounts but empty `api_roles`.
+
+### 6. Tests Required
+- Unit: contractor `review -> active` with Keycloak binding calls `sync_keycloak_app_role_for_user(...)`.
+- Unit: same transition best-effort calls `logout_user_sessions(...)` after role sync.
+- Unit: contractor activation without Keycloak binding skips sync.
+- Integration: existing `/users/{id}/status` and `/contractors/{id}/status` enforcement fixtures stay aligned with the expanded `UserStatusService(...)` constructor.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Assume self-registration plus local approval is enough and wait for some later auth path to backfill missing Keycloak app roles.
+
+#### Correct
+- Treat local activation as the authoritative moment to grant Keycloak application access for self-registered contractors, using the stored Keycloak binding immediately in the status-change service.
+
 ---
 
 ## Code Review Checklist

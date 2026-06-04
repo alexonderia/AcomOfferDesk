@@ -257,6 +257,45 @@ def _normalize_keycloak_email_value(value: str | None) -> str | None:
     return normalized
 
 
+@dataclass(frozen=True, slots=True)
+class KeycloakNameParts:
+    first_name: str | None
+    last_name: str | None
+    middle_name: str | None
+    should_sync: bool
+
+
+def _split_full_name_for_keycloak(full_name: str | None) -> KeycloakNameParts:
+    normalized = (full_name or "").strip()
+    if not normalized or normalized.lower() in {PLACEHOLDER_TEXT.lower(), "none", "null"}:
+        return KeycloakNameParts(first_name=None, last_name=None, middle_name=None, should_sync=False)
+
+    tokens = [token for token in normalized.split() if token]
+    if not tokens:
+        return KeycloakNameParts(first_name=None, last_name=None, middle_name=None, should_sync=False)
+    if len(tokens) == 1:
+        return KeycloakNameParts(
+            first_name=None,
+            last_name=tokens[0],
+            middle_name=None,
+            should_sync=True,
+        )
+    if len(tokens) == 2:
+        return KeycloakNameParts(
+            first_name=tokens[1],
+            last_name=tokens[0],
+            middle_name=None,
+            should_sync=True,
+        )
+
+    return KeycloakNameParts(
+        first_name=" ".join(tokens[1:-1]),
+        last_name=tokens[0],
+        middle_name=tokens[-1],
+        should_sync=True,
+    )
+
+
 def _normalize_notification_email(value: str | None) -> str | None:
     normalized = (value or "").strip()
     if not normalized:
@@ -434,9 +473,14 @@ class UserRegistrationService:
                 mail=normalized_mail,
             )
         )
+        keycloak_name_parts = _split_full_name_for_keycloak(normalized_full_name)
         keycloak_user = await self._keycloak_admin.ensure_user(
             username=user_id,
             email=normalized_mail,
+            first_name=keycloak_name_parts.first_name,
+            last_name=keycloak_name_parts.last_name,
+            middle_name=keycloak_name_parts.middle_name,
+            sync_names=keycloak_name_parts.should_sync,
             email_verified=False,
         )
         await _bind_keycloak_account(
@@ -1397,10 +1441,15 @@ class ManualContractorService:
         if note is not None:
             company_contact.note = note
 
+        keycloak_name_parts = _split_full_name_for_keycloak(profile.full_name)
         keycloak_user = await self._keycloak_admin.ensure_user(
             username=user.id,
             previous_username=original_user_id,
             email=_normalize_keycloak_email_value(company_contact.mail),
+            first_name=keycloak_name_parts.first_name,
+            last_name=keycloak_name_parts.last_name,
+            middle_name=keycloak_name_parts.middle_name,
+            sync_names=keycloak_name_parts.should_sync,
             email_verified=False,
         )
         await _bind_keycloak_account(
@@ -1585,14 +1634,19 @@ class UserStatusService:
         users: UserRepository,
         tg_users: TgUserRepository,
         profiles: ProfileRepository,
+        user_auth_accounts: UserAuthAccountRepository | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._users = users
         self._tg_users = tg_users
         self._profiles = profiles
+        self._user_auth_accounts = user_auth_accounts
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -1601,6 +1655,42 @@ class UserStatusService:
             lambda: self._process_event_publisher(event)
         )
         return True
+
+    async def _sync_contractor_keycloak_access_on_activation(
+        self,
+        *,
+        user: User,
+        old_status: str,
+    ) -> None:
+        if self._user_auth_accounts is None:
+            return
+        if user.id_role != settings.contractor_role_id:
+            return
+        if user.status != "active" or old_status == "active":
+            return
+
+        keycloak_account = await self._user_auth_accounts.get_by_user_provider(
+            user_id=user.id,
+            provider="keycloak",
+            include_inactive=False,
+        )
+        if keycloak_account is None:
+            return
+
+        keycloak_subject_id = (keycloak_account.external_subject_id or "").strip()
+        if not keycloak_subject_id:
+            return
+
+        await sync_keycloak_app_role_for_user(
+            self._keycloak_admin,
+            keycloak_user_id=keycloak_subject_id,
+            local_role_id=user.id_role,
+        )
+        try:
+            await self._keycloak_admin.logout_user_sessions(user_id=keycloak_subject_id)
+        except Conflict:
+            # Role sync is the source-of-truth change; token refresh can recover later if session logout fails.
+            pass
 
     async def update_statuses(
         self,
@@ -1668,6 +1758,11 @@ class UserStatusService:
         old_status = user.status
         status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
+        if status_changed:
+            await self._sync_contractor_keycloak_access_on_activation(
+                user=user,
+                old_status=old_status,
+            )
 
         notify_tg_id = tg_user.id if tg_user is not None else None
 
@@ -1751,11 +1846,16 @@ class UserSelfService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         user_status_periods: UserStatusPeriodRepository,
+        user_auth_accounts: UserAuthAccountRepository | None = None,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_status_periods = user_status_periods
+        self._user_auth_accounts = user_auth_accounts
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     async def _ensure_accessible_subordinate(
         self,
@@ -1833,22 +1933,46 @@ class UserSelfService:
     ) -> None:
         profile = await self._profiles.get_by_id(user_id)
         if profile is None:
-            await self._profiles.add(
-                Profile(
-                    id=user_id,
-                    full_name=full_name or "Не указано",
-                    phone=phone or "Не указано",
-                    mail=mail or "Не указано",
-                )
+            profile = Profile(
+                id=user_id,
+                full_name=full_name or "Не указано",
+                phone=phone or "Не указано",
+                mail=mail or "Не указано",
             )
+            await self._profiles.add(profile)
+        else:
+            if full_name is not None:
+                profile.full_name = full_name
+            if phone is not None:
+                profile.phone = phone
+            if mail is not None:
+                profile.mail = mail
+
+        await self._sync_linked_keycloak_profile(user_id=user_id, profile=profile)
+
+    async def _sync_linked_keycloak_profile(self, *, user_id: str, profile: Profile) -> None:
+        if self._user_auth_accounts is None:
             return
 
-        if full_name is not None:
-            profile.full_name = full_name
-        if phone is not None:
-            profile.phone = phone
-        if mail is not None:
-            profile.mail = mail
+        account = await self._user_auth_accounts.get_by_user_provider(
+            user_id=user_id,
+            provider="keycloak",
+            include_inactive=False,
+        )
+        if account is None:
+            return
+
+        keycloak_name_parts = _split_full_name_for_keycloak(profile.full_name)
+        await self._keycloak_admin.ensure_user(
+            username=user_id,
+            previous_username=account.external_username,
+            email=_normalize_keycloak_email_value(profile.mail),
+            first_name=keycloak_name_parts.first_name,
+            last_name=keycloak_name_parts.last_name,
+            middle_name=keycloak_name_parts.middle_name,
+            sync_names=keycloak_name_parts.should_sync,
+            email_verified=False,
+        )
 
     async def update_my_profile(
         self,

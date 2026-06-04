@@ -1,20 +1,45 @@
 name: Deploy to VPS
 
+# Push to `test` no longer starts deploy directly — only after green CI (workflow "CI").
+# Manual: Actions → Deploy to VPS → Run workflow (break-glass; does not wait for CI).
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches:
       - test
   workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-test-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    # Auto deploy: only when CI finished successfully on a push to test (not on PR CI).
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'test' &&
+       github.event.workflow_run.event == 'push') ||
+      github.event_name == 'workflow_dispatch'
     steps:
+      - name: CI gate context
+        if: github.event_name == 'workflow_run'
+        run: |
+          echo "Deploy triggered after CI success."
+          echo "CI run: ${{ github.event.workflow_run.html_url }}"
+          echo "Commit: ${{ github.event.workflow_run.head_sha }}"
+          echo "Branch: ${{ github.event.workflow_run.head_branch }}"
+
+      - name: Manual deploy notice
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::warning::Manual deploy (workflow_dispatch) — CI gate was not required. Use only for break-glass."
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:

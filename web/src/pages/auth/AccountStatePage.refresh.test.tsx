@@ -29,7 +29,7 @@ vi.mock('@shared/ui/toasts', () => ({
   }),
 }));
 
-const buildSession = (token: string) => ({
+const buildSession = (token: string, permissions: string[] = []) => ({
   token,
   tokenType: 'bearer',
   tokenExpiresAt: 1_700_000_000,
@@ -41,7 +41,7 @@ const buildSession = (token: string) => ({
   authProvider: 'keycloak',
   businessAccess: false,
   onboardingState: null,
-  permissions: [] as string[],
+  permissions,
   appRoles: [] as string[],
   delegationRoles: [] as string[],
 });
@@ -114,6 +114,34 @@ describe('AccountStatePage refresh behavior', () => {
 
     useAuthMock.mockReturnValue({
       session: buildSession('token-2'),
+      logout: logoutMock,
+    });
+
+    view.rerender(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <AccountStatePage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(getRegistrationCurrentUserProfileMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not refetch the registration profile when the same user session changes permissions', async () => {
+    useAuthMock.mockReturnValue({
+      session: buildSession('token-1', []),
+      logout: logoutMock,
+    });
+
+    const view = renderPage();
+
+    await waitFor(() => {
+      expect(getRegistrationCurrentUserProfileMock).toHaveBeenCalledTimes(1);
+    });
+
+    useAuthMock.mockReturnValue({
+      session: buildSession('token-1', ['profile.manage_own']),
       logout: logoutMock,
     });
 

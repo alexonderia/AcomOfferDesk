@@ -16,6 +16,11 @@ def _normalize_email(email: str | None) -> str | None:
     return normalized or None
 
 
+def _normalize_name_part(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    return normalized or None
+
+
 @dataclass(frozen=True, slots=True)
 class KeycloakAdminUser:
     id: str
@@ -50,6 +55,10 @@ class KeycloakAdminService:
         *,
         username: str,
         email: str | None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        middle_name: str | None = None,
+        sync_names: bool = False,
         password: str | None = None,
         previous_username: str | None = None,
         enabled: bool = True,
@@ -76,6 +85,10 @@ class KeycloakAdminService:
                 admin_token,
                 username=username,
                 email=normalized_email,
+                first_name=first_name,
+                last_name=last_name,
+                middle_name=middle_name,
+                sync_names=sync_names,
                 enabled=enabled,
                 email_verified=email_verified,
             )
@@ -90,6 +103,10 @@ class KeycloakAdminService:
                 user_id=current_user.id,
                 username=username,
                 email=normalized_email,
+                first_name=first_name,
+                last_name=last_name,
+                middle_name=middle_name,
+                sync_names=sync_names,
                 enabled=enabled,
                 email_verified=email_verified,
             )
@@ -535,16 +552,23 @@ class KeycloakAdminService:
         *,
         username: str,
         email: str | None,
+        first_name: str | None,
+        last_name: str | None,
+        middle_name: str | None,
+        sync_names: bool,
         enabled: bool,
         email_verified: bool,
     ) -> str:
-        payload: dict[str, Any] = {
-            "username": username,
-            "enabled": enabled,
-            "emailVerified": email_verified,
-        }
-        if email is not None:
-            payload["email"] = email
+        payload = self._build_user_payload(
+            username=username,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            middle_name=middle_name,
+            sync_names=sync_names,
+            enabled=enabled,
+            email_verified=email_verified,
+        )
 
         async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.post(
@@ -569,16 +593,23 @@ class KeycloakAdminService:
         user_id: str,
         username: str,
         email: str | None,
+        first_name: str | None,
+        last_name: str | None,
+        middle_name: str | None,
+        sync_names: bool,
         enabled: bool,
         email_verified: bool,
     ) -> None:
-        payload: dict[str, Any] = {
-            "username": username,
-            "enabled": enabled,
-            "emailVerified": email_verified,
-        }
-        if email is not None:
-            payload["email"] = email
+        payload = self._build_user_payload(
+            username=username,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            middle_name=middle_name,
+            sync_names=sync_names,
+            enabled=enabled,
+            email_verified=email_verified,
+        )
 
         async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             response = await client.put(
@@ -588,6 +619,40 @@ class KeycloakAdminService:
             )
         if response.status_code >= 400:
             raise Conflict("Unable to update Keycloak account")
+
+    def _build_user_payload(
+        self,
+        *,
+        username: str,
+        email: str | None,
+        first_name: str | None,
+        last_name: str | None,
+        middle_name: str | None,
+        sync_names: bool,
+        enabled: bool,
+        email_verified: bool,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "username": username,
+            "enabled": enabled,
+            "emailVerified": email_verified,
+        }
+        if email is not None:
+            payload["email"] = email
+
+        normalized_first_name = _normalize_name_part(first_name)
+        normalized_last_name = _normalize_name_part(last_name)
+        normalized_middle_name = _normalize_name_part(middle_name)
+        if sync_names:
+            if normalized_first_name is not None:
+                payload["firstName"] = normalized_first_name
+            if normalized_last_name is not None:
+                payload["lastName"] = normalized_last_name
+            payload["attributes"] = {
+                "middleName": [normalized_middle_name] if normalized_middle_name is not None else [],
+            }
+
+        return payload
 
     async def _set_password(self, admin_token: str, *, user_id: str, password: str) -> None:
         async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:

@@ -111,6 +111,7 @@ describe('AccountStatePage', () => {
     expect(screen.getByText('Личные данные')).toBeInTheDocument();
     expect(screen.getByText('Данные компании')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
+    expect(screen.queryByText(/Статус:/i)).not.toBeInTheDocument();
   });
 
   it('shows required-field icons and closes the form after successful submit', async () => {

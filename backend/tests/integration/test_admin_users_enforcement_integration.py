@@ -150,8 +150,18 @@ class _UsersUow:
 
 
 def _set_fake_keycloak(monkeypatch) -> None:
-    async def _fake_ensure_user(self, *, username: str, email: str | None = None, email_verified: bool = False):
-        _ = (self, username, email, email_verified)
+    async def _fake_ensure_user(
+        self,
+        *,
+        username: str,
+        email: str | None = None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        middle_name: str | None = None,
+        sync_names: bool = False,
+        email_verified: bool = False,
+    ):
+        _ = (self, username, email, first_name, last_name, middle_name, sync_names, email_verified)
         return SimpleNamespace(id=f"kc-{username}")
 
     async def _fake_sync_keycloak_app_role_for_user(*args, **kwargs) -> None:

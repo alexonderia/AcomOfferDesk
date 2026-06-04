@@ -55,6 +55,12 @@ class _OnboardingPeriodsRepo:
         return []
 
 
+class _OnboardingUserAuthAccountsRepo:
+    async def get_by_user_provider(self, *, user_id: str, provider: str, include_inactive: bool = False):
+        _ = (user_id, provider, include_inactive)
+        return None
+
+
 class _OnboardingUow:
     def __init__(self, *, profile=None, company_contact=None) -> None:
         self.profiles = _OnboardingProfilesRepo(profile)
@@ -64,6 +70,7 @@ class _OnboardingUow:
             company_contacts=self.company_contacts,
         )
         self.user_status_periods = _OnboardingPeriodsRepo()
+        self.user_auth_accounts = _OnboardingUserAuthAccountsRepo()
 
     async def __aenter__(self) -> "_OnboardingUow":
         return self

@@ -1,5 +1,5 @@
 ﻿import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import {
@@ -138,11 +138,10 @@ export const AccountStatePage = () => {
   const [showValidation, setShowValidation] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Partial<Record<keyof ProfileDraft, boolean>>>({});
+  const loadedUserIdRef = useRef<string | null>(null);
 
   const sessionUserId = session?.userId ?? null;
   const hasBusinessAccess = Boolean(session?.businessAccess);
-  const sessionRoleId = session?.roleId ?? null;
-  const sessionPermissionsKey = (session?.permissions ?? []).join('|');
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
   const isReview = session?.status === 'review';
   const isBlocked = session?.status === 'inactive' || session?.status === 'blacklist';
@@ -156,9 +155,23 @@ export const AccountStatePage = () => {
       navigate(resolveAuthenticatedPath('/', session), { replace: true });
       return;
     }
+  }, [hasBusinessAccess, navigate, session]);
 
+  useEffect(() => {
+    if (!session || hasBusinessAccess || !sessionUserId) {
+      if (!session) {
+        loadedUserIdRef.current = null;
+      }
+      return;
+    }
+    if (loadedUserIdRef.current === sessionUserId) {
+      return;
+    }
+
+    loadedUserIdRef.current = sessionUserId;
     let cancelled = false;
     setIsLoading(true);
+    setErrorMessage(null);
     void getRegistrationCurrentUserProfile()
       .then((data) => {
         if (cancelled) {
@@ -171,6 +184,7 @@ export const AccountStatePage = () => {
       })
       .catch((error) => {
         if (!cancelled) {
+          loadedUserIdRef.current = null;
           setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить данные.');
         }
       })
@@ -183,7 +197,7 @@ export const AccountStatePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [hasBusinessAccess, navigate, sessionPermissionsKey, sessionRoleId, sessionUserId]);
+  }, [hasBusinessAccess, session, sessionUserId]);
 
   const canEditCompany = useMemo(() => isContractor && isReview, [isContractor, isReview]);
   const statusContent = useMemo(() => getStatusContent(session?.status ?? ''), [session?.status]);
@@ -281,10 +295,6 @@ export const AccountStatePage = () => {
                 </Typography>
               ) : null}
             </Stack>
-
-            {!isBlocked ? (
-              <Alert severity={statusContent.severity}>{'Статус'}: {statusContent.title.toLowerCase()}.</Alert>
-            ) : null}
             {!isBlocked && errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
 
             {!isBlocked && !isSubmitted ? (

@@ -46,7 +46,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const IDLE_WINDOW_MS = 30 * 60 * 1000;
-const SESSION_SYNC_POLL_MS = 10000;
+const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
 
 const mapSession = (response: AuthSessionResponse): AuthSession => ({
   token: response.data.access_token,
@@ -220,16 +220,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [applySession, refresh]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session?.token) {
+    if (status !== 'authenticated' || !session?.token || !session.tokenExpiresAt) {
       return;
     }
-    const timerId = window.setInterval(() => {
+
+    const refreshAt = (session.tokenExpiresAt * 1000) - ACCESS_TOKEN_REFRESH_LEEWAY_MS;
+    const delayMs = Math.max(1000, refreshAt - Date.now());
+    const timerId = window.setTimeout(() => {
       void refresh('http_401');
-    }, SESSION_SYNC_POLL_MS);
+    }, delayMs);
+
     return () => {
-      window.clearInterval(timerId);
+      window.clearTimeout(timerId);
     };
-  }, [refresh, session?.token, status]);
+  }, [refresh, session?.token, session?.tokenExpiresAt, status]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

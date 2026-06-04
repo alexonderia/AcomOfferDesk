@@ -68,9 +68,16 @@ jobs:
               sha256sum "$backup_path" > "$backup_path.sha256"
 
               # order-database-postgres: avoid DNS alias "postgres" (acome-monitoring also registers postgres on project_net).
-              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm \
-                -e "FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${ORDER_DB_NAME}" \
-                flyway migrate)
+              run_flyway() {
+                (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm \
+                  -e "FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${ORDER_DB_NAME}" \
+                  "$@")
+              }
+              if ! run_flyway migrate; then
+                echo "FLYWAY_MIGRATE: migrate failed — repair checksums for already-applied scripts, then retry once"
+                run_flyway repair
+                run_flyway migrate
+              fi
             }
 
             cd /opt/acome-offer-desk

@@ -32,6 +32,7 @@ from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.registration_admin_notify import (
     RegistrationNotifyContext,
     notify_new_user_registration,
+    schedule_registration_review_required_notification,
 )
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
@@ -618,19 +619,12 @@ class ContractorRegistrationService:
                 company_name=company_name,
             )
         )
-        self._schedule_process_notification_event(
-            build_process_notification_event(
-                event_type="user.review_required",
-                actor_user_id=user.id,
-                entity_type="user",
-                entity_id=user.id,
-                dedupe_key=f"user.review_required:{user.id}:contractor_tg",
-                payload={
-                    "target_user_id": user.id,
-                    "target_role": settings.contractor_role_id,
-                    "source": "contractor_tg_registration",
-                },
-            )
+        schedule_registration_review_required_notification(
+            after_commit_hook_registrar=self._after_commit_hook_registrar,
+            user_id=user.id,
+            actor_user_id=user.id,
+            role_id=settings.contractor_role_id,
+            source="contractor_tg_registration",
         )
         return user
 

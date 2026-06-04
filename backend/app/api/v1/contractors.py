@@ -129,6 +129,7 @@ async def invite_contractors(
     async with uow:
         service = ContractorInvitationService(
             attachment_service=NormativeEmailAttachmentService(uow.files),
+            after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.invite_contractors(
             current_user=current_user,

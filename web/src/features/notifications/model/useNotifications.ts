@@ -10,6 +10,7 @@ import {
   NOTIFICATION_PAGE_SIZE,
   NOTIFICATION_UNREAD_FALLBACK_POLLING_INTERVAL_MS,
 } from './constants';
+import { isVisibleNotification } from './isVisibleNotification';
 
 const DEFAULT_POLLING_INTERVAL_MS = NOTIFICATION_UNREAD_FALLBACK_POLLING_INTERVAL_MS;
 
@@ -103,19 +104,20 @@ export const useNotifications = ({
       const requestPromise = (async () => {
         try {
           const response = await getNotifications({ limit, offset });
+          const visibleItems = response.items.filter(isVisibleNotification);
 
           setItems((current) => {
             if (!append) {
-              return hasSameNotificationItems(current, response.items) ? current : response.items;
+              return hasSameNotificationItems(current, visibleItems) ? current : visibleItems;
             }
 
-            if (response.items.length === 0) {
+            if (visibleItems.length === 0) {
               return current;
             }
 
             const existingIds = new Set(current.map((item) => item.id));
             const merged = [...current];
-            response.items.forEach((item) => {
+            visibleItems.forEach((item) => {
               if (!existingIds.has(item.id)) {
                 merged.push(item);
               }
@@ -125,12 +127,12 @@ export const useNotifications = ({
 
           setHasMore(response.items.length >= limit);
           setIsListLoaded(true);
-          if (!append && response.items.length > 0) {
+          if (!append && visibleItems.length > 0) {
             setHasUnread((current) =>
-              current || response.items.some((notification) => notification.read_at === null)
+              current || visibleItems.some((notification) => notification.read_at === null)
             );
           }
-          return response.items;
+          return visibleItems;
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Не удалось загрузить уведомления.';
           setListError(message);
@@ -187,13 +189,22 @@ export const useNotifications = ({
       if (!enabled) {
         return;
       }
+      const isVisible = isVisibleNotification(notification);
       setItems((current) => {
-        if (current.some((item) => item.id === notification.id)) {
-          return current;
+        if (!isVisible) {
+          return current.filter((item) => item.id !== notification.id);
         }
-        return [notification, ...current];
+
+        const existingIndex = current.findIndex((item) => item.id === notification.id);
+        if (existingIndex === -1) {
+          return [notification, ...current];
+        }
+
+        const next = [...current];
+        next[existingIndex] = notification;
+        return next;
       });
-      if (hasUnreadFlag) {
+      if (isVisible && hasUnreadFlag && notification.read_at === null) {
         setHasUnread(true);
       }
     },

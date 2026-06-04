@@ -549,7 +549,7 @@ async def test_handler_user_status_changed_uses_login_when_profile_name_missing(
 
 
 @pytest.mark.asyncio
-async def test_handler_user_review_required_notifies_admins_except_actor(monkeypatch):
+async def test_handler_user_review_required_notifies_admin_and_superadmin(monkeypatch):
     repo = _FakeNotificationsRepo()
     monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
     handler = module.ProcessNotificationEventHandler()
@@ -565,9 +565,29 @@ async def test_handler_user_review_required_notifies_admins_except_actor(monkeyp
     )
     await handler.handle(payload=event.to_payload())
 
-    assert len(repo.created) == 1
-    assert repo.created[0].user_id == "admin-2"
-    assert repo.created[0].type == "user.review_required"
+    assert [item.user_id for item in repo.created] == ["admin-1", "admin-2"]
+    assert all(item.type == "user.review_required" for item in repo.created)
+
+
+@pytest.mark.asyncio
+async def test_handler_user_review_required_excludes_contractor_target_from_recipients(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="user.review_required",
+        actor_user_id="target-1",
+        dedupe_key="user.review_required:target-1:self-register",
+        payload={
+            "target_user_id": "target-1",
+            "target_role": module.settings.contractor_role_id,
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert [item.user_id for item in repo.created] == ["admin-1", "admin-2"]
+    assert all(item.user_id != "target-1" for item in repo.created)
 
 
 @pytest.mark.asyncio

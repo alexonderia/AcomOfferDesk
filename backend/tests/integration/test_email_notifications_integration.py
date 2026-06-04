@@ -15,6 +15,7 @@ from app.repositories.profiles import ActiveContractorEmailRecipient
 from app.services.requests import RequestFileCreateInput, RequestService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
 from app.services import send_request_notification_email as send_request_notification_email_module
+from app.services.email_delivery_events import BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
 
 
 def _future_dt() -> datetime:
@@ -312,6 +313,7 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
     await use_case.execute(
         request_id=33,
         contractor_role_id=settings.contractor_role_id,
+        initiator_user_id="economist-1",
         additional_emails=[
             "CONTRACTOR@example.com",
             "invite@example.com",
@@ -333,9 +335,14 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
     assert verified_item["reply_token"]
     assert "/requests/33/contractor" in verified_item["text_content"]
     assert "Открыть заявку:" in verified_item["text_content"]
+    assert verified_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
+    assert verified_item["operation_expected_total"] == 2
     assert invite_item["reply_token"] is None
     assert "/api/v1/auth/oidc/register?invite_token=" in invite_item["text_content"]
     assert "Ссылка на регистрацию:" in invite_item["text_content"]
+    assert invite_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
+    assert invite_item["operation_expected_total"] == 2
+    assert verified_item["operation_id"] == invite_item["operation_id"]
 
     registration_url = next(
         line.removeprefix("Ссылка на регистрацию: ").strip()

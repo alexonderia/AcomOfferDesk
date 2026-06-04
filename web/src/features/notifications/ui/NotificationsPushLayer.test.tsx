@@ -91,6 +91,24 @@ const emitRealtimeNotificationCreated = (notification: Notification) => {
   });
 };
 
+const emitRealtimeSystemToast = (input: {
+  eventId?: string;
+  title?: string;
+  message: string;
+  severity?: 'success' | 'info' | 'warning' | 'error';
+}) => {
+  realtimeListener?.({
+    type: 'system.toast',
+    event_id: input.eventId ?? 'system-toast-1',
+    ts: '2026-05-15T10:00:00Z',
+    data: {
+      title: input.title,
+      message: input.message,
+      severity: input.severity ?? 'info',
+    },
+  });
+};
+
 describe('NotificationsPushLayer', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -174,6 +192,68 @@ describe('NotificationsPushLayer', () => {
     expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores tracking-only realtime notifications and does not show business push for system-toast notifications', async () => {
+    render(<NotificationsPushLayer />);
+
+    act(() => {
+      emitRealtimeNotificationCreated({
+        id: 31,
+        type: 'system.warning',
+        severity: 'info',
+        title: 'Tracking email operation',
+        body: 'Tracking email operation',
+        entity_type: 'request',
+        entity_id: 77,
+        link_url: '/requests/77',
+        payload: { tracking_only: 'true', operation_id: 'op-31' },
+        read_at: null,
+        created_at: '2026-05-15T10:00:31Z',
+      });
+      emitRealtimeNotificationCreated({
+        id: 31,
+        type: 'email.sent',
+        severity: 'success',
+        title: 'Результат дополнительной рассылки',
+        body: 'Успешно отправлено 1 из 1 писем.',
+        entity_type: 'request',
+        entity_id: 77,
+        link_url: '/requests/77',
+        payload: {
+          tracking_only: 'false',
+          operation_id: 'op-31',
+          toast_channel: 'system',
+          final_success_count: 1,
+          final_failure_count: 0,
+        },
+        read_at: null,
+        created_at: '2026-05-15T10:00:32Z',
+      });
+      vi.advanceTimersByTime(700);
+    });
+
+    expect(enqueueSnackbarMock).not.toHaveBeenCalled();
+  });
+
+  it('shows system toast at top-center for realtime system.toast event', async () => {
+    render(<NotificationsPushLayer />);
+
+    act(() => {
+      emitRealtimeSystemToast({
+        eventId: 'system-toast-email-1',
+        title: 'Результат дополнительной рассылки',
+        message: 'Успешно отправлено 1 из 1 писем.',
+        severity: 'success',
+      });
+    });
+
+    expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
+    expect(enqueueSnackbarMock.mock.calls[0][0]).toContain('Результат дополнительной рассылки');
+    expect(enqueueSnackbarMock.mock.calls[0][1]).toMatchObject({
+      anchorOrigin: { vertical: 'top', horizontal: 'center' },
+      variant: 'success',
+    });
+  });
+
   it('shows a single aggregated push for 3+ notifications in a short burst', async () => {
     render(<NotificationsPushLayer />);
 
@@ -185,7 +265,6 @@ describe('NotificationsPushLayer', () => {
     });
 
     expect(enqueueSnackbarMock).toHaveBeenCalledTimes(1);
-
     expect(enqueueSnackbarMock.mock.calls[0][0]).toContain('У вас 3 новых уведомлений');
   });
 });

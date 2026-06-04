@@ -770,7 +770,12 @@ async def send_request_email_notifications(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEmailNotificationResponse:
     async with uow:
-        email_notifications = EmailNotificationService(uow.profiles, uow.requests, uow.files)
+        email_notifications = EmailNotificationService(
+            uow.profiles,
+            uow.requests,
+            uow.files,
+            after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
+        )
         service = _build_request_service(
             uow,
             email_notifications=email_notifications,

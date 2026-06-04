@@ -232,6 +232,48 @@ async def test_create_for_user_uses_payload_event_id_for_realtime_envelope():
 
 
 @pytest.mark.asyncio
+async def test_create_for_user_skips_realtime_for_tracking_only_payload():
+    repo = _Repo()
+    sender = _RealtimeSender()
+    service = NotificationService(repo, realtime_sender=sender)
+
+    created = await service.create_for_user(
+        user_id="user-1",
+        notification_type="system.warning",
+        severity="info",
+        title="Tracking email operation",
+        body="Tracking email operation",
+        payload={"tracking_only": "true", "operation_id": "op-1"},
+    )
+
+    assert created.id == 1
+    assert len(repo.items) == 1
+    assert sender.calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_for_user_sends_system_toast_for_system_toast_channel():
+    repo = _Repo()
+    sender = _RealtimeSender()
+    service = NotificationService(repo, realtime_sender=sender)
+
+    await service.create_for_user(
+        user_id="user-1",
+        notification_type="email.sent",
+        severity="success",
+        title="Результат дополнительной рассылки",
+        body="Успешно отправлено 1 из 1 писем.",
+        payload={"toast_channel": "system"},
+    )
+
+    assert len(sender.calls) == 2
+    assert sender.calls[0][1].type == "notification.created"
+    assert sender.calls[1][1].type == "system.toast"
+    assert sender.calls[1][1].data["title"] == "Результат дополнительной рассылки"
+    assert sender.calls[1][1].data["severity"] == "success"
+
+
+@pytest.mark.asyncio
 async def test_create_for_user_logs_and_keeps_flow_on_realtime_failure(caplog: pytest.LogCaptureFixture):
     repo = _Repo()
     sender = _RealtimeSender(should_fail=True)
@@ -249,4 +291,4 @@ async def test_create_for_user_logs_and_keeps_flow_on_realtime_failure(caplog: p
     assert created.id == 1
     assert len(repo.items) == 1
     assert len(sender.calls) == 1
-    assert "Failed to send realtime notification.created event" in caplog.text
+    assert "Failed to send realtime notification event" in caplog.text

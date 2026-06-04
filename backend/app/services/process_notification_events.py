@@ -637,9 +637,7 @@ class ProcessNotificationEventHandler:
         rows = await uow.users.list_by_role_ids_with_profiles_and_roles(
             role_ids=[settings.admin_role_id, settings.superadmin_role_id],
         )
-        recipients = _normalize_user_ids(
-            user.id for user, _, _ in rows if user.id != actor_user_id
-        )
+        recipients = _normalize_user_ids(user.id for user, _, _ in rows)
         if not recipients:
             return
 

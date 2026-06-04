@@ -12,7 +12,8 @@ import { parseNotificationCreatedEvent } from '../model/realtimeNotificationEven
 import { resolveNotificationLink } from '../model/resolveNotificationLink';
 import type { Notification } from '../model/types';
 import { NotificationPushToast } from './NotificationPushToast';
-import { getBusinessToastAutoHideDuration } from '@shared/ui/toasts';
+import { getBusinessToastAutoHideDuration, showSystemToast } from '@shared/ui/toasts';
+import { isSystemToastNotification, isVisibleNotification } from '../model/isVisibleNotification';
 
 const getPushAutoHideDuration = (notification: Pick<Notification, 'severity'>): number =>
   getBusinessToastAutoHideDuration(notification.severity);
@@ -52,6 +53,21 @@ const hasDuplicateSignatures = (notifications: Notification[]) => {
   return false;
 };
 
+const toOptionalString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized || null;
+};
+
+const toToastSeverity = (value: unknown): 'success' | 'info' | 'warning' | 'error' => {
+  if (value === 'success' || value === 'warning' || value === 'error') {
+    return value;
+  }
+  return 'info';
+};
+
 export const NotificationsPushLayer = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -61,11 +77,13 @@ export const NotificationsPushLayer = () => {
   const { markOneAsRead } = useNotificationsState();
 
   const shownNotificationIdsRef = useRef<Set<number>>(new Set());
+  const shownSystemToastEventIdsRef = useRef<Set<string>>(new Set());
   const burstQueueRef = useRef<Notification[]>([]);
   const burstTimerRef = useRef<number | null>(null);
 
   const resetPushRefs = useCallback(() => {
     shownNotificationIdsRef.current = new Set();
+    shownSystemToastEventIdsRef.current = new Set();
     burstQueueRef.current = [];
     if (burstTimerRef.current !== null) {
       window.clearTimeout(burstTimerRef.current);
@@ -177,12 +195,39 @@ export const NotificationsPushLayer = () => {
     }
 
     const unsubscribe = onEvent((event) => {
+      if (event.type === 'system.toast') {
+        if (shownSystemToastEventIdsRef.current.has(event.event_id)) {
+          return;
+        }
+        shownSystemToastEventIdsRef.current.add(event.event_id);
+        const title = toOptionalString(event.data.title);
+        const message = toOptionalString(event.data.message) ?? toOptionalString(event.data.body);
+        if (!message) {
+          return;
+        }
+        showSystemToast(
+          { enqueueSnackbar, closeSnackbar },
+          {
+            title: title ?? undefined,
+            message,
+            severity: toToastSeverity(event.data.severity),
+          }
+        );
+        return;
+      }
+
       const createdEvent = parseNotificationCreatedEvent(event);
       if (!createdEvent) {
         return;
       }
 
       const notification = createdEvent.notification;
+      if (!isVisibleNotification(notification)) {
+        return;
+      }
+      if (isSystemToastNotification(notification)) {
+        return;
+      }
       if (shownNotificationIdsRef.current.has(notification.id)) {
         return;
       }
@@ -196,7 +241,7 @@ export const NotificationsPushLayer = () => {
     });
 
     return unsubscribe;
-  }, [isAuthenticated, location, onEvent, queueNotification, resetPushRefs]);
+  }, [closeSnackbar, enqueueSnackbar, isAuthenticated, location, onEvent, queueNotification, resetPushRefs]);
 
   useEffect(
     () => () => {

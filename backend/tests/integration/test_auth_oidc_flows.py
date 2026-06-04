@@ -338,6 +338,10 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
         observed["decoded_token"] = token
         return _build_keycloak_claims(subject="kc-invite", email="new-contractor@example.com")
 
+    def _fake_schedule_registration_review_required_notification(**kwargs):
+        observed["review_notification_kwargs"] = kwargs
+        return True
+
     class _FakeIdentitySyncService:
         def __init__(self, **kwargs):
             observed["sync_ctor_keys"] = sorted(kwargs.keys())
@@ -354,6 +358,11 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
     monkeypatch.setattr(auth_api, "exchange_code_for_tokens", _fake_exchange_code_for_tokens)
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)
     monkeypatch.setattr(auth_api, "IdentitySyncService", _FakeIdentitySyncService)
+    monkeypatch.setattr(
+        auth_api,
+        "schedule_registration_review_required_notification",
+        _fake_schedule_registration_review_required_notification,
+    )
 
     callback_response = _get_with_cookie(
         test_client,
@@ -371,6 +380,10 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
     assert observed["sync_subject"] == "kc-invite"
     assert observed["sync_email"] == "new-contractor@example.com"
     assert observed["allow_user_creation"] is True
+    assert observed["review_notification_kwargs"]["user_id"] == "new_contractor"
+    assert observed["review_notification_kwargs"]["actor_user_id"] == "new_contractor"
+    assert observed["review_notification_kwargs"]["role_id"] == settings.contractor_role_id
+    assert observed["review_notification_kwargs"]["source"] == "oidc_invite_registration"
 
     set_cookie_headers = _collect_set_cookie_headers(callback_response)
     assert any(settings.keycloak_refresh_cookie_name in header and "Max-Age=5400" in header for header in set_cookie_headers)

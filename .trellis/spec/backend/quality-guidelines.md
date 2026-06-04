@@ -221,6 +221,107 @@ If checks cannot be run, state why and list the residual risk.
 #### Correct
 - Treat local activation as the authoritative moment to grant Keycloak application access for self-registered contractors, using the stored Keycloak binding immediately in the status-change service.
 
+## Scenario: Contractor Review Notifications Go To Admin Staff Only
+
+### 1. Scope / Trigger
+- Trigger: a contractor appears in `users.status=review` through self-registration, invite completion, or a manual/internal status transition that requires admin moderation.
+
+### 2. Signatures
+- Process event:
+  `user.review_required`
+- Backend handler:
+  `ProcessNotificationEventHandler._handle_user_review_required(...)`
+
+### 3. Contracts
+- Recipient set for `user.review_required` is role-based:
+  - `admin`
+  - `superadmin`
+- The contractor under review must never become a recipient of this moderation notification.
+- Do not apply generic “exclude actor” behavior to this event; if an `admin` triggered the status transition, that admin still receives the moderation notification.
+
+### 4. Validation & Error Matrix
+- contractor self-registers into `review` -> notify `admin` + `superadmin`
+- admin manually moves contractor into `review` -> notify `admin` + `superadmin`
+- contractor is the event actor -> contractor still receives no `user.review_required` notification
+
+### 5. Good/Base/Bad Cases
+- Good: contractor finishes registration, and both admin roles see one moderation notification in the notification center.
+- Base: ordinary process notifications may still exclude the actor when that is part of the product contract.
+- Bad: reuse a generic “all recipients except actor” rule and accidentally suppress the initiating admin, or send the moderation notification to the contractor being reviewed.
+
+### 6. Tests Required
+- Unit: `user.review_required` with admin actor still creates notifications for both admin-role recipients.
+- Unit: `user.review_required` with contractor actor creates notifications only for admin-role recipients.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Filter `user.review_required` recipients with `user.id != actor_user_id`.
+
+#### Correct
+- Build recipients strictly from `admin` / `superadmin` role membership and let the role filter, not the actor filter, decide visibility.
+
+## Scenario: Aggregated Final Email Result Notifications
+
+### 1. Scope / Trigger
+- Trigger: a user launches a multi-recipient email operation where the product needs one final in-app result notification after worker-confirmed delivery, not a burst of per-recipient system notifications.
+
+### 2. Signatures
+- Request additional emails:
+  `POST /api/v1/requests/{request_id}/email-notifications`
+- Contractor invitations:
+  `POST /api/v1/contractors/invite`
+- Outbound email payload fields:
+  `operation_id`
+  `operation_kind`
+  `operation_expected_total`
+- Delivery feedback event fields:
+  `operation_id`
+  `operation_kind`
+  `operation_expected_total`
+
+### 3. Contracts
+- `operation_id` groups all recipient deliveries that belong to one user action.
+- `operation_kind` currently supports:
+  - `request.additional_email`
+  - `contractor.invite`
+- `operation_expected_total` is the total intended recipient count for the operation, including items that may fail before worker delivery.
+- The notification center may use one hidden tracking row in `user_notifications` with `payload.tracking_only="true"` while the batch is incomplete.
+- Hidden tracking rows must not appear in list/unread APIs.
+- Hidden tracking rows must not be delivered to the SPA as visible `notification.created` items; otherwise the later finalized event may reuse the same notification id and lose its push/display update.
+- Final visible email-result notification must carry `payload.toast_channel="system"` and trigger a dedicated realtime `system.toast` event for top-center system UI, while the normal `notification.created` event still refreshes the notification center list.
+- Final user-visible notification is emitted only when:
+  - all worker delivery events for the operation are processed; and
+  - any pre-worker queue failures are accounted for.
+
+### 4. Validation & Error Matrix
+- batch operation with final worker feedback complete -> emit one final aggregated notification to the initiator
+- per-recipient worker events for a tracked batch -> do not emit separate initiator-facing `email.sent` / `email.failed` notifications
+- duplicate delivery event with same `correlation_id` inside one `operation_id` -> ignore
+- queue failure before worker delivery -> count it toward the same batch summary
+- hidden tracking row still incomplete -> exclude from notifications list and unread count
+- hidden tracking row reaches realtime/frontend state -> ignore it and still allow the later finalized notification with the same id to appear
+- final email-result notification arrives with `toast_channel=system` -> do not show business push; show only system toast plus center update
+
+### 5. Good/Base/Bad Cases
+- Good: 10 invitations started, 7 delivered, 2 worker failures, 1 queue failure -> initiator gets one final summary with `7/10`, partial success, no burst of 10 notifications.
+- Base: one-off email flow without batch metadata may still use ordinary per-email `email.sent` / `email.failed`.
+- Bad: create one system notification per recipient for a batch operation and flood the notification center, or emit a “success” summary before worker delivery finishes.
+
+### 6. Tests Required
+- Unit: worker feedback with one `operation_id` finalizes exactly one notification after the last delivery event.
+- Unit: queue-only total failure finalizes one `email.failed` aggregated summary without waiting for worker events.
+- Unit: duplicate delivery `correlation_id` inside one batch does not increment counts twice.
+- Unit/Frontend: tracking-only realtime notification is ignored, and the finalized visible notification with the same id still updates state and shows push UI.
+- Unit/Frontend: `toast_channel=system` email result emits `system.toast` and skips the bottom-right business notification push.
+- Integration: OIDC/request/invite flows pass operation metadata through the existing adapters where required.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Treat every recipient result as an independent initiator-facing system notification for batch operations.
+
+#### Correct
+- Use operation metadata plus one hidden tracking notification row, then publish one final aggregated initiator-facing result when the batch is fully resolved.
+
 ---
 
 ## Code Review Checklist

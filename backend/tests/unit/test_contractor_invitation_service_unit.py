@@ -7,6 +7,7 @@ from app.domain.exceptions import Conflict, Forbidden
 from app.domain.permissions import PermissionCodes
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.services.contractor_invitations import ContractorInvitationService
+from app.services.email_delivery_events import BATCH_OPERATION_KIND_CONTRACTOR_INVITE
 
 
 class _FakeEmailService:
@@ -63,6 +64,9 @@ async def test_invite_contractors_parses_dedupes_and_reports_invalid(make_curren
     assert attachment_service.requested_normative_ids == [7]
     for call in email_service.calls:
         assert len(call["attachments"]) == 1
+        assert call["operation_kind"] == BATCH_OPERATION_KIND_CONTRACTOR_INVITE
+        assert call["operation_expected_total"] == 2
+    assert email_service.calls[0]["operation_id"] == email_service.calls[1]["operation_id"]
 
 
 @pytest.mark.asyncio

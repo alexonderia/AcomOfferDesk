@@ -17,6 +17,7 @@ from app.realtime.contracts import OutboundEnvelope
 from app.repositories.notifications import NotificationRepository
 
 logger = logging.getLogger(__name__)
+_SYSTEM_TOAST_CHANNEL = "system"
 
 
 RealtimeNotificationSender = Callable[..., Awaitable[bool]]
@@ -291,6 +292,9 @@ class NotificationService:
             payload=payload,
         )
 
+    async def emit_created_event(self, notification: UserNotification) -> None:
+        await self._send_created_event_best_effort(notification)
+
     def _ensure_supported_type(self, value: str) -> None:
         if value not in NOTIFICATION_TYPES:
             raise ValueError(f"Unsupported notification type: {value}")
@@ -305,6 +309,9 @@ class NotificationService:
             if sender is None:
                 return
             payload = notification.payload if isinstance(notification.payload, dict) else {}
+            tracking_only = str(payload.get("tracking_only") or "").strip().lower()
+            if tracking_only == "true":
+                return
             process_event_id = payload.get("event_id")
             normalized_event_id = str(process_event_id).strip() if process_event_id is not None else ""
 
@@ -325,9 +332,24 @@ class NotificationService:
                     notification.user_id,
                     notification.id,
                 )
+                return
+            if self._resolve_toast_channel(payload) == _SYSTEM_TOAST_CHANNEL:
+                await sender(
+                    user_id=notification.user_id,
+                    event=OutboundEnvelope(
+                        type="system.toast",
+                        data={
+                            "title": notification.title,
+                            "message": notification.body,
+                            "severity": notification.severity,
+                            "link_url": notification.link_url,
+                            "notification_id": notification.id,
+                        },
+                    ),
+                )
         except Exception:
             logger.exception(
-                "Failed to send realtime notification.created event: user_id=%s notification_id=%s",
+                "Failed to send realtime notification event: user_id=%s notification_id=%s",
                 notification.user_id,
                 notification.id,
             )
@@ -344,6 +366,16 @@ class NotificationService:
         except Exception:
             logger.exception("Realtime runtime is unavailable for notification delivery")
             return None
+
+    @staticmethod
+    def _resolve_toast_channel(payload: dict | None) -> str | None:
+        if not isinstance(payload, dict):
+            return None
+        raw_channel = payload.get("toast_channel")
+        if raw_channel is None:
+            return None
+        normalized_channel = str(raw_channel).strip().lower()
+        return normalized_channel or None
 
 
 def notification_to_dict(notification: UserNotification) -> dict:

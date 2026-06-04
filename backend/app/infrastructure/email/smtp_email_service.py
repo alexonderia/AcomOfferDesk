@@ -37,6 +37,9 @@ class SMTPEmailService:
         offer_id: int | None = None,
         initiator_user_id: str | None = None,
         suppress_delivery_notification: bool = False,
+        operation_id: str | None = None,
+        operation_kind: str | None = None,
+        operation_expected_total: int | None = None,
     ) -> None:
         resolved_correlation_id = (correlation_id or "").strip() or generate_correlation_id()
         await publish_notification(
@@ -63,6 +66,9 @@ class SMTPEmailService:
                 "request_id": request_id,
                 "offer_id": offer_id,
                 "suppress_delivery_notification": suppress_delivery_notification,
+                "operation_id": operation_id,
+                "operation_kind": operation_kind,
+                "operation_expected_total": operation_expected_total,
                 "from_address": self._from_address,
                 "from_name": self._from_name,
             },

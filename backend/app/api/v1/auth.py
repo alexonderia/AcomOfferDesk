@@ -57,6 +57,7 @@ from app.services.tg_registration_links import (
 from app.services.registration_admin_notify import (
     RegistrationNotifyContext,
     notify_new_user_registration,
+    schedule_registration_review_required_notification,
 )
 from app.services.users import UserRegistrationService
 
@@ -499,6 +500,14 @@ async def keycloak_callback(
                         keycloak_subject=token_claims.subject,
                     )
                 )
+                if synced.user.id_role == settings.contractor_role_id and synced.user.status == "review":
+                    schedule_registration_review_required_notification(
+                        after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
+                        user_id=synced.user.id,
+                        actor_user_id=synced.user.id,
+                        role_id=synced.user.id_role,
+                        source="oidc_invite_registration",
+                    )
             if claims.tg_registration_id is not None:
                 if not settings.telegram_legacy_enabled:
                     raise Forbidden("Telegram legacy authentication is disabled")

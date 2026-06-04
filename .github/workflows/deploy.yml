@@ -96,7 +96,7 @@ jobs:
               run_flyway() {
                 (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm \
                   -e "FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${ORDER_DB_NAME}" \
-                  "$@")
+                  flyway "$@")
               }
               if ! run_flyway migrate; then
                 echo "FLYWAY_MIGRATE: migrate failed — repair checksums for already-applied scripts, then retry once"

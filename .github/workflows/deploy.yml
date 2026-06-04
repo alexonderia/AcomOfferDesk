@@ -1,20 +1,45 @@
 name: Deploy to VPS
 
+# Push to `test` no longer starts deploy directly — only after green CI (workflow "CI").
+# Manual: Actions → Deploy to VPS → Run workflow (break-glass; does not wait for CI).
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches:
       - test
   workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-test-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    # Auto deploy: only when CI finished successfully on a push to test (not on PR CI).
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'test' &&
+       github.event.workflow_run.event == 'push') ||
+      github.event_name == 'workflow_dispatch'
     steps:
+      - name: CI gate context
+        if: github.event_name == 'workflow_run'
+        run: |
+          echo "Deploy triggered after CI success."
+          echo "CI run: ${{ github.event.workflow_run.html_url }}"
+          echo "Commit: ${{ github.event.workflow_run.head_sha }}"
+          echo "Branch: ${{ github.event.workflow_run.head_branch }}"
+
+      - name: Manual deploy notice
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::warning::Manual deploy (workflow_dispatch) — CI gate was not required. Use only for break-glass."
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -22,7 +47,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-          command_timeout: 20m
+          command_timeout: 35m
           script: |
             set -e
 
@@ -43,16 +68,61 @@ jobs:
               fi
             }
 
+            sync_and_migrate_order_database() {
+              local migrations_src="/opt/acome-offer-desk/deploy/order_database/flyway/sql"
+              local backup_dir="$ORDER_DB_DIR/backups"
+              local backup_path
+              local timestamp
+
+              if [ ! -d "$migrations_src" ]; then
+                fail_order_db_prerequisite "Missing order_database migration snapshot: $migrations_src."
+              fi
+
+              set -- "$migrations_src"/V*.sql
+              if [ ! -e "$1" ]; then
+                fail_order_db_prerequisite "No V*.sql files in order_database migration snapshot: $migrations_src."
+              fi
+
+              mkdir -p "$ORDER_DB_DIR/flyway/sql" "$backup_dir"
+              cp -a "$@" "$ORDER_DB_DIR/flyway/sql/"
+
+              timestamp="$(date -u +'%Y%m%d_%H%M%S')"
+              backup_path="$backup_dir/order_database_${timestamp}.dump"
+              echo "ORDER_DB_BACKUP: creating $backup_path"
+              docker exec order-database-postgres pg_dump -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -F c > "$backup_path"
+              sha256sum "$backup_path" > "$backup_path.sha256"
+
+              # order-database-postgres: avoid DNS alias "postgres" (acome-monitoring also registers postgres on project_net).
+              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm \
+                -e "FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${ORDER_DB_NAME}" \
+                flyway migrate)
+            }
+
             cd /opt/acome-offer-desk
-            git fetch upstream
+            # Concurrent fetch (CI + manual) can corrupt refs/remotes/upstream/*:
+            # "cannot lock ref ... is at <sha> but expected <old-sha>".
+            git remote prune upstream 2>/dev/null || true
+            if ! git fetch upstream test dev 2>/dev/null; then
+              git update-ref -d refs/remotes/upstream/test 2>/dev/null || true
+              git update-ref -d refs/remotes/upstream/dev 2>/dev/null || true
+              git fetch upstream refs/heads/test:refs/remotes/upstream/test refs/heads/dev:refs/remotes/upstream/dev
+            fi
             git checkout test
-            git pull upstream test
+            # Совпадать с удалённой веткой целиком: иначе git pull падает, если на сервере
+            # остались локальные правки отслеживаемых файлов (например ручной scp поверх checkout).
+            git reset --hard upstream/test
 
             ORDER_DB_DIR=/opt/order_database
             APP_ENV_FILE=/opt/acome-offer-desk/backend/.env
+            COMPOSE_ENV_FILE=backend/.env
+            export APP_RUNTIME_ENV_FILE="./$COMPOSE_ENV_FILE"
 
             if [ ! -f "$ORDER_DB_DIR/docker-compose.yml" ] || [ ! -f "$ORDER_DB_DIR/.env" ]; then
               fail_order_db_prerequisite "order_database is not installed on VPS as documented."
+            fi
+
+            if [ ! -f "$COMPOSE_ENV_FILE" ]; then
+              fail_order_db_prerequisite "$COMPOSE_ENV_FILE is missing; docker compose cannot load runtime env."
             fi
 
             if ! docker network inspect project_net >/dev/null 2>&1; then
@@ -74,6 +144,8 @@ jobs:
               fail_order_db_prerequisite "POSTGRES_USER or POSTGRES_DB is missing in $ORDER_DB_DIR/.env."
             fi
 
+            sync_and_migrate_order_database
+
             require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'flyway_schema_history';" "1"
 
             # Пустой flyway/sql на диске давал только baseline без версионных миграций → нет user_auth_accounts и 500 на OAuth callback (см. docs/order-database-vps.md).
@@ -86,26 +158,69 @@ jobs:
             fi
 
             require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_auth_accounts';" "1"
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'requests' AND column_name = 'id_plan';" "1"
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('economy_plans', 'economy_plan_request_facts');" "2"
 
             if [ ! -f "$APP_ENV_FILE" ] || ! grep -q '^DATABASE_URL=.*@order-database-postgres:5432/' "$APP_ENV_FILE"; then
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
-            docker compose down --remove-orphans || true
-            docker compose -f docker-compose.init.yml up keycloak_db_prepare
-            if ! docker compose up -d --build; then
-              echo "=== docker compose ps -a ==="
-              docker compose ps -a || true
-              echo "=== keycloak logs (tail) ==="
-              docker compose logs --tail=160 keycloak || true
-              echo "=== backend logs (tail) ==="
-              docker compose logs --tail=160 backend || true
-              exit 1
+            # Infra: no --force-recreate — Docker can return "No such container" mid-recreate
+            # when the old container ID is torn down while Compose still tracks it (#26146730081).
+            # App images: --force-recreate --no-deps per service + retries (no parallel infra churn).
+            compose_up_infra() {
+              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build "$@"
+              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --wait "$@" 2>/dev/null || true
+            }
+
+            compose_up_app() {
+              local svc="$1"
+              local max="${COMPOSE_UP_RETRIES:-3}"
+              local delay="${COMPOSE_UP_RETRY_DELAY_SEC:-5}"
+              local attempt=1
+              while [ "$attempt" -le "$max" ]; do
+                if docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build --force-recreate --no-deps "$svc"; then
+                  return 0
+                fi
+                echo "COMPOSE_UP_RETRY: $svc attempt $attempt/$max"
+                sleep "$delay"
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
+
+            for infra_svc in rabbitmq minio keycloak; do
+              if ! compose_up_infra "$infra_svc"; then
+                echo "=== docker compose ps -a (infra: $infra_svc) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+                echo "=== $infra_svc logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 "$infra_svc" || true
+                exit 1
+              fi
+            done
+            for app_svc in backend notifications_worker web; do
+              if ! compose_up_app "$app_svc"; then
+                echo "=== docker compose ps -a (app: $app_svc) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+                echo "=== $app_svc logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 "$app_svc" || true
+                exit 1
+              fi
+            done
+
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" exec -T gateway nginx -s reload; then
+              if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --no-deps --force-recreate gateway; then
+                echo "=== gateway logs (tail) ==="
+                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 gateway || true
+                exit 1
+              fi
             fi
-            if ! docker compose -f docker-compose.init.yml up keycloak_bootstrap; then
-              echo "=== keycloak bootstrap logs (tail) ==="
-              docker compose -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
-              echo "=== keycloak logs (tail) ==="
-              docker compose logs --tail=160 keycloak || true
+
+            # Keycloak: skip 20–30 min bootstrap when model OK + bootstrap.sh unchanged; repair on verify fail.
+            # Force full bootstrap: KEYCLOAK_BOOTSTRAP_FORCE=1 on VPS before deploy (workflow_dispatch).
+            chmod +x ./scripts/keycloak-init-deploy.sh ./scripts/keycloak-refresh-theme.sh ./scripts/run-keycloak-check-backend.sh ./scripts/post-deploy-verify.sh
+            if ! ./scripts/keycloak-init-deploy.sh "$COMPOSE_ENV_FILE"; then
+              echo "=== keycloak-init-deploy failed ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               exit 1
             fi

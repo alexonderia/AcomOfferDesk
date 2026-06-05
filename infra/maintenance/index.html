@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AcomOfferDesk | Технические работы</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: light;
+        --aod-font-family: "Inter", "Segoe UI", sans-serif;
+        --aod-primary: #3b82f6;
+        --aod-primary-dark: #2f6fe3;
+        --aod-bg: #f3f5fb;
+        --aod-surface: #ffffff;
+        --aod-text: #111827;
+        --aod-text-muted: #6b7280;
+        --aod-border: #dde3ef;
+        --aod-shadow-soft: 0 4px 14px rgba(15, 35, 75, 0.04);
+        --aod-shadow-card: 0 12px 28px rgba(15, 35, 75, 0.08);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        font-family: var(--aod-font-family);
+        color: var(--aod-text);
+      }
+
+      body {
+        background:
+          radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 30%),
+          radial-gradient(circle at bottom left, rgba(59, 130, 246, 0.06), transparent 34%),
+          var(--aod-bg);
+      }
+
+      .page {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .card {
+        width: min(94vw, 576px);
+        border: 1px solid var(--aod-border);
+        border-radius: 30px;
+        background: var(--aod-surface);
+        box-shadow: var(--aod-shadow-card);
+        padding: 40px 44px;
+        text-align: center;
+      }
+
+      .card-title {
+        margin: 0 0 16px;
+        font-size: 30px;
+        line-height: 1.15;
+        font-weight: 700;
+        color: var(--aod-text);
+      }
+
+      .card-copy {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.5;
+        font-weight: 400;
+        color: var(--aod-text-muted);
+      }
+
+      .footer {
+        width: 100%;
+        padding: 4.8px clamp(12px, 4.6vw, 78px) 8.8px;
+      }
+
+      .footer-panel {
+        width: 100%;
+        margin: 0 auto;
+        padding: 6.4px 11.6px;
+        border-radius: 30px;
+        background: #ffffff;
+        box-shadow: var(--aod-shadow-soft);
+      }
+
+      .footer-layout {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 9.6px;
+      }
+
+      .footer-side {
+        flex: 1;
+        display: flex;
+      }
+
+      .footer-side--start {
+        justify-content: flex-start;
+      }
+
+      .footer-side--end {
+        justify-content: flex-end;
+      }
+
+      .footer-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 8.8px;
+        flex-wrap: nowrap;
+      }
+
+      .footer-text {
+        color: var(--aod-text-muted);
+        font-size: 12.5px;
+        line-height: 1.43;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+
+      .footer-brand {
+        color: var(--aod-text);
+        font-size: 14px;
+        line-height: 1.43;
+        font-weight: 550;
+        letter-spacing: 0.1px;
+        text-align: center;
+        white-space: nowrap;
+      }
+
+      .footer-icon-link {
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 30px;
+        border: 1px solid var(--aod-border);
+        background: rgba(255, 255, 255, 0.86);
+        text-decoration: none;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+      }
+
+      .footer-icon-link:hover {
+        border-color: var(--aod-primary);
+        background: #ffffff;
+        transform: translateY(-1px) scale(1.02);
+        box-shadow: 0 8px 16px rgba(15, 35, 75, 0.16);
+      }
+
+      .footer-icon {
+        width: 24px;
+        height: 24px;
+        display: block;
+        object-fit: cover;
+        border-radius: 24px;
+      }
+
+      @media (max-width: 640px) {
+        .content {
+          align-items: flex-start;
+          padding: 16px;
+        }
+
+        .card {
+          width: 100%;
+          padding: 32px 24px;
+          border-radius: 24px;
+        }
+
+        .card-title {
+          font-size: 26px;
+        }
+
+        .footer {
+          padding: 4px 4px 7.2px;
+        }
+
+        .footer-panel {
+          padding: 5.6px 8.8px;
+          border-radius: 24px;
+        }
+
+        .footer-layout {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 6.4px;
+        }
+
+        .footer-side,
+        .footer-side--start,
+        .footer-side--end {
+          width: 100%;
+          justify-content: flex-start;
+        }
+
+        .footer-text {
+          white-space: normal;
+        }
+
+        .footer-brand {
+          font-size: 16px;
+          line-height: 1.1;
+          font-weight: 650;
+          align-self: flex-start;
+        }
+
+        .footer-icon-link {
+          width: 30px;
+          height: 30px;
+        }
+
+        .footer-icon {
+          width: 20px;
+          height: 20px;
+          border-radius: 99px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <main class="content">
+        <section class="card" aria-label="Технические работы">
+          <h1 class="card-title">Ведутся технические работы</h1>
+          <p class="card-copy">Пожалуйста, попробуйте обновить страницу позже.</p>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div class="footer-panel">
+          <div class="footer-layout">
+            <div class="footer-side footer-side--start">
+              <div class="footer-group">
+                <span class="footer-text">Created by "Цифровизация проектных задач"</span>
+                <a
+                  class="footer-icon-link"
+                  href="https://team.alabuga.ru/company/structure.php?set_filter_structure=Y&structure_UF_DEPARTMENT=8304&filter=Y&set_filter=Y"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Перейти в Битрикс"
+                >
+                  <img class="footer-icon" src="/maintenance-assets/bitrix24-logo.png" alt="Bitrix24" />
+                </a>
+              </div>
+            </div>
+
+            <div class="footer-brand">AcomOfferDesk</div>
+
+            <div class="footer-side footer-side--end">
+              <div class="footer-group">
+                <span class="footer-text">По вопросам системы писать сюда</span>
+                <a
+                  class="footer-icon-link"
+                  href="https://max.ru/u/f9LHodD0cOIA4s2RhH3dW5NoCLRn88NF67UYfQe_rOnnM6Y1a7VW_vOUt5I"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Открыть MAX"
+                >
+                  <img class="footer-icon" src="/maintenance-assets/max-logo-2025.png" alt="MAX" />
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

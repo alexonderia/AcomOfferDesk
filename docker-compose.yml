@@ -82,6 +82,25 @@ services:
     networks:
       - project_net
 
+  maintenance:
+    image: nginx:1.27-alpine
+    container_name: maintenance
+    restart: unless-stopped
+    volumes:
+      - ./infra/maintenance/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infra/maintenance/index.html:/usr/share/nginx/html/index.html:ro
+      - ./infra/keycloak/themes/acom-offerdesk/login/resources/img/bitrix24-logo.png:/usr/share/nginx/html/maintenance-assets/bitrix24-logo.png:ro
+      - ./infra/keycloak/themes/acom-offerdesk/login/resources/img/max-logo-2025.png:/usr/share/nginx/html/maintenance-assets/max-logo-2025.png:ro
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - project_net
+
   gateway:
     image: nginx:1.27-alpine
     container_name: gateway
@@ -89,11 +108,7 @@ services:
     volumes:
       - ./backend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      keycloak:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-      web:
+      maintenance:
         condition: service_healthy
     ports:
       - "127.0.0.1:8080:80"

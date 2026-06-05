@@ -55,6 +55,7 @@
 | `docker-compose.prod-like.yml` | Локальная production-like проверка |
 | `docker-compose.prod.yml` | Override для production-периметра в `test/prod` |
 | `docker-compose.test.yml` | Test helper: loopback-публикация `gateway` на том же VPS |
+| `docker-compose.maintenance.yml` | Override для ручного maintenance mode: переводит `gateway` в режим полной заглушки без пересборки `backend/web` |
 | `docker-compose.init.yml` | One-shot init: `keycloak_db_prepare`, `keycloak_bootstrap`, `keycloak_user_role_sync` |
 
 Внешний reverse proxy пример: `infra/reverse-proxy/nginx.prod.example.conf`.
@@ -109,6 +110,134 @@ docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose
 docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok config
 docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml config
 docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml config
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml config
+docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml -f docker-compose.maintenance.yml config
+```
+
+## Maintenance mode
+
+### Автоматический fallback
+
+- Базовый `gateway` всегда поднимается вместе с внутренним сервисом `maintenance`.
+- Если недоступен `web`, запросы на `/` и SPA-маршруты получают maintenance page вместо стандартного nginx `502`.
+- Если недоступен `backend`, запросы на `/api/*` получают контролируемый `503` JSON:
+
+```json
+{"detail":"Система временно недоступна. Ведутся технические работы."}
+```
+
+- `/iam/*` продолжает проксироваться в `keycloak`, пока сам Keycloak доступен.
+- `maintenance` не публикуется наружу отдельным портом и остается доступным только внутри `project_net`.
+
+### Ручной maintenance mode
+
+Ручной режим включается дополнительным compose-override `docker-compose.maintenance.yml`. В этом режиме:
+
+- `/` и `/iam/*` отдают maintenance page;
+- `/api/*` отдает `503` JSON;
+- `/health` отвечает из maintenance-контура, чтобы сам `gateway` оставался доступным.
+
+Включить `dev`:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `dev`:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d gateway maintenance
+```
+
+Включить `prod-like`:
+
+```bash
+docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `prod-like`:
+
+```bash
+docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml up -d gateway maintenance
+```
+
+Включить `test`:
+
+```bash
+docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `test`:
+
+```bash
+docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml up -d gateway maintenance
+```
+
+Включить `prod`:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `prod`:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d gateway maintenance
+```
+
+### Локальная проверка
+
+1. Проверить итоговый compose:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml config
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml config
+```
+
+2. Поднять `dev`-стенд:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+3. Проверить обычный режим:
+
+```bash
+curl -i http://localhost:8080/
+curl -i http://localhost:8080/api/health
+curl -i "http://localhost:8080/api/v1/auth/oidc/login?next_path=%2F"
+curl -i http://localhost:8080/iam/
+```
+
+4. Проверить автоматический fallback frontend:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml stop web
+curl -i http://localhost:8080/
+```
+
+5. Проверить автоматический fallback API:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml stop backend
+curl -i "http://localhost:8080/api/v1/auth/oidc/login?next_path=%2F"
+curl -i http://localhost:8080/api/health
+curl -i http://localhost:8080/health
+```
+
+6. Проверить ручной maintenance mode:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+curl -i http://localhost:8080/
+curl -i http://localhost:8080/api/health
+curl -i http://localhost:8080/iam/
+```
+
+7. Вернуть обычный режим:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d gateway maintenance web backend
 ```
 
 Примечание по env-файлам в репозитории:
@@ -139,6 +268,7 @@ Public ingress только через HTTPS reverse proxy.
 | Откуда | Куда | Порт |
 |---|---|---|
 | `gateway` | `web` | `80` |
+| `gateway` | `maintenance` | `80` |
 | `gateway` | `backend` | `8000` |
 | `gateway` | `keycloak` | `8080` |
 | `backend` | PostgreSQL (`order_database`) | `5432` |

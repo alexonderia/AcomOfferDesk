@@ -93,6 +93,10 @@ if ($RabbitmqUrl) {
 Assert-StepSucceeded -StepName "infrastructure smoke checks"
 
 Write-Host "== [4/8] keycloak permission model checks =="
+$useRepairKeycloak = $RepairKeycloak
+if (-not $PSBoundParameters.ContainsKey("RepairKeycloak")) {
+  $useRepairKeycloak = $true
+}
 $prevKeycloakInternalBaseUrl = [Environment]::GetEnvironmentVariable("KEYCLOAK_INTERNAL_BASE_URL", "Process")
 $effectiveKeycloakInternalBaseUrl = $KeycloakInternalBaseUrl
 if (-not $effectiveKeycloakInternalBaseUrl) {
@@ -129,7 +133,7 @@ try {
   $keycloakCheckParams = @{
     EnvFile = $EnvFile
   }
-  if ($RepairKeycloak) {
+  if ($useRepairKeycloak) {
     $keycloakCheckParams.Repair = $true
   }
   & "$RootDir/scripts/check-keycloak.ps1" @keycloakCheckParams

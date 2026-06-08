@@ -152,6 +152,18 @@ class _FakeEmailNotificationService:
         )
 
 
+class _TypeErrorEmailNotificationService:
+    async def notify_request_to_additional_emails(
+        self,
+        *,
+        request_id: str,
+        additional_emails: list[str],
+        initiator_user_id: str | None = None,
+    ) -> None:
+        _ = (request_id, additional_emails, initiator_user_id)
+        raise TypeError("transport bug")
+
+
 class _FakeRequestRepoForSendUseCase:
     def __init__(self, *, request_row: SimpleNamespace, files: list[SimpleNamespace] | None = None) -> None:
         self._request_row = request_row
@@ -281,6 +293,36 @@ async def test_manual_request_email_notification_rejects_invalid_email(make_curr
             current_user=user,
             request_id=10,
             additional_emails=["not-an-email"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_manual_request_email_notification_does_not_swallow_internal_type_error(make_current_user):
+    request_row = SimpleNamespace(id=10, id_user="owner-10", status="open")
+    requests_repo = _FakeRequestRepoForCreate()
+    requests_repo.created_requests.append(request_row)
+    service = RequestService(
+        requests=requests_repo,
+        files=_FakeFilesRepo(),
+        users=_FakeUsersRepo(),
+        offers=_FakeOffersRepo(),
+        user_status_periods=_FakeUserStatusPeriodsRepo(),
+        email_notifications=_TypeErrorEmailNotificationService(),
+    )
+    user = make_current_user(
+        user_id="owner-10",
+        role_id=settings.economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
+            PermissionCodes.REQUESTS_UPDATE,
+        },
+    )
+
+    with pytest.raises(TypeError, match="transport bug"):
+        await service.send_request_email_notification(
+            current_user=user,
+            request_id=10,
+            additional_emails=["user@example.com"],
         )
 
 

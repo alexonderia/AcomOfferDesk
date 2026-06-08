@@ -10,12 +10,13 @@ from aiormq.exceptions import AMQPConnectionError
 
 from .consumers import handle_message
 from shared.broker import EXCHANGE, QUEUE_EMAIL, QUEUE_TG, RK_EMAIL, RK_TG
+from shared.normalization import is_truthy_env_flag
 
 logger = logging.getLogger(__name__)
 
 
 def _is_telegram_legacy_enabled() -> bool:
-    return os.getenv("LEGACY_TELEGRAM_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    return is_truthy_env_flag(os.getenv("LEGACY_TELEGRAM_ENABLED", "false"))
 
 
 async def _connect_with_retry(rabbitmq_url: str) -> AbstractRobustConnection:

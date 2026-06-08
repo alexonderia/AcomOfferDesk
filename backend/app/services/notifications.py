@@ -15,6 +15,7 @@ from app.domain.notifications import (
 from app.models.orm_models import UserNotification
 from app.realtime.contracts import OutboundEnvelope
 from app.repositories.notifications import NotificationRepository
+from shared.normalization import as_optional_int as _as_optional_int
 
 logger = logging.getLogger(__name__)
 _SYSTEM_TOAST_CHANNEL = "system"
@@ -260,7 +261,7 @@ class NotificationService:
             title="Статус заявки изменен",
             body=f"Заявка №{request_id}: {previous_status} -> {new_status}.",
             entity_type="request",
-            entity_id=request_id,
+            entity_id=_as_optional_int(request_id),
             link_url=f"/requests/{request_id}",
             payload={
                 "request_id": request_id,

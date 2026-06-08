@@ -403,8 +403,20 @@ class _ManualEmailNotifications:
         _ = (profiles, requests, files, after_commit_hook_registrar)
         self.calls: list[dict] = []
 
-    async def notify_request_to_additional_emails(self, *, request_id: str, additional_emails: list[str]) -> None:
-        self.calls.append({"request_id": request_id, "additional_emails": additional_emails})
+    async def notify_request_to_additional_emails(
+        self,
+        *,
+        request_id: str,
+        additional_emails: list[str],
+        initiator_user_id: str | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "request_id": request_id,
+                "additional_emails": additional_emails,
+                "initiator_user_id": initiator_user_id,
+            }
+        )
 
 
 class _ManualEmailRequestsRepo:
@@ -1602,7 +1614,11 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
     }
     assert fake_notifications is not None
     assert fake_notifications.calls == [
-        {"request_id": "55", "additional_emails": ["user@example.com", "second@example.com"]}
+        {
+            "request_id": "55",
+            "additional_emails": ["user@example.com", "second@example.com"],
+            "initiator_user_id": "owner-1",
+        }
     ]
 
 

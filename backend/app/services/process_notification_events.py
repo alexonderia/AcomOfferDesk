@@ -8,16 +8,11 @@ from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.repositories.notifications import NotificationRepository
 from app.services.notifications import NotificationService
+from shared.normalization import as_optional_int as _as_optional_int
+from shared.normalization import normalize_optional_str as _normalize_optional_str
 from shared.process_notifications import ProcessNotificationEvent
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_optional_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
 
 
 def _normalize_user_ids(values: Sequence[Any]) -> list[str]:
@@ -96,6 +91,10 @@ def _format_user_status_label(value: str | None) -> str:
     if normalized is None:
         return "-"
     return _USER_STATUS_LABELS.get(normalized, normalized)
+
+
+def _request_entity_id(request_id: str | None) -> int | None:
+    return _as_optional_int(request_id)
 
 
 class ProcessNotificationEventHandler:
@@ -386,7 +385,7 @@ class ProcessNotificationEventHandler:
             if event.request_id is not None
             else f"Статус заявки изменен: {previous_status} -> {new_status}.",
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,
@@ -445,7 +444,7 @@ class ProcessNotificationEventHandler:
             title="Новая заявка",
             body=f"Создана новая заявка №{event.request_id}." if event.request_id is not None else "Создана новая заявка.",
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,
@@ -504,7 +503,7 @@ class ProcessNotificationEventHandler:
             title="Изменены файлы заявки",
             body=f"По заявке №{event.request_id} обновлены вложения.",
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}",
             payload={
                 "event_id": event.event_id,
@@ -761,7 +760,7 @@ class ProcessNotificationEventHandler:
             title=title,
             body=body,
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,
@@ -875,7 +874,7 @@ class ProcessNotificationEventHandler:
             title="Изменен срок заявки",
             body=f"По заявке №{event.request_id} изменен срок." if event.request_id is not None else "Изменен срок заявки.",
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,

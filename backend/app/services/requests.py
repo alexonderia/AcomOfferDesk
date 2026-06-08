@@ -376,18 +376,11 @@ class RequestService:
         if self._email_notifications is None:
             raise Conflict("Email notifications are not configured")
 
-        try:
-            await self._email_notifications.notify_request_to_additional_emails(
-                request_id=request.id,
-                additional_emails=normalized_additional_emails,
-                initiator_user_id=current_user.user_id,
-            )
-        except TypeError:
-            # Backward compatibility for legacy test doubles/transports that don't yet accept initiator_user_id.
-            await self._email_notifications.notify_request_to_additional_emails(
-                request_id=request.id,
-                additional_emails=normalized_additional_emails,
-            )
+        await self._email_notifications.notify_request_to_additional_emails(
+            request_id=request.id,
+            additional_emails=normalized_additional_emails,
+            initiator_user_id=current_user.user_id,
+        )
         return RequestEmailNotificationResult(
             request_id=request.id,
             sent_to=normalized_additional_emails,

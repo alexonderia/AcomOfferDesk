@@ -8,6 +8,8 @@ from app.domain.notifications import sanitize_notification_error_message
 from app.models.orm_models import UserNotification
 from app.services.notifications import NotificationService
 from shared.broker import RK_EMAIL_DELIVERY_FAILED, RK_EMAIL_DELIVERY_SUCCEEDED
+from shared.normalization import as_optional_int as _as_optional_int
+from shared.normalization import normalize_optional_str as _normalize_optional_str
 
 logger = logging.getLogger(__name__)
 
@@ -23,23 +25,6 @@ _TRACKING_FLAG_FALSE = "false"
 _TOAST_CHANNEL_SYSTEM = "system"
 _GENERIC_QUEUE_FAILURE_MESSAGE = "Не удалось поставить письмо в очередь на отправку."
 _GENERIC_DELIVERY_FAILURE_MESSAGE = "Не удалось отправить письмо. Попробуйте позже."
-
-
-def _as_optional_int(value) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _normalize_optional_str(value) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
-
 
 def _normalize_operation_kind(value) -> str | None:
     normalized = _normalize_optional_str(value)

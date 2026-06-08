@@ -7,6 +7,7 @@ can run without live infrastructure services.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+import hashlib
 
 import pytest
 from fastapi import FastAPI
@@ -17,6 +18,7 @@ from app.api.dependencies import get_current_user, get_uow
 from app.api.v1 import router as v1_router
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Conflict, Forbidden, NotFound, ServiceUnavailable, Unauthorized, UploadRejected
+from app.services import file_upload_guard as file_upload_guard_module
 
 
 class DummyUow:
@@ -145,3 +147,18 @@ def set_uow(api_app: FastAPI):
         api_app.dependency_overrides[get_uow] = _override
 
     return _set_uow
+
+
+@pytest.fixture(autouse=True)
+def allow_file_guard_integration_scans(monkeypatch):
+    async def _allow(self, *, original_name: str, content_bytes: bytes, content_type: str | None):
+        _ = self
+        normalized_mime = (content_type or "application/octet-stream").strip() or "application/octet-stream"
+        return file_upload_guard_module.GuardedUpload(
+            original_name=original_name,
+            content_bytes=content_bytes,
+            mime_type=normalized_mime,
+            content_sha256=hashlib.sha256(content_bytes).hexdigest(),
+        )
+
+    monkeypatch.setattr(file_upload_guard_module.FileUploadGuardService, "scan_bytes", _allow)

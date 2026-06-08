@@ -15,8 +15,12 @@ export const useHeaderConfig = () => {
   const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
 
   const adminUsersTabParam = searchParams.get('users_tab');
-  const adminUsersTab: 'contractors' | 'economists' | 'admins' =
-    adminUsersTabParam === 'economists' || adminUsersTabParam === 'admins' ? adminUsersTabParam : 'contractors';
+  const adminUsersTab: 'contractors' | 'economists' | 'admins' | 'security_officers' =
+    adminUsersTabParam === 'economists'
+    || adminUsersTabParam === 'admins'
+    || adminUsersTabParam === 'security_officers'
+      ? adminUsersTabParam
+      : 'contractors';
 
   const canCreateRequest = hasPermission(session, 'requests.create');
   const canLoadOpenRequests = hasPermission(session, 'requests.open.read');

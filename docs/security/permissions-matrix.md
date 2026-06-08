@@ -74,6 +74,7 @@ Legend: `Y` = granted, `N` = not granted.
 |---|---|---|
 | `superadmin` | `/admin`, `/requests`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/feedback` | Full management across users, requests, offers, contractors, dashboards, normative files and statuses |
 | `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
+| `security_officer` | `/contractors` | Read contractor list/profile, update contractor status, use own profile and feedback, no `/admin`, requests, offers, chats, dashboards or normative files |
 | `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Read requests/offers/chats across department; change request owner; read contractors and manage users hierarchy/manual contractors/subordinate unavailability/economy-role changes for subordinates |
 | `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Full request/offer workflow, create manual offers, manage normative files, read contractors, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
 | `economist` | `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Request/offers processing in scope, manual offers, subordinate unavailability, read contractors, manual contractors create/manage, plan dashboard (only delegated branch and below) |

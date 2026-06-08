@@ -244,6 +244,14 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
             }
         ),
+        settings.security_officer_role_id: frozenset(
+            common_permissions
+            | {
+                PermissionCodes.CONTRACTORS_READ,
+                PermissionCodes.CONTRACTORS_PROFILE_READ,
+                PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            }
+        ),
         settings.operator_role_id: frozenset(
             common_permissions
             | {

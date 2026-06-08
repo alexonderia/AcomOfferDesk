@@ -14,7 +14,8 @@ const roleById: Record<number, string> = {
   4: 'project_manager',
   5: 'lead_economist',
   6: 'economist',
-  7: 'operator'
+  7: 'operator',
+  8: 'security_officer'
 };
 
 export type AuthSession = {

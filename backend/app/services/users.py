@@ -49,6 +49,7 @@ ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
 ROLE_NAME_ECONOMIST = "Экономист"
 ROLE_NAME_OPERATOR = "Оператор"
 ROLE_NAME_CONTRACTOR = "Контрагент"
+ROLE_NAME_SECURITY_OFFICER = "Служба безопасности"
 PLACEHOLDER_TEXT = "Не указано"
 SUBORDINATE_PROFILE_ROLE_IDS = {
     settings.lead_economist_role_id,
@@ -162,6 +163,7 @@ def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
         return {
             settings.admin_role_id,
             settings.contractor_role_id,
+            settings.security_officer_role_id,
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
@@ -234,6 +236,8 @@ def _role_name_by_id(*, role_id: int) -> str:
         return ROLE_NAME_OPERATOR
     if role_id == settings.contractor_role_id:
         return ROLE_NAME_CONTRACTOR
+    if role_id == settings.security_officer_role_id:
+        return ROLE_NAME_SECURITY_OFFICER
     if role_id == settings.admin_role_id:
         return ROLE_NAME_ADMIN
     if role_id == settings.superadmin_role_id:
@@ -1164,6 +1168,7 @@ class ManualContractorService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         user_auth_accounts: UserAuthAccountRepository,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         *,
         keycloak_admin: KeycloakAdminService | None = None,
     ) -> None:
@@ -1171,6 +1176,7 @@ class ManualContractorService:
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_auth_accounts = user_auth_accounts
+        self._after_commit_hook_registrar = after_commit_hook_registrar
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
@@ -1345,6 +1351,13 @@ class ManualContractorService:
                 registered_by=current_user.user_id,
                 company_name=normalized_data.company_name,
             )
+        )
+        schedule_registration_review_required_notification(
+            after_commit_hook_registrar=self._after_commit_hook_registrar,
+            user_id=login,
+            actor_user_id=current_user.user_id,
+            role_id=settings.contractor_role_id,
+            source="manual_contractor",
         )
         return login
 

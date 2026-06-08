@@ -145,6 +145,7 @@ class Settings(BaseSettings):
     lead_economist_role_id: int = 5
     economist_role_id: int = 6
     operator_role_id: int = 7
+    security_officer_role_id: int = 8
     telegram_legacy_enabled: bool = Field(
         default=False,
         validation_alias="LEGACY_TELEGRAM_ENABLED",
@@ -272,6 +273,7 @@ class Settings(BaseSettings):
         self.lead_economist_role_id = 5
         self.economist_role_id = 6
         self.operator_role_id = 7
+        self.security_officer_role_id = 8
 
         self.refresh_cookie_samesite = self.refresh_cookie_samesite.lower().strip() or "lax"
         if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:

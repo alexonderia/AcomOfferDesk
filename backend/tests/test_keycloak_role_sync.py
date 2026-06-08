@@ -28,6 +28,7 @@ def test_role_mapping_by_local_role_id_matches_expected_app_roles():
     assert mapping[settings.lead_economist_role_id] == "app.lead_economist"
     assert mapping[settings.economist_role_id] == "app.economist"
     assert mapping[settings.operator_role_id] == "app.operator"
+    assert mapping[settings.security_officer_role_id] == "app.security_officer"
     assert mapping[settings.contractor_role_id] == "app.contractor"
 
 

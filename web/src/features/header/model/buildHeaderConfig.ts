@@ -17,7 +17,7 @@ type BuildHeaderConfigArgs = {
   canViewDashboardPlans: boolean;
   breadcrumbs?: { key: string; label: string; to?: string }[];
   contractorTab: 'my' | 'open';
-  adminUsersTab: 'contractors' | 'economists' | 'admins';
+  adminUsersTab: 'contractors' | 'economists' | 'admins' | 'security_officers';
   onNavigateToDashboard: () => void;
   onNavigateToSavings: () => void;
   onNavigateToPlan: () => void;
@@ -29,7 +29,7 @@ type BuildHeaderConfigArgs = {
   onNavigateToAdminCreate: () => void;
   onNavigateBackToRequests: () => void;
   onSetContractorTab: (_value: 'my' | 'open') => void;
-  onSetAdminUsersTab: (_value: 'contractors' | 'economists' | 'admins') => void;
+  onSetAdminUsersTab: (_value: 'contractors' | 'economists' | 'admins' | 'security_officers') => void;
 };
 
 type MoreMenuOptions = {
@@ -296,6 +296,27 @@ const buildAdminMobileNavItems = (canOpenUsersPage: boolean): HeaderMobileNavIte
   return items;
 };
 
+const buildSecurityOfficerMobileNavItems = (canOpenContractorsPage: boolean): HeaderMobileNavItem[] => {
+  const items: HeaderMobileNavItem[] = [];
+
+  if (canOpenContractorsPage) {
+    items.push({ key: 'contractors', label: 'Контрагенты', to: '/contractors' });
+  }
+
+  items.push(
+    buildMoreNavItem({
+      showProfile: true,
+      showContractors: false,
+      showNormative: false,
+      showRoleGuide: true,
+      showFeedback: true,
+      showLogout: true,
+    })
+  );
+
+  return items;
+};
+
 const buildAdminUsersMobileNavItems = (): HeaderMobileNavItem[] => [
   {
     key: 'users',
@@ -305,6 +326,7 @@ const buildAdminUsersMobileNavItems = (): HeaderMobileNavItem[] => [
       { key: 'contractors', label: 'Контрагенты', tabValue: 'contractors' },
       { key: 'economists', label: 'Экономисты', tabValue: 'economists' },
       { key: 'admins', label: 'Админы', tabValue: 'admins' },
+      { key: 'security_officers', label: 'Служба безопасности', tabValue: 'security_officers' },
     ],
   },
   buildMoreNavItem({
@@ -321,6 +343,7 @@ const resolveDefaultMobileNavItems = ({
   isProjectManager,
   isLeadEconomist,
   isContractor,
+  isSecurityOfficer,
   isLeadLike,
   isEconomist,
   isOperator,
@@ -337,6 +360,7 @@ const resolveDefaultMobileNavItems = ({
   isProjectManager: boolean;
   isLeadEconomist: boolean;
   isContractor: boolean;
+  isSecurityOfficer: boolean;
   isLeadLike: boolean;
   isEconomist: boolean;
   isOperator: boolean;
@@ -373,6 +397,10 @@ const resolveDefaultMobileNavItems = ({
 
   if (isContractor) {
     return buildContractorMobileNavItems();
+  }
+
+  if (isSecurityOfficer) {
+    return buildSecurityOfficerMobileNavItems(canOpenContractorsPage);
   }
 
   if (isLeadLike && !isProjectManager && !isLeadEconomist) {
@@ -428,6 +456,7 @@ export const buildHeaderConfig = ({
   const isSuperadmin = roleId === ROLE.SUPERADMIN;
   const isAdmin = roleId === ROLE.ADMIN;
   const isContractor = roleId === ROLE.CONTRACTOR;
+  const isSecurityOfficer = roleId === ROLE.SECURITY_OFFICER;
   const isLeadEconomist = roleId === ROLE.LEAD_ECONOMIST;
   const isProjectManager = roleId === ROLE.PROJECT_MANAGER;
   const isEconomist = roleId === ROLE.ECONOMIST;
@@ -460,6 +489,7 @@ export const buildHeaderConfig = ({
   const isSuperadminRequestsPage = isSuperadmin && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isSuperadminUsersPage = isSuperadmin && pathname.startsWith('/admin');
   const isAdminUsersPage = isAdmin && pathname.startsWith('/admin');
+  const isSecurityOfficerContractorsPage = isSecurityOfficer && pathname.startsWith('/contractors');
 
   const isContractorRequestsArea = isContractor
     && (isRequestsListPage || isContractorRequestDetailsPage || isOfferWorkspacePage);
@@ -481,6 +511,7 @@ export const buildHeaderConfig = ({
     && (pathname.startsWith('/requests') || pathname.startsWith('/admin') || pathname.startsWith('/contractors') || isOfferWorkspacePage)
     && canOpenUsersPage;
   const canUseOperatorTabs = isOperator && pathname.startsWith('/requests');
+  const canUseSecurityOfficerTabs = isSecurityOfficer && canOpenContractorsPage && isSecurityOfficerContractorsPage;
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
     && (canViewDashboardProcess || canViewDashboardSavings || canViewDashboardPlans || canOpenContractorsPage)
     && (
@@ -502,6 +533,7 @@ export const buildHeaderConfig = ({
     isProjectManager,
     isLeadEconomist,
     isContractor,
+    isSecurityOfficer,
     isLeadLike,
     isEconomist,
     isOperator,
@@ -804,6 +836,25 @@ export const buildHeaderConfig = ({
     };
   }
 
+  if (canUseSecurityOfficerTabs) {
+    return {
+      mode: 'sidebar',
+      breadcrumbs,
+      mobileNavItems: buildSecurityOfficerMobileNavItems(canOpenContractorsPage),
+      tabs: [{ key: 'contractors', value: 'contractors', label: 'Контрагенты' }],
+      activeTab: 'contractors',
+      onTabChange: () => {
+        onNavigateToContractors();
+      },
+      actions: [],
+      showFeedback: true,
+      showRoleGuide: true,
+      showProfile: true,
+      showLogout: true,
+      ...normativeNavProps,
+    };
+  }
+
   if (isAdminUsersPage) {
     return {
       mode: 'sidebar',
@@ -812,10 +863,11 @@ export const buildHeaderConfig = ({
       tabs: [
         { key: 'contractors', value: 'contractors', label: 'Контрагенты' },
         { key: 'economists', value: 'economists', label: 'Экономисты' },
-        { key: 'admins', value: 'admins', label: 'Администраторы' }
+        { key: 'admins', value: 'admins', label: 'Администраторы' },
+        { key: 'security_officers', value: 'security_officers', label: 'Служба безопасности' }
       ],
       activeTab: adminUsersTab,
-      onTabChange: (value) => onSetAdminUsersTab(value as 'contractors' | 'economists' | 'admins'),
+      onTabChange: (value) => onSetAdminUsersTab(value as 'contractors' | 'economists' | 'admins' | 'security_officers'),
       actions: [],
       showFeedback: true,
       showRoleGuide: true,

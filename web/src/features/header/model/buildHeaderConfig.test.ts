@@ -198,6 +198,33 @@ describe('buildHeaderConfig role navigation', () => {
     expect(mobileKeys(config)).not.toContain('admin');
   });
 
+  it('shows only contractors navigation for security officer', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.SECURITY_OFFICER,
+      pathname: '/contractors',
+      canOpenContractorsPage: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['contractors']);
+    expect(config.activeTab).toBe('contractors');
+    expect(mobileKeys(config)).toEqual(['contractors', 'more']);
+  });
+
+  it('uses the full security officer label on admin user tabs', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ADMIN,
+      pathname: '/admin',
+      canOpenUsersPage: true,
+      adminUsersTab: 'security_officers',
+    });
+
+    expect(config.tabs.find((tab) => tab.key === 'security_officers')?.label).toBe('Служба безопасности');
+    const usersNav = config.mobileNavItems?.find((item) => item.key === 'users');
+    expect(usersNav?.children?.find((item) => item.key === 'security_officers')?.label).toBe('Служба безопасности');
+  });
+
   it('shows only requests section for operator', () => {
     const config = buildHeaderConfig({
       ...baseArgs(),

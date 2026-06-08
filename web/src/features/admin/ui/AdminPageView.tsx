@@ -67,7 +67,7 @@ export const AdminPageView = () => {
     isAdmin,
     canViewRoleIds,
     isDialogOpen,
-    setIsDialogOpen,
+    openCreateDialog,
     activeTab,
     handleTabChange,
     users,
@@ -161,7 +161,7 @@ export const AdminPageView = () => {
         canUpdateRole={canUpdateRole}
         allowedRoleOptions={roleUpdateOptions}
         onStatusUpdated={loadUsers}
-        onAddClick={canOpenCreateDialog ? () => setIsDialogOpen(true) : undefined}
+        onAddClick={canOpenCreateDialog ? openCreateDialog : undefined}
       />
 
       <Dialog

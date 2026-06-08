@@ -44,6 +44,14 @@ def _status_severity(status: str | None) -> str:
 
 
 _PROFILE_PLACEHOLDER_VALUES = frozenset({"не указано", "-"})
+_CONTRACTOR_REGISTRATION_SOURCES = frozenset({"contractor_tg", "oidc_invite"})
+_CONTRACTOR_CREATION_SOURCES = frozenset({"manual_contractor"})
+_USER_STATUS_LABELS = {
+    "review": "На проверке",
+    "active": "Активен",
+    "inactive": "Неактивен",
+    "blacklist": "В черном списке",
+}
 
 
 def _is_missing_profile_value(value: str | None) -> bool:
@@ -71,6 +79,23 @@ def _resolve_user_target_descriptor(
         return mail
 
     return login
+
+
+def _is_contractor_lifecycle_target(*, payload: dict[str, Any]) -> bool:
+    target_role = payload.get("target_role")
+    if target_role == settings.contractor_role_id:
+        return True
+    if payload.get("target_is_contractor") is True:
+        return True
+    source = _normalize_optional_str(payload.get("source"))
+    return source in _CONTRACTOR_REGISTRATION_SOURCES or source in _CONTRACTOR_CREATION_SOURCES
+
+
+def _format_user_status_label(value: str | None) -> str:
+    normalized = _normalize_optional_str(value)
+    if normalized is None:
+        return "-"
+    return _USER_STATUS_LABELS.get(normalized, normalized)
 
 
 class ProcessNotificationEventHandler:
@@ -573,9 +598,13 @@ class ProcessNotificationEventHandler:
         target_user_id = _normalize_optional_str(payload.get("target_user_id"))
         old_status = _normalize_optional_str(payload.get("old_status"))
         new_status = _normalize_optional_str(payload.get("new_status"))
+        is_contractor_target = _is_contractor_lifecycle_target(payload=payload)
 
+        recipient_role_ids = [settings.admin_role_id, settings.superadmin_role_id]
+        if is_contractor_target:
+            recipient_role_ids.append(settings.security_officer_role_id)
         rows = await uow.users.list_by_role_ids_with_profiles_and_roles(
-            role_ids=[settings.admin_role_id, settings.superadmin_role_id],
+            role_ids=recipient_role_ids,
         )
         recipients = _normalize_user_ids(
             user.id for user, _, _ in rows if user.id != actor_user_id
@@ -596,16 +625,25 @@ class ProcessNotificationEventHandler:
             target_user_id=target_user_id,
             target_profile=target_profile,
         )
+        old_status_label = _format_user_status_label(old_status)
+        new_status_label = _format_user_status_label(new_status)
+        title = "Изменен статус контрагента" if is_contractor_target else "Изменен статус пользователя"
+        body = (
+            f"Изменен статус контрагента {target_descriptor}: {old_status_label} -> {new_status_label}."
+            if is_contractor_target
+            else f"Изменен статус пользователя {target_descriptor}."
+        )
+        link_url = "/contractors" if is_contractor_target else "/admin/users"
 
         await service.create_many_for_users(
             user_ids=filtered_recipients,
             notification_type="user.status_changed",
             severity=_status_severity(new_status),
-            title="Изменен статус пользователя",
-            body=f"Изменен статус пользователя {target_descriptor}.",
+            title=title,
+            body=body,
             entity_type="user",
             entity_id=None,
-            link_url="/admin/users",
+            link_url=link_url,
             payload={
                 "event_id": event.event_id,
                 "dedupe_key": event.dedupe_key,
@@ -633,9 +671,14 @@ class ProcessNotificationEventHandler:
         payload = event.payload or {}
         target_user_id = _normalize_optional_str(payload.get("target_user_id"))
         actor_user_id = event.actor_user_id
+        is_contractor_target = _is_contractor_lifecycle_target(payload=payload)
+        source = _normalize_optional_str(payload.get("source"))
 
+        recipient_role_ids = [settings.admin_role_id, settings.superadmin_role_id]
+        if is_contractor_target:
+            recipient_role_ids.append(settings.security_officer_role_id)
         rows = await uow.users.list_by_role_ids_with_profiles_and_roles(
-            role_ids=[settings.admin_role_id, settings.superadmin_role_id],
+            role_ids=recipient_role_ids,
         )
         recipients = _normalize_user_ids(user.id for user, _, _ in rows)
         if not recipients:
@@ -654,23 +697,34 @@ class ProcessNotificationEventHandler:
             target_user_id=target_user_id,
             target_profile=target_profile,
         )
+        title = "Пользователь ожидает модерации"
+        body = f"Требуется проверка пользователя {target_descriptor}."
+        link_url = "/admin/users"
+        if is_contractor_target and source in _CONTRACTOR_REGISTRATION_SOURCES:
+            title = "Зарегистрирован новый контрагент"
+            body = f"Зарегистрирован новый контрагент: {target_descriptor}."
+            link_url = "/contractors"
+        elif is_contractor_target and source in _CONTRACTOR_CREATION_SOURCES:
+            title = "Создан новый контрагент"
+            body = f"Создан новый контрагент: {target_descriptor}."
+            link_url = "/contractors"
 
         await service.create_many_for_users(
             user_ids=filtered_recipients,
             notification_type="user.review_required",
             severity="warning",
-            title="Пользователь ожидает модерации",
-            body=f"Требуется проверка пользователя {target_descriptor}.",
+            title=title,
+            body=body,
             entity_type="user",
             entity_id=None,
-            link_url="/admin/users",
+            link_url=link_url,
             payload={
                 "event_id": event.event_id,
                 "dedupe_key": event.dedupe_key,
                 "target_user_id": target_user_id,
                 "target_role": payload.get("target_role"),
                 "actor_user_id": actor_user_id,
-                "source": payload.get("source"),
+                "source": source,
             },
         )
 

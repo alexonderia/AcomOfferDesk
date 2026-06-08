@@ -212,7 +212,7 @@ export const useAdminPage = () => {
 
     if (canCreateUser) {
       if (session?.roleId === ROLE.SUPERADMIN) {
-        [ROLE.ADMIN, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
+        [ROLE.ADMIN, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
       } else if (session?.roleId === ROLE.ADMIN) {
         [ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
       } else if (session?.roleId === ROLE.LEAD_ECONOMIST) {
@@ -238,10 +238,19 @@ export const useAdminPage = () => {
   }, [activeTab, baseCreateRoleIds, session?.roleId]);
 
   const canOpenCreateDialog = roleOptions.length > 0;
+  const preferredCreateRoleId = roleOptions[0]?.id ?? roleByTab[activeTab];
 
   const roleUpdateOptions = useMemo(() => {
     if (canUpdateRoleAny) {
-      return [ROLE.ADMIN, ROLE.CONTRACTOR, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR];
+      return [
+        ROLE.ADMIN,
+        ROLE.CONTRACTOR,
+        ROLE.SECURITY_OFFICER,
+        ROLE.PROJECT_MANAGER,
+        ROLE.LEAD_ECONOMIST,
+        ROLE.ECONOMIST,
+        ROLE.OPERATOR
+      ];
     }
     if (!canUpdateRoleEconomy) {
       return [];
@@ -258,7 +267,13 @@ export const useAdminPage = () => {
   const userTabs = useMemo(() => {
     if (isLeadLike) return tabOptions.filter((tab) => tab.value === 'economists');
     if (session?.roleId === ROLE.SUPERADMIN) return tabOptions;
-    return tabOptions.filter((tab) => tab.value === 'contractors' || tab.value === 'economists' || tab.value === 'admins');
+    return tabOptions.filter(
+      (tab) =>
+        tab.value === 'contractors'
+        || tab.value === 'economists'
+        || tab.value === 'admins'
+        || tab.value === 'security_officers'
+    );
   }, [isLeadLike, session?.roleId]);
 
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
@@ -267,7 +282,7 @@ export const useAdminPage = () => {
   const form = useLiveValidatedForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      role_id: roleOptions[0]?.id ?? ROLE.CONTRACTOR,
+      role_id: preferredCreateRoleId,
       login: '',
       password: '',
       confirmPassword: '',
@@ -333,19 +348,6 @@ export const useAdminPage = () => {
     }
   }, [isLeadLike, searchParams]);
 
-  useEffect(() => {
-    if (!canOpenCreateDialog) return;
-
-    if (searchParams.get('create') === '1') {
-      setIsDialogOpen(true);
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('create');
-        return next;
-      }, { replace: true });
-    }
-  }, [canOpenCreateDialog, searchParams, setSearchParams]);
-
   const loadManagers = useCallback(async () => {
     const [economistManagersResult, leadEconomistManagersResult, projectManagerRoleManagersResult] = await Promise.allSettled([
       getManagerCandidates(ROLE.ECONOMIST),
@@ -406,7 +408,7 @@ export const useAdminPage = () => {
 
   const resetForm = useCallback(() => {
     reset({
-      role_id: roleOptions[0]?.id ?? ROLE.CONTRACTOR,
+      role_id: preferredCreateRoleId,
       login: '',
       password: '',
       confirmPassword: '',
@@ -421,7 +423,25 @@ export const useAdminPage = () => {
       address: '',
       note: ''
     });
-  }, [reset, roleOptions]);
+  }, [preferredCreateRoleId, reset]);
+
+  const openCreateDialog = useCallback(() => {
+    resetForm();
+    setIsDialogOpen(true);
+  }, [resetForm]);
+
+  useEffect(() => {
+    if (!canOpenCreateDialog) return;
+
+    if (searchParams.get('create') === '1') {
+      openCreateDialog();
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('create');
+        return next;
+      }, { replace: true });
+    }
+  }, [canOpenCreateDialog, openCreateDialog, searchParams, setSearchParams]);
 
   const handleClose = () => {
     setIsDialogOpen(false);
@@ -477,7 +497,7 @@ export const useAdminPage = () => {
     isAdmin,
     canViewRoleIds,
     isDialogOpen,
-    setIsDialogOpen,
+    openCreateDialog,
     activeTab,
     handleTabChange,
     users,

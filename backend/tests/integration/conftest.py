@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_current_user, get_uow
 from app.api.v1 import router as v1_router
 from app.domain.auth_context import CurrentUser
-from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
+from app.domain.exceptions import Conflict, Forbidden, NotFound, ServiceUnavailable, Unauthorized, UploadRejected
 
 
 class DummyUow:
@@ -91,6 +91,22 @@ def api_app() -> FastAPI:
     async def conflict_handler(request, exc):
         _ = request
         return JSONResponse(status_code=409, content={"detail": str(exc) or "Conflict"})
+
+    @app.exception_handler(UploadRejected)
+    async def upload_rejected_handler(request, exc):
+        _ = request
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail or "Upload rejected", "reason_code": exc.reason_code},
+        )
+
+    @app.exception_handler(ServiceUnavailable)
+    async def service_unavailable_handler(request, exc):
+        _ = request
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail or "Service unavailable", "reason_code": exc.reason_code},
+        )
 
     async def _default_current_user() -> CurrentUser:
         raise RuntimeError("Test should override current user dependency")

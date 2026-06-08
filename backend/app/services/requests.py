@@ -21,7 +21,7 @@ from app.infrastructure.notification_publisher import publish_process_notificati
 from app.services.email_notifications import EmailNotificationService
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
-from app.services.files import FileService
+from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
@@ -67,13 +67,6 @@ def format_offer_status(status: str | None) -> str:
     if not status:
         return "не указан"
     return OFFER_STATUS_LABELS.get(status, status)
-
-
-@dataclass(frozen=True)
-class RequestFileCreateInput:
-    original_name: str
-    content_bytes: bytes
-    mime_type: str
 
 
 @dataclass(frozen=True)
@@ -262,7 +255,7 @@ class RequestService:
         initial_amount: float | None,
         id_plan: int | None = None,
         normative_file_id: int | None = None,
-        files: list[RequestFileCreateInput],
+        files: list[PreparedUpload],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
     ) -> tuple[str, list[int]]:
@@ -306,14 +299,9 @@ class RequestService:
         )
         file_ids.append(normative_file_id_value)
         for file_item in files:
-            prepared = await self._file_service.prepare_bytes(
-                original_name=file_item.original_name,
-                content_bytes=file_item.content_bytes,
-                mime_type=file_item.mime_type,
-            )
             db_file = await self._file_service.create_request_file(
                 request_id=request.id,
-                upload=prepared,
+                upload=file_item,
             )
             await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
             file_ids.append(db_file.id)
@@ -723,7 +711,7 @@ class RequestService:
         *,
         current_user: CurrentUser,
         request_id: str,
-        file_data: RequestFileCreateInput,
+        file_data: PreparedUpload,
     ) -> int:
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
@@ -735,14 +723,9 @@ class RequestService:
             upload=True,
         )
 
-        prepared = await self._file_service.prepare_bytes(
-            original_name=file_data.original_name,
-            content_bytes=file_data.content_bytes,
-            mime_type=file_data.mime_type,
-        )
         db_file = await self._file_service.create_request_file(
             request_id=request.id,
-            upload=prepared,
+            upload=file_data,
         )
         await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
         original_name = getattr(db_file, "original_name", None) or file_data.original_name

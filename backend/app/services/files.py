@@ -1,37 +1,20 @@
 ﻿from __future__ import annotations
 
-import hashlib
-import io
-import mimetypes
-import zipfile
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 
 from fastapi import UploadFile
 
 from app.core.config import settings
-from app.domain.exceptions import Conflict, NotFound
+from app.domain.exceptions import Conflict, NotFound, UploadRejected
 from app.infrastructure.minio_client import MinioStorage, S3Error
 from app.models.orm_models import File, StorageObject
 from app.repositories.files import FileRepository
+from app.services.file_upload_guard import FileUploadGuardService
 
-_ALLOWED_EXTENSIONS = {
-    ".pdf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".txt",
-    ".md",
-    ".doc",
-    ".docx",
-    ".docs",
-    ".xls",
-    ".xlsx",
-    ".exl",
-    ".csv",
-    ".ods",
-}
-_DANGEROUS_EXTENSIONS = {".exe", ".sh", ".bat", ".cmd", ".ps1", ".js", ".msi", ".dll", ".so", ".jar"}
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,18 +35,26 @@ class FileService:
         files: FileRepository | None = None,
         *,
         storage: MinioStorage | None = None,
+        upload_guard: FileUploadGuardService | None = None,
     ) -> None:
         self._files = files
         self._storage = storage or MinioStorage()
+        self._upload_guard = upload_guard or FileUploadGuardService()
         self._tracked_objects: list[tuple[str, str]] = []
 
     async def ensure_bucket_exists(self) -> None:
         await self._storage.ensure_bucket_exists(bucket=settings.s3_bucket)
 
     async def prepare_upload(self, upload: UploadFile) -> PreparedUpload:
+        logger.info(
+            "Receiving upload from HTTP request: filename=%s content_type=%s",
+            upload.filename or "",
+            upload.content_type or "application/octet-stream",
+        )
+        content_bytes = await self._read_upload_bytes(upload)
         return await self.prepare_bytes(
             original_name=upload.filename or "",
-            content_bytes=await upload.read(),
+            content_bytes=content_bytes,
             mime_type=upload.content_type,
         )
 
@@ -74,26 +65,44 @@ class FileService:
         content_bytes: bytes,
         mime_type: str | None = None,
     ) -> PreparedUpload:
-        safe_name = self._sanitize_filename(original_name)
-        extension = Path(safe_name).suffix.lower()
-
-        if extension in _DANGEROUS_EXTENSIONS:
-            raise Conflict("Forbidden file type")
-        if extension not in _ALLOWED_EXTENSIONS:
-            raise Conflict("Unsupported file extension")
-        if not content_bytes:
-            raise Conflict("File cannot be empty")
+        logger.info(
+            "Preparing upload bytes for validation: filename=%s size_bytes=%s claimed_mime=%s",
+            original_name,
+            len(content_bytes),
+            (mime_type or "application/octet-stream").strip() or "application/octet-stream",
+        )
+        if len(content_bytes) == 0:
+            logger.warning(
+                "Upload contains no bytes and will be rejected by file guard: filename=%s claimed_mime=%s",
+                original_name,
+                (mime_type or "application/octet-stream").strip() or "application/octet-stream",
+            )
         if len(content_bytes) > settings.max_upload_size_bytes:
-            raise Conflict("File too large")
-        if not self._magic_signature_matches(extension=extension, content=content_bytes):
-            raise Conflict("File content does not match extension")
-
-        detected_mime_type = (mime_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream").strip()
+            logger.warning(
+                "Upload rejected before scan because size exceeds backend limit: filename=%s size_bytes=%s max_size_bytes=%s",
+                original_name,
+                len(content_bytes),
+                settings.max_upload_size_bytes,
+            )
+            raise UploadRejected(reason_code="file_too_large", detail="Файл слишком большой.")
+        guarded = await self._upload_guard.scan_bytes(
+            original_name=original_name,
+            content_bytes=content_bytes,
+            content_type=mime_type,
+        )
+        safe_name = self._sanitize_filename(guarded.original_name)
+        logger.info(
+            "Upload prepared successfully: filename=%s size_bytes=%s mime_type=%s sha256_prefix=%s",
+            safe_name,
+            len(guarded.content_bytes),
+            guarded.mime_type,
+            _hash_prefix(guarded.content_sha256),
+        )
         return PreparedUpload(
             original_name=safe_name,
-            content_bytes=content_bytes,
-            mime_type=detected_mime_type or "application/octet-stream",
-            content_sha256=hashlib.sha256(content_bytes).hexdigest(),
+            content_bytes=guarded.content_bytes,
+            mime_type=guarded.mime_type,
+            content_sha256=guarded.content_sha256,
         )
 
     async def create_request_file(self, *, request_id: str, upload: PreparedUpload) -> File:
@@ -172,6 +181,11 @@ class FileService:
     async def cleanup_tracked_objects(self) -> None:
         while self._tracked_objects:
             bucket, key = self._tracked_objects.pop()
+            logger.info(
+                "Cleaning up tracked storage object after failed flow: bucket=%s key=%s",
+                bucket,
+                key,
+            )
             try:
                 await self._storage.remove_object(bucket=bucket, key=key)
             except S3Error as exc:
@@ -182,6 +196,12 @@ class FileService:
         if self._files is None:
             raise RuntimeError("File repository is not configured")
 
+        logger.info(
+            "Persisting prepared upload: filename=%s size_bytes=%s sha256_prefix=%s",
+            upload.original_name,
+            upload.size_bytes,
+            _hash_prefix(upload.content_sha256),
+        )
         await self._files.acquire_storage_object_lock(content_sha256=upload.content_sha256)
         storage_object = await self._files.get_storage_object_by_content_hash(
             content_sha256=upload.content_sha256,
@@ -189,8 +209,17 @@ class FileService:
         )
 
         if storage_object is None:
+            logger.info(
+                "No existing storage object found; creating new object: sha256_prefix=%s",
+                _hash_prefix(upload.content_sha256),
+            )
             storage_object = await self._create_storage_object(upload=upload)
         else:
+            logger.info(
+                "Reusing existing storage object: storage_object_id=%s sha256_prefix=%s",
+                storage_object.id,
+                _hash_prefix(upload.content_sha256),
+            )
             await self._ensure_storage_object_content(storage_object=storage_object, upload=upload)
 
         return await self._files.create(
@@ -204,6 +233,14 @@ class FileService:
 
         storage_bucket = settings.s3_bucket
         storage_key = f"objects/{upload.content_sha256}"
+        logger.info(
+            "Uploading new storage object: bucket=%s key=%s size_bytes=%s mime_type=%s sha256_prefix=%s",
+            storage_bucket,
+            storage_key,
+            upload.size_bytes,
+            upload.mime_type,
+            _hash_prefix(upload.content_sha256),
+        )
         await self._storage.upload_object(
             bucket=storage_bucket,
             key=storage_key,
@@ -213,14 +250,26 @@ class FileService:
         self._tracked_objects.append((storage_bucket, storage_key))
 
         try:
-            return await self._files.create_storage_object(
+            storage_object = await self._files.create_storage_object(
                 storage_bucket=storage_bucket,
                 storage_key=storage_key,
                 content_sha256=upload.content_sha256,
                 mime_type=upload.mime_type,
                 size_bytes=upload.size_bytes,
             )
+            logger.info(
+                "Storage object metadata created: storage_object_id=%s bucket=%s key=%s",
+                storage_object.id,
+                storage_bucket,
+                storage_key,
+            )
+            return storage_object
         except Exception:
+            logger.exception(
+                "Failed to create storage object metadata; removing uploaded object: bucket=%s key=%s",
+                storage_bucket,
+                storage_key,
+            )
             try:
                 await self._storage.remove_object(bucket=storage_bucket, key=storage_key)
             except S3Error as exc:
@@ -243,9 +292,21 @@ class FileService:
                 bucket=storage_object.storage_bucket,
                 key=storage_object.storage_key,
             )
+            logger.info(
+                "Verified existing storage object content: storage_object_id=%s bucket=%s key=%s",
+                storage_object.id,
+                storage_object.storage_bucket,
+                storage_object.storage_key,
+            )
         except S3Error as exc:
             if not self._is_missing_object_error(exc):
                 raise
+            logger.warning(
+                "Storage object metadata exists but content is missing; re-uploading: storage_object_id=%s bucket=%s key=%s",
+                storage_object.id,
+                storage_object.storage_bucket,
+                storage_object.storage_key,
+            )
             await self._storage.upload_object(
                 bucket=storage_object.storage_bucket,
                 key=storage_object.storage_key,
@@ -270,51 +331,35 @@ class FileService:
         return basename
 
     @staticmethod
-    def _is_zip_based_office_document(*, content: bytes, required_entry: str) -> bool:
-        if not content.startswith(b"PK\x03\x04"):
-            return False
-        try:
-            with zipfile.ZipFile(io.BytesIO(content)) as archive:
-                names = set(archive.namelist())
-                return required_entry in names
-        except zipfile.BadZipFile:
-            return False
-
-    @classmethod
-    def _magic_signature_matches(cls, *, extension: str, content: bytes) -> bool:
-        if extension == ".pdf":
-            return content.startswith(b"%PDF-")
-        if extension == ".png":
-            return content.startswith(b"\x89PNG\r\n\x1a\n")
-        if extension in {".jpg", ".jpeg"}:
-            return content.startswith(b"\xff\xd8\xff")
-        if extension in {".txt", ".md", ".csv"}:
-            try:
-                content.decode("utf-8")
-            except UnicodeDecodeError:
-                return False
-            return True
-        if extension in {".doc", ".docs", ".xls", ".exl"}:
-            return content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
-        if extension == ".docx":
-            return cls._is_zip_based_office_document(content=content, required_entry="word/document.xml")
-        if extension == ".xlsx":
-            return cls._is_zip_based_office_document(content=content, required_entry="xl/workbook.xml")
-        if extension == ".ods":
-            if not content.startswith(b"PK\x03\x04"):
-                return False
-            try:
-                with zipfile.ZipFile(io.BytesIO(content)) as archive:
-                    names = set(archive.namelist())
-                    if "mimetype" in names:
-                        mimetype = archive.read("mimetype")
-                        if mimetype == b"application/vnd.oasis.opendocument.spreadsheet":
-                            return True
-                    return "content.xml" in names
-            except (zipfile.BadZipFile, KeyError):
-                return False
-        return False
+    async def _read_upload_bytes(upload: UploadFile) -> bytes:
+        max_size = settings.max_upload_size_bytes
+        total_size = 0
+        chunks: list[bytes] = []
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_size:
+                logger.warning(
+                    "Upload stream exceeded backend size limit while reading: filename=%s size_bytes=%s max_size_bytes=%s",
+                    upload.filename or "",
+                    total_size,
+                    max_size,
+                )
+                raise UploadRejected(reason_code="file_too_large", detail="Файл слишком большой.")
+            chunks.append(chunk)
+        logger.info(
+            "Upload stream read successfully: filename=%s size_bytes=%s",
+            upload.filename or "",
+            total_size,
+        )
+        return b"".join(chunks)
 
     @staticmethod
     def _is_missing_object_error(exc: S3Error) -> bool:
         return exc.code in {"NoSuchKey", "NoSuchObject", "NoSuchBucket"}
+
+
+def _hash_prefix(value: str) -> str:
+    return value[:12]

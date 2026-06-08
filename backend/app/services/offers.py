@@ -25,7 +25,7 @@ from app.repositories.requests import RequestRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
-from app.services.files import FileService
+from app.services.files import FileService, PreparedUpload
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.keycloak_admin import KeycloakAdminService
@@ -93,13 +93,6 @@ def _normalize_keycloak_email_value(value: str | None) -> str | None:
     if not normalized or normalized == PLACEHOLDER_TEXT:
         return None
     return normalized
-
-@dataclass(frozen=True)
-class AttachmentFileInput:
-    original_name: str
-    content_bytes: bytes
-    mime_type: str
-
 
 @dataclass(frozen=True)
 class ExistingAttachmentFileInput:
@@ -653,7 +646,7 @@ class OfferService:
         contractor_user_id: str | None,
         contractor_data: ManualContractorCreateInput | None,
         offer_amount: float | None = None,
-        files: list[AttachmentFileInput] | None = None,
+        files: list[PreparedUpload] | None = None,
     ) -> ManualOfferCreateResult:
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
@@ -716,14 +709,9 @@ class OfferService:
         )
 
         for upload in files or []:
-            prepared = await self._file_service.prepare_bytes(
-                original_name=upload.original_name,
-                content_bytes=upload.content_bytes,
-                mime_type=upload.mime_type,
-            )
             db_file = await self._file_service.create_offer_file(
                 offer_id=offer.id,
-                upload=prepared,
+                upload=upload,
             )
             await self._offers.attach_file(offer_id=offer.id, file_id=db_file.id)
 
@@ -838,7 +826,7 @@ class OfferService:
         *,
         current_user: CurrentUser,
         offer_id: int,
-        upload: AttachmentFileInput,
+        upload: PreparedUpload,
     ) -> int:
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
@@ -889,14 +877,9 @@ class OfferService:
         ):
             raise Conflict("Cannot edit files for finalized offer")
 
-        prepared = await self._file_service.prepare_bytes(
-            original_name=upload.original_name,
-            content_bytes=upload.content_bytes,
-            mime_type=upload.mime_type,
-        )
         db_file = await self._file_service.create_offer_file(
             offer_id=offer.id,
-            upload=prepared,
+            upload=upload,
         )
         await self._offers.attach_file(offer_id=offer.id, file_id=db_file.id)
         original_name = getattr(db_file, "original_name", None) or upload.original_name
@@ -1175,7 +1158,7 @@ class OfferService:
         *,
         current_user: CurrentUser,
         offer_id: int,
-        upload: AttachmentFileInput,
+        upload: PreparedUpload,
     ) -> UploadedMessageAttachment:
         offer, request, _chat, _ = await self._require_chat_context(
             current_user=current_user,
@@ -1187,14 +1170,9 @@ class OfferService:
             request_owner_user_id=request.id_user,
         ):
             raise Forbidden("Insufficient permissions to attach files to chat messages")
-        prepared = await self._file_service.prepare_bytes(
-            original_name=upload.original_name,
-            content_bytes=upload.content_bytes,
-            mime_type=upload.mime_type,
-        )
         db_file = await self._file_service.create_chat_temp_file(
             offer_id=offer.id,
-            upload=prepared,
+            upload=upload,
         )
         return UploadedMessageAttachment(file_id=db_file.id, path=db_file.path, name=db_file.name)
 
@@ -1240,7 +1218,7 @@ class OfferService:
         current_user: CurrentUser,
         offer_id: int,
         text: str,
-        attachments: list[AttachmentFileInput] | None = None,
+        attachments: list[PreparedUpload] | None = None,
         existing_file_refs: list[ExistingAttachmentFileInput] | None = None,
     ) -> OfferMessageMutationResult:
         offer, request, chat, _ = await self._require_chat_context(
@@ -1272,14 +1250,9 @@ class OfferService:
             message_type=message_type,
         )
         for attachment in new_attachments:
-            prepared = await self._file_service.prepare_bytes(
-                original_name=attachment.original_name,
-                content_bytes=attachment.content_bytes,
-                mime_type=attachment.mime_type,
-            )
             db_file = await self._file_service.create_chat_message_file(
                 offer_id=offer.id,
-                upload=prepared,
+                upload=attachment,
             )
             await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
         for file_ref in stored_file_refs:

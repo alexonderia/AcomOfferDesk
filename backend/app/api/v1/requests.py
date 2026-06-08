@@ -42,10 +42,10 @@ from app.schemas.requests import (
     RequestStatsSchema,
 )
 from app.services.email_notifications import EmailNotificationService
-from app.services.files import FileService
+from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
 from app.services.department_scope import DepartmentScopeService
-from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
+from app.services.requests import RequestEditInput, RequestService
 from app.services.staff_access_scope import StaffAccessScopeService
 
 router = APIRouter()
@@ -691,16 +691,10 @@ async def create_request(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestCreateResponse:
     validator = FileService()
-    file_inputs: list[RequestFileCreateInput] = []
+    file_inputs: list[PreparedUpload] = []
     for file in files:
         prepared = await validator.prepare_upload(file)
-        file_inputs.append(
-            RequestFileCreateInput(
-                original_name=prepared.original_name,
-                content_bytes=prepared.content_bytes,
-                mime_type=prepared.mime_type,
-            )
-        )
+        file_inputs.append(prepared)
 
     request_file_service: FileService | None = None
     try:
@@ -811,11 +805,7 @@ async def add_request_file(
             file_id = await service.attach_file(
                 current_user=current_user,
                 request_id=request_id,
-                file_data=RequestFileCreateInput(
-                    original_name=prepared.original_name,
-                    content_bytes=prepared.content_bytes,
-                    mime_type=prepared.mime_type,
-                ),
+                file_data=prepared,
             )
     except Exception:
         if request_file_service is not None:

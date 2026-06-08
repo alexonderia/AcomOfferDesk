@@ -88,7 +88,7 @@ Prod-like + `ngrok` (только для внешней проверки callbac
 - в `.env.prod-like` задан `NGROK_AUTHTOKEN=<ваш_токен>`.
 
 ```bash
-docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok up -d --build keycloak backend web gateway rabbitmq minio notifications_worker ngrok
+docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok up -d --build keycloak file_guard backend web gateway rabbitmq minio notifications_worker ngrok
 ```
 
 ### Test (VPS)
@@ -273,8 +273,26 @@ Public ingress только через HTTPS reverse proxy.
 | `gateway` | `keycloak` | `8080` |
 | `backend` | PostgreSQL (`order_database`) | `5432` |
 | `backend` / `notifications_worker` | `rabbitmq` | `5672` |
+| `backend` | `file_guard` | `8080` |
 | `backend` | `minio` | `9000` |
 | `backend` / `notifications_worker` / `keycloak` | SMTP/IMAP | provider ports |
+
+## File Guard upload scanning
+
+- `file_guard` — внутренний FastAPI-сервис проверки загружаемых файлов перед сохранением в MinIO и перед записью связей в БД.
+- Сервис не публикуется наружу через `ports`, не подключается к `gateway` и доступен только по service name `http://file_guard:8080` внутри `project_net`.
+- Backend работает в fail-closed режиме: если `file_guard` недоступен или вернул ошибку, пользовательский файл не должен попадать в MinIO и БД.
+- Результат проверки не сохраняется в отдельную бизнес-таблицу БД; это только gate перед текущей логикой хранения.
+- MVP allowlist: `.pdf`, `.docx`, `.xlsx`, `.jpg`, `.jpeg`, `.png`.
+- Базовые env-переменные backend/runtime:
+  - `FILE_GUARD_ENABLED=true`
+  - `FILE_GUARD_URL=http://file_guard:8080`
+  - `FILE_GUARD_TIMEOUT_SECONDS=10`
+  - `FILE_GUARD_MAX_FILE_SIZE_BYTES=5242880`
+- Локальная проверка runtime-контура:
+  - `docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml config`
+  - `docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build file_guard backend web gateway`
+- Проверка должна завершаться до постоянного хранения файла. Разрешённый файл продолжает текущий flow, заблокированный — возвращает безопасную ошибку frontend.
 
 ## Admin-only flow
 

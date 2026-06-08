@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.api.v1 import router as v1_router
-from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
+from app.domain.exceptions import Conflict, Forbidden, NotFound, ServiceUnavailable, Unauthorized, UploadRejected
 from app.infrastructure.db import engine
 from app.infrastructure.email_delivery_consumer import EmailDeliveryConsumerRuntime
 from app.infrastructure.process_notification_consumer import ProcessNotificationConsumerRuntime
@@ -267,6 +267,30 @@ async def conflict_handler(request: Request, exc: Conflict) -> JSONResponse:
     return JSONResponse(
         status_code=409,
         content={"detail": _normalize_public_error_detail(status_code=409, detail=str(exc))},
+    )
+
+
+@app.exception_handler(UploadRejected)
+async def upload_rejected_handler(request: Request, exc: UploadRejected) -> JSONResponse:
+    _ = request
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": _normalize_public_error_detail(status_code=exc.status_code, detail=exc.detail),
+            "reason_code": exc.reason_code,
+        },
+    )
+
+
+@app.exception_handler(ServiceUnavailable)
+async def service_unavailable_handler(request: Request, exc: ServiceUnavailable) -> JSONResponse:
+    _ = request
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": _normalize_public_error_detail(status_code=exc.status_code, detail=exc.detail),
+            "reason_code": exc.reason_code,
+        },
     )
 
 

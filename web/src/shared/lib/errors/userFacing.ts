@@ -7,6 +7,21 @@ export const NOT_FOUND_ERROR_MESSAGE = 'Данные не найдены или 
 export const SAVE_ERROR_MESSAGE = 'Не удалось сохранить изменения.';
 export const LOAD_ERROR_MESSAGE = 'Не удалось загрузить данные.';
 export const DELETE_ERROR_MESSAGE = 'Не удалось удалить данные.';
+export const FILE_SCAN_UNAVAILABLE_MESSAGE = 'Сервис проверки файлов временно недоступен.';
+
+const API_REASON_CODE_TRANSLATIONS: Record<string, string> = {
+  file_type_not_allowed: 'Тип файла не разрешен.',
+  file_too_large: 'Файл слишком большой. Размер одного файла не должен превышать 5 МБ.',
+  empty_file: 'Файл пустой.',
+  unsafe_file_name: 'Недопустимое имя файла.',
+  mime_mismatch: 'Содержимое файла не соответствует расширению файла.',
+  invalid_pdf: 'PDF-файл поврежден или не читается.',
+  encrypted_pdf_not_allowed: 'Зашифрованные PDF-файлы не поддерживаются.',
+  invalid_office_document: 'Office-файл поврежден или имеет неверную структуру.',
+  invalid_image: 'Изображение повреждено или имеет неверный формат.',
+  malware_detected: 'Файл не прошел проверку безопасности.',
+  file_scan_unavailable: FILE_SCAN_UNAVAILABLE_MESSAGE,
+};
 
 const DIRECT_TRANSLATIONS: Record<string, string> = {
   Unauthorized: SESSION_EXPIRED_MESSAGE,
@@ -49,6 +64,14 @@ const TECHNICAL_CONTENT_PATTERN =
 const containsCyrillic = (value: string) => /[А-Яа-яЁё]/.test(value);
 const containsLatin = (value: string) => /[A-Za-z]/.test(value);
 const isLikelyMojibake = (value: string) => /(?:Р.|С.){2,}/.test(value);
+
+export const translateApiReasonCode = (reasonCode: string | null | undefined): string | null => {
+  const normalized = (reasonCode ?? '').trim();
+  if (!normalized) {
+    return null;
+  }
+  return API_REASON_CODE_TRANSLATIONS[normalized] ?? null;
+};
 
 export const fallbackByHttpStatus = (status: number): string | null => {
   switch (status) {

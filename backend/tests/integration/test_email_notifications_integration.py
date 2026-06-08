@@ -12,7 +12,8 @@ from app.domain.exceptions import Conflict
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.repositories.profiles import ActiveContractorEmailRecipient
-from app.services.requests import RequestFileCreateInput, RequestService
+from app.services.files import PreparedUpload
+from app.services.requests import RequestService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
 from app.services import send_request_notification_email as send_request_notification_email_module
 from app.services.email_delivery_events import BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
@@ -232,10 +233,11 @@ async def test_create_request_triggers_email_notification_event(make_current_use
         id_plan=None,
         normative_file_id=1,
         files=[
-            RequestFileCreateInput(
+            PreparedUpload(
                 original_name="spec.pdf",
                 content_bytes=b"file-bytes",
                 mime_type="application/pdf",
+                content_sha256="sha-1",
             )
         ],
         additional_emails=[" INVITE@example.com ", "invite@example.com", ""],

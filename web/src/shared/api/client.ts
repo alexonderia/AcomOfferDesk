@@ -1,9 +1,11 @@
 ﻿import {
   GENERIC_ERROR_MESSAGE,
   NETWORK_ERROR_MESSAGE,
+  NOT_FOUND_ERROR_MESSAGE,
   fallbackByActionHint,
   fallbackByHttpStatus,
   normalizeUserFacingText,
+  translateApiReasonCode,
 } from '@shared/lib/errors/userFacing';
 
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
@@ -172,10 +174,25 @@ export const setAuthRuntime = (runtime: AuthRuntime | null) => {
 
 const getErrorMessage = async (response: Response, fallback: string) => {
   const data = await response.json().catch(() => null);
-  if (data && typeof data === 'object' && 'detail' in data) {
-    const detailMessage = extractDetailMessage((data as { detail?: unknown }).detail);
+  if (data && typeof data === 'object') {
+    const detailMessage = 'detail' in data ? extractDetailMessage((data as { detail?: unknown }).detail) : null;
+    const reasonCodeMessage = 'reason_code' in data
+      ? translateApiReasonCode((data as { reason_code?: string | null }).reason_code)
+      : null;
+
+    if (
+      reasonCodeMessage
+      && (!detailMessage || detailMessage === GENERIC_ERROR_MESSAGE || detailMessage === NOT_FOUND_ERROR_MESSAGE)
+    ) {
+      return reasonCodeMessage;
+    }
+
     if (detailMessage) {
       return detailMessage;
+    }
+
+    if (reasonCodeMessage) {
+      return reasonCodeMessage;
     }
   }
 

@@ -392,6 +392,66 @@ If checks cannot be run, state why and list the residual risk.
 #### Correct
 - Keep maintenance as a dedicated internal service behind `gateway`, with automatic frontend/API fallback and an explicit compose override for manual full-maintenance mode.
 
+## Scenario: Isolated File Upload Guard
+
+### 1. Scope / Trigger
+- Trigger: any change that accepts user-uploaded files from HTTP endpoints or adds a new storage-bound file ingestion path.
+
+### 2. Signatures
+- Backend shared seam:
+  `FileService.prepare_upload(upload: UploadFile) -> PreparedUpload`
+  `FileService.prepare_bytes(original_name, content_bytes, mime_type) -> PreparedUpload`
+- Backend guard orchestration:
+  `FileUploadGuardService.scan_bytes(...) -> GuardedUpload`
+- Internal scanner API:
+  `POST http://file_guard:8080/scan`
+- File guard health:
+  `GET http://file_guard:8080/health`
+
+### 3. Contracts
+- HTTP upload routes should pass already prepared `PreparedUpload` objects into request/offer/chat/normative services instead of re-validating the same file bytes again.
+- `file_guard` stays internal-only on `project_net`; it is not exposed through `gateway` or public `ports`.
+- `file_guard` must not receive backend DB, Keycloak, or MinIO secrets through the shared runtime env file. Give it only the minimum env keys it needs.
+- Backend env keys:
+  `FILE_GUARD_ENABLED`
+  `FILE_GUARD_URL`
+  `FILE_GUARD_TIMEOUT_SECONDS`
+- File guard env keys:
+  `FILE_GUARD_MAX_FILE_SIZE_BYTES`
+  optional `FILE_GUARD_ALLOW_LIBMAGIC_FALLBACK`
+- Allowed MVP types:
+  `.pdf`
+  `.docx`
+  `.xlsx`
+  `.jpg`
+  `.jpeg`
+  `.png`
+
+### 4. Validation & Error Matrix
+- file size exceeds backend limit before scanner call -> `422 file_too_large`
+- scanner verdict `allowed=false` -> backend returns `422` with `reason_code`
+- scanner unavailable / timeout / invalid response -> backend returns fail-closed `503 file_scan_unavailable`
+- blocked or unavailable scan -> do not write file to MinIO and do not attach DB records
+- allowed scan -> continue with the existing storage + DB flow
+
+### 5. Good/Base/Bad Cases
+- Good: request/offer/chat/normative uploads all pass through the same guard seam before persistence.
+- Base: non-HTTP byte sources (for example email ingestion) may still use `prepare_bytes(...)`, but they should still hit the same guard service once.
+- Bad: each route hand-rolls its own upload checks, or `file_guard` inherits the full backend env contract with unrelated secrets.
+
+### 6. Tests Required
+- Unit: `FileUploadGuardService` allowed verdict, blocked verdict, and unavailable-scanner fail-closed behavior.
+- Integration: at least one upload endpoint returns `reason_code` when the scanner blocks a file.
+- Service/API regression: request/offer/normative upload contract tests still pass after switching route -> service payloads to `PreparedUpload`.
+- Runtime: `docker compose ... config` shows `backend -> file_guard` dependency and no public `ports` for `file_guard`.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Validate/sanitize/scan the same HTTP file multiple times across route and service layers, or let `file_guard` read the shared backend env file with DB/identity/storage secrets.
+
+#### Correct
+- Read/prepare the HTTP upload once, pass `PreparedUpload` through the service flow, and keep `file_guard` isolated with a minimal env contract and fail-closed backend integration.
+
 ---
 
 ## Code Review Checklist

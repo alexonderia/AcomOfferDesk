@@ -11,12 +11,12 @@ from app.services.files import FileService
 from app.services.notifications import NotificationService
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.offers import (
-    AttachmentFileInput,
     ExistingAttachmentFileInput,
     OfferMessageAckResult,
     OfferMessageMutationResult,
     OfferService,
 )
+from app.services.files import PreparedUpload
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +68,7 @@ class ChatRealtimeService:
         *,
         current_user: CurrentUser,
         offer_id: int,
-        upload: AttachmentFileInput,
+        upload: PreparedUpload,
     ) -> dict:
         file_service: FileService | None = None
         try:

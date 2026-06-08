@@ -24,6 +24,7 @@ from app.core.email_token import EmailVerificationTokenCodec
 from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import UserPolicy
+from app.services import file_upload_guard as file_upload_guard_module
 from app.services import offers as offers_service_module
 from app.services import requests as requests_service_module
 
@@ -1062,12 +1063,13 @@ def test_request_file_delete_missing_attachment_returns_404(
 @pytest.mark.parametrize(
     ("filename", "payload", "expected_status"),
     [
-        ("bad.exe", b"not allowed", 409),
-        ("empty.txt", b"", 409),
+        ("bad.exe", b"not allowed", 422),
+        ("empty.pdf", b"", 422),
     ],
 )
 def test_request_file_upload_rejects_unsupported_and_empty_files(
     test_client,
+    monkeypatch,
     set_current_user,
     set_uow,
     make_current_user,
@@ -1075,6 +1077,19 @@ def test_request_file_upload_rejects_unsupported_and_empty_files(
     payload,
     expected_status,
 ):
+    async def _scan(self, *, original_name: str, content_bytes: bytes, content_type: str | None):
+        _ = (self, content_bytes, content_type)
+        if original_name.endswith(".exe"):
+            raise file_upload_guard_module.UploadRejected(
+                reason_code="file_type_not_allowed",
+                detail="Тип файла не разрешен.",
+            )
+        raise file_upload_guard_module.UploadRejected(
+            reason_code="empty_file",
+            detail="Файл пустой.",
+        )
+
+    monkeypatch.setattr(file_upload_guard_module.FileUploadGuardService, "scan_bytes", _scan)
     set_uow(_RequestFilesUow())
     set_current_user(
         make_current_user(
@@ -1086,7 +1101,7 @@ def test_request_file_upload_rejects_unsupported_and_empty_files(
 
     response = test_client.post(
         "/api/v1/requests/10/files",
-        files={"file": (filename, payload, "text/plain")},
+        files={"file": (filename, payload, "application/pdf")},
     )
 
     assert response.status_code == expected_status
@@ -1111,10 +1126,10 @@ def test_request_file_upload_rejects_oversized_file(
 
     response = test_client.post(
         "/api/v1/requests/10/files",
-        files={"file": ("big.txt", b"ab", "text/plain")},
+        files={"file": ("big.pdf", b"ab", "application/pdf")},
     )
 
-    assert response.status_code == 409
+    assert response.status_code == 422
 
 
 def test_offer_file_upload_delete_and_missing_attachment_contracts(

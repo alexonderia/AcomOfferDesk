@@ -224,6 +224,9 @@ class Settings(BaseSettings):
     s3_secure: bool = Field(default=False, validation_alias="S3_SECURE")
     s3_presigned_get_ttl_seconds: int = Field(default=300, validation_alias="S3_PRESIGNED_GET_TTL_SECONDS")
     max_upload_size_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
+    file_guard_enabled: bool = Field(default=True, validation_alias="FILE_GUARD_ENABLED")
+    file_guard_url: str = Field(default="http://file_guard:8080", validation_alias="FILE_GUARD_URL")
+    file_guard_timeout_seconds: float = Field(default=10.0, validation_alias="FILE_GUARD_TIMEOUT_SECONDS")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
     tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
@@ -298,6 +301,9 @@ class Settings(BaseSettings):
             self.s3_presigned_get_ttl_seconds = 300
         if self.max_upload_size_bytes <= 0:
             self.max_upload_size_bytes = 5 * 1024 * 1024
+        self.file_guard_url = self.file_guard_url.rstrip("/") or "http://file_guard:8080"
+        if self.file_guard_timeout_seconds <= 0:
+            self.file_guard_timeout_seconds = 10.0
         if self.contractor_invite_max_emails_per_request <= 0:
             self.contractor_invite_max_emails_per_request = 50
         if self.invitation_portal_url is not None:

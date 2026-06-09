@@ -1,5 +1,6 @@
 import type { HeaderConfig, HeaderMobileNavItem } from './types';
 import { ROLE } from '@shared/constants/roles';
+import { isContractorRequestDetailsPath, isRequestDetailsPath } from '@shared/lib/routing/parseRequestRoutes';
 
 type BuildHeaderConfigArgs = {
   roleId: number | null;
@@ -471,8 +472,8 @@ export const buildHeaderConfig = ({
   };
 
   const isRequestsListPage = pathname === '/requests';
-  const isRequestDetailsPage = /^\/requests\/\d+$/.test(pathname);
-  const isContractorRequestDetailsPage = /^\/requests\/\d+\/contractor$/.test(pathname);
+  const isRequestDetailsPage = isRequestDetailsPath(pathname);
+  const isContractorRequestDetailsPage = isContractorRequestDetailsPath(pathname);
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(pathname);
   const isResponsibilityDashboard =
     (isProjectManager || isLeadEconomist || isEconomist) && canViewDashboardProcess && pathname === '/pm-dashboard';

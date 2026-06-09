@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
+import { matchContractorRequestDetailsPath, matchRequestDetailsPath } from '@shared/lib/routing/parseRequestRoutes';
 import { buildHeaderConfig } from './buildHeaderConfig';
 
 export const useHeaderConfig = () => {
@@ -38,8 +39,8 @@ export const useHeaderConfig = () => {
     || hasPermission(session, 'department.plans.read')
     || hasPermission(session, 'department.plans.manage');
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
-  const requestMatch = location.pathname.match(/^\/requests\/(\d+)$/);
-  const contractorRequestMatch = location.pathname.match(/^\/requests\/(\d+)\/contractor$/);
+  const requestId = matchRequestDetailsPath(location.pathname);
+  const contractorRequestId = matchContractorRequestDetailsPath(location.pathname);
   const offerMatch = location.pathname.match(/^\/offers\/(\d+)\/workspace$/);
   const offerRequestIdParam = searchParams.get('requestId');
   const isPmDashboard = location.pathname === '/pm-dashboard';
@@ -93,17 +94,17 @@ export const useHeaderConfig = () => {
       ];
     }
 
-    if (requestMatch) {
+    if (requestId) {
       return [
         { key: 'requests', label: 'Заявки', to: '/requests' },
-        { key: `request-${requestMatch[1]}`, label: `Заявка №${requestMatch[1]}` },
+        { key: `request-${requestId}`, label: `Заявка №${requestId}` },
       ];
     }
 
-    if (contractorRequestMatch) {
+    if (contractorRequestId) {
       return [
         { key: 'requests', label: 'Заявки', to: '/requests' },
-        { key: `contractor-request-${contractorRequestMatch[1]}`, label: `Заявка №${contractorRequestMatch[1]}` },
+        { key: `contractor-request-${contractorRequestId}`, label: `Заявка №${contractorRequestId}` },
       ];
     }
 
@@ -125,7 +126,7 @@ export const useHeaderConfig = () => {
     }
 
     return [];
-  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmPlan, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch, session?.roleId]);
+  }, [contractorRequestId, isContractor, isPmDashboard, isPmPlan, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestId, session?.roleId]);
 
   return useMemo(
     () =>

@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
 
-from .scanner import FileScanner
+from .config import settings
+from .scanner import FileScanner, ScanUnavailableError
 from .schemas import ScanResponse
 
 
@@ -32,23 +34,52 @@ logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> JSONResponse:
+    if settings.antivirus_enabled and not _scanner.is_ready():
+        logger.warning("Проверка здоровья file_guard: сервис запущен, но антивирус пока не готов")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "reason_code": "file_scan_unavailable"},
+        )
+    logger.info(
+        "Проверка здоровья file_guard: сервис готов к работе, antivirus=%s",
+        ("disabled" if not settings.antivirus_enabled else "ready"),
+    )
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ok",
+            "antivirus": ("disabled" if not settings.antivirus_enabled else "ready"),
+        },
+    )
 
 
 @app.post("/scan", response_model=ScanResponse)
-async def scan(file: UploadFile = File(...)) -> ScanResponse:
+async def scan(file: UploadFile = File(...)) -> ScanResponse | JSONResponse:
     logger.info(
-        "Accepted scan request: filename=%s content_type=%s",
+        "Принят запрос на проверку файла: filename=%s content_type=%s",
         file.filename or "",
         file.content_type or "application/octet-stream",
     )
-    verdict = _scanner.scan_bytes(
-        original_name=file.filename or "",
-        content_bytes=await file.read(),
-    )
+    try:
+        verdict = _scanner.scan_bytes(
+            original_name=file.filename or "",
+            content_bytes=await file.read(),
+        )
+    except ScanUnavailableError:
+        logger.exception(
+            "Обязательная зависимость проверки файла недоступна: filename=%s",
+            file.filename or "",
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "File scan is temporarily unavailable",
+                "reason_code": "file_scan_unavailable",
+            },
+        )
     logger.info(
-        "Returning scan verdict: filename=%s allowed=%s reason_code=%s",
+        "Возвращаем итог проверки файла: filename=%s allowed=%s reason_code=%s",
         file.filename or "",
         verdict.allowed,
         verdict.reason_code,

@@ -6,8 +6,9 @@ import logging
 import unicodedata
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
+from .antivirus import AntivirusUnavailableError, ClamAVScanner, DisabledAntivirusScanner
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,15 @@ except Exception:  # pragma: no cover - optional dependency
 
 try:
     from PIL import Image, UnidentifiedImageError
+
+    try:
+        from PIL import DecompressionBombError
+    except Exception:  # pragma: no cover - optional dependency
+        DecompressionBombError = ValueError
 except Exception:  # pragma: no cover - optional dependency
     Image = None
     UnidentifiedImageError = Exception
+    DecompressionBombError = ValueError
 
 _ALLOWED_EXTENSIONS = frozenset({".pdf", ".docx", ".xlsx", ".jpg", ".jpeg", ".png"})
 _DANGEROUS_EXTENSIONS = frozenset(
@@ -67,6 +74,20 @@ _EXPECTED_MIME_BY_EXTENSION = {
     ".jpeg": {"image/jpeg"},
     ".png": {"image/png"},
 }
+_SUSPICIOUS_PDF_TOKENS = (
+    b"/JavaScript",
+    b"/JS",
+    b"/OpenAction",
+    b"/AA",
+    b"/Launch",
+    b"/EmbeddedFile",
+    b"/RichMedia",
+    b"/XFA",
+)
+
+
+class ScanUnavailableError(RuntimeError):
+    """Raised when the scan engine cannot complete mandatory checks."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +101,15 @@ class ScanVerdict:
 
 
 class FileScanner:
+    def __init__(self, *, antivirus_scanner=None) -> None:
+        self._antivirus_scanner = antivirus_scanner or self._build_antivirus_scanner()
+
+    def is_ready(self) -> bool:
+        probe_readiness = getattr(self._antivirus_scanner, "probe_readiness", None)
+        if callable(probe_readiness):
+            return bool(probe_readiness())
+        return bool(self._antivirus_scanner.is_ready())
+
     def scan_bytes(
         self,
         *,
@@ -89,7 +119,7 @@ class FileScanner:
         size_bytes = len(content_bytes)
         sha256 = hashlib.sha256(content_bytes).hexdigest()
         logger.info(
-            "Received file for scan: filename=%s size_bytes=%s sha256_prefix=%s",
+            "Получен файл для проверки: filename=%s size_bytes=%s sha256_prefix=%s",
             original_name,
             size_bytes,
             _hash_prefix(sha256),
@@ -97,6 +127,25 @@ class FileScanner:
 
         try:
             safe_name = self._normalize_filename(original_name)
+            extension = Path(safe_name).suffix.lower()
+            detected_mime = self._detect_mime(content_bytes=content_bytes)
+            verdict = self._scan_validated_content(
+                original_name=original_name,
+                safe_name=safe_name,
+                extension=extension,
+                detected_mime=detected_mime,
+                content_bytes=content_bytes,
+                size_bytes=size_bytes,
+                sha256=sha256,
+            )
+        except ScanUnavailableError:
+            logger.exception(
+                "Проверка файла не может быть завершена из-за недоступности обязательной зависимости: filename=%s size_bytes=%s sha256_prefix=%s",
+                original_name,
+                size_bytes,
+                _hash_prefix(sha256),
+            )
+            raise
         except ValueError as exc:
             return self._blocked(
                 original_name=original_name,
@@ -104,21 +153,40 @@ class FileScanner:
                 extension=None,
                 reason_code="unsafe_file_name",
                 message=str(exc),
-                detected_mime=self._detect_mime(content_bytes=content_bytes),
+                detected_mime=self._best_effort_detect_mime(content_bytes=content_bytes),
                 size_bytes=size_bytes,
                 sha256=sha256,
             )
 
-        extension = Path(safe_name).suffix.lower()
         logger.info(
-            "Normalized file name for scan: original_name=%s normalized_name=%s extension=%s",
+            "Проверка файла завершена успешно: filename=%s extension=%s detected_mime=%s size_bytes=%s sha256_prefix=%s",
+            safe_name,
+            extension,
+            detected_mime,
+            size_bytes,
+            _hash_prefix(sha256),
+        )
+        return verdict
+
+    def _scan_validated_content(
+        self,
+        *,
+        original_name: str,
+        safe_name: str,
+        extension: str,
+        detected_mime: str,
+        content_bytes: bytes,
+        size_bytes: int,
+        sha256: str,
+    ) -> ScanVerdict:
+        logger.info(
+            "Имя файла нормализовано: original_name=%s normalized_name=%s extension=%s",
             original_name,
             safe_name,
             extension,
         )
-        detected_mime = self._detect_mime(content_bytes=content_bytes)
         logger.info(
-            "Detected file MIME type: filename=%s extension=%s detected_mime=%s",
+            "Определен MIME-тип файла: filename=%s extension=%s detected_mime=%s",
             safe_name,
             extension,
             detected_mime,
@@ -160,7 +228,7 @@ class FileScanner:
 
         expected_mimes = _EXPECTED_MIME_BY_EXTENSION[extension]
         logger.info(
-            "Running file checks: filename=%s extension=%s expected_mimes=%s",
+            "Запускаем базовые проверки файла: filename=%s extension=%s expected_mimes=%s",
             safe_name,
             extension,
             ",".join(sorted(expected_mimes)),
@@ -168,10 +236,7 @@ class FileScanner:
         if detected_mime not in expected_mimes:
             if self._looks_like_extension(extension=extension, content_bytes=content_bytes):
                 logger.info(
-                    "Detected MIME does not match extension, but signature matches; running deep validation: filename=%s extension=%s detected_mime=%s",
-                    safe_name,
-                    extension,
-                    detected_mime,
+                    "MIME не совпал с ожидаемым, но сигнатура похожа на заявленный тип: начинаем углубленную структурную проверку файла"
                 )
                 failure = self._validate_content(extension=extension, content_bytes=content_bytes)
                 if failure is not None:
@@ -209,14 +274,21 @@ class FileScanner:
                 sha256=sha256,
             )
 
-        logger.info(
-            "File scan completed successfully: filename=%s extension=%s detected_mime=%s size_bytes=%s sha256_prefix=%s",
-            safe_name,
-            extension,
-            detected_mime,
-            size_bytes,
-            _hash_prefix(sha256),
-        )
+        logger.info("Структурная проверка файла пройдена успешно: extension=%s", extension)
+        failure = self._scan_antivirus(content_bytes=content_bytes)
+        if failure is not None:
+            return self._blocked(
+                original_name=original_name,
+                normalized_name=safe_name,
+                extension=extension,
+                reason_code=failure[0],
+                message=failure[1],
+                detected_mime=detected_mime,
+                size_bytes=size_bytes,
+                sha256=sha256,
+            )
+
+        logger.info("Антивирусная проверка файла пройдена успешно")
         return ScanVerdict(
             allowed=True,
             reason_code=None,
@@ -225,6 +297,22 @@ class FileScanner:
             size_bytes=size_bytes,
             sha256=sha256,
         )
+
+    def _scan_antivirus(self, *, content_bytes: bytes) -> tuple[str, str] | None:
+        if not settings.antivirus_enabled:
+            logger.info("Антивирусная проверка пропущена: FILE_GUARD_ANTIVIRUS_ENABLED=false")
+            return None
+
+        logger.info("Начинаем антивирусную проверку файла")
+        try:
+            result = self._antivirus_scanner.scan_bytes(content_bytes=content_bytes)
+        except AntivirusUnavailableError as exc:
+            raise ScanUnavailableError("Antivirus is unavailable") from exc
+
+        if result.infected:
+            logger.warning("Файл заблокирован антивирусом: signature=%s", result.signature or "unknown")
+            return ("malware_detected", "Malware detected")
+        return None
 
     def _blocked(
         self,
@@ -239,7 +327,7 @@ class FileScanner:
         sha256: str,
     ) -> ScanVerdict:
         logger.warning(
-            "File scan blocked: original_name=%s normalized_name=%s extension=%s reason_code=%s detected_mime=%s size_bytes=%s sha256_prefix=%s",
+            "Файл заблокирован по результатам проверки: original_name=%s normalized_name=%s extension=%s reason_code=%s detected_mime=%s size_bytes=%s sha256_prefix=%s",
             original_name,
             normalized_name or "",
             extension or "",
@@ -264,7 +352,7 @@ class FileScanner:
             raise ValueError("File name is required")
         if len(normalized) > 255:
             raise ValueError("File name is too long")
-        if any(ord(ch) < 32 for ch in normalized):
+        if any(unicodedata.category(ch).startswith("C") for ch in normalized):
             raise ValueError("File name contains control characters")
         if Path(normalized).name != normalized or "/" in normalized or "\\" in normalized:
             raise ValueError("Unsafe file name")
@@ -276,11 +364,17 @@ class FileScanner:
                 detected = str(magic_lib.from_buffer(content_bytes, mime=True) or "").strip()
                 if detected:
                     return self._normalize_magic_mime(detected, content_bytes=content_bytes)
-            except Exception:
+            except Exception as exc:
                 if not settings.allow_libmagic_fallback:
-                    raise
-                logger.warning("libmagic MIME detection failed; falling back to signature-based detection")
+                    raise ScanUnavailableError("libmagic MIME detection failed") from exc
+                logger.warning("Определение MIME через libmagic завершилось ошибкой; переключаемся на определение по сигнатуре")
         return self._detect_mime_fallback(content_bytes)
+
+    def _best_effort_detect_mime(self, *, content_bytes: bytes) -> str:
+        try:
+            return self._detect_mime(content_bytes=content_bytes)
+        except ScanUnavailableError:
+            return "application/octet-stream"
 
     def _normalize_magic_mime(self, detected: str, *, content_bytes: bytes) -> str:
         if detected == "application/zip":
@@ -316,7 +410,7 @@ class FileScanner:
         return None
 
     def _validate_content(self, *, extension: str, content_bytes: bytes) -> tuple[str, str] | None:
-        logger.info("Validating file content by extension: extension=%s", extension)
+        logger.info("Запускаем структурную проверку содержимого файла: extension=%s", extension)
         if extension == ".pdf":
             return self._validate_pdf(content_bytes)
         if extension in {".docx", ".xlsx"}:
@@ -338,8 +432,11 @@ class FileScanner:
         return False
 
     def _validate_pdf(self, content_bytes: bytes) -> tuple[str, str] | None:
+        logger.info("Проверяем PDF-файл: сигнатуру, структуру и активное содержимое")
         if not content_bytes.startswith(b"%PDF-"):
             return ("invalid_pdf", "PDF is corrupted or unreadable")
+        if self._contains_suspicious_pdf_tokens(content_bytes):
+            return ("invalid_pdf", "PDF contains active content")
 
         if PdfReader is not None:
             try:
@@ -348,45 +445,99 @@ class FileScanner:
                     return ("encrypted_pdf_not_allowed", "Encrypted PDF files are not allowed")
                 if len(reader.pages) < 1:
                     return ("invalid_pdf", "PDF is corrupted or unreadable")
+                logger.info("PDF успешно разобран через pypdf: pages=%s", len(reader.pages))
                 return None
             except Exception:
-                logger.info("pypdf could not parse PDF; falling back to signature checks")
+                logger.info("pypdf не смог разобрать PDF; файл будет заблокирован по принципу fail-closed")
+                return ("invalid_pdf", "PDF is corrupted or unreadable")
 
         if b"%%EOF" not in content_bytes[-2048:]:
             return ("invalid_pdf", "PDF is corrupted or unreadable")
         if b"/Encrypt" in content_bytes[:65536]:
             return ("encrypted_pdf_not_allowed", "Encrypted PDF files are not allowed")
+        if self._contains_suspicious_pdf_tokens(content_bytes):
+            return ("invalid_pdf", "PDF contains active content")
         return None
 
     @staticmethod
-    def _validate_office(*, extension: str, content_bytes: bytes) -> tuple[str, str] | None:
+    def _contains_suspicious_pdf_tokens(content_bytes: bytes) -> bool:
+        return any(token in content_bytes for token in _SUSPICIOUS_PDF_TOKENS)
+
+    def _validate_office(self, *, extension: str, content_bytes: bytes) -> tuple[str, str] | None:
+        logger.info("Проверяем Office-файл: extension=%s", extension)
         required_entry = "word/document.xml" if extension == ".docx" else "xl/workbook.xml"
         if not content_bytes.startswith(b"PK\x03\x04"):
             return ("invalid_office_document", "Office document is corrupted or invalid")
+
         try:
             with zipfile.ZipFile(io.BytesIO(content_bytes)) as archive:
-                names = set(archive.namelist())
-                if "[Content_Types].xml" not in names or required_entry not in names:
-                    return ("invalid_office_document", "Office document is corrupted or invalid")
-                for name in names:
-                    if name.startswith("/") or ".." in Path(name).parts:
-                        return ("invalid_office_document", "Office document is corrupted or invalid")
+                infos = archive.infolist()
+                names = {info.filename for info in infos}
         except zipfile.BadZipFile:
             return ("invalid_office_document", "Office document is corrupted or invalid")
+
+        if "[Content_Types].xml" not in names or required_entry not in names:
+            return ("invalid_office_document", "Office document is corrupted or invalid")
+        if len(infos) > settings.office_max_entries:
+            return ("invalid_office_document", "Office document exceeds safety limits")
+
+        total_uncompressed = 0
+        logger.info(
+            "Office-архив открыт успешно: entries=%s required_entry=%s",
+            len(infos),
+            required_entry,
+        )
+        for info in infos:
+            name = info.filename
+            normalized_path = PurePosixPath(name)
+            if (
+                not name
+                or name.startswith(("/", "\\"))
+                or "\\" in name
+                or ".." in normalized_path.parts
+            ):
+                return ("invalid_office_document", "Office document is corrupted or invalid")
+            suffix = Path(name).suffix.lower()
+            if suffix in _DANGEROUS_EXTENSIONS or name.lower().endswith("vbaproject.bin"):
+                return ("invalid_office_document", "Office document contains forbidden content")
+            if info.file_size > settings.office_max_entry_uncompressed_bytes:
+                return ("invalid_office_document", "Office document exceeds safety limits")
+            total_uncompressed += info.file_size
+            if total_uncompressed > settings.office_max_total_uncompressed_bytes:
+                return ("invalid_office_document", "Office document exceeds safety limits")
+            if info.file_size > 0:
+                if info.compress_size <= 0:
+                    return ("invalid_office_document", "Office document exceeds safety limits")
+                if (info.file_size / info.compress_size) > settings.office_max_compression_ratio:
+                    return ("invalid_office_document", "Office document exceeds safety limits")
+        logger.info("Office-файл прошел структурную проверку: extension=%s total_uncompressed=%s", extension, total_uncompressed)
         return None
 
     def _validate_image(self, *, extension: str, content_bytes: bytes) -> tuple[str, str] | None:
+        logger.info("Проверяем изображение: extension=%s", extension)
         if Image is not None:
             try:
                 with Image.open(io.BytesIO(content_bytes)) as image:
-                    image.verify()
                     format_name = (image.format or "").upper()
+                    width, height = image.size
+                    if width > settings.image_max_width or height > settings.image_max_height:
+                        return ("invalid_image", "Image exceeds allowed dimensions")
+                    if width * height > settings.image_max_pixels:
+                        return ("invalid_image", "Image exceeds allowed dimensions")
+                    image.load()
+                logger.info(
+                    "Изображение успешно декодировано: extension=%s format=%s width=%s height=%s",
+                    extension,
+                    format_name,
+                    width,
+                    height,
+                )
                 if extension == ".png" and format_name != "PNG":
                     return ("invalid_image", "Image is corrupted or invalid")
                 if extension in {".jpg", ".jpeg"} and format_name != "JPEG":
                     return ("invalid_image", "Image is corrupted or invalid")
                 return None
-            except (UnidentifiedImageError, OSError, ValueError):
+            except (DecompressionBombError, UnidentifiedImageError, OSError, ValueError):
                 return ("invalid_image", "Image is corrupted or invalid")
         if extension == ".png":
             return self._validate_png(content_bytes)
@@ -407,6 +558,12 @@ class FileScanner:
         if not content_bytes.endswith(b"\xff\xd9"):
             return ("invalid_image", "Image is corrupted or invalid")
         return None
+
+    @staticmethod
+    def _build_antivirus_scanner():
+        if not settings.antivirus_enabled:
+            return DisabledAntivirusScanner()
+        return ClamAVScanner()
 
 
 def _hash_prefix(value: str) -> str:

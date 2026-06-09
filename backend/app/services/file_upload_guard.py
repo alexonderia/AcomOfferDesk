@@ -23,6 +23,7 @@ _PUBLIC_ERROR_BY_REASON: dict[str, str] = {
     "invalid_office_document": "Office-файл поврежден или имеет неверную структуру.",
     "invalid_image": "Изображение повреждено или имеет неверный формат.",
     "malware_detected": "Файл не прошел проверку безопасности.",
+    "file_scan_unavailable": "Файл не удалось проверить. Попробуйте загрузить его позже.",
 }
 _DEFAULT_BLOCKED_MESSAGE = "Файл не прошел проверку безопасности."
 _FILE_SCAN_UNAVAILABLE_MESSAGE = "Сервис проверки файлов временно недоступен."

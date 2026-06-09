@@ -37,10 +37,15 @@ import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { DatePickerField } from '@shared/components/DatePickerField';
 import { ToggleSection } from '@shared/components/ToggleSection';
+import {
+  ALLOWED_UPLOAD_FILE_INPUT_ACCEPT,
+  ALLOWED_UPLOAD_FILE_TYPES_LABEL,
+  MAX_UPLOAD_FILE_SIZE_MB,
+  getFileKey,
+  mergeUniqueFiles,
+} from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
 
-const ALLOWED_FILE_EXTENSIONS = ['PDF', 'PNG', 'JPG', 'JPEG', 'TXT', 'MD', 'DOC', 'DOCX', 'DOCS', 'XLS', 'XLSX', 'EXL', 'CSV', 'ODS'];
-const MAX_FILE_SIZE_MB = 10;
 const normalizeAmountValue = (value: string) => value.trim().replace(',', '.');
 const isValidAmountValue = (value: string) => {
   const normalized = normalizeAmountValue(value);
@@ -68,18 +73,6 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
-
-const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
-
-const mergeUniqueFiles = (currentFiles: File[], addedFiles: File[]) => {
-  const fileMap = new Map<string, File>();
-
-  [...currentFiles, ...addedFiles].forEach((file) => {
-    fileMap.set(getFileKey(file), file);
-  });
-
-  return Array.from(fileMap.values());
-};
 
 const getContractorOptionLabel = (contractor: RequestContractorItem) => {
   const primaryLabel = contractor.company_name?.trim() || contractor.full_name?.trim() || contractor.user_id;
@@ -609,6 +602,7 @@ export const CreateRequestPage = () => {
                   type="file"
                   hidden
                   multiple
+                  accept={ALLOWED_UPLOAD_FILE_INPUT_ACCEPT}
                   onChange={(event) => {
                     handleFilesAdded(Array.from(event.target.files ?? []));
                     event.target.value = '';
@@ -625,7 +619,7 @@ export const CreateRequestPage = () => {
                   </Typography>
 
                   <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 410, lineHeight: 1.35 }}>
-                    Поддерживаются {ALLOWED_FILE_EXTENSIONS.join(', ')}. Размер одного файла до {MAX_FILE_SIZE_MB} МБ.
+                    Поддерживаются {ALLOWED_UPLOAD_FILE_TYPES_LABEL}. Размер одного файла до {MAX_UPLOAD_FILE_SIZE_MB} МБ.
                   </Typography>
 
                   <Button

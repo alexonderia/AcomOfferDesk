@@ -293,6 +293,64 @@ Public ingress только через HTTPS reverse proxy.
   - `docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml config`
   - `docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build file_guard backend web gateway`
 - Проверка должна завершаться до постоянного хранения файла. Разрешённый файл продолжает текущий flow, заблокированный — возвращает безопасную ошибку frontend.
+- Если ручной smoke включает backend upload с реальным сохранением (например, `POST /api/v1/normative-files`), cleanup обязателен: после подтверждения happy-path нужно удалить созданную запись и storage object, чтобы не оставлять тестовые артефакты в БД и MinIO.
+- Для cleanup сохраняйте `normative_id` из ответа upload и проверяйте ожидаемое имя файла перед удалением. Пример для удаления тестового normative file через runtime backend container:
+
+```bash
+docker exec backend sh -lc "cd /app && python - <<'PY'
+import asyncio
+from sqlalchemy import text
+from app.core.uow import UnitOfWork
+from app.services.files import FileService
+
+TARGET_NORMATIVE_ID = 8
+TARGET_FILE_NAME = 'ok.png'
+
+async def main():
+    async with UnitOfWork() as uow:
+        row = await uow.files.get_normative_file_row(normative_id=TARGET_NORMATIVE_ID)
+        if row is None:
+            print('already_absent')
+            return
+        if row.original_name != TARGET_FILE_NAME:
+            raise RuntimeError(f'unexpected normative file: {row}')
+        await uow.session.execute(
+            text('DELETE FROM normative_files WHERE id = :id'),
+            {'id': TARGET_NORMATIVE_ID},
+        )
+        await uow.session.flush()
+        await FileService(uow.files).delete_file(file_id=row.file_id)
+        print(
+            {
+                'deleted_normative_id': TARGET_NORMATIVE_ID,
+                'deleted_file_id': row.file_id,
+                'original_name': row.original_name,
+            }
+        )
+
+asyncio.run(main())
+PY"
+```
+
+- Минимальная post-cleanup проверка:
+
+```bash
+docker exec backend sh -lc "cd /app && python - <<'PY'
+import asyncio
+from app.core.uow import UnitOfWork
+
+TARGET_NORMATIVE_ID = 8
+TARGET_FILE_ID = 64
+
+async def main():
+    async with UnitOfWork() as uow:
+        row = await uow.files.get_normative_file_row(normative_id=TARGET_NORMATIVE_ID)
+        db_file = await uow.files.get_by_id(TARGET_FILE_ID)
+        print({'normative_exists': row is not None, 'file_exists': db_file is not None})
+
+asyncio.run(main())
+PY"
+```
 
 ## Admin-only flow
 

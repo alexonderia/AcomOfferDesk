@@ -77,6 +77,33 @@ async def test_scan_bytes_raises_upload_rejected_for_blocked_verdict(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_scan_bytes_maps_file_scan_unavailable_reason_to_safe_russian_text(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "file_guard_enabled", True)
+    service = FileUploadGuardService(
+        client=_FakeClient(
+            verdict=FileGuardVerdict(
+                allowed=False,
+                reason_code="file_scan_unavailable",
+                message="scan engine unavailable",
+                detected_mime="application/pdf",
+                size_bytes=4,
+                sha256="def456",
+            )
+        )
+    )
+
+    with pytest.raises(UploadRejected) as exc_info:
+        await service.scan_bytes(
+            original_name="spec.pdf",
+            content_bytes=b"fake",
+            content_type="application/pdf",
+        )
+
+    assert exc_info.value.reason_code == "file_scan_unavailable"
+    assert exc_info.value.detail == "Файл не удалось проверить. Попробуйте загрузить его позже."
+
+
+@pytest.mark.asyncio
 async def test_scan_bytes_fails_closed_when_guard_errors(monkeypatch) -> None:
     monkeypatch.setattr(settings, "file_guard_enabled", True)
     service = FileUploadGuardService(client=_FakeClient(exc=RuntimeError("boom")))

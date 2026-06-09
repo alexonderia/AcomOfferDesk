@@ -13,20 +13,20 @@ from app.infrastructure.file_guard_client import FileGuardClient, FileGuardVerdi
 logger = logging.getLogger(__name__)
 
 _PUBLIC_ERROR_BY_REASON: dict[str, str] = {
-    "file_type_not_allowed": "Тип файла не разрешен.",
+    "file_type_not_allowed": "Недопустимый тип файла.",
     "file_too_large": "Файл слишком большой.",
     "empty_file": "Файл пустой.",
     "unsafe_file_name": "Недопустимое имя файла.",
     "mime_mismatch": "Содержимое файла не соответствует расширению файла.",
     "invalid_pdf": "PDF-файл поврежден или не читается.",
-    "encrypted_pdf_not_allowed": "Зашифрованные PDF-файлы не поддерживаются.",
+    "encrypted_pdf_not_allowed": "Зашифрованные PDF-файлы запрещены.",
     "invalid_office_document": "Office-файл поврежден или имеет неверную структуру.",
     "invalid_image": "Изображение повреждено или имеет неверный формат.",
     "malware_detected": "Файл не прошел проверку безопасности.",
     "file_scan_unavailable": "Файл не удалось проверить. Попробуйте загрузить его позже.",
 }
 _DEFAULT_BLOCKED_MESSAGE = "Файл не прошел проверку безопасности."
-_FILE_SCAN_UNAVAILABLE_MESSAGE = "Сервис проверки файлов временно недоступен."
+_FILE_SCAN_UNAVAILABLE_MESSAGE = _PUBLIC_ERROR_BY_REASON["file_scan_unavailable"]
 
 
 @dataclass(frozen=True, slots=True)

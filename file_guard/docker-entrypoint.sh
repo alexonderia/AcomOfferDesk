@@ -1,14 +1,23 @@
 #!/bin/sh
 set -eu
 
-cleanup() {
-  if [ -n "${CLAMD_PID:-}" ]; then
-    kill "${CLAMD_PID}" 2>/dev/null || true
-    wait "${CLAMD_PID}" 2>/dev/null || true
+CLAMD_PID=""
+UVICORN_PID=""
+
+stop_process() {
+  pid="$1"
+  if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+    kill "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
   fi
 }
 
-trap cleanup EXIT INT TERM
+cleanup() {
+  stop_process "${UVICORN_PID}"
+  stop_process "${CLAMD_PID}"
+}
+
+trap cleanup INT TERM
 
 echo "[file_guard] Подготавливаем каталоги ClamAV и права доступа"
 mkdir -p /run/clamav /var/lib/clamav /var/log/clamav
@@ -28,4 +37,19 @@ else
 fi
 
 echo "[file_guard] Запускаем FastAPI-сервис проверки файлов"
-exec uvicorn app.main:app --host 0.0.0.0 --port 8080
+uvicorn app.main:app --host 0.0.0.0 --port 8080 &
+UVICORN_PID="$!"
+
+exit_code=0
+while kill -0 "${UVICORN_PID}" 2>/dev/null; do
+  if [ -n "${CLAMD_PID}" ] && ! kill -0 "${CLAMD_PID}" 2>/dev/null; then
+    echo "[file_guard] Процесс clamd завершился; останавливаем uvicorn"
+    cleanup
+    exit 1
+  fi
+  sleep 1
+done
+
+wait "${UVICORN_PID}" 2>/dev/null || exit_code=$?
+cleanup
+exit "${exit_code}"

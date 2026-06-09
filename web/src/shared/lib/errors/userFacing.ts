@@ -7,16 +7,17 @@ export const NOT_FOUND_ERROR_MESSAGE = 'Данные не найдены или 
 export const SAVE_ERROR_MESSAGE = 'Не удалось сохранить изменения.';
 export const LOAD_ERROR_MESSAGE = 'Не удалось загрузить данные.';
 export const DELETE_ERROR_MESSAGE = 'Не удалось удалить данные.';
-export const FILE_SCAN_UNAVAILABLE_MESSAGE = 'Сервис проверки файлов временно недоступен.';
+export const FILE_SCAN_UNAVAILABLE_MESSAGE =
+  'Файл не удалось проверить. Попробуйте загрузить его позже.';
 
 const API_REASON_CODE_TRANSLATIONS: Record<string, string> = {
-  file_type_not_allowed: 'Тип файла не разрешен.',
-  file_too_large: 'Файл слишком большой. Размер одного файла не должен превышать 5 МБ.',
+  file_type_not_allowed: 'Недопустимый тип файла.',
+  file_too_large: 'Файл слишком большой.',
   empty_file: 'Файл пустой.',
   unsafe_file_name: 'Недопустимое имя файла.',
   mime_mismatch: 'Содержимое файла не соответствует расширению файла.',
   invalid_pdf: 'PDF-файл поврежден или не читается.',
-  encrypted_pdf_not_allowed: 'Зашифрованные PDF-файлы не поддерживаются.',
+  encrypted_pdf_not_allowed: 'Зашифрованные PDF-файлы запрещены.',
   invalid_office_document: 'Office-файл поврежден или имеет неверную структуру.',
   invalid_image: 'Изображение повреждено или имеет неверный формат.',
   malware_detected: 'Файл не прошел проверку безопасности.',

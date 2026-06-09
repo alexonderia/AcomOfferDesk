@@ -1,36 +1,38 @@
-# File Security
+# Безопасность файлов
 
-## Purpose
+## Назначение
 
-`file_guard` is the single isolated runtime responsible for validating user-uploaded files before backend persists them in MinIO/S3 and links them in the database.
+`file_guard` — единый изолированный сервис, который проверяет пользовательские файлы до того, как backend сохранит их в MinIO/S3 и создаст связь в базе данных.
 
-The main data flow stays unchanged:
+Основной поток данных не меняется:
 
 ```text
 frontend -> backend -> file_guard -> verdict -> backend persistence
 ```
 
-## Why Validation Stays Outside Backend
+## Почему проверка вынесена из backend
 
-* Backend remains the orchestrator and does not duplicate deep file parsing logic.
-* A single guard service keeps upload rules consistent across requests, offers, chat files, and normative documents.
-* Fail-closed behavior is centralized: if `file_guard` cannot complete a mandatory check, backend must not save the file.
+* Backend остаётся оркестратором и не дублирует глубокий разбор файлов.
+* Один сервис проверки обеспечивает единые правила загрузки для заявок, КП, чатов и нормативных документов.
+* Поведение fail-closed централизовано: если `file_guard` не может завершить обязательную проверку, backend не сохраняет файл.
 
-## Container Model
+## Модель контейнера
 
-`file_guard` remains one dedicated internal container on `project_net`.
+`file_guard` — один выделенный внутренний контейнер в сети `project_net`.
 
-Inside the same container:
+Внутри того же контейнера:
 
-* FastAPI exposes `/scan` and `/health`
-* format validators inspect PDF, DOCX, XLSX, PNG, and JPEG
-* local ClamAV (`clamd`) performs antivirus checks through a Unix socket
+* FastAPI отдаёт `/scan` и `/health`
+* валидаторы форматов проверяют PDF, DOCX, XLSX, PNG и JPEG
+* локальный ClamAV (`clamd`) выполняет антивирусную проверку через Unix socket
 
-There is no separate `clamav` service in the runtime stack.
+Отдельного сервиса `clamav` в runtime-стеке нет.
 
-## Allowed File Types
+Базы сигнатур ClamAV хранятся в постоянном Docker volume (`clamav_data`, смонтирован в `/var/lib/clamav`), поэтому пересоздание контейнера не вынуждает заново скачивать все базы.
 
-Allowed extensions:
+## Разрешённые типы файлов
+
+Разрешённые расширения:
 
 * `.pdf`
 * `.docx`
@@ -39,40 +41,58 @@ Allowed extensions:
 * `.jpeg`
 * `.png`
 
-Everything else is rejected with `reason_code=file_type_not_allowed`.
+Всё остальное отклоняется с `reason_code=file_type_not_allowed`.
 
-## Validation Stages
+## Этапы проверки
 
-Each upload goes through these checks before backend may persist it:
+Каждая загрузка проходит эти шаги до сохранения в backend:
 
-1. File name safety
-2. Empty-file and file-size validation
-3. Extension allowlist / denylist validation
-4. MIME and signature validation
-5. Deep format validation
-6. Antivirus scan
+1. Безопасность имени файла
+2. Проверка пустого файла и размера
+3. Allowlist / denylist расширений
+4. Проверка MIME и сигнатуры
+5. Глубокая структурная проверка формата
+6. Антивирусное сканирование
 
-Examples of deep validation:
+Примеры глубокой проверки:
 
-* PDF: parseability, non-encrypted structure, no dangerous active objects
-* DOCX/XLSX: required OpenXML entries, no zip-slip, no macro payloads, no zip-bomb/resource-abuse patterns
-* PNG/JPEG: decodable image with safe dimensions
+* PDF: читаемость, отсутствие шифрования, отсутствие опасного активного содержимого
+* DOCX/XLSX: обязательные OpenXML entry, защита от zip-slip, макросов, zip-bomb и resource abuse, скриптов и активного содержимого
+* PNG/JPEG: декодируемое изображение с безопасными размерами
 
-## Fail-Closed Rules
+## Проверка Office-документов на скрипты и активное содержимое
 
-The file is blocked if:
+Файлы DOCX и XLSX — это ZIP-контейнеры. `file_guard` блокирует их, если внутри архива найдено:
 
-* `file_guard` cannot complete a mandatory check
-* ClamAV is unavailable or times out
-* MIME/signature does not match the extension
-* the file structure is corrupted or suspicious
-* malware is detected
+* скриптовые файлы (`.js`, `.vbs`, `.ps1`, `.bat`, `.sh`, `.py`, `.php` и аналогичные)
+* HTML/SVG-вложения
+* признаки OLE/ActiveX (`oleObject`, `activeX`, `embed`, вложения `.bin`)
+* артефакты макросов (`vbaProject`, `macroEnabled`, `application/vnd.ms-office.vbaProject`)
+* подозрительные external-цели в `.rels` (`javascript:`, `vbscript:`, `file:`, `cmd`, `powershell`, `ms-its:`)
+* content type с поддержкой макросов
+* небезопасные пути entry (`\`, `..`, абсолютные пути, управляющие символы, слишком длинные имена)
+* слишком большие XML entry, которые нужно анализировать по содержимому
 
-Backend also blocks persistence when `file_guard` itself is unreachable.
+Типичные коды блокировки:
 
-## Reason Codes
+* `invalid_office_document` — нарушение структуры или политики содержимого внутри DOCX/XLSX
+* `malware_detected` — ClamAV обнаружил угрозу
 
-Current public-facing reasons include:
+## Правила fail-closed
+
+Файл блокируется, если:
+
+* `file_guard` не может завершить обязательную проверку
+* ClamAV недоступен или истёк таймаут
+* MIME/сигнатура не соответствует расширению
+* структура файла повреждена или выглядит подозрительно
+* обнаружено вредоносное содержимое
+
+Backend также блокирует сохранение, если сам `file_guard` недоступен.
+
+## Коды причин (`reason_code`)
+
+Публичные коды, которые видит пользователь через backend:
 
 * `file_type_not_allowed`
 * `file_too_large`
@@ -86,29 +106,48 @@ Current public-facing reasons include:
 * `malware_detected`
 * `file_scan_unavailable`
 
-`file_guard` may keep technical internal messages in English, but backend must return safe Russian user-facing text by `reason_code`.
+`file_guard` может хранить технические сообщения на английском, но backend обязан возвращать безопасный русский текст по `reason_code`.
 
-## Health And Readiness
+### Сообщения пользователю
 
-`/health` returns success only when:
+| reason_code | Сообщение |
+| ----------- | --------- |
+| `file_type_not_allowed` | Недопустимый тип файла. |
+| `file_too_large` | Файл слишком большой. |
+| `empty_file` | Файл пустой. |
+| `unsafe_file_name` | Недопустимое имя файла. |
+| `mime_mismatch` | Содержимое файла не соответствует расширению файла. |
+| `invalid_pdf` | PDF-файл поврежден или не читается. |
+| `encrypted_pdf_not_allowed` | Зашифрованные PDF-файлы запрещены. |
+| `invalid_office_document` | Office-файл поврежден или имеет неверную структуру. |
+| `invalid_image` | Изображение повреждено или имеет неверный формат. |
+| `malware_detected` | Файл не прошел проверку безопасности. |
+| `file_scan_unavailable` | Файл не удалось проверить. Попробуйте загрузить его позже. |
 
-* FastAPI is alive
-* antivirus is either explicitly disabled by config or ready for scans
+## Health и готовность
 
-If ClamAV is enabled but unavailable, `file_guard` health degrades and the container must not be treated as ready to accept safe uploads.
+`/health` возвращает успех только когда:
 
-## Environment Variables
+* FastAPI запущен
+* антивирус либо явно отключён настройкой, либо готов к сканированию
 
-Important backend variables:
+Если ClamAV включён, но недоступен, health `file_guard` деградирует, и контейнер нельзя считать готовым к безопасной обработке загрузок.
+
+Для production недопустимо `FILE_GUARD_ANTIVIRUS_ENABLED=false`. В production-like конфигурации используйте `FILE_GUARD_ANTIVIRUS_ENABLED=true`.
+
+## Переменные окружения
+
+Важные переменные backend:
 
 * `FILE_GUARD_ENABLED`
 * `FILE_GUARD_URL`
 * `FILE_GUARD_TIMEOUT_SECONDS`
 * `MAX_UPLOAD_SIZE_BYTES`
 
-Important `file_guard` variables:
+Важные переменные `file_guard`:
 
 * `FILE_GUARD_MAX_FILE_SIZE_BYTES`
+* `FILE_GUARD_UPLOAD_READ_CHUNK_BYTES`
 * `FILE_GUARD_ALLOW_LIBMAGIC_FALLBACK`
 * `FILE_GUARD_ANTIVIRUS_ENABLED`
 * `FILE_GUARD_ANTIVIRUS_TIMEOUT_SECONDS`
@@ -118,12 +157,70 @@ Important `file_guard` variables:
 * `FILE_GUARD_OFFICE_MAX_TOTAL_UNCOMPRESSED_BYTES`
 * `FILE_GUARD_OFFICE_MAX_ENTRY_UNCOMPRESSED_BYTES`
 * `FILE_GUARD_OFFICE_MAX_COMPRESSION_RATIO`
+* `FILE_GUARD_OFFICE_MAX_XML_SCAN_BYTES`
+* `FILE_GUARD_OFFICE_MAX_ENTRY_NAME_LENGTH`
 * `FILE_GUARD_IMAGE_MAX_WIDTH`
 * `FILE_GUARD_IMAGE_MAX_HEIGHT`
 * `FILE_GUARD_IMAGE_MAX_PIXELS`
 
-## Notes
+## Ручной smoke-тест
 
-The current implementation keeps ClamAV inside `file_guard`. If runtime load grows later, the antivirus engine can be split into a separate service without changing the backend upload contract.
+Проверка compose-конфигурации и сборки:
 
-Any manual smoke that persists a file through backend must also remove the created database link and storage object after the happy-path is confirmed. Direct `/scan` checks do not leave persistence artifacts, but backend upload checks must not leave test files in MinIO or in file-link tables.
+```bash
+docker compose config
+docker compose build file_guard
+docker compose up -d file_guard
+docker compose logs -f file_guard
+```
+
+Проверка health (с хоста, если порт опубликован, иначе через `docker compose exec file_guard curl ...`):
+
+```bash
+curl http://localhost:8080/health
+```
+
+Ожидаемый ответ при готовом антивирусе:
+
+```json
+{
+  "status": "ok",
+  "antivirus": "ready"
+}
+```
+
+Проверка EICAR:
+
+```bash
+curl -F "file=@eicar_test_file.txt" http://localhost:8080/scan
+```
+
+Ожидаемый ответ:
+
+```json
+{
+  "allowed": false,
+  "reason_code": "malware_detected"
+}
+```
+
+Загрузка валидного PNG/PDF:
+
+```bash
+curl -F "file=@valid.png" http://localhost:8080/scan
+```
+
+Ожидаемый ответ:
+
+```json
+{
+  "allowed": true,
+  "reason_code": null
+}
+```
+
+## Примечания
+
+Текущая реализация держит ClamAV внутри `file_guard`. Если нагрузка вырастет, антивирусный движок можно вынести в отдельный сервис без изменения контракта загрузки backend.
+
+Любой ручной smoke, который сохраняет файл через backend, должен после успешной проверки удалить созданную связь в БД и объект в хранилище. Прямые вызовы `/scan` не оставляют артефактов в persistence, но проверки загрузки через backend не должны оставлять тестовые файлы в MinIO или в таблицах связей файлов.

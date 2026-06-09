@@ -72,7 +72,7 @@ async def test_scan_bytes_raises_upload_rejected_for_blocked_verdict(monkeypatch
         )
 
     assert exc_info.value.reason_code == "file_type_not_allowed"
-    assert exc_info.value.detail == "Тип файла не разрешен."
+    assert exc_info.value.detail == "Недопустимый тип файла."
     assert exc_info.value.status_code == 422
 
 
@@ -117,6 +117,46 @@ async def test_scan_bytes_fails_closed_when_guard_errors(monkeypatch) -> None:
 
     assert exc_info.value.reason_code == "file_scan_unavailable"
     assert exc_info.value.status_code == 503
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reason_code", "expected_detail"),
+    [
+        ("file_type_not_allowed", "Недопустимый тип файла."),
+        ("encrypted_pdf_not_allowed", "Зашифрованные PDF-файлы запрещены."),
+        ("file_scan_unavailable", "Файл не удалось проверить. Попробуйте загрузить его позже."),
+    ],
+)
+async def test_scan_bytes_maps_reason_codes_to_approved_russian_messages(
+    monkeypatch,
+    reason_code: str,
+    expected_detail: str,
+) -> None:
+    monkeypatch.setattr(settings, "file_guard_enabled", True)
+    service = FileUploadGuardService(
+        client=_FakeClient(
+            verdict=FileGuardVerdict(
+                allowed=False,
+                reason_code=reason_code,
+                message="technical message from file_guard",
+                detected_mime="application/pdf",
+                size_bytes=4,
+                sha256="def456",
+            )
+        )
+    )
+
+    with pytest.raises(UploadRejected) as exc_info:
+        await service.scan_bytes(
+            original_name="spec.pdf",
+            content_bytes=b"fake",
+            content_type="application/pdf",
+        )
+
+    assert exc_info.value.reason_code == reason_code
+    assert exc_info.value.detail == expected_detail
+    assert exc_info.value.detail != "technical message from file_guard"
 
 
 @pytest.mark.asyncio

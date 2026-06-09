@@ -12,7 +12,9 @@ import pytest
 
 os.environ.setdefault("FILE_GUARD_ANTIVIRUS_ENABLED", "false")
 
+from file_guard.app import config as config_module
 from file_guard.app import main as main_module
+from file_guard.app import office_security as office_security_module
 from file_guard.app import scanner as scanner_module
 from file_guard.app.scanner import FileScanner
 
@@ -46,10 +48,11 @@ class _UnavailableAntivirus:
 def _valid_pdf_bytes() -> bytes:
     return (
         b"%PDF-1.4\n"
-        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>\nendobj\n"
-        b"trailer\n<< /Root 1 0 R >>\n%%EOF"
+        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 100 100]>>endobj\n"
+        b"xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \n"
+        b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n168\n%%EOF"
     )
 
 
@@ -94,8 +97,11 @@ def _jpeg_bytes(*, width: int = 1, height: int = 1) -> bytes:
 
 def _patch_scanner(monkeypatch, *, antivirus, **settings_overrides) -> None:
     if settings_overrides:
-        monkeypatch.setattr(scanner_module, "settings", replace(scanner_module.settings, **settings_overrides))
-        monkeypatch.setattr(main_module, "settings", replace(main_module.settings, **settings_overrides))
+        patched_settings = replace(scanner_module.settings, **settings_overrides)
+        monkeypatch.setattr(config_module, "settings", patched_settings)
+        monkeypatch.setattr(scanner_module, "settings", patched_settings)
+        monkeypatch.setattr(office_security_module, "settings", patched_settings)
+        monkeypatch.setattr(main_module, "settings", patched_settings)
     monkeypatch.setattr(main_module, "_scanner", FileScanner(antivirus_scanner=antivirus))
 
 
@@ -314,3 +320,216 @@ def test_health_reports_degraded_when_antivirus_not_ready(monkeypatch) -> None:
 
     assert response.status_code == 503
     assert response.json()["reason_code"] == "file_scan_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("filename",),
+    [
+        ("folder\\file.pdf",),
+        ("folder/file.pdf",),
+        ("../file.pdf",),
+        ("C:\\temp\\file.pdf",),
+    ],
+)
+def test_scan_blocks_unsafe_file_names(monkeypatch, filename: str) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    verdict = main_module._scanner.scan_bytes(
+        original_name=filename,
+        content_bytes=_valid_pdf_bytes(),
+    )
+
+    assert verdict.allowed is False
+    assert verdict.reason_code == "unsafe_file_name"
+
+
+@pytest.mark.parametrize(
+    ("entry_name",),
+    [
+        ("word\\document.xml",),
+        ("../evil.js",),
+        ("word/../evil.js",),
+        ("/absolute/path.xml",),
+        ("C:\\temp\\evil.xml",),
+    ],
+)
+def test_scan_blocks_unsafe_office_entry_paths(monkeypatch, entry_name: str) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    response = client.post(
+        "/scan",
+        files={
+            "file": (
+                "paths.docx",
+                _office_bytes(("word/document.xml", "<xml />"), (entry_name, b"payload")),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+def test_scan_blocks_office_entry_with_control_character(monkeypatch) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    response = client.post(
+        "/scan",
+        files={
+            "file": (
+                "control.docx",
+                _office_bytes(("word/document.xml", "<xml />"), ("word/evil\x01.xml", b"payload")),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+def test_scan_blocks_office_entry_name_longer_than_limit(monkeypatch) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus(), office_max_entry_name_length=20)
+    response = client.post(
+        "/scan",
+        files={
+            "file": (
+                "long.docx",
+                _office_bytes(("word/document.xml", "<xml />"), ("word/" + ("a" * 30) + ".xml", b"x")),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+@pytest.mark.parametrize(
+    ("entry_name",),
+    [
+        ("word/embeddings/evil.js",),
+        ("word/embeddings/evil.vbs",),
+        ("word/embeddings/evil.ps1",),
+        ("word/embeddings/evil.html",),
+        ("word/embeddings/evil.svg",),
+        ("word/embeddings/evil.bin",),
+        ("word/vbaProject.bin",),
+        ("xl/vbaProject.bin",),
+    ],
+)
+def test_scan_blocks_office_script_and_bin_payloads(monkeypatch, entry_name: str) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    extension = ".xlsx" if entry_name.startswith("xl/") else ".docx"
+    required_entry = "xl/workbook.xml" if extension == ".xlsx" else "word/document.xml"
+    mime = (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        if extension == ".xlsx"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    response = client.post(
+        "/scan",
+        files={
+            "file": (
+                f"payload{extension}",
+                _office_bytes((required_entry, "<xml />"), (entry_name, b"evil")),
+                mime,
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+@pytest.mark.parametrize(
+    ("rels_content",),
+    [
+        ('<Relationship TargetMode="External" Target="javascript:alert(1)" />',),
+        ('<Relationship TargetMode="External" Target="file:///C:/Windows/System32/cmd.exe" />',),
+        ('<Relationship TargetMode="External" Target="powershell.exe" />',),
+    ],
+)
+def test_scan_blocks_suspicious_office_external_relationships(monkeypatch, rels_content: str) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    response = client.post(
+        "/scan",
+        files={
+            "file": (
+                "rels.docx",
+                _office_bytes(
+                    ("word/document.xml", "<xml />"),
+                    ("word/_rels/document.xml.rels", rels_content),
+                ),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+def _office_bytes_single_content_types(*entries: tuple[str, bytes | str]) -> bytes:
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, value in entries:
+            archive.writestr(name, value)
+    return payload.getvalue()
+
+
+def test_scan_blocks_suspicious_office_content_types(monkeypatch) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    response = client.post(
+        "/scan",
+        files={
+            "file": (
+                "macro-types.docx",
+                _office_bytes_single_content_types(
+                    ("word/document.xml", "<xml />"),
+                    (
+                        "[Content_Types].xml",
+                        '<Types><Override PartName="/word/vbaProject.bin" '
+                        'ContentType="application/vnd.ms-office.vbaProject"/>macroEnabled</Types>',
+                    ),
+                ),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+def test_scan_blocks_office_xml_entry_larger_than_scan_limit(monkeypatch) -> None:
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus(), office_max_xml_scan_bytes=128)
+    response = client.post(
+        "/scan",
+        files={
+            "file": (
+                "big-xml.docx",
+                _office_bytes(("word/document.xml", "x" * 256)),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+def test_scan_returns_file_too_large_during_chunked_read(monkeypatch) -> None:
+    _patch_scanner(
+        monkeypatch,
+        antivirus=_ReadyAntivirus(),
+        max_file_size_bytes=1024,
+        upload_read_chunk_bytes=256,
+    )
+    response = client.post(
+        "/scan",
+        files={"file": ("huge.pdf", b"x" * 2048, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reason_code"] == "file_too_large"
+    assert payload["size_bytes"] > 1024

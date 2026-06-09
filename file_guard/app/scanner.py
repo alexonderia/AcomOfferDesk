@@ -6,10 +6,11 @@ import logging
 import unicodedata
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from .antivirus import AntivirusUnavailableError, ClamAVScanner, DisabledAntivirusScanner
 from .config import settings
+from .office_security import validate_office_archive
 
 logger = logging.getLogger(__name__)
 
@@ -448,7 +449,9 @@ class FileScanner:
                 logger.info("PDF успешно разобран через pypdf: pages=%s", len(reader.pages))
                 return None
             except Exception:
-                logger.info("pypdf не смог разобрать PDF; файл будет заблокирован по принципу fail-closed")
+                logger.info("pypdf не смог разобрать PDF; проверяем сигнатуру")
+                if b"/Encrypt" in content_bytes[:65536]:
+                    return ("encrypted_pdf_not_allowed", "Encrypted PDF files are not allowed")
                 return ("invalid_pdf", "PDF is corrupted or unreadable")
 
         if b"%%EOF" not in content_bytes[-2048:]:
@@ -465,53 +468,10 @@ class FileScanner:
 
     def _validate_office(self, *, extension: str, content_bytes: bytes) -> tuple[str, str] | None:
         logger.info("Проверяем Office-файл: extension=%s", extension)
-        required_entry = "word/document.xml" if extension == ".docx" else "xl/workbook.xml"
-        if not content_bytes.startswith(b"PK\x03\x04"):
-            return ("invalid_office_document", "Office document is corrupted or invalid")
-
-        try:
-            with zipfile.ZipFile(io.BytesIO(content_bytes)) as archive:
-                infos = archive.infolist()
-                names = {info.filename for info in infos}
-        except zipfile.BadZipFile:
-            return ("invalid_office_document", "Office document is corrupted or invalid")
-
-        if "[Content_Types].xml" not in names or required_entry not in names:
-            return ("invalid_office_document", "Office document is corrupted or invalid")
-        if len(infos) > settings.office_max_entries:
-            return ("invalid_office_document", "Office document exceeds safety limits")
-
-        total_uncompressed = 0
-        logger.info(
-            "Office-архив открыт успешно: entries=%s required_entry=%s",
-            len(infos),
-            required_entry,
-        )
-        for info in infos:
-            name = info.filename
-            normalized_path = PurePosixPath(name)
-            if (
-                not name
-                or name.startswith(("/", "\\"))
-                or "\\" in name
-                or ".." in normalized_path.parts
-            ):
-                return ("invalid_office_document", "Office document is corrupted or invalid")
-            suffix = Path(name).suffix.lower()
-            if suffix in _DANGEROUS_EXTENSIONS or name.lower().endswith("vbaproject.bin"):
-                return ("invalid_office_document", "Office document contains forbidden content")
-            if info.file_size > settings.office_max_entry_uncompressed_bytes:
-                return ("invalid_office_document", "Office document exceeds safety limits")
-            total_uncompressed += info.file_size
-            if total_uncompressed > settings.office_max_total_uncompressed_bytes:
-                return ("invalid_office_document", "Office document exceeds safety limits")
-            if info.file_size > 0:
-                if info.compress_size <= 0:
-                    return ("invalid_office_document", "Office document exceeds safety limits")
-                if (info.file_size / info.compress_size) > settings.office_max_compression_ratio:
-                    return ("invalid_office_document", "Office document exceeds safety limits")
-        logger.info("Office-файл прошел структурную проверку: extension=%s total_uncompressed=%s", extension, total_uncompressed)
-        return None
+        failure = validate_office_archive(extension=extension, content_bytes=content_bytes)
+        if failure is None:
+            logger.info("Office-файл прошел структурную проверку: extension=%s", extension)
+        return failure
 
     def _validate_image(self, *, extension: str, content_bytes: bytes) -> tuple[str, str] | None:
         logger.info("Проверяем изображение: extension=%s", extension)

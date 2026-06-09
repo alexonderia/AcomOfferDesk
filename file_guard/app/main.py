@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from fastapi import FastAPI, File, UploadFile
@@ -54,6 +55,16 @@ async def health() -> JSONResponse:
     )
 
 
+async def _read_upload_bytes(file: UploadFile) -> tuple[bytes, bool]:
+    content = bytearray()
+    chunk_size = settings.upload_read_chunk_bytes
+    while chunk := await file.read(chunk_size):
+        content.extend(chunk)
+        if len(content) > settings.max_file_size_bytes:
+            return bytes(content), True
+    return bytes(content), False
+
+
 @app.post("/scan", response_model=ScanResponse)
 async def scan(file: UploadFile = File(...)) -> ScanResponse | JSONResponse:
     logger.info(
@@ -61,10 +72,25 @@ async def scan(file: UploadFile = File(...)) -> ScanResponse | JSONResponse:
         file.filename or "",
         file.content_type or "application/octet-stream",
     )
+    content_bytes, exceeded_limit = await _read_upload_bytes(file)
+    if exceeded_limit:
+        logger.warning(
+            "Файл превысил лимит размера при потоковом чтении: filename=%s size_bytes=%s",
+            file.filename or "",
+            len(content_bytes),
+        )
+        return ScanResponse(
+            allowed=False,
+            reason_code="file_too_large",
+            message="File exceeds maximum size",
+            detected_mime="application/octet-stream",
+            size_bytes=len(content_bytes),
+            sha256=hashlib.sha256(content_bytes).hexdigest(),
+        )
     try:
         verdict = _scanner.scan_bytes(
             original_name=file.filename or "",
-            content_bytes=await file.read(),
+            content_bytes=content_bytes,
         )
     except ScanUnavailableError:
         logger.exception(

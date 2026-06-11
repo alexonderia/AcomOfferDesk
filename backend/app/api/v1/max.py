@@ -58,6 +58,7 @@ async def handle_max_start(
     return MaxStartResponse(
         action=result.action,  # type: ignore[arg-type]
         registration_url=result.registration_url,
+        existing_account_link_token=result.existing_account_link_token,
         requests=[
             MaxOpenRequestItem(
                 id=item.id,

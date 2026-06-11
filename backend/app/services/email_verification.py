@@ -10,14 +10,20 @@ from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.infrastructure.email.email_templates.verification_email import build_verification_email_payload
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
 from app.repositories.profiles import ProfileRepository
+from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.services.tg_registration_links import build_keycloak_registration_link
 
 
 class EmailVerificationService:
     _request_locks: dict[str, int] = {}
 
-    def __init__(self, profiles: ProfileRepository) -> None:
+    def __init__(
+        self,
+        profiles: ProfileRepository,
+        user_contact_channels: UserContactChannelRepository | None = None,
+    ) -> None:
         self._profiles = profiles
+        self._user_contact_channels = user_contact_channels
         self._token_codec = EmailVerificationTokenCodec(
             secret=settings.email_verification_secret,
             ttl_seconds=settings.email_verification_ttl_seconds,
@@ -81,7 +87,16 @@ class EmailVerificationService:
             raise Forbidden("Invalid verification flow")
         if await self._profiles.exists_by_mail(email=claims.email, exclude_user_id=claims.user_id):
             raise Conflict("Эта электронная почта уже используется")
-        return await self._profiles.update_mail_after_verification(user_id=claims.user_id, email=claims.email)
+        updated = await self._profiles.update_mail_after_verification(user_id=claims.user_id, email=claims.email)
+        if updated and self._user_contact_channels is not None:
+            await self._user_contact_channels.upsert_channel(
+                user_id=claims.user_id,
+                channel_type="email",
+                channel_value=claims.email.strip(),
+                is_verified=True,
+                is_primary=True,
+            )
+        return updated
 
     async def parse_claims(self, *, token: str) -> EmailVerificationClaims:
         return await self._token_codec.parse_token(token)

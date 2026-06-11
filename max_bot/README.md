@@ -30,13 +30,23 @@ Backend использует отдельные переменные `MAX_BOT_EN
 ## Запуск в составе проекта
 
 ```bash
-cp max_bot/env.example max_bot/.env
-# заполните MAX_BOT_TOKEN и при необходимости PUBLIC_BACKEND_BASE_URL
-
 docker compose up -d --build
 ```
 
-Сервис `max_bot` запускается автоматически вместе с backend/web/gateway.
+При запуске из корня проекта сервис `max_bot` берет `MAX_BOT_TOKEN`, `MAX_BOT_ENABLED`, `MAX_LINK_SECRET`, `PUBLIC_BACKEND_BASE_URL` и `WEB_BASE_URL` из root runtime env (`${APP_RUNTIME_ENV_FILE:-./.env}` или другого root env-файла, выбранного compose-слоем).
+
+`max_bot/.env` для root-запуска не нужен.
+
+По умолчанию MAX должен быть выключен:
+
+- `MAX_BOT_ENABLED=false`
+- для включения задайте `MAX_BOT_ENABLED=true`, `MAX_BOT_TOKEN` и `MAX_LINK_SECRET`
+
+Если `MAX_BOT_ENABLED=false`, контейнер `max_bot` можно не трогать или остановить отдельно:
+
+```bash
+docker compose stop max_bot
+```
 
 ## Standalone-запуск для отладки
 
@@ -45,6 +55,8 @@ cd max_bot
 cp env.example .env
 docker compose up --build
 ```
+
+`max_bot/.env` используется только для standalone-отладки из директории `max_bot`.
 
 ## Команды
 

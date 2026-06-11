@@ -9,7 +9,11 @@ from app.domain.exceptions import Conflict
 from app.repositories.max_users import MaxUserRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
-from app.services.max_registration_links import build_keycloak_max_registration_link, create_max_registration_token
+from app.services.max_registration_links import (
+    build_keycloak_max_registration_link,
+    create_max_existing_link_token,
+    create_max_registration_token,
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,7 @@ class MaxOpenRequestItem:
 class MaxStartResult:
     action: str
     registration_url: str | None
+    existing_account_link_token: str | None
     requests: list[MaxOpenRequestItem]
 
 
@@ -44,20 +49,26 @@ class MaxStartService:
         linked_user = await self._users.get_by_max_user_id(normalized_id)
 
         if linked_user is not None and self._is_blocked(linked_user.status, max_user.status):
-            return MaxStartResult(action="blocked", registration_url=None, requests=[])
+            return MaxStartResult(
+                action="blocked",
+                registration_url=None,
+                existing_account_link_token=None,
+                requests=[],
+            )
 
         if linked_user is None:
             return MaxStartResult(
                 action="register",
                 registration_url=self._build_registration_url(max_user_id=normalized_id),
+                existing_account_link_token=self._build_existing_account_link_token(max_user_id=normalized_id),
                 requests=[],
             )
 
         if linked_user.status != "active" or max_user.status != "approved":
-            return MaxStartResult(action="pending", registration_url=None, requests=[])
+            return MaxStartResult(action="pending", registration_url=None, existing_account_link_token=None, requests=[])
 
         if linked_user.id_role != settings.contractor_role_id:
-            return MaxStartResult(action="pending", registration_url=None, requests=[])
+            return MaxStartResult(action="pending", registration_url=None, existing_account_link_token=None, requests=[])
 
         open_requests = await self._requests.list_open_for_contractor(contractor_user_id=linked_user.id)
         request_items = [
@@ -72,6 +83,7 @@ class MaxStartService:
         return MaxStartResult(
             action="open_requests",
             registration_url=None,
+            existing_account_link_token=None,
             requests=request_items,
         )
 
@@ -86,6 +98,11 @@ class MaxStartService:
             raise Conflict("MAX links are not configured")
         code = create_max_registration_token(max_user_id=max_user_id)
         return build_keycloak_max_registration_link(token=code)
+
+    def _build_existing_account_link_token(self, *, max_user_id: str) -> str:
+        if not settings.max_link_secret:
+            raise Conflict("MAX links are not configured")
+        return create_max_existing_link_token(max_user_id=max_user_id)
 
     def _build_request_url(self, *, request_id: str) -> str:
         if not settings.public_backend_base_url:

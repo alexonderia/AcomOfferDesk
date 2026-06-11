@@ -23,6 +23,7 @@ from app.repositories.users import UserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
+from app.repositories.user_notification_preferences import UserNotificationPreferenceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class UnitOfWork:
         self.user_status_periods: UserStatusPeriodRepository | None = None
         self.user_auth_accounts: UserAuthAccountRepository | None = None
         self.user_contact_channels: UserContactChannelRepository | None = None
+        self.user_notification_preferences: UserNotificationPreferenceRepository | None = None
         self.economy_plans: EconomyPlanRepository | None = None
         self._after_commit_hooks: list[Callable[[], Awaitable[None]]] = []
 
@@ -67,6 +69,7 @@ class UnitOfWork:
         self.user_status_periods = UserStatusPeriodRepository(self.session)
         self.user_auth_accounts = UserAuthAccountRepository(self.session)
         self.user_contact_channels = UserContactChannelRepository(self.session)
+        self.user_notification_preferences = UserNotificationPreferenceRepository(self.session)
         self.economy_plans = EconomyPlanRepository(self.session)
         self._after_commit_hooks = []
         return self

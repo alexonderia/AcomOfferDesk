@@ -14,6 +14,9 @@ from app.schemas.users import (
     EconomistListData,
     EconomistListItemSchema,
     EconomistListResponse,
+    LinkMyMaxAccountRequest,
+    NotificationPreferencesData,
+    NotificationPreferencesResponse,
     ManualContractorCreateRequest,
     ManualContractorCreateResponse,
     ManualContractorUpdateRequest,
@@ -54,7 +57,9 @@ from app.schemas.users import (
     UserContractorDelegationsResponse,
     UserContractorDelegationsData,
     UserContractorDelegationsUpdateRequest,
+    UpdateNotificationPreferencesRequest,
 )
+from app.domain.exceptions import Forbidden
 from app.services.users import (
     ManualContractorCreateInput,
     ManualContractorService,
@@ -65,6 +70,10 @@ from app.services.users import (
     UserSelfService,
     UserStatusService,
 )
+from app.services.max_account_linking import link_max_account
+from app.services.max_notifications import notify_account_linked as notify_max_account_linked
+from app.services.max_registration_links import MaxExistingLinkExpiredError, MaxExistingLinkInvalidError, resolve_max_existing_link_token
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from app.services.user_department_delegations import UserDepartmentDelegationsService
 from app.services.user_contractor_delegations import UserContractorDelegationsService
 
@@ -360,6 +369,93 @@ async def update_my_profile(
     return MeResponse(
         data=_me_data(current_user, me),
     )
+
+
+def _notification_preferences_data(item) -> NotificationPreferencesData:
+    return NotificationPreferencesData(
+        mode=item.mode,
+        email_available=item.email_available,
+        max_available=item.max_available,
+        email=item.email,
+        max_user_id=item.max_user_id,
+    )
+
+
+@router.post("/users/me/max-link", response_model=MeResponse)
+async def link_my_max_account(
+    payload: LinkMyMaxAccountRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> MeResponse:
+    try:
+        max_user_id = await resolve_max_existing_link_token(payload.code.strip())
+    except MaxExistingLinkExpiredError as exc:
+        raise Forbidden("Срок действия кода привязки MAX истёк") from exc
+    except MaxExistingLinkInvalidError as exc:
+        raise Forbidden("Недействительный код привязки MAX") from exc
+
+    async with uow:
+        await link_max_account(
+            user_auth_accounts=uow.user_auth_accounts,
+            user_contact_channels=uow.user_contact_channels,
+            user_id=current_user.user_id,
+            max_user_id=max_user_id,
+            is_verified=True,
+        )
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
+        me = await query_service.get_me(current_user)
+
+    await notify_max_account_linked(max_user_id)
+
+    if current_user.role_id != settings.contractor_role_id:
+        me = me.__class__(
+            user_id=me.user_id,
+            role_id=me.role_id,
+            status=me.status,
+            tg_user_id=me.tg_user_id,
+            full_name=me.full_name,
+            phone=me.phone,
+            mail=me.mail,
+            unavailable_period=me.unavailable_period,
+            unavailable_periods=me.unavailable_periods,
+        )
+
+    return MeResponse(
+        data=_me_data(current_user, me),
+    )
+
+
+@router.get("/users/me/notification-preferences", response_model=NotificationPreferencesResponse)
+async def get_my_notification_preferences(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> NotificationPreferencesResponse:
+    async with uow:
+        service = UserNotificationPreferencesService(
+            uow.user_contact_channels,
+            uow.user_notification_preferences,
+            profiles=uow.profiles,
+        )
+        state = await service.get_state(user_id=current_user.user_id)
+
+    return NotificationPreferencesResponse(data=_notification_preferences_data(state))
+
+
+@router.put("/users/me/notification-preferences", response_model=NotificationPreferencesResponse)
+async def update_my_notification_preferences(
+    payload: UpdateNotificationPreferencesRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> NotificationPreferencesResponse:
+    async with uow:
+        service = UserNotificationPreferencesService(
+            uow.user_contact_channels,
+            uow.user_notification_preferences,
+            profiles=uow.profiles,
+        )
+        state = await service.update_mode(user_id=current_user.user_id, mode=payload.mode)
+
+    return NotificationPreferencesResponse(data=_notification_preferences_data(state))
 
 
 @router.patch("/users/me/registration-profile", response_model=MeResponse)
@@ -761,6 +857,11 @@ async def update_user_status(
             uow.profiles,
             uow.user_auth_accounts,
             uow.max_users,
+            notification_preferences=UserNotificationPreferencesService(
+                uow.user_contact_channels,
+                uow.user_notification_preferences,
+                profiles=uow.profiles,
+            ),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.update_statuses(

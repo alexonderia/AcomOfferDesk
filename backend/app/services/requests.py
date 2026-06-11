@@ -26,6 +26,7 @@ from app.services.notifications import NotificationService
 from app.services.max_notifications import notify_new_request as notify_max_new_request
 from app.services.max_notifications import notify_request_status_changed as notify_max_request_status_changed
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 PARTNER_CARD_NORMATIVE_ID = 1
@@ -215,6 +216,7 @@ class RequestService:
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
         notifications: NotificationService | None = None,
+        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
@@ -226,6 +228,7 @@ class RequestService:
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
         self._notifications = notifications
+        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
@@ -326,10 +329,21 @@ class RequestService:
             )
 
         if settings.max_bot_enabled:
-            max_user_ids = await self._users.list_active_approved_contractor_max_ids(
+            max_recipients = await self._users.list_active_approved_contractor_max_recipients(
                 contractor_role_id=settings.contractor_role_id,
                 exclude_user_ids=normalized_hidden_contractor_ids,
             )
+            max_user_ids: list[str] = []
+            for contractor_user_id, max_user_id in max_recipients:
+                if self._notification_preferences is not None:
+                    is_enabled = await self._notification_preferences.is_channel_enabled(
+                        user_id=contractor_user_id,
+                        channel_type="max",
+                        notification_type="request",
+                    )
+                    if not is_enabled:
+                        continue
+                max_user_ids.append(max_user_id)
             await notify_max_new_request(
                 max_user_ids=max_user_ids,
                 request_id=request.id,
@@ -529,11 +543,19 @@ class RequestService:
                 for tg_id in tg_ids:
                     await notify_request_status_changed(tg_id=tg_id)
             if status_changed and settings.max_bot_enabled:
-                max_user_ids = await self._offers.list_contractor_max_ids_for_request(
+                max_recipients = await self._offers.list_contractor_max_recipients_for_request(
                     request_id=request.id,
                     contractor_role_id=settings.contractor_role_id,
                 )
-                for max_user_id in max_user_ids:
+                for contractor_user_id, max_user_id in max_recipients:
+                    if self._notification_preferences is not None:
+                        is_enabled = await self._notification_preferences.is_channel_enabled(
+                            user_id=contractor_user_id,
+                            channel_type="max",
+                            notification_type="request",
+                        )
+                        if not is_enabled:
+                            continue
                     await notify_max_request_status_changed(max_user_id=max_user_id)
             if status_changed:
                 event = build_process_notification_event(

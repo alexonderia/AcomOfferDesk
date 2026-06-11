@@ -50,6 +50,7 @@ async def test_start_sends_payload() -> None:
         (
             {
                 "action": "open_requests",
+                "existing_account_link_token": None,
                 "requests": [
                     {
                         "id": "1",

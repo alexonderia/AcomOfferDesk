@@ -36,6 +36,7 @@ from app.services.requests import RequestFileItem, format_offer_status, format_r
 from app.services.max_notifications import notify_new_message as notify_max_new_message
 from app.services.max_notifications import notify_offer_status_finalized as notify_max_offer_status_finalized
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 DEFAULT_PARTNER_CARD_PATH = (
@@ -257,6 +258,7 @@ class OfferService:
         file_service: FileService | None = None,
         keycloak_admin: KeycloakAdminService | None = None,
         notifications: NotificationService | None = None,
+        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
@@ -272,6 +274,7 @@ class OfferService:
         self._file_service = file_service or FileService(files)
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
         self._notifications = notifications
+        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
@@ -1018,6 +1021,15 @@ class OfferService:
                 contractor_role_id=settings.contractor_role_id,
             )
             if max_user_id is not None:
+                if self._notification_preferences is not None:
+                    is_enabled = await self._notification_preferences.is_channel_enabled(
+                        user_id=offer.id_user,
+                        channel_type="max",
+                        notification_type="offer",
+                    )
+                    if not is_enabled:
+                        max_user_id = None
+            if max_user_id is not None:
                 await notify_max_offer_status_finalized(max_user_id=max_user_id)
 
         if status_changed and status in {"accepted", "rejected", "deleted"}:
@@ -1314,6 +1326,15 @@ class OfferService:
                 user_id=offer.id_user,
                 contractor_role_id=settings.contractor_role_id,
             )
+            if max_user_id is not None:
+                if self._notification_preferences is not None:
+                    is_enabled = await self._notification_preferences.is_channel_enabled(
+                        user_id=offer.id_user,
+                        channel_type="max",
+                        notification_type="chat",
+                    )
+                    if not is_enabled:
+                        max_user_id = None
             if max_user_id is not None:
                 await notify_max_new_message(max_user_id=max_user_id, request_id=request.id)
 

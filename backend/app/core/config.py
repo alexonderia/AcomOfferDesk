@@ -150,7 +150,7 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="LEGACY_TELEGRAM_ENABLED",
     )
-    max_bot_enabled: bool = Field(default=True, validation_alias="MAX_BOT_ENABLED")
+    max_bot_enabled: bool = Field(default=False, validation_alias="MAX_BOT_ENABLED")
     max_bot_token: str | None = Field(default=None, validation_alias="MAX_BOT_TOKEN")
     max_bot_public_url: str | None = Field(default=None, validation_alias="MAX_BOT_PUBLIC_URL")
     max_link_secret: str | None = Field(default=None, validation_alias="MAX_LINK_SECRET")

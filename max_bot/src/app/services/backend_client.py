@@ -27,6 +27,7 @@ class MaxOpenRequestItem:
 class MaxStartResponse:
     action: StartAction
     registration_url: str | None
+    existing_account_link_token: str | None
     requests: list[MaxOpenRequestItem]
 
 
@@ -106,6 +107,7 @@ class BackendClient:
         return MaxStartResponse(
             action=action,
             registration_url=_resolve_link(public_base_url, body.get("registration_url")),
+            existing_account_link_token=_normalize_optional_text(body.get("existing_account_link_token")),
             requests=requests,
         )
 
@@ -125,3 +127,10 @@ def _resolve_link(base_url: str, link: str | None) -> str | None:
     if not link.startswith("/"):
         return f"{base_url.rstrip('/')}/{link}"
     return f"{base_url.rstrip('/')}{link}"
+
+
+def _normalize_optional_text(value) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None

@@ -256,6 +256,26 @@ class UpdateMyCompanyContactsRequest(BaseModel):
     note: str | None = None
 
 
+class LinkMyMaxAccountRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=4096)
+
+
+class NotificationPreferencesData(BaseModel):
+    mode: str
+    email_available: bool
+    max_available: bool
+    email: str | None = None
+    max_user_id: str | None = None
+
+
+class NotificationPreferencesResponse(BaseModel):
+    data: NotificationPreferencesData
+
+
+class UpdateNotificationPreferencesRequest(BaseModel):
+    mode: str = Field(min_length=1, max_length=32)
+
+
 class SetMyUnavailabilityPeriodRequest(BaseModel):
     status: str
     started_at: datetime

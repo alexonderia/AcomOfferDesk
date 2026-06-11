@@ -36,6 +36,7 @@ async def test_start_register_action() -> None:
     response = MaxStartResponse(
         action="register",
         registration_url="https://example.com/register",
+        existing_account_link_token="123456789",
         requests=[],
     )
 
@@ -44,13 +45,15 @@ async def test_start_register_action() -> None:
         await handle_start(event)
 
     event.message.answer.assert_awaited_once()
-    assert messages.REGISTER_INTRO in event.message.answer.await_args.args[0]
+    answer_text = event.message.answer.await_args.args[0]
+    assert "123456789" in answer_text
+    assert "MAX ID" in answer_text
 
 
 @pytest.mark.asyncio
 async def test_start_pending_action() -> None:
     event = _build_event()
-    response = MaxStartResponse(action="pending", registration_url=None, requests=[])
+    response = MaxStartResponse(action="pending", registration_url=None, existing_account_link_token=None, requests=[])
 
     with patch("app.handlers.start.get_backend_client") as get_client:
         get_client.return_value.start = AsyncMock(return_value=response)
@@ -65,6 +68,7 @@ async def test_start_open_requests_action() -> None:
     response = MaxStartResponse(
         action="open_requests",
         registration_url=None,
+        existing_account_link_token=None,
         requests=[
             MaxOpenRequestItem(
                 id="1",
@@ -89,7 +93,7 @@ async def test_start_open_requests_action() -> None:
 @pytest.mark.asyncio
 async def test_start_blocked_action() -> None:
     event = _build_event()
-    response = MaxStartResponse(action="blocked", registration_url=None, requests=[])
+    response = MaxStartResponse(action="blocked", registration_url=None, existing_account_link_token=None, requests=[])
 
     with patch("app.handlers.start.get_backend_client") as get_client:
         get_client.return_value.start = AsyncMock(return_value=response)

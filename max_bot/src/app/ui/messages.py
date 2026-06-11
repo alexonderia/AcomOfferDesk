@@ -5,10 +5,21 @@ BOT_WELCOME = (
     "Введите команду /start или /info в поле сообщения."
 )
 
-REGISTER_INTRO = (
-    "Вы еще не зарегистрированы в системе.\n\n"
-    "Для доступа к заявкам пройдите регистрацию."
-)
+def format_register_intro(*, existing_account_link_token: str | None) -> str:
+    lines = [
+        "Вы еще не зарегистрированы в системе.",
+        "",
+        "Если это новый аккаунт, пройдите регистрацию по кнопке ниже.",
+    ]
+    if existing_account_link_token:
+        lines.extend(
+            [
+                "",
+                "Если аккаунт в системе уже есть, войдите в него через сайт и укажите в профиле ваш MAX ID:",
+                existing_account_link_token,
+            ]
+        )
+    return "\n".join(lines)
 
 PENDING_REVIEW = (
     "Ваша регистрация получена и ожидает проверки.\n\n"

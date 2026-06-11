@@ -66,6 +66,18 @@ type CurrentUserResponse = {
   data?: ProfilePayload;
 };
 
+type NotificationPreferencesPayload = {
+  mode?: string;
+  email_available?: boolean;
+  max_available?: boolean;
+  email?: string | null;
+  max_user_id?: string | null;
+};
+
+type NotificationPreferencesResponse = {
+  data?: NotificationPreferencesPayload;
+};
+
 export type CurrentUserProfile = {
   userId: string;
   roleId: number;
@@ -100,6 +112,16 @@ export type CurrentUserProfile = {
   actions: UserActions;
 };
 
+export type NotificationPreferencesMode = 'all' | 'email_only' | 'max_only' | 'none';
+
+export type NotificationPreferences = {
+  mode: NotificationPreferencesMode;
+  emailAvailable: boolean;
+  maxAvailable: boolean;
+  email: string | null;
+  maxUserId: string | null;
+};
+
 type UpdateCredentialsPayload = {
   current_password: string;
   new_password: string;
@@ -109,6 +131,10 @@ type UpdateProfilePayload = {
   full_name?: string;
   phone?: string;
   mail?: string;
+};
+
+type LinkMyMaxAccountPayload = {
+  code: string;
 };
 
 type SetUnavailabilityPeriodPayload = {
@@ -124,6 +150,10 @@ type UpdateCompanyContactsPayload = {
   company_mail?: string;
   address?: string;
   note?: string;
+};
+
+type UpdateNotificationPreferencesPayload = {
+  mode: NotificationPreferencesMode;
 };
 
 const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfile => {
@@ -169,6 +199,18 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
   };
 };
 
+const mapNotificationPreferences = (response: NotificationPreferencesResponse): NotificationPreferences => {
+  const data = response.data ?? {};
+  const mode = data.mode;
+  return {
+    mode: mode === 'all' || mode === 'email_only' || mode === 'max_only' || mode === 'none' ? mode : 'none',
+    emailAvailable: Boolean(data.email_available),
+    maxAvailable: Boolean(data.max_available),
+    email: data.email ?? null,
+    maxUserId: data.max_user_id ?? null
+  };
+};
+
 export const getCurrentUserProfile = async (): Promise<CurrentUserProfile> => {
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me',
@@ -207,6 +249,38 @@ export const updateMyProfile = async (payload: UpdateProfilePayload): Promise<Cu
   );
 
   return mapCurrentUserProfile(response);
+};
+
+export const linkMyMaxAccount = async (payload: LinkMyMaxAccountPayload): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/max-link',
+    { method: 'POST', body: JSON.stringify(payload) },
+    'Не удалось привязать MAX'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
+export const getMyNotificationPreferences = async (): Promise<NotificationPreferences> => {
+  const response = await fetchJson<NotificationPreferencesResponse>(
+    '/api/v1/users/me/notification-preferences',
+    { method: 'GET' },
+    'Не удалось загрузить настройки уведомлений'
+  );
+
+  return mapNotificationPreferences(response);
+};
+
+export const updateMyNotificationPreferences = async (
+  payload: UpdateNotificationPreferencesPayload
+): Promise<NotificationPreferences> => {
+  const response = await fetchJson<NotificationPreferencesResponse>(
+    '/api/v1/users/me/notification-preferences',
+    { method: 'PUT', body: JSON.stringify(payload) },
+    'Не удалось сохранить настройки уведомлений'
+  );
+
+  return mapNotificationPreferences(response);
 };
 
 export const updateMyRegistrationProfile = async (payload: UpdateProfilePayload): Promise<CurrentUserProfile> => {

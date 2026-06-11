@@ -475,6 +475,43 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return [str(value).strip() for value in result.scalars().all() if str(value).strip()]
 
+    async def list_active_approved_contractor_max_recipients(
+        self,
+        *,
+        contractor_role_id: int,
+        exclude_user_ids: list[str] | None = None,
+    ) -> list[tuple[str, str]]:
+        stmt = (
+            select(User.id, UserAuthAccount.external_subject_id)
+            .join(User, User.id == UserAuthAccount.id_user)
+            .join(
+                UserContactChannel,
+                and_(
+                    UserContactChannel.id_user == User.id,
+                    UserContactChannel.channel_type == "max",
+                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
+                    UserContactChannel.is_active.is_(True),
+                    UserContactChannel.is_verified.is_(True),
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(UserAuthAccount.provider == "max")
+            .where(UserAuthAccount.is_active.is_(True))
+            .order_by(User.id.asc())
+        )
+        if exclude_user_ids:
+            stmt = stmt.where(User.id.not_in(exclude_user_ids))
+        result = await self._session.execute(stmt)
+
+        recipients: list[tuple[str, str]] = []
+        for user_id, value in result.all():
+            normalized = str(value).strip()
+            if not normalized:
+                continue
+            recipients.append((user_id, normalized))
+        return recipients
+
     async def list_active_approved_contractor_tg_ids(
         self,
         *,

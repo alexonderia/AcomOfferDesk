@@ -23,6 +23,7 @@ class MaxOpenRequestItem(BaseModel):
 class MaxStartResponse(BaseModel):
     action: Literal["register", "pending", "open_requests", "blocked"]
     registration_url: str | None = None
+    existing_account_link_token: str | None = None
     requests: list[MaxOpenRequestItem] = Field(default_factory=list)
 
 

@@ -55,6 +55,9 @@ async def run_bot(
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    if not settings.max_bot_enabled:
+        logging.getLogger(__name__).info("MAX bot is disabled by MAX_BOT_ENABLED=false")
+        return
     await run_bot()
 
 

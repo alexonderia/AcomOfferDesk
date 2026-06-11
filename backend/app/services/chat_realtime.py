@@ -17,6 +17,7 @@ from app.services.offers import (
     OfferService,
 )
 from app.services.files import PreparedUpload
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +40,8 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
     assert uow.profiles is not None
     assert uow.company_contacts is not None
     assert uow.users is not None
+    assert uow.user_contact_channels is not None
+    assert uow.user_notification_preferences is not None
     user_auth_accounts = getattr(uow, "user_auth_accounts", None)
     notifications_repo = getattr(uow, "notifications", None)
     after_commit_hook_registrar = getattr(uow, "add_after_commit_hook", None)
@@ -55,6 +58,11 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
         file_service=file_service,
         keycloak_admin=KeycloakAdminService(),
         notifications=(NotificationService(notifications_repo) if notifications_repo is not None else None),
+        notification_preferences=UserNotificationPreferencesService(
+            uow.user_contact_channels,
+            uow.user_notification_preferences,
+            profiles=uow.profiles,
+        ),
         after_commit_hook_registrar=after_commit_hook_registrar,
     )
 

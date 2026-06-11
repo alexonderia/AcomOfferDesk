@@ -63,7 +63,10 @@ async def handle_start(event: MessageCreated) -> None:
     if result.action == "register":
         keyboard = keyboards.registration_keyboard(result.registration_url)
         attachments = [keyboard] if keyboard is not None else None
-        await event.message.answer(messages.REGISTER_INTRO, attachments=attachments)
+        await event.message.answer(
+            messages.format_register_intro(existing_account_link_token=result.existing_account_link_token),
+            attachments=attachments,
+        )
         return
 
     if result.action == "open_requests":

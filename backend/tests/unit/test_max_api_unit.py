@@ -4,12 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_uow
 from app.api.v1 import router as v1_router
 from app.core.config import settings
+from app.domain.exceptions import Forbidden
 from app.services.max_start import MaxStartResult
 
 
@@ -42,8 +44,14 @@ def max_api_client(monkeypatch: pytest.MonkeyPatch):
 def test_max_start_returns_403_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "max_bot_enabled", False)
     app = FastAPI()
+
+    @app.exception_handler(Forbidden)
+    async def forbidden_handler(request: Request, exc: Forbidden) -> JSONResponse:
+        _ = request
+        return JSONResponse(status_code=403, content={"detail": str(exc) or "Forbidden"})
+
     app.include_router(v1_router)
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=False)
 
     response = client.post("/api/v1/max/start", json={"max_user_id": "123"})
 
@@ -52,7 +60,7 @@ def test_max_start_returns_403_when_disabled(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_max_start_success(max_api_client, monkeypatch: pytest.MonkeyPatch) -> None:
     client, _dummy_uow = max_api_client
-    expected = MaxStartResult(action="pending", registration_url=None, requests=[])
+    expected = MaxStartResult(action="pending", registration_url=None, existing_account_link_token=None, requests=[])
     monkeypatch.setattr(
         "app.api.v1.max.MaxStartService.handle_start",
         AsyncMock(return_value=expected),
@@ -61,7 +69,12 @@ def test_max_start_success(max_api_client, monkeypatch: pytest.MonkeyPatch) -> N
     response = client.post("/api/v1/max/start", json={"max_user_id": "123"})
 
     assert response.status_code == 200
-    assert response.json() == {"action": "pending", "registration_url": None, "requests": []}
+    assert response.json() == {
+        "action": "pending",
+        "registration_url": None,
+        "existing_account_link_token": None,
+        "requests": [],
+    }
 
 
 def test_max_start_invalid_payload_returns_422(max_api_client) -> None:

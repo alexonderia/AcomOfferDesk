@@ -19,6 +19,14 @@ class MaxRegistrationLinkExpiredError(ValueError):
     pass
 
 
+class MaxExistingLinkInvalidError(ValueError):
+    pass
+
+
+class MaxExistingLinkExpiredError(ValueError):
+    pass
+
+
 def create_max_registration_token(*, max_user_id: str) -> str:
     if not settings.max_link_secret:
         raise Conflict("MAX links are not configured")
@@ -28,6 +36,13 @@ def create_max_registration_token(*, max_user_id: str) -> str:
         ttl_seconds=settings.max_register_ttl_seconds,
     )
     return MaxShortcodeCodec.encode(payload, secret=settings.max_link_secret)
+
+
+def create_max_existing_link_token(*, max_user_id: str) -> str:
+    normalized_id = max_user_id.strip()
+    if not normalized_id:
+        raise Conflict("MAX user id is required")
+    return normalized_id
 
 
 def build_keycloak_max_registration_link(
@@ -71,4 +86,37 @@ async def resolve_max_registration_token(token: str) -> str:
         raise MaxRegistrationLinkInvalidError("Invalid token")
     if shortcode_payload.exp < now:
         raise MaxRegistrationLinkExpiredError("Link expired")
+    return shortcode_payload.max_user_id
+
+
+async def resolve_max_existing_link_token(token: str) -> str:
+    normalized_token = token.strip()
+    if normalized_token:
+        return normalized_token
+
+    if not settings.max_link_secret:
+        raise MaxExistingLinkInvalidError("Invalid token")
+
+    now = int(time.time())
+    try:
+        payload = decode_max_token(token, settings.max_link_secret)
+    except ValueError:
+        payload = None
+
+    if payload is not None:
+        if payload.purpose != "max_link_existing":
+            raise MaxExistingLinkInvalidError("Invalid token")
+        if payload.exp < now:
+            raise MaxExistingLinkExpiredError("Link expired")
+        return payload.max_user_id
+
+    try:
+        shortcode_payload = MaxShortcodeCodec.decode(token, secret=settings.max_link_secret)
+    except ValueError as exc:
+        raise MaxExistingLinkInvalidError("Invalid token") from exc
+
+    if shortcode_payload.purpose != "max_link_existing":
+        raise MaxExistingLinkInvalidError("Invalid token")
+    if shortcode_payload.exp < now:
+        raise MaxExistingLinkExpiredError("Link expired")
     return shortcode_payload.max_user_id

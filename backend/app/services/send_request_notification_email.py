@@ -25,6 +25,7 @@ from app.services.email_delivery_events import (
 )
 from app.services.files import FileService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.email_delivery import generate_correlation_id
 
 MAX_EMAIL_ATTACHMENT_SIZE_MB = 20
@@ -58,6 +59,7 @@ class SendRequestNotificationEmailUseCase:
         app_url: str,
         file_service: FileService | None = None,
         presentation_attachment_service: NormativeEmailAttachmentService | None = None,
+        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar=None,
     ) -> None:
         self._request_repository = request_repository
@@ -66,6 +68,7 @@ class SendRequestNotificationEmailUseCase:
         self._app_url = app_url.rstrip("/")
         self._file_service = file_service or FileService()
         self._presentation_attachment_service = presentation_attachment_service
+        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
 
     async def execute(
@@ -255,6 +258,15 @@ class SendRequestNotificationEmailUseCase:
             if contractor.user_id in hidden_contractor_id_set:
                 hidden_emails.add(normalized_email)
                 continue
+            if self._notification_preferences is not None:
+                is_enabled = await self._notification_preferences.is_channel_enabled(
+                    user_id=contractor.user_id,
+                    channel_type="email",
+                    notification_type="request",
+                )
+                if not is_enabled:
+                    hidden_emails.add(normalized_email)
+                    continue
             recipient = NotificationRecipient(
                 email=normalized_email,
                 user_login=contractor.user_id,

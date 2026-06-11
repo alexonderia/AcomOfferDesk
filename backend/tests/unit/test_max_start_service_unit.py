@@ -28,6 +28,7 @@ async def test_new_max_user_returns_register(service: MaxStartService) -> None:
 
     assert result.action == "register"
     assert result.registration_url is not None
+    assert result.existing_account_link_token == "123"
     assert "max_token=" in result.registration_url
 
 

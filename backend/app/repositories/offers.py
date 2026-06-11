@@ -172,6 +172,50 @@ class OfferRepository:
         result = await self._session.execute(stmt)
         return [str(value).strip() for value in result.scalars().all() if str(value).strip()]
 
+    async def list_contractor_max_recipients_for_request(
+        self,
+        *,
+        request_id: str,
+        contractor_role_id: int,
+    ) -> list[tuple[str, str]]:
+        stmt = (
+            select(User.id, UserAuthAccount.external_subject_id)
+            .select_from(Offer)
+            .join(User, User.id == Offer.id_user)
+            .join(
+                UserAuthAccount,
+                and_(
+                    UserAuthAccount.id_user == User.id,
+                    UserAuthAccount.provider == "max",
+                    UserAuthAccount.is_active.is_(True),
+                ),
+            )
+            .join(
+                UserContactChannel,
+                and_(
+                    UserContactChannel.id_user == User.id,
+                    UserContactChannel.channel_type == "max",
+                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
+                    UserContactChannel.is_active.is_(True),
+                    UserContactChannel.is_verified.is_(True),
+                ),
+            )
+            .where(Offer.id_request == request_id)
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .distinct()
+            .order_by(User.id.asc(), UserAuthAccount.external_subject_id.asc())
+        )
+        result = await self._session.execute(stmt)
+
+        recipients: list[tuple[str, str]] = []
+        for user_id, value in result.all():
+            normalized = str(value).strip()
+            if not normalized:
+                continue
+            recipients.append((user_id, normalized))
+        return recipients
+
     async def is_file_linked(self, *, offer_id: int, file_id: int) -> bool:
         stmt = select(OfferFile.id).where(OfferFile.id_offer == offer_id, OfferFile.id == file_id)
         result = await self._session.execute(stmt)

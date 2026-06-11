@@ -110,6 +110,13 @@ async def notify_offer_status_finalized(*, max_user_id: str) -> None:
     )
 
 
+async def notify_account_linked(max_user_id: str) -> None:
+    await _notify(
+        max_user_id=max_user_id,
+        text="MAX successfully linked to your AcomOfferDesk account.",
+    )
+
+
 def _build_web_service_link() -> str:
     public_base_url = _resolve_max_public_base_url()
     if public_base_url is None:

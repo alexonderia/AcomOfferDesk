@@ -7,7 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    max_bot_token: str = Field(validation_alias="MAX_BOT_TOKEN")
+    max_bot_enabled: bool = Field(default=False, validation_alias="MAX_BOT_ENABLED")
+    max_bot_token: str | None = Field(default=None, validation_alias="MAX_BOT_TOKEN")
     backend_base_url: str = Field(validation_alias="BACKEND_BASE_URL")
     public_backend_base_url: str | None = Field(default=None, validation_alias="PUBLIC_BACKEND_BASE_URL")
     max_bot_timeout_seconds: float = Field(default=10.0, validation_alias="MAX_BOT_TIMEOUT_SECONDS")
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_required(self) -> "Settings":
-        if not (self.max_bot_token or "").strip():
+        if self.max_bot_enabled and not (self.max_bot_token or "").strip():
             raise ValueError("MAX_BOT_TOKEN must not be empty")
         if not (self.backend_base_url or "").strip():
             raise ValueError("BACKEND_BASE_URL must not be empty")

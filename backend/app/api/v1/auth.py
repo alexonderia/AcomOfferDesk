@@ -33,7 +33,6 @@ from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Conflict, Forbidden, Unauthorized
 from app.domain.policies import UserPolicy
 from app.models.auth_models import UserAuthAccount
-from app.repositories.max_compat import max_subject_value
 from app.repositories.telegram_compat import telegram_subject_value
 from app.schemas.auth import (
     LoginResponse,
@@ -51,6 +50,7 @@ from app.services.keycloak_oidc import (
 )
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.max_notifications import notify_registration_completed as notify_max_registration_completed
+from app.services.max_account_linking import link_max_account
 from app.services.max_registration_links import (
     MaxRegistrationLinkExpiredError,
     MaxRegistrationLinkInvalidError,
@@ -206,37 +206,12 @@ async def _link_max_registration_context(
     user_id: str,
     max_user_id: str,
 ) -> None:
-    subject = max_subject_value(max_user_id)
-    linked_user = await uow.users.get_by_max_user_id(max_user_id)
-    if linked_user is not None and linked_user.id != user_id:
-        raise Conflict("MAX account is already linked to another user")
-
-    max_account = await uow.user_auth_accounts.get_by_user_provider(
+    await link_max_account(
+        user_auth_accounts=uow.user_auth_accounts,
+        user_contact_channels=uow.user_contact_channels,
         user_id=user_id,
-        provider="max",
-        include_inactive=True,
-    )
-    if max_account is None:
-        await uow.user_auth_accounts.add(
-            UserAuthAccount(
-                id_user=user_id,
-                provider="max",
-                external_subject_id=subject,
-                external_username=None,
-                external_email=None,
-                is_active=True,
-            )
-        )
-    else:
-        max_account.external_subject_id = subject
-        max_account.is_active = True
-
-    await uow.user_contact_channels.upsert_channel(
-        user_id=user_id,
-        channel_type="max",
-        channel_value=subject,
-        is_verified=False,
-        is_primary=True,
+        max_user_id=max_user_id,
+        is_verified=True,
     )
 
 
@@ -307,7 +282,7 @@ async def request_email_verification(
 ) -> EmailVerificationActionResponse:
     UserPolicy.ensure_can_manage_own_profile(current_user)
     async with uow:
-        service = EmailVerificationService(uow.profiles)
+        service = EmailVerificationService(uow.profiles, uow.user_contact_channels)
         result = await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
 
     if result == "same_email":
@@ -329,7 +304,7 @@ async def verify_email(
     uow: UnitOfWork = Depends(get_uow),
 ) -> EmailVerificationActionResponse:
     async with uow:
-        service = EmailVerificationService(uow.profiles)
+        service = EmailVerificationService(uow.profiles, uow.user_contact_channels)
         updated = await service.confirm_profile_verification(token=token)
 
     if updated:
@@ -436,8 +411,11 @@ async def begin_keycloak_registration(
             )
 
         async with uow:
-            linked_user = await uow.users.get_by_max_user_id(max_registration_id)
-        if linked_user is not None:
+            conflicting_binding = await uow.user_auth_accounts.get_conflicting_subject(
+                provider="max",
+                subject=max_registration_id,
+            )
+        if conflicting_binding is not None:
             return RedirectResponse(
                 url=_build_registration_link_status_url(web_base, reason="already_registered"),
                 status_code=status.HTTP_302_FOUND,

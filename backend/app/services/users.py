@@ -43,6 +43,7 @@ from app.services.max_notifications import (
     notify_access_closed as notify_max_access_closed,
     notify_access_opened as notify_max_access_opened,
 )
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
@@ -1674,6 +1675,7 @@ class UserStatusService:
         profiles: ProfileRepository,
         user_auth_accounts: UserAuthAccountRepository | None = None,
         max_users: MaxUserRepository | None = None,
+        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
         *,
@@ -1684,6 +1686,7 @@ class UserStatusService:
         self._max_users = max_users
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
+        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
@@ -1842,23 +1845,41 @@ class UserStatusService:
                 await notify_tg_access_closed(notify_tg_id)
 
         if settings.max_bot_enabled and linked_max_user_id is not None and max_user is not None:
-            if user.status == "active" and max_user.status == "approved":
-                await notify_max_access_opened(linked_max_user_id)
-            elif status_changed:
-                await notify_max_access_closed(linked_max_user_id)
+            max_system_enabled = True
+            if self._notification_preferences is not None:
+                max_system_enabled = await self._notification_preferences.is_channel_enabled(
+                    user_id=user.id,
+                    channel_type="max",
+                    notification_type="system",
+                )
+            if max_system_enabled:
+                if user.status == "active" and max_user.status == "approved":
+                    await notify_max_access_opened(linked_max_user_id)
+                elif status_changed:
+                    await notify_max_access_closed(linked_max_user_id)
 
         if status_changed and user.id_role == settings.contractor_role_id:
             if notify_email is None:
                 contractor_email_notification_reason = "missing_email"
             else:
-                contractor_email_notification_queued = await notify_contractor_status_changed_email(
-                    to_email=notify_email,
-                    user_status=user.status,
-                    recipient_user_id=user.id,
-                    initiator_user_id=current_user.user_id,
-                )
-                if not contractor_email_notification_queued:
-                    contractor_email_notification_reason = "status_not_supported_for_email"
+                email_system_enabled = True
+                if self._notification_preferences is not None:
+                    email_system_enabled = await self._notification_preferences.is_channel_enabled(
+                        user_id=user.id,
+                        channel_type="email",
+                        notification_type="system",
+                    )
+                if not email_system_enabled:
+                    contractor_email_notification_reason = "disabled_by_user"
+                else:
+                    contractor_email_notification_queued = await notify_contractor_status_changed_email(
+                        to_email=notify_email,
+                        user_status=user.status,
+                        recipient_user_id=user.id,
+                        initiator_user_id=current_user.user_id,
+                    )
+                    if not contractor_email_notification_queued:
+                        contractor_email_notification_reason = "status_not_supported_for_email"
 
         if status_changed:
             event = build_process_notification_event(

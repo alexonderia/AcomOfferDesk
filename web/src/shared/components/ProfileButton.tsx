@@ -1,5 +1,6 @@
-import { zodResolver } from '@hookform/resolvers/zod';
+import EditOutlined from '@mui/icons-material/EditOutlined';
 import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -8,30 +9,39 @@ import {
   CircularProgress,
   Dialog,
   DialogContent,
+  Divider,
+  FormControlLabel,
   Stack,
+  Switch,
   Tooltip,
   Typography
 } from '@mui/material';
-import { alpha, type Theme, useTheme } from '@mui/material/styles';
-import { useLiveValidatedForm } from '@shared/lib/forms';
-import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
-import { z } from 'zod';
+import { type Theme, useTheme } from '@mui/material/styles';
 import { useAuth } from '@app/providers/AuthProvider';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor } from '@entities/unavailability';
+import { ActionButton } from '@shared/components/ActionButton';
+import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
+import { requestEmailVerification } from '@shared/api/auth/emailVerification';
 import {
   getCurrentUserProfile,
+  getMyNotificationPreferences,
+  linkMyMaxAccount,
   setMyUnavailabilityPeriod,
+  type CurrentUserProfile,
+  type NotificationPreferences,
+  type NotificationPreferencesMode,
   updateMyCompanyContacts,
   updateMyCredentials,
+  updateMyNotificationPreferences,
   updateMyProfile
 } from '@shared/api/users/getCurrentUserProfile';
-import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile';
 import { ROLE } from '@shared/constants/roles';
-import { requestEmailVerification } from '@shared/api/auth/emailVerification';
-import { ActionButton } from '@shared/components/ActionButton';
-
+import { useLiveValidatedForm } from '@shared/lib/forms';
+import { useSystemToasts } from '@shared/ui/toasts';
+import { z } from 'zod';
 
 const fallbackText = 'Не указано';
+const defaultDbPlaceholder = 'не указано';
 
 const dialogPaperSx = (theme: Theme) => ({
   borderRadius: 2,
@@ -40,7 +50,10 @@ const dialogPaperSx = (theme: Theme) => ({
   backgroundColor: theme.palette.background.default,
   maxHeight: 'min(760px, calc(100vh - 32px))',
   overflow: 'hidden',
-  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
+  boxShadow:
+    theme.palette.mode === 'light'
+      ? '0 24px 80px rgba(15, 23, 42, 0.18)'
+      : '0 24px 80px rgba(0, 0, 0, 0.5)'
 });
 
 const dialogContentSx = {
@@ -60,7 +73,66 @@ const inputFieldSx = {
   }
 };
 
-const defaultDbPlaceholder = 'не указано';
+const smallEditButtonSx = {
+  borderRadius: 1,
+  textTransform: 'none',
+  minWidth: 0,
+  px: 1.25
+};
+
+const primaryButtonSx = {
+  borderRadius: 1,
+  textTransform: 'none',
+  py: 1.1,
+  boxShadow: 'none'
+};
+
+const submitButtonSx = {
+  borderRadius: 1,
+  textTransform: 'none',
+  py: 1.25,
+  fontSize: 16,
+  fontWeight: 700,
+  boxShadow: 'none'
+};
+
+const notificationSwitchSx = {
+  m: 0,
+  justifyContent: 'space-between',
+  width: '100%',
+  '& .MuiFormControlLabel-label': {
+    fontSize: 15
+  },
+  '& .MuiSwitch-root': {
+    width: 46,
+    height: 28,
+    p: 0
+  },
+  '& .MuiSwitch-switchBase': {
+    p: '4px',
+    '&.Mui-checked': {
+      transform: 'translateX(18px)',
+      color: '#fff',
+      '& + .MuiSwitch-track': {
+        opacity: 1,
+        backgroundColor: 'primary.main',
+        borderColor: 'primary.main'
+      }
+    }
+  },
+  '& .MuiSwitch-thumb': {
+    width: 20,
+    height: 20,
+    boxShadow: 'none'
+  },
+  '& .MuiSwitch-track': {
+    borderRadius: '999px',
+    opacity: 1,
+    backgroundColor: 'action.selected',
+    border: '1px solid',
+    borderColor: 'divider'
+  }
+};
 
 const isPlaceholderValue = (value: string) => value.trim().toLowerCase() === defaultDbPlaceholder;
 
@@ -83,15 +155,16 @@ const passwordSchema = z
     path: ['confirmPassword']
   });
 
-// profiles: full_name и phone обязательные, mail имеет default в БД
 const profileSchema = z.object({
   full_name: z.string().trim().min(1, 'Введите ФИО'),
   phone: z.string().trim().min(1, 'Введите телефон'),
   mail: optionalEmail
 });
 
-// company_contacts: company_name, inn, phone обязательные,
-// mail/address/note имеют default в БД
+const maxLinkSchema = z.object({
+  code: z.string().trim().min(1, 'Введите MAX ID')
+});
+
 const companySchema = z.object({
   inn: z.string().trim().min(1, 'Введите ИНН'),
   company_name: z.string().trim().min(1, 'Введите наименование'),
@@ -114,12 +187,22 @@ const unavailabilitySchema = z
 
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 type ProfileFormValues = z.infer<typeof profileSchema>;
+type MaxLinkFormValues = z.infer<typeof maxLinkSchema>;
 type CompanyFormValues = z.infer<typeof companySchema>;
 type UnavailabilityFormValues = z.infer<typeof unavailabilitySchema>;
 
+type ProfileButtonProps = {
+  iconOnly?: boolean;
+  sidebar?: boolean;
+};
+
 const DataRow = ({ label, value }: { label: string; value: string | null }) => (
-  <Stack direction="row" spacing={2}>
-    <Typography sx={{ width: 170, color: 'text.primary' }}>{label}</Typography>
+  <Stack
+    direction={{ xs: 'column', sm: 'row' }}
+    spacing={{ xs: 0.5, sm: 2 }}
+    alignItems={{ xs: 'flex-start', sm: 'center' }}
+  >
+    <Typography sx={{ width: { sm: 170 }, color: 'text.primary' }}>{label}</Typography>
     <Typography color={value ? 'text.primary' : 'text.secondary'}>{value ?? fallbackText}</Typography>
   </Stack>
 );
@@ -134,23 +217,20 @@ const normalizeOptional = (value: string) => {
 
 const sanitizeDefaultValue = (value: string | null) => (value && isPlaceholderValue(value) ? '' : value ?? '');
 
-type ProfileButtonProps = {
-  iconOnly?: boolean;
-  sidebar?: boolean;
-};
-
 export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButtonProps) => {
   const theme = useTheme();
   const { session } = useAuth();
+  const { showSuccessToast, showSystemToast } = useSystemToasts();
   const [open, setOpen] = useState(false);
   const [openPassword, setOpenPassword] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
   const [openUnavailability, setOpenUnavailability] = useState(false);
   const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSavingNotificationPreferences, setIsSavingNotificationPreferences] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
 
   const {
     register: registerPassword,
@@ -180,6 +260,16 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   } = useLiveValidatedForm<CompanyFormValues>({
     resolver: zodResolver(companySchema),
     defaultValues: { inn: '', company_name: '', company_phone: '', company_mail: '', address: '', note: '' }
+  });
+
+  const {
+    register: registerMaxLink,
+    handleSubmit: handleMaxLinkSubmit,
+    formState: { errors: maxLinkErrors, isSubmitting: isSubmittingMaxLink },
+    reset: resetMaxLink
+  } = useLiveValidatedForm<MaxLinkFormValues>({
+    resolver: zodResolver(maxLinkSchema),
+    defaultValues: { code: '' }
   });
 
   const {
@@ -219,15 +309,17 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       started_at: '',
       ended_at: ''
     });
-  }, [profile, resetCompany, resetProfile, resetUnavailability]);
+    resetMaxLink({ code: '' });
+  }, [profile, resetCompany, resetMaxLink, resetProfile, resetUnavailability]);
 
   const loadProfile = async () => {
     setIsLoading(true);
     setError(null);
-    setInfo(null);
     try {
       const data = await getCurrentUserProfile();
+      const preferences = await getMyNotificationPreferences();
       setProfile(data);
+      setNotificationPreferences(preferences);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить профиль');
     } finally {
@@ -244,6 +336,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   };
 
   const showCompanyInfo = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
+  const showContractorNotificationSettings = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
   const canEditCredentials = Boolean(profile?.actions.manage_credentials) && session?.authProvider === 'legacy';
   const canEditProfile = Boolean(profile?.actions.manage_own_profile);
   const canEditCompany = Boolean(profile?.actions.manage_company_contacts);
@@ -251,7 +344,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
 
   const onSubmitPassword = async (values: PasswordFormValues) => {
     setError(null);
-    setInfo(null);
     try {
       const nextProfile = await updateMyCredentials({
         current_password: values.oldPassword.trim(),
@@ -267,15 +359,12 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
 
   const onSubmitProfile = async (values: ProfileFormValues) => {
     setError(null);
-    setInfo(null);
     try {
       const normalizedMail = normalizeOptional(values.mail);
       const currentMail = normalizeOptional(profile?.mail ?? '');
       const normalizedMailLower = normalizedMail?.toLowerCase();
       const currentMailLower = currentMail?.toLowerCase() ?? '';
-      const shouldRequestVerification =
-        Boolean(normalizedMailLower) &&
-        normalizedMailLower !== currentMailLower;
+      const shouldRequestVerification = Boolean(normalizedMailLower) && normalizedMailLower !== currentMailLower;
       const nextProfile = await updateMyProfile({
         full_name: values.full_name.trim(),
         phone: values.phone.trim()
@@ -288,7 +377,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       setProfile(nextProfile);
       setOpenProfile(false);
       if (verificationDetail) {
-        setInfo(verificationDetail);
+        showSystemToast({ severity: 'info', message: verificationDetail });
       }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить личные данные');
@@ -297,7 +386,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
 
   const onSubmitCompany = async (values: CompanyFormValues) => {
     setError(null);
-    setInfo(null);
     try {
       const nextProfile = await updateMyCompanyContacts({
         inn: values.inn.trim(),
@@ -314,9 +402,63 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
     }
   };
 
+  const onSubmitMaxLink = async (values: MaxLinkFormValues) => {
+    setError(null);
+    try {
+      const nextProfile = await linkMyMaxAccount({
+        code: values.code.trim()
+      });
+      const nextPreferences = await getMyNotificationPreferences();
+      setProfile(nextProfile);
+      setNotificationPreferences(nextPreferences);
+      resetMaxLink({ code: '' });
+      showSuccessToast('MAX привязан к вашему аккаунту.');
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Не удалось привязать MAX');
+    }
+  };
+
+  const saveNotificationMode = async (mode: NotificationPreferencesMode) => {
+    setError(null);
+    setIsSavingNotificationPreferences(true);
+    try {
+      const nextPreferences = await updateMyNotificationPreferences({ mode });
+      setNotificationPreferences(nextPreferences);
+      showSuccessToast('Настройки уведомлений сохранены.');
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Не удалось сохранить настройки уведомлений');
+    } finally {
+      setIsSavingNotificationPreferences(false);
+    }
+  };
+
+  const handleNotificationChannelsChange = (channel: 'email' | 'max', checked: boolean) => {
+    if (!notificationPreferences) {
+      return;
+    }
+
+    const currentEmailEnabled =
+      notificationPreferences.mode === 'all' || notificationPreferences.mode === 'email_only';
+    const currentMaxEnabled =
+      notificationPreferences.mode === 'all' || notificationPreferences.mode === 'max_only';
+
+    const nextEmailEnabled = channel === 'email' ? checked : currentEmailEnabled;
+    const nextMaxEnabled = channel === 'max' ? checked : currentMaxEnabled;
+
+    let nextMode: NotificationPreferencesMode = 'none';
+    if (nextEmailEnabled && nextMaxEnabled) {
+      nextMode = 'all';
+    } else if (nextEmailEnabled) {
+      nextMode = 'email_only';
+    } else if (nextMaxEnabled) {
+      nextMode = 'max_only';
+    }
+
+    void saveNotificationMode(nextMode);
+  };
+
   const onSubmitUnavailability = async (values: UnavailabilityFormValues) => {
     setError(null);
-    setInfo(null);
     try {
       const nextProfile = await setMyUnavailabilityPeriod({
         status: values.status,
@@ -329,6 +471,12 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить нерабочий период');
     }
   };
+
+  const isEmailNotificationsEnabled =
+    notificationPreferences?.mode === 'all' || notificationPreferences?.mode === 'email_only';
+  const isMaxNotificationsEnabled =
+    notificationPreferences?.mode === 'all' || notificationPreferences?.mode === 'max_only';
+
   return (
     <>
       {sidebar ? (
@@ -367,7 +515,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                   transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
                 }}
               >
-                {'Профиль'}
+                Профиль
               </Typography>
             </ActionButton>
           </Box>
@@ -397,20 +545,12 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
           </Box>
         </Tooltip>
       ) : (
-      <Button variant="outlined" onClick={() => void openDialog()} startIcon={<PersonOutlineRounded fontSize="small" />} sx={{ minWidth: 124 }}>
-        Профиль
-      </Button>
+        <Button variant="outlined" onClick={() => void openDialog()} startIcon={<PersonOutlineRounded fontSize="small" />} sx={{ minWidth: 124 }}>
+          Профиль
+        </Button>
       )}
 
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: dialogPaperSx
-        }}
-      >
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: dialogPaperSx }}>
         <DialogContent sx={dialogContentSx}>
           {isLoading ? (
             <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 240 }}>
@@ -419,30 +559,45 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
           ) : (
             <Stack spacing={2}>
               {error ? <Alert severity="error">{error}</Alert> : null}
-              {info ? <Alert severity="info">{info}</Alert> : null}
-              
+
               <Stack spacing={1.5}>
-                <Typography variant="h5" fontWeight={600} lineHeight={1}>
-                  Личные данные
-                </Typography>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1}
+                  alignItems={{ xs: 'flex-start', sm: 'center' }}
+                  justifyContent="space-between"
+                >
+                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
+                    Личные данные
+                  </Typography>
+                  <Stack direction="row" spacing={1}>
+                    {canEditCredentials ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<EditOutlined fontSize="small" />}
+                        sx={smallEditButtonSx}
+                        onClick={() => setOpenPassword(true)}
+                      />
+                    ) : null}
+                    {canEditProfile ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<EditOutlined fontSize="small" />}
+                        sx={smallEditButtonSx}
+                        onClick={() => setOpenProfile(true)}
+                      />
+                    ) : null}
+                  </Stack>
+                </Stack>
                 <DataRow label="Логин" value={session?.login ?? profile?.userId ?? null} />
                 <DataRow label="ФИО" value={profile?.fullName ?? null} />
                 <DataRow label="Телефон" value={profile?.phone ?? null} />
                 <DataRow label="E-mail" value={profile?.mail ?? null} />
               </Stack>
 
-              <Stack spacing={1.25}>
-                {canEditCredentials ? (
-                  <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenPassword(true)}>
-                    Изменить данные входа
-                  </Button>
-                ) : null}
-                {canEditProfile ? (
-                  <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenProfile(true)}>
-                    Изменить данные для связи
-                  </Button>
-                ) : null}
-              </Stack>
+              {showCompanyInfo ? <Divider /> : null}
 
               {canSetUnavailability ? (
                 <Stack spacing={1.5}>
@@ -482,30 +637,94 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
 
               {showCompanyInfo ? (
                 <Stack spacing={1.5}>
-                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
-                    Данные компании
-                  </Typography>
-                  <Box
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      p: 1.5,
-                      backgroundColor: 'rgba(255,255,255,0.24)'
-                    }}
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    justifyContent="space-between"
                   >
-                    <DataRow label="ИНН" value={profile?.company.inn ?? null} />
-                    <DataRow label="Наименование" value={profile?.company.companyName ?? null} />
-                    <DataRow label="Телефон" value={profile?.company.phone ?? null} />
-                    <DataRow label="E-mail" value={profile?.company.mail ?? null} />
-                    <DataRow label="Адрес" value={profile?.company.address ?? null} />
-                    <DataRow label="Доп. информация" value={profile?.company.note ?? null} />
-                  </Box>
-                  {canEditCompany ? (
-                    <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenCompany(true)}>
-                      Изменить данные компании
-                    </Button>
-                  ) : null}
+                    <Typography variant="h5" fontWeight={600} lineHeight={1}>
+                      Данные компании
+                    </Typography>
+                    {canEditCompany ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<EditOutlined fontSize="small" />}
+                        sx={smallEditButtonSx}
+                        onClick={() => setOpenCompany(true)}
+                      />
+                    ) : null}
+                  </Stack>
+                  <DataRow label="ИНН" value={profile?.company.inn ?? null} />
+                  <DataRow label="Наименование" value={profile?.company.companyName ?? null} />
+                  <DataRow label="Телефон" value={profile?.company.phone ?? null} />
+                  <DataRow label="E-mail" value={profile?.company.mail ?? null} />
+                  <DataRow label="Адрес" value={profile?.company.address ?? null} />
+                  <DataRow label="Доп. информация" value={profile?.company.note ?? null} />
+                </Stack>
+              ) : null}
+
+              {canEditProfile && showContractorNotificationSettings ? <Divider /> : null}
+
+              {canEditProfile && showContractorNotificationSettings ? (
+                <Stack spacing={1.5} component="form" onSubmit={handleMaxLinkSubmit((values) => void onSubmitMaxLink(values))}>
+                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
+                    Привязка MAX
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    По команде `/start` в MAX-боте можно узнать свой MAX ID и по нему привязать аккаунт для уведомлений.
+                  </Typography>
+                  <ValidatedTextField
+                    label="MAX ID"
+                    fieldName="code"
+                    registration={registerMaxLink('code')}
+                    error={Boolean(maxLinkErrors.code)}
+                    helperText={maxLinkErrors.code?.message}
+                    sx={inputFieldSx}
+                  />
+                  <Button type="submit" variant="contained" sx={primaryButtonSx} disabled={isSubmittingMaxLink}>
+                    Привязать MAX
+                  </Button>
+                </Stack>
+              ) : null}
+
+              {canEditProfile && showContractorNotificationSettings && notificationPreferences ? <Divider /> : null}
+
+              {canEditProfile && showContractorNotificationSettings && notificationPreferences ? (
+                <Stack spacing={1.5}>
+                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
+                    Уведомления
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Выберите, как получать уведомления.
+                  </Typography>
+                  <Stack spacing={0.5}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={Boolean(isEmailNotificationsEnabled)}
+                          onChange={(_, checked) => handleNotificationChannelsChange('email', checked)}
+                          disabled={!notificationPreferences.emailAvailable || isSavingNotificationPreferences}
+                        />
+                      }
+                      label={`Email${notificationPreferences?.email ? `: ${notificationPreferences.email}` : ''}`}
+                      labelPlacement="start"
+                      sx={notificationSwitchSx}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={Boolean(isMaxNotificationsEnabled)}
+                          onChange={(_, checked) => handleNotificationChannelsChange('max', checked)}
+                          disabled={!notificationPreferences.maxAvailable || isSavingNotificationPreferences}
+                        />
+                      }
+                      label={`MAX${notificationPreferences?.maxUserId ? `: ${notificationPreferences.maxUserId}` : ''}`}
+                      labelPlacement="start"
+                      sx={notificationSwitchSx}
+                    />
+                  </Stack>
                 </Stack>
               ) : null}
             </Stack>
@@ -546,13 +765,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
               helperText={passwordErrors.confirmPassword?.message}
               sx={inputFieldSx}
             />
-            <Button
-              type="submit"
-              variant="contained"
-              fullWidth
-              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
-              disabled={isSubmittingPassword}
-            >
+            <Button type="submit" variant="contained" fullWidth sx={submitButtonSx} disabled={isSubmittingPassword}>
               Сохранить новый пароль
             </Button>
           </Stack>
@@ -589,13 +802,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
               helperText={profileErrors.mail?.message}
               sx={inputFieldSx}
             />
-            <Button
-              type="submit"
-              variant="contained"
-              fullWidth
-              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
-              disabled={isSubmittingProfile}
-            >
+            <Button type="submit" variant="contained" fullWidth sx={submitButtonSx} disabled={isSubmittingProfile}>
               Сохранить изменения
             </Button>
           </Stack>
@@ -658,13 +865,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
               helperText={companyErrors.note?.message}
               sx={inputFieldSx}
             />
-            <Button
-              type="submit"
-              variant="contained"
-              fullWidth
-              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
-              disabled={isSubmittingCompany}
-            >
+            <Button type="submit" variant="contained" fullWidth sx={submitButtonSx} disabled={isSubmittingCompany}>
               Сохранить изменения
             </Button>
           </Stack>

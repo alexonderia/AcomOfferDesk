@@ -150,6 +150,13 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="LEGACY_TELEGRAM_ENABLED",
     )
+    max_bot_enabled: bool = Field(default=True, validation_alias="MAX_BOT_ENABLED")
+    max_bot_token: str | None = Field(default=None, validation_alias="MAX_BOT_TOKEN")
+    max_bot_public_url: str | None = Field(default=None, validation_alias="MAX_BOT_PUBLIC_URL")
+    max_link_secret: str | None = Field(default=None, validation_alias="MAX_LINK_SECRET")
+    max_register_ttl_seconds: int = Field(default=86400, validation_alias="MAX_REGISTER_TTL_SECONDS")
+    max_auth_ttl_seconds: int = Field(default=600, validation_alias="MAX_AUTH_TTL_SECONDS")
+    max_request_ttl_seconds: int = Field(default=604800, validation_alias="MAX_REQUEST_TTL_SECONDS")
     tg_link_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TG_LINK_SECRET", "TG_LINK_SALT"),
@@ -357,6 +364,12 @@ class Settings(BaseSettings):
             )
         if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
             raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
+
+        if self.max_bot_enabled:
+            if not (self.max_bot_token or "").strip():
+                raise ValueError("MAX_BOT_TOKEN is required when MAX_BOT_ENABLED=true")
+            if not (self.max_link_secret or "").strip():
+                raise ValueError("MAX_LINK_SECRET is required when MAX_BOT_ENABLED=true")
 
         if self.keycloak_enabled and self.app_env == "production":
             if not self.keycloak_public_base_url:

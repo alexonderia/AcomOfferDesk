@@ -96,6 +96,7 @@ export const CreateRequestPage = () => {
   const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
   const [actualNormativeFiles, setActualNormativeFiles] = useState<NormativeFileItem[]>([]);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [showSlowFileCheckHint, setShowSlowFileCheckHint] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requestIdStatus, setRequestIdStatus] = useState<{ available: boolean; detail: string } | null>(null);
   const [isCheckingRequestId, setIsCheckingRequestId] = useState(false);
@@ -293,6 +294,21 @@ export const CreateRequestPage = () => {
     || !hasActualNormativeFiles
     || isLoadingNormativeFiles
     || !normativeFileId;
+
+  useEffect(() => {
+    if (!isSubmittingRequest) {
+      setShowSlowFileCheckHint(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowSlowFileCheckHint(true);
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isSubmittingRequest]);
 
   const handleSubmitForm = async (values: FormValues) => {
     if (!values.normativeFileId) {
@@ -772,6 +788,12 @@ export const CreateRequestPage = () => {
             >
               {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}
             </Button>
+
+            {isSubmittingRequest && showSlowFileCheckHint ? (
+              <Alert severity="info">
+                Проверка тяжёлых файлов может занять пару минут. Пожалуйста, не закрывайте страницу.
+              </Alert>
+            ) : null}
 
             {errorMessage ? (
               <Typography color="error" textAlign="center">

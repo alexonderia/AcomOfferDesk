@@ -20,6 +20,7 @@ from app.models.orm_models import (
     User,
     UserStatusPeriod,
 )
+from app.repositories.max_compat import max_subject_value
 from app.repositories.telegram_compat import build_tg_user, telegram_subject_value
 
 
@@ -70,6 +71,42 @@ class UserRepository:
                     User.tg_user_id,
                     cast(UserAuthAccount.external_subject_id, BigInteger),
                 )
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_linked_max_user_id(self, user_id: str) -> str | None:
+        stmt = (
+            select(UserAuthAccount.external_subject_id)
+            .where(
+                UserAuthAccount.id_user == user_id,
+                UserAuthAccount.provider == "max",
+                UserAuthAccount.is_active.is_(True),
+            )
+            .order_by(UserAuthAccount.id.asc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        value = result.scalar_one_or_none()
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    async def get_by_max_user_id(self, max_user_id: int | str) -> User | None:
+        subject = max_subject_value(max_user_id)
+        stmt = (
+            select(User)
+            .join(
+                UserAuthAccount,
+                and_(
+                    UserAuthAccount.id_user == User.id,
+                    UserAuthAccount.provider == "max",
+                    UserAuthAccount.external_subject_id == subject,
+                    UserAuthAccount.is_active.is_(True),
+                ),
             )
             .limit(1)
         )
@@ -379,6 +416,64 @@ class UserRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_active_approved_contractor_max_id(self, *, user_id: str, contractor_role_id: int) -> str | None:
+        stmt = (
+            select(UserAuthAccount.external_subject_id)
+            .join(User, User.id == UserAuthAccount.id_user)
+            .join(
+                UserContactChannel,
+                and_(
+                    UserContactChannel.id_user == User.id,
+                    UserContactChannel.channel_type == "max",
+                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
+                    UserContactChannel.is_active.is_(True),
+                    UserContactChannel.is_verified.is_(True),
+                ),
+            )
+            .where(User.id == user_id)
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(UserAuthAccount.provider == "max")
+            .where(UserAuthAccount.is_active.is_(True))
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        value = result.scalar_one_or_none()
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    async def list_active_approved_contractor_max_ids(
+        self,
+        *,
+        contractor_role_id: int,
+        exclude_user_ids: list[str] | None = None,
+    ) -> list[str]:
+        stmt = (
+            select(UserAuthAccount.external_subject_id)
+            .join(User, User.id == UserAuthAccount.id_user)
+            .join(
+                UserContactChannel,
+                and_(
+                    UserContactChannel.id_user == User.id,
+                    UserContactChannel.channel_type == "max",
+                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
+                    UserContactChannel.is_active.is_(True),
+                    UserContactChannel.is_verified.is_(True),
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(UserAuthAccount.provider == "max")
+            .where(UserAuthAccount.is_active.is_(True))
+            .order_by(User.id.asc())
+        )
+        if exclude_user_ids:
+            stmt = stmt.where(User.id.not_in(exclude_user_ids))
+        result = await self._session.execute(stmt)
+        return [str(value).strip() for value in result.scalars().all() if str(value).strip()]
 
     async def list_active_approved_contractor_tg_ids(
         self,

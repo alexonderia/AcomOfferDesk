@@ -35,6 +35,11 @@ class TgUser:
     status: str
 
 
+@dataclass(slots=True)
+class MaxUser:
+    id: str
+    status: str
+
 
 class User(Base):
     __tablename__ = "users"

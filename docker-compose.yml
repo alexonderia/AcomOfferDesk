@@ -166,6 +166,20 @@ services:
   #   networks:
   #     - project_net
 
+  max_bot:
+    <<: *runtime-env
+    build:
+      context: ./max_bot
+    container_name: max_bot
+    environment:
+      BACKEND_BASE_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - project_net
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq

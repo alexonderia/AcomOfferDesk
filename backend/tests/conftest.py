@@ -22,6 +22,10 @@ def _ensure_test_env() -> None:
         "S3_ACCESS_KEY": "ci-access-key",
         "S3_SECRET_KEY": "ci-secret-key",
         "S3_BUCKET": "ci-bucket",
+        "MAX_BOT_ENABLED": "true",
+        "MAX_BOT_TOKEN": "ci-test-max-bot-token",
+        "MAX_LINK_SECRET": "ci-test-max-link-secret",
+        "PUBLIC_BACKEND_BASE_URL": "http://localhost:8080",
     }
     for key, value in defaults.items():
         os.environ.setdefault(key, value)

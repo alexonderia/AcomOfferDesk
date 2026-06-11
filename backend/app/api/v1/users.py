@@ -760,6 +760,7 @@ async def update_user_status(
             uow.tg_users,
             uow.profiles,
             uow.user_auth_accounts,
+            uow.max_users,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.update_statuses(

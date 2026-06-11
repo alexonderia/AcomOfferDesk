@@ -23,6 +23,8 @@ from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
+from app.services.max_notifications import notify_new_request as notify_max_new_request
+from app.services.max_notifications import notify_request_status_changed as notify_max_request_status_changed
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
@@ -323,6 +325,18 @@ class RequestService:
                 deadline_at=deadline_at,
             )
 
+        if settings.max_bot_enabled:
+            max_user_ids = await self._users.list_active_approved_contractor_max_ids(
+                contractor_role_id=settings.contractor_role_id,
+                exclude_user_ids=normalized_hidden_contractor_ids,
+            )
+            await notify_max_new_request(
+                max_user_ids=max_user_ids,
+                request_id=request.id,
+                description=description,
+                deadline_at=deadline_at,
+            )
+
         if self._email_notifications is not None:
             await self._email_notifications.notify_new_request(
                 request_id=request.id,
@@ -514,6 +528,13 @@ class RequestService:
                 )
                 for tg_id in tg_ids:
                     await notify_request_status_changed(tg_id=tg_id)
+            if status_changed and settings.max_bot_enabled:
+                max_user_ids = await self._offers.list_contractor_max_ids_for_request(
+                    request_id=request.id,
+                    contractor_role_id=settings.contractor_role_id,
+                )
+                for max_user_id in max_user_ids:
+                    await notify_max_request_status_changed(max_user_id=max_user_id)
             if status_changed:
                 event = build_process_notification_event(
                     event_type="request.status_changed",

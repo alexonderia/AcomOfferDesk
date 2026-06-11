@@ -17,6 +17,7 @@ from app.repositories.feedback import FeedBackRepository
 from app.repositories.notifications import NotificationRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
+from app.repositories.max_users import MaxUserRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
@@ -34,6 +35,7 @@ class UnitOfWork:
         self.profiles: ProfileRepository | None = None
         self.company_contacts: CompanyContactRepository | None = None
         self.tg_users: TgUserRepository | None = None
+        self.max_users: MaxUserRepository | None = None
         self.requests: RequestRepository | None = None
         self.files: FileRepository | None = None
         self.offers: OfferRepository | None = None
@@ -54,6 +56,7 @@ class UnitOfWork:
         self.profiles = ProfileRepository(self.session)
         self.company_contacts = CompanyContactRepository(self.session)
         self.tg_users = TgUserRepository(self.session)
+        self.max_users = MaxUserRepository(self.session)
         self.requests = RequestRepository(self.session)
         self.files = FileRepository(self.session)
         self.offers = OfferRepository(self.session)

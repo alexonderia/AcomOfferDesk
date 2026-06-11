@@ -20,6 +20,7 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.tg_users import TgUserRepository
+from app.repositories.max_compat import max_subject_value
 from app.repositories.telegram_compat import telegram_subject_value
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
@@ -36,6 +37,12 @@ from app.services.registration_admin_notify import (
 )
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.repositories.max_users import MaxUserRepository
+from app.models.orm_models import MaxUser
+from app.services.max_notifications import (
+    notify_access_closed as notify_max_access_closed,
+    notify_access_opened as notify_max_access_opened,
+)
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
@@ -546,7 +553,8 @@ class ContractorRegistrationService:
     async def register_contractor(
         self,
         *,
-        tg_user_id: int,
+        tg_user_id: int | None = None,
+        max_user_id: str | None = None,
         login: str,
         password: str,
         full_name: str,
@@ -558,12 +566,35 @@ class ContractorRegistrationService:
         address: str,
         note: str,
     ) -> User:
-        telegram_subject = telegram_subject_value(tg_user_id)
+        if tg_user_id is not None and max_user_id is not None:
+            raise Conflict("Нельзя одновременно привязать Telegram и MAX")
+        if tg_user_id is None and max_user_id is None:
+            raise Conflict("Не указан канал регистрации")
+
         if await self._users.exists(login):
             raise Conflict("Пользователь уже существует")
-        existing_by_tg = await self._users.get_by_tg_user_id(tg_user_id)
-        if existing_by_tg is not None:
-            raise Conflict("Пользователь Telegram уже привязан")
+
+        messenger_provider: str
+        messenger_subject: str
+        registration_source: str
+        registration_notify_source: str
+
+        if max_user_id is not None:
+            messenger_provider = "max"
+            messenger_subject = max_subject_value(max_user_id)
+            registration_source = "contractor_max"
+            registration_notify_source = "contractor_max_registration"
+            existing_by_messenger = await self._users.get_by_max_user_id(max_user_id)
+            if existing_by_messenger is not None:
+                raise Conflict("Пользователь MAX уже привязан")
+        else:
+            messenger_provider = "telegram"
+            messenger_subject = telegram_subject_value(tg_user_id)  # type: ignore[arg-type]
+            registration_source = "contractor_tg"
+            registration_notify_source = "contractor_tg_registration"
+            existing_by_messenger = await self._users.get_by_tg_user_id(tg_user_id)  # type: ignore[arg-type]
+            if existing_by_messenger is not None:
+                raise Conflict("Пользователь Telegram уже привязан")
 
         user = User(
             id=login,
@@ -592,8 +623,8 @@ class ContractorRegistrationService:
         await self._user_auth_accounts.add(
             UserAuthAccount(
                 id_user=login,
-                provider="telegram",
-                external_subject_id=telegram_subject,
+                provider=messenger_provider,
+                external_subject_id=messenger_subject,
                 external_username=None,
                 external_email=None,
                 is_active=True,
@@ -602,8 +633,8 @@ class ContractorRegistrationService:
         await self._user_contact_channels.add(
             UserContactChannel(
                 id_user=login,
-                channel_type="telegram",
-                channel_value=telegram_subject,
+                channel_type=messenger_provider,
+                channel_value=messenger_subject,
                 is_verified=False,
                 verified_at=None,
                 is_primary=True,
@@ -613,7 +644,7 @@ class ContractorRegistrationService:
         contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
         await notify_new_user_registration(
             RegistrationNotifyContext(
-                source="contractor_tg",
+                source=registration_source,
                 user_id=user.id,
                 role_id=settings.contractor_role_id,
                 role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
@@ -628,7 +659,7 @@ class ContractorRegistrationService:
             user_id=user.id,
             actor_user_id=user.id,
             role_id=settings.contractor_role_id,
-            source="contractor_tg_registration",
+            source=registration_notify_source,
         )
         return user
 
@@ -1642,6 +1673,7 @@ class UserStatusService:
         tg_users: TgUserRepository,
         profiles: ProfileRepository,
         user_auth_accounts: UserAuthAccountRepository | None = None,
+        max_users: MaxUserRepository | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
         *,
@@ -1649,6 +1681,7 @@ class UserStatusService:
     ):
         self._users = users
         self._tg_users = tg_users
+        self._max_users = max_users
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
         self._after_commit_hook_registrar = after_commit_hook_registrar
@@ -1751,6 +1784,15 @@ class UserStatusService:
         if settings.telegram_legacy_enabled and user.tg_user_id is not None:
             tg_user = await self._tg_users.get_by_id(user.tg_user_id)
 
+        max_user: MaxUser | None = None
+        linked_max_user_id: str | None = None
+        if settings.max_bot_enabled and self._max_users is not None:
+            linked_max_user_id = await self._users.get_linked_max_user_id(user.id)
+            if linked_max_user_id is not None:
+                max_user = await self._max_users.get_by_id(linked_max_user_id)
+                if max_user is None:
+                    max_user = MaxUser(id=linked_max_user_id, status="review")
+
         if settings.telegram_legacy_enabled and tg_status is not None:
             if tg_user is None:
                 raise Conflict("У пользователя нет привязанного аккаунта Telegram")
@@ -1761,6 +1803,12 @@ class UserStatusService:
                 await self._tg_users.update_status(tg_user, "disapproved")
             elif user_status == "active":
                 await self._tg_users.update_status(tg_user, "approved")
+
+        if settings.max_bot_enabled and max_user is not None and self._max_users is not None and tg_status is None:
+            if user_status in {"inactive", "blacklist"}:
+                await self._max_users.update_status(max_user, "disapproved")
+            elif user_status == "active":
+                await self._max_users.update_status(max_user, "approved")
 
         old_status = user.status
         status_changed = old_status != user_status
@@ -1792,6 +1840,12 @@ class UserStatusService:
                 await notify_tg_access_opened(notify_tg_id)
             else:
                 await notify_tg_access_closed(notify_tg_id)
+
+        if settings.max_bot_enabled and linked_max_user_id is not None and max_user is not None:
+            if user.status == "active" and max_user.status == "approved":
+                await notify_max_access_opened(linked_max_user_id)
+            elif status_changed:
+                await notify_max_access_closed(linked_max_user_id)
 
         if status_changed and user.id_role == settings.contractor_role_id:
             if notify_email is None:

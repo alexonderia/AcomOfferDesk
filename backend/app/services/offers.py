@@ -33,6 +33,8 @@ from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.users import _bind_keycloak_account
 from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
+from app.services.max_notifications import notify_new_message as notify_max_new_message
+from app.services.max_notifications import notify_offer_status_finalized as notify_max_offer_status_finalized
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
@@ -1010,6 +1012,13 @@ class OfferService:
             )
             if tg_id is not None:
                 await notify_offer_status_finalized(tg_id=tg_id)
+        if status_changed and status in {"accepted", "rejected"} and settings.max_bot_enabled:
+            max_user_id = await self._users.get_active_approved_contractor_max_id(
+                user_id=offer.id_user,
+                contractor_role_id=settings.contractor_role_id,
+            )
+            if max_user_id is not None:
+                await notify_max_offer_status_finalized(max_user_id=max_user_id)
 
         if status_changed and status in {"accepted", "rejected", "deleted"}:
             event = build_process_notification_event(
@@ -1300,6 +1309,13 @@ class OfferService:
             )
             if tg_id is not None:
                 await notify_new_message(tg_id=tg_id, request_id=request.id)
+        if current_user.user_id != offer.id_user and settings.max_bot_enabled:
+            max_user_id = await self._users.get_active_approved_contractor_max_id(
+                user_id=offer.id_user,
+                contractor_role_id=settings.contractor_role_id,
+            )
+            if max_user_id is not None:
+                await notify_max_new_message(max_user_id=max_user_id, request_id=request.id)
 
         return OfferMessageMutationResult(
             offer_id=offer.id,

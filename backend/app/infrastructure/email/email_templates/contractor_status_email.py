@@ -3,19 +3,21 @@ from __future__ import annotations
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from shared.notification_copy import (
+    ACCESS_CLOSED_BODY,
+    ACCESS_OPENED_BODY,
+    REGISTRATION_COMPLETED_BODY,
+    email_subject,
+)
 
 
 def build_contractor_review_email_payload(*, to_email: str) -> EmailMessagePayload:
-    subject = "AcomOfferDesk — профиль контрагента на рассмотрении"
+    subject = email_subject("регистрация пройдена")
     return EmailMessagePayload(
         to_email=to_email,
         subject=subject,
-        text_content=(
-            "Здравствуйте!\n\n"
-            "Регистрация в AcomOfferDesk завершена. Ваш профиль находится на рассмотрении.\n"
-            "Мы сообщим дополнительно, когда доступ в сервис будет открыт.\n"
-        ),
-        html_content="""
+        text_content=f"{REGISTRATION_COMPLETED_BODY}\n",
+        html_content=f"""
 <!DOCTYPE html>
 <html lang="ru">
   <body style="margin:0;padding:0;background-color:#f6f8fb;">
@@ -30,8 +32,7 @@ def build_contractor_review_email_payload(*, to_email: str) -> EmailMessagePaylo
             </tr>
             <tr>
               <td style="padding:0 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
-                Регистрация завершена.<br/><br/>
-                Ваш профиль находится на рассмотрении. Мы сообщим, когда доступ к сервису будет открыт.
+                {escape(REGISTRATION_COMPLETED_BODY)}
               </td>
             </tr>
           </table>
@@ -49,15 +50,13 @@ def build_contractor_access_opened_email_payload(
     to_email: str,
     authorization_url: str | None,
 ) -> EmailMessagePayload:
-    subject = "AcomOfferDesk — доступ в сервис открыт"
+    subject = email_subject("доступ открыт")
     escaped_url = escape(authorization_url or "")
 
     text_with_url = (
-        "Здравствуйте!\n\n"
-        "Доступ в AcomOfferDesk открыт. Вы можете войти в сервис по ссылке:\n"
-        f"{authorization_url}\n"
+        f"{ACCESS_OPENED_BODY}\n{authorization_url}\n"
         if authorization_url
-        else "Здравствуйте!\n\nДоступ в AcomOfferDesk открыт.\n"
+        else f"{ACCESS_OPENED_BODY}\n"
     )
 
     html_link_block = (
@@ -105,8 +104,7 @@ def build_contractor_access_opened_email_payload(
             </tr>
             <tr>
               <td style="padding:0 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
-                Доступ в сервис открыт.<br/>
-                Теперь вы можете войти в AcomOfferDesk.
+                {escape(ACCESS_OPENED_BODY)}
               </td>
             </tr>
             {html_link_block}
@@ -121,16 +119,12 @@ def build_contractor_access_opened_email_payload(
 
 
 def build_contractor_access_closed_email_payload(*, to_email: str) -> EmailMessagePayload:
-    subject = "AcomOfferDesk — доступ в сервис ограничен"
+    subject = email_subject("доступ ограничен")
     return EmailMessagePayload(
         to_email=to_email,
         subject=subject,
-        text_content=(
-            "Здравствуйте!\n\n"
-            "Ваш доступ в AcomOfferDesk временно ограничен.\n"
-            "Для уточнения причины обратитесь к администратору.\n"
-        ),
-        html_content="""
+        text_content=f"{ACCESS_CLOSED_BODY}\n",
+        html_content=f"""
 <!DOCTYPE html>
 <html lang="ru">
   <body style="margin:0;padding:0;background-color:#f6f8fb;">
@@ -145,8 +139,7 @@ def build_contractor_access_closed_email_payload(*, to_email: str) -> EmailMessa
             </tr>
             <tr>
               <td style="padding:0 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
-                Ваш доступ в сервис временно ограничен.<br/>
-                Для уточнения причины обратитесь к администратору.
+                {escape(ACCESS_CLOSED_BODY)}
               </td>
             </tr>
           </table>

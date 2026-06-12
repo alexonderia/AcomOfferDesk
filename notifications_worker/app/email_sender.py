@@ -90,12 +90,16 @@ def _build_reply_to_address(from_address: str, from_name: str, reply_token: str 
 def _format_recipient_log(payload: dict) -> str:
     to_email = str(payload.get("to_email", "")).strip()
     recipient_context = payload.get("recipient_context")
+    user_login = ""
+    tg_id = None
     if isinstance(recipient_context, dict):
         user_login = str(recipient_context.get("user_login") or "").strip()
         tg_id = recipient_context.get("tg_id")
-        if user_login:
-            return f'"{to_email}" - "зарегистрированный пользователь - login={user_login}, tg_id={tg_id if tg_id is not None else "нет"}"'
-    return f'"{to_email}" - "не зарегистрирован"'
+    if not user_login:
+        user_login = str(payload.get("recipient_user_id") or "").strip()
+    if user_login:
+        return f'"{to_email}" - "зарегистрированный пользователь - login={user_login}, tg_id={tg_id if tg_id is not None else "нет"}"'
+    return f'"{to_email}" - "внешний получатель"'
 
 
 def _resolve_smtp_security_mode(smtp_port: int) -> str:

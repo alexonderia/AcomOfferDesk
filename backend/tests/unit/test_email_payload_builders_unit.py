@@ -168,7 +168,7 @@ def test_contractor_access_opened_payload_includes_manual_link_when_url_exists()
         authorization_url="https://acom.example/login?next=/",
     )
 
-    assert payload.subject == "AcomOfferDesk — доступ в сервис открыт"
+    assert payload.subject == "AcomOfferDesk — доступ открыт"
     assert "https://acom.example/login?next=/" in payload.text_content
     assert "Если кнопка не работает, откройте ссылку вручную" in payload.html_content
 

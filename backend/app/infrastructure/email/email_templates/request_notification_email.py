@@ -4,6 +4,7 @@ from datetime import datetime
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from shared.notification_copy import request_created_body
 from app.infrastructure.email.email_templates.email_contact_blocks import (
     EmailContactInfo,
     build_contact_html_block,
@@ -142,7 +143,7 @@ def _build_standard_text(
 
     return (
         "AcomOfferDesk\n\n"
-        f"Новая заявка №{request_id}\n"
+        f"{request_created_body(request_id=request_id)}\n"
         f"Описание: {request_description}\n"
         f"Дедлайн: {deadline_label}\n\n"
         "Как можно оставить отклик:\n"

@@ -181,6 +181,15 @@ class MessageRepository:
         result = await self._session.execute(stmt)
         return [int(message_id) for message_id in result.scalars().all()]
 
+    async def is_unread_for_user(self, *, message_id: int, user_id: str) -> bool:
+        stmt = select(MessageReceipt.read_at).where(
+            MessageReceipt.id_message == message_id,
+            MessageReceipt.id_user == user_id,
+        )
+        result = await self._session.execute(stmt)
+        read_at = result.scalar_one_or_none()
+        return read_at is None
+
     async def mark_read(
         self,
         *,

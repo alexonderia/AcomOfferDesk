@@ -49,6 +49,7 @@ from app.services.keycloak_oidc import (
     refresh_tokens,
 )
 from app.services.keycloak_admin import KeycloakAdminService
+from app.services.contractor_email_notifications import notify_registration_completed_email
 from app.services.max_notifications import notify_registration_completed as notify_max_registration_completed
 from app.services.max_account_linking import link_max_account
 from app.services.max_registration_links import (
@@ -562,6 +563,12 @@ async def keycloak_callback(
                         actor_user_id=synced.user.id,
                         role_id=synced.user.id_role,
                         source="oidc_invite_registration",
+                    )
+                registration_email = (token_claims.email or "").strip().lower()
+                if registration_email and synced.user.id_role == settings.contractor_role_id:
+                    await notify_registration_completed_email(
+                        to_email=registration_email,
+                        recipient_user_id=synced.user.id,
                     )
             if claims.tg_registration_id is not None:
                 if not settings.telegram_legacy_enabled:

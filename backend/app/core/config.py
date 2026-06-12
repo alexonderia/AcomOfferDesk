@@ -223,6 +223,10 @@ class Settings(BaseSettings):
         default=60,
         validation_alias="REQUEST_MAILBOX_POLL_INTERVAL_SECONDS",
     )
+    chat_unread_email_delay_seconds: int = Field(
+        default=3600,
+        validation_alias="CHAT_UNREAD_EMAIL_DELAY_SECONDS",
+    )
     s3_endpoint: str = Field(..., validation_alias="S3_ENDPOINT")
     s3_public_endpoint: str | None = Field(default=None, validation_alias="S3_PUBLIC_ENDPOINT")
     s3_access_key: str = Field(..., validation_alias="S3_ACCESS_KEY")

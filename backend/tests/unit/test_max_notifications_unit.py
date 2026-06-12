@@ -66,3 +66,19 @@ async def test_notify_new_request_sends_to_each_recipient(monkeypatch):
     assert user_ids == {"111", "222"}
     assert all("REQ-1" in call[1]["text"] for call in calls)
     assert all(call[1]["button_url"].startswith("https://example.com/login") for call in calls)
+
+
+@pytest.mark.asyncio
+async def test_notify_account_linked_uses_russian_text(monkeypatch):
+    calls: list[tuple[str, dict]] = []
+
+    async def _fake_publish(routing_key: str, payload: dict) -> None:
+        calls.append((routing_key, payload))
+
+    monkeypatch.setattr(module, "publish_notification", _fake_publish)
+    monkeypatch.setattr(settings, "max_bot_enabled", True)
+
+    await module.notify_account_linked("482403059838")
+
+    assert len(calls) == 1
+    assert "MAX успешно привязан" in calls[0][1]["text"]

@@ -83,21 +83,37 @@ class UserRepository:
             .where(
                 UserAuthAccount.id_user == user_id,
                 UserAuthAccount.provider == "max",
-                UserAuthAccount.is_active.is_(True),
             )
-            .order_by(UserAuthAccount.id.asc())
+            .order_by(UserAuthAccount.is_active.desc(), UserAuthAccount.id.asc())
             .limit(1)
         )
         result = await self._session.execute(stmt)
         value = result.scalar_one_or_none()
-        if value is None:
+        if value is not None:
+            normalized = str(value).strip()
+            if normalized:
+                return normalized
+
+        channel_stmt = (
+            select(UserContactChannel.channel_value)
+            .where(
+                UserContactChannel.id_user == user_id,
+                UserContactChannel.channel_type == "max",
+                UserContactChannel.is_active.is_(True),
+            )
+            .order_by(UserContactChannel.is_primary.desc(), UserContactChannel.id.asc())
+            .limit(1)
+        )
+        channel_result = await self._session.execute(channel_stmt)
+        channel_value = channel_result.scalar_one_or_none()
+        if channel_value is None:
             return None
-        normalized = str(value).strip()
-        return normalized or None
+        normalized_channel = str(channel_value).strip()
+        return normalized_channel or None
 
     async def get_by_max_user_id(self, max_user_id: int | str) -> User | None:
         subject = max_subject_value(max_user_id)
-        stmt = (
+        account_stmt = (
             select(User)
             .join(
                 UserAuthAccount,
@@ -105,13 +121,32 @@ class UserRepository:
                     UserAuthAccount.id_user == User.id,
                     UserAuthAccount.provider == "max",
                     UserAuthAccount.external_subject_id == subject,
-                    UserAuthAccount.is_active.is_(True),
                 ),
             )
+            .order_by(UserAuthAccount.is_active.desc(), UserAuthAccount.id.asc())
             .limit(1)
         )
-        result = await self._session.execute(stmt)
-        return result.scalar_one_or_none()
+        account_result = await self._session.execute(account_stmt)
+        linked_user = account_result.scalar_one_or_none()
+        if linked_user is not None:
+            return linked_user
+
+        channel_stmt = (
+            select(User)
+            .join(
+                UserContactChannel,
+                and_(
+                    UserContactChannel.id_user == User.id,
+                    UserContactChannel.channel_type == "max",
+                    UserContactChannel.channel_value == subject,
+                    UserContactChannel.is_active.is_(True),
+                ),
+            )
+            .order_by(UserContactChannel.is_primary.desc(), UserContactChannel.id.asc())
+            .limit(1)
+        )
+        channel_result = await self._session.execute(channel_stmt)
+        return channel_result.scalar_one_or_none()
 
     async def exists(self, user_id: str) -> bool:
         result = await self._session.execute(select(User.id).where(User.id == user_id))

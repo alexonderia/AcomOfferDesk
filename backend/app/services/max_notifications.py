@@ -8,6 +8,20 @@ from urllib.parse import quote, urlparse
 from app.core.config import settings
 from app.infrastructure.notification_publisher import publish_notification
 from shared.broker import RK_MAX
+from shared.notification_copy import (
+    ACCESS_CLOSED_BODY,
+    ACCESS_OPENED_BODY,
+    EXPIRED_REGISTRATION_LINK_BODY,
+    MAX_ACCOUNT_LINKED_BODY,
+    REGISTRATION_COMPLETED_BODY,
+    message_created_body,
+    new_request_outbound_body,
+    offer_status_changed_body,
+    offer_updated_body,
+    request_deadline_changed_body,
+    request_files_changed_body,
+    request_status_changed_body,
+)
 
 _INVALID_MAX_BUTTON_HOSTS = {
     "",
@@ -27,28 +41,28 @@ _INVALID_MAX_BUTTON_HOSTS = {
 async def notify_expired_link(max_user_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
-        text="Срок действия ссылки истек. Пожалуйста, запросите новую через /start.",
+        text=EXPIRED_REGISTRATION_LINK_BODY,
     )
 
 
 async def notify_registration_completed(max_user_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
-        text="Регистрация пройдена. Данные отправлены на проверку.",
+        text=REGISTRATION_COMPLETED_BODY,
     )
 
 
 async def notify_access_opened(max_user_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
-        text="Доступ открыт. Теперь вы можете получать открытые заявки через MAX.",
+        text=ACCESS_OPENED_BODY,
     )
 
 
 async def notify_access_closed(max_user_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
-        text="Доступ к системе через MAX ограничен.",
+        text=ACCESS_CLOSED_BODY,
     )
 
 
@@ -56,7 +70,7 @@ async def notify_new_message(*, max_user_id: str, request_id: str) -> None:
     link = _build_web_service_link()
     await _notify(
         max_user_id=max_user_id,
-        text=f"Новое сообщение по заявке №{request_id}",
+        text=message_created_body(request_id=request_id),
         button_text="Открыть систему",
         button_url=link,
     )
@@ -69,16 +83,14 @@ async def notify_new_request(
     description: str | None,
     deadline_at: datetime,
 ) -> None:
-    description_text = description.strip() if description else "без описания"
-    deadline_text = deadline_at.strftime("%d.%m.%Y, %H:%M")
+    text = new_request_outbound_body(
+        request_id=request_id,
+        description=description,
+        deadline_at=deadline_at,
+    )
     tasks = []
     for max_user_id in max_user_ids:
         link = _build_web_service_link()
-        text = (
-            f"Новая заявка №{request_id}\n\n"
-            f"{description_text}\n"
-            f"Срок: {deadline_text}"
-        )
         tasks.append(
             _notify(
                 max_user_id=max_user_id,
@@ -92,19 +104,56 @@ async def notify_new_request(
         await asyncio.gather(*tasks)
 
 
-async def notify_request_status_changed(*, max_user_id: str) -> None:
+async def notify_request_status_changed(
+    *,
+    max_user_id: str,
+    request_id: str,
+    previous_status: str | None = None,
+    new_status: str | None = None,
+) -> None:
     await _notify(
         max_user_id=max_user_id,
-        text="Статус интересующей вас заявки изменён.",
+        text=request_status_changed_body(
+            request_id=request_id,
+            previous_status=previous_status,
+            new_status=new_status,
+        ),
         button_text="Открыть систему",
         button_url=_build_web_service_link(),
     )
 
 
-async def notify_offer_status_finalized(*, max_user_id: str) -> None:
+async def notify_request_deadline_changed(*, max_user_id: str, request_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
-        text="Статус вашего оффера обновлён.",
+        text=request_deadline_changed_body(request_id=request_id),
+        button_text="Открыть заявку",
+        button_url=_build_web_service_link(),
+    )
+
+
+async def notify_request_files_changed(*, max_user_id: str, request_id: str) -> None:
+    await _notify(
+        max_user_id=max_user_id,
+        text=request_files_changed_body(request_id=request_id),
+        button_text="Открыть заявку",
+        button_url=_build_web_service_link(),
+    )
+
+
+async def notify_offer_updated(*, max_user_id: str, request_id: str) -> None:
+    await _notify(
+        max_user_id=max_user_id,
+        text=offer_updated_body(request_id=request_id),
+        button_text="Открыть КП",
+        button_url=_build_web_service_link(),
+    )
+
+
+async def notify_offer_status_finalized(*, max_user_id: str, request_id: str) -> None:
+    await _notify(
+        max_user_id=max_user_id,
+        text=offer_status_changed_body(request_id=request_id),
         button_text="Открыть систему",
         button_url=_build_web_service_link(),
     )
@@ -113,7 +162,7 @@ async def notify_offer_status_finalized(*, max_user_id: str) -> None:
 async def notify_account_linked(max_user_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
-        text="MAX successfully linked to your AcomOfferDesk account.",
+        text=MAX_ACCOUNT_LINKED_BODY,
     )
 
 

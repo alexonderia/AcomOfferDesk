@@ -23,8 +23,11 @@ from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
+from app.services.contractor_outbound_notifications import (
+    RequestEventKind,
+    notify_contractors_with_offers_about_request,
+)
 from app.services.max_notifications import notify_new_request as notify_max_new_request
-from app.services.max_notifications import notify_request_status_changed as notify_max_request_status_changed
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
 from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
@@ -241,6 +244,27 @@ class RequestService:
             lambda: self._process_event_publisher(event)
         )
         return True
+
+    def _schedule_contractor_request_outbound(
+        self,
+        *,
+        request_id: str,
+        event_kind: RequestEventKind,
+        actor_user_id: str | None = None,
+        previous_status: str | None = None,
+        new_status: str | None = None,
+    ) -> None:
+        if self._after_commit_hook_registrar is None:
+            return
+        self._after_commit_hook_registrar(
+            lambda: notify_contractors_with_offers_about_request(
+                request_id=request_id,
+                event_kind=event_kind,
+                actor_user_id=actor_user_id,
+                previous_status=previous_status,
+                new_status=new_status,
+            )
+        )
 
     async def check_request_id_available(self, *, request_id: str) -> tuple[bool, str | None]:
         normalized_id = request_id.strip()
@@ -541,22 +565,20 @@ class RequestService:
                     contractor_role_id=settings.contractor_role_id,
                 )
                 for tg_id in tg_ids:
-                    await notify_request_status_changed(tg_id=tg_id)
-            if status_changed and settings.max_bot_enabled:
-                max_recipients = await self._offers.list_contractor_max_recipients_for_request(
+                    await notify_request_status_changed(
+                        tg_id=tg_id,
+                        request_id=request.id,
+                        previous_status=previous_status,
+                        new_status=data.status,
+                    )
+            if status_changed:
+                self._schedule_contractor_request_outbound(
                     request_id=request.id,
-                    contractor_role_id=settings.contractor_role_id,
+                    event_kind="status_changed",
+                    actor_user_id=current_user.user_id,
+                    previous_status=previous_status,
+                    new_status=data.status,
                 )
-                for contractor_user_id, max_user_id in max_recipients:
-                    if self._notification_preferences is not None:
-                        is_enabled = await self._notification_preferences.is_channel_enabled(
-                            user_id=contractor_user_id,
-                            channel_type="max",
-                            notification_type="request",
-                        )
-                        if not is_enabled:
-                            continue
-                    await notify_max_request_status_changed(max_user_id=max_user_id)
             if status_changed:
                 event = build_process_notification_event(
                     event_type="request.status_changed",
@@ -600,6 +622,11 @@ class RequestService:
                 },
             )
             self._schedule_process_notification_event(deadline_event)
+            self._schedule_contractor_request_outbound(
+                request_id=request.id,
+                event_kind="deadline_changed",
+                actor_user_id=current_user.user_id,
+            )
 
         if data.owner_user_id is not None:
             owner = await self._users.get_by_id(data.owner_user_id)
@@ -782,6 +809,11 @@ class RequestService:
                 },
             )
         )
+        self._schedule_contractor_request_outbound(
+            request_id=request.id,
+            event_kind="files_changed",
+            actor_user_id=current_user.user_id,
+        )
         return db_file.id
 
     async def remove_file(
@@ -821,6 +853,11 @@ class RequestService:
                     "changed_file_count": 1,
                 },
             )
+        )
+        self._schedule_contractor_request_outbound(
+            request_id=request.id,
+            event_kind="files_changed",
+            actor_user_id=current_user.user_id,
         )
 
     async def _attach_normative_file_copy(self, *, request_id: str, normative_file_id: int) -> int:

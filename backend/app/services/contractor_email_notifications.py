@@ -10,6 +10,11 @@ from app.infrastructure.email.email_templates.contractor_status_email import (
     build_contractor_review_email_payload,
 )
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
+from shared.notification_copy import (
+    ACCESS_CLOSED_BODY,
+    ACCESS_OPENED_BODY,
+    email_subject,
+)
 
 
 def _build_authorization_link() -> str | None:
@@ -29,6 +34,22 @@ def _build_email_service() -> SMTPEmailService:
         password=settings.email_app_password,
         from_address=settings.email_address,
         from_name=settings.email_from_name,
+    )
+
+
+async def notify_registration_completed_email(
+    *,
+    to_email: str,
+    recipient_user_id: str | None = None,
+) -> None:
+    payload = build_contractor_review_email_payload(to_email=to_email)
+    await _build_email_service().send_email(
+        to_email=payload.to_email,
+        subject=payload.subject,
+        text_content=payload.text_content,
+        html_content=payload.html_content,
+        recipient_user_id=recipient_user_id,
+        suppress_delivery_notification=True,
     )
 
 
@@ -74,14 +95,11 @@ async def notify_contractor_status_changed_email(
 ) -> bool:
     normalized_status = (user_status or "").strip().lower()
     if normalized_status == "active":
-        subject = "AcomOfferDesk — доступ одобрен"
-        text = "Ваш доступ к системе AcomOfferDesk одобрен. Вы можете войти в систему."
-    elif normalized_status in {"inactive", "review"}:
-        subject = "AcomOfferDesk — заявка на доступ отклонена"
-        text = "Ваша заявка на доступ к системе AcomOfferDesk отклонена."
-    elif normalized_status == "blacklist":
-        subject = "AcomOfferDesk — доступ ограничен"
-        text = "Ваш доступ к системе AcomOfferDesk ограничен."
+        subject = email_subject("доступ открыт")
+        text = ACCESS_OPENED_BODY
+    elif normalized_status in {"inactive", "review", "blacklist"}:
+        subject = email_subject("доступ ограничен")
+        text = ACCESS_CLOSED_BODY
     else:
         return False
 

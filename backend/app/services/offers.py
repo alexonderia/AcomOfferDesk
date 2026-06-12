@@ -33,6 +33,8 @@ from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.users import _bind_keycloak_account
 from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
+from app.infrastructure.delayed_notification_publisher import schedule_unread_chat_email_notification
+from app.services.contractor_outbound_notifications import notify_contractor_offer_updated
 from app.services.max_notifications import notify_new_message as notify_max_new_message
 from app.services.max_notifications import notify_offer_status_finalized as notify_max_offer_status_finalized
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
@@ -287,6 +289,54 @@ class OfferService:
             lambda: self._process_event_publisher(event)
         )
         return True
+
+    def _schedule_contractor_offer_updated_outbound(
+        self,
+        *,
+        contractor_user_id: str,
+        request_id: str,
+        offer_id: int,
+        actor_user_id: str | None,
+    ) -> None:
+        if actor_user_id is not None and actor_user_id == contractor_user_id:
+            return
+        if self._after_commit_hook_registrar is None:
+            return
+        self._after_commit_hook_registrar(
+            lambda: notify_contractor_offer_updated(
+                contractor_user_id=contractor_user_id,
+                request_id=request_id,
+                offer_id=offer_id,
+                actor_user_id=actor_user_id,
+            )
+        )
+
+    def _schedule_unread_chat_email_notifications(
+        self,
+        *,
+        message_id: int,
+        recipient_user_ids: list[str],
+        request_id: str,
+        offer_id: int,
+        author_user_id: str,
+    ) -> None:
+        if self._after_commit_hook_registrar is None:
+            return
+        delay_seconds = max(60, settings.chat_unread_email_delay_seconds)
+
+        async def _schedule_all() -> None:
+            for recipient_user_id in recipient_user_ids:
+                if recipient_user_id == author_user_id:
+                    continue
+                await schedule_unread_chat_email_notification(
+                    message_id=message_id,
+                    recipient_user_id=recipient_user_id,
+                    request_id=request_id,
+                    offer_id=offer_id,
+                    delay_seconds=delay_seconds,
+                )
+
+        self._after_commit_hook_registrar(_schedule_all)
 
     def _build_read_only_chat_state(self, *, chat_id: int, last_message_id: int | None, last_message_at) -> ChatState:
         return ChatState(
@@ -908,6 +958,12 @@ class OfferService:
                 },
             )
         )
+        self._schedule_contractor_offer_updated_outbound(
+            contractor_user_id=offer.id_user,
+            request_id=request.id,
+            offer_id=offer.id,
+            actor_user_id=current_user.user_id,
+        )
         return db_file.id
 
     async def remove_file(self, *, current_user: CurrentUser, offer_id: int, file_id: int) -> None:
@@ -977,6 +1033,12 @@ class OfferService:
                 },
             )
         )
+        self._schedule_contractor_offer_updated_outbound(
+            contractor_user_id=offer.id_user,
+            request_id=request.id,
+            offer_id=offer.id,
+            actor_user_id=current_user.user_id,
+        )
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
@@ -1014,7 +1076,7 @@ class OfferService:
                 contractor_role_id=settings.contractor_role_id,
             )
             if tg_id is not None:
-                await notify_offer_status_finalized(tg_id=tg_id)
+                await notify_offer_status_finalized(tg_id=tg_id, request_id=request.id)
         if status_changed and status in {"accepted", "rejected"} and settings.max_bot_enabled:
             max_user_id = await self._users.get_active_approved_contractor_max_id(
                 user_id=offer.id_user,
@@ -1030,7 +1092,10 @@ class OfferService:
                     if not is_enabled:
                         max_user_id = None
             if max_user_id is not None:
-                await notify_max_offer_status_finalized(max_user_id=max_user_id)
+                await notify_max_offer_status_finalized(
+                    max_user_id=max_user_id,
+                    request_id=request.id,
+                )
 
         if status_changed and status in {"accepted", "rejected", "deleted"}:
             event = build_process_notification_event(
@@ -1115,6 +1180,12 @@ class OfferService:
                         "new_offer_amount": str(offer.offer_amount) if offer.offer_amount is not None else None,
                     },
                 )
+            )
+            self._schedule_contractor_offer_updated_outbound(
+                contractor_user_id=offer.id_user,
+                request_id=request.id,
+                offer_id=offer.id,
+                actor_user_id=current_user.user_id,
             )
         return float(Decimal(str(offer.offer_amount)))
 
@@ -1337,6 +1408,14 @@ class OfferService:
                         max_user_id = None
             if max_user_id is not None:
                 await notify_max_new_message(max_user_id=max_user_id, request_id=request.id)
+
+        self._schedule_unread_chat_email_notifications(
+            message_id=message.id,
+            recipient_user_ids=notification_recipients,
+            request_id=request.id,
+            offer_id=offer.id,
+            author_user_id=current_user.user_id,
+        )
 
         return OfferMessageMutationResult(
             offer_id=offer.id,

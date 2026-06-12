@@ -172,6 +172,26 @@ class OfferRepository:
         result = await self._session.execute(stmt)
         return [str(value).strip() for value in result.scalars().all() if str(value).strip()]
 
+    async def list_contractor_user_ids_for_request(
+        self,
+        *,
+        request_id: str,
+        contractor_role_id: int,
+    ) -> list[str]:
+        stmt = (
+            select(User.id)
+            .select_from(Offer)
+            .join(User, User.id == Offer.id_user)
+            .where(Offer.id_request == request_id)
+            .where(Offer.status != "deleted")
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .distinct()
+            .order_by(User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [str(user_id).strip() for user_id in result.scalars().all() if str(user_id).strip()]
+
     async def list_contractor_max_recipients_for_request(
         self,
         *,

@@ -119,6 +119,10 @@ export const useOfferWorkspace = () => {
     () => sortedOffers.find((item) => item.offer_id === selectedOfferId) ?? sortedOffers[0] ?? workspace?.offer ?? null,
     [selectedOfferId, sortedOffers, workspace?.offer]
   );
+  const selectedOfferFilesKey = useMemo(
+    () => (selectedOffer?.files ?? []).map((file) => `${file.id}:${file.name}:${file.download_url}`).join('|'),
+    [selectedOffer?.files]
+  );
 
   const {
     messages,
@@ -225,7 +229,7 @@ export const useOfferWorkspace = () => {
     setExistingOfferFiles(selectedOffer?.files ?? []);
     setDeletedOfferFileIds([]);
     setNewOfferFile(null);
-  }, [selectedOffer?.offer_amount, selectedOffer?.offer_id]);
+  }, [selectedOffer?.offer_amount, selectedOffer?.offer_id, selectedOfferFilesKey]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -378,7 +382,14 @@ export const useOfferWorkspace = () => {
       if (newOfferFile) {
         await uploadOfferFile(selectedOffer.offer_id, newOfferFile);
       }
-      await refreshWorkspace(selectedOffer.offer_id);
+      const nextWorkspace = await refreshWorkspace(selectedOffer.offer_id);
+      const updatedOffer =
+        nextWorkspace.offers.find((item) => item.offer_id === selectedOffer.offer_id) ??
+        nextWorkspace.offer;
+      const nextOfferAmount = toAmountInputValue(updatedOffer.offer_amount ?? null);
+      setExistingOfferFiles(updatedOffer.files ?? []);
+      setOfferAmountInput(nextOfferAmount);
+      setBaselineOfferAmount(nextOfferAmount);
       setDeletedOfferFileIds([]);
       setNewOfferFile(null);
       setLastOfferSaveSuccessAt(Date.now());

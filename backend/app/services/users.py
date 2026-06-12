@@ -26,6 +26,7 @@ from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
     notify_contractor_status_changed_email,
+    notify_registration_completed_email,
 )
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.keycloak_admin import KeycloakAdminService
@@ -662,6 +663,20 @@ class ContractorRegistrationService:
             role_id=settings.contractor_role_id,
             source=registration_notify_source,
         )
+        normalized_mail = (company_mail or "").strip().lower()
+        if normalized_mail and normalized_mail != "не указано":
+            if self._after_commit_hook_registrar is None:
+                await notify_registration_completed_email(
+                    to_email=normalized_mail,
+                    recipient_user_id=user.id,
+                )
+            else:
+                self._after_commit_hook_registrar(
+                    lambda: notify_registration_completed_email(
+                        to_email=normalized_mail,
+                        recipient_user_id=user.id,
+                    )
+                )
         return user
 
 

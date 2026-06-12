@@ -28,6 +28,7 @@ from app.schemas.tg_users import (
     TgUserStartResponse,
     TgUserStartData,
 )
+from app.services.contractor_email_notifications import notify_registration_completed_email
 from app.services.tg_notifications import notify_expired_link, notify_registration_completed
 from app.services.tg_registration_links import (
     TgRegistrationLinkExpiredError,
@@ -208,6 +209,11 @@ async def complete_tg_registration(
             pass
 
     await notify_registration_completed(tg_id)
+    if normalized_mail:
+        await notify_registration_completed_email(
+            to_email=normalized_mail,
+            recipient_user_id=user.id,
+        )
 
     return ContractorRegistrationResponse(
         data=ContractorRegistrationData(

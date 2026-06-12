@@ -16,6 +16,7 @@ from app.api.v1 import router as v1_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, ServiceUnavailable, Unauthorized, UploadRejected
 from app.infrastructure.db import engine
 from app.infrastructure.email_delivery_consumer import EmailDeliveryConsumerRuntime
+from app.infrastructure.delayed_notification_consumer import DelayedNotificationConsumerRuntime
 from app.infrastructure.process_notification_consumer import ProcessNotificationConsumerRuntime
 from app.realtime.runtime import (
     ChatRealtimeRuntime,
@@ -188,6 +189,7 @@ async def lifespan(_: FastAPI):
     await realtime_runtime.start()
     email_delivery_runtime = EmailDeliveryConsumerRuntime()
     process_notification_runtime = ProcessNotificationConsumerRuntime()
+    delayed_notification_runtime = DelayedNotificationConsumerRuntime()
     try:
         await email_delivery_runtime.start()
     except Exception:
@@ -196,6 +198,10 @@ async def lifespan(_: FastAPI):
         await process_notification_runtime.start()
     except Exception:
         logger.exception("Process notification consumer failed to start; backend will continue without it")
+    try:
+        await delayed_notification_runtime.start()
+    except Exception:
+        logger.exception("Delayed notification consumer failed to start; backend will continue without it")
 
     task: asyncio.Task[None] | None = None
     if is_leader:
@@ -210,6 +216,7 @@ async def lifespan(_: FastAPI):
             await task
         await email_delivery_runtime.stop()
         await process_notification_runtime.stop()
+        await delayed_notification_runtime.stop()
         await realtime_runtime.stop()
         if is_leader:
             leader_lock.release()

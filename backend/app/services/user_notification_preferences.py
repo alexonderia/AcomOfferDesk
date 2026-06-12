@@ -11,6 +11,7 @@ from app.repositories.user_notification_preferences import UserNotificationPrefe
 NOTIFICATION_CHANNEL_EMAIL = "email"
 NOTIFICATION_CHANNEL_MAX = "max"
 NOTIFICATION_MODE_ALL = "all"
+NOTIFICATION_MODE_CUSTOM = "custom"
 NOTIFICATION_MODE_EMAIL_ONLY = "email_only"
 NOTIFICATION_MODE_MAX_ONLY = "max_only"
 NOTIFICATION_MODE_NONE = "none"
@@ -24,6 +25,16 @@ NOTIFICATION_MODES = frozenset(
 )
 NOTIFICATION_TYPES = ("chat", "request", "offer", "system")
 _INVALID_NOTIFICATION_VALUES = frozenset({"не указано", "none", "null"})
+_EMAIL_REQUIRED_MESSAGE = "Добавьте email, чтобы включить email-уведомления"
+_MAX_REQUIRED_MESSAGE = "Сначала привяжите подтвержденный MAX, чтобы включить MAX-уведомления"
+_UNSUPPORTED_MODE_MESSAGE = "Неподдерживаемый режим уведомлений"
+_UNSUPPORTED_TYPE_MESSAGE = "Неподдерживаемый тип уведомлений"
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationTypePreferenceState:
+    email: bool
+    max: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +44,7 @@ class UserNotificationPreferencesState:
     max_available: bool
     email: str | None
     max_user_id: str | None
+    preferences: dict[str, NotificationTypePreferenceState]
 
 
 class UserNotificationPreferencesService:
@@ -58,24 +70,60 @@ class UserNotificationPreferencesService:
 
         email_enabled = normalized_mode in {NOTIFICATION_MODE_ALL, NOTIFICATION_MODE_EMAIL_ONLY}
         max_enabled = normalized_mode in {NOTIFICATION_MODE_ALL, NOTIFICATION_MODE_MAX_ONLY}
+        self._ensure_channel_requirements(
+            context=context,
+            requires_email=email_enabled,
+            requires_max=max_enabled,
+        )
 
-        if email_enabled and not context.email_available:
-            raise Conflict("Добавьте email, чтобы включить email-уведомления")
-        if max_enabled and not context.max_available:
-            raise Conflict("Сначала привяжите подтверждённый MAX, чтобы включить MAX-уведомления")
-
-        for channel in filter(None, (context.email_channel, context.max_channel)):
-            channel_enabled = (
-                email_enabled if channel.channel_type == NOTIFICATION_CHANNEL_EMAIL else max_enabled
-            )
-            for notification_type in NOTIFICATION_TYPES:
-                await self._user_notification_preferences.upsert(
-                    channel_id=channel.id,
-                    notification_type=notification_type,
-                    is_enabled=channel_enabled,
+        await self._persist_preferences(
+            context=context,
+            preferences_by_type={
+                notification_type: NotificationTypePreferenceState(
+                    email=email_enabled,
+                    max=max_enabled,
                 )
+                for notification_type in NOTIFICATION_TYPES
+            },
+        )
 
-        return self._build_state_from_context(context, mode_override=normalized_mode)
+        next_context = await self._load_context(user_id=user_id)
+        return self._build_state_from_context(next_context, mode_override=normalized_mode)
+
+    async def update_preferences(
+        self,
+        *,
+        user_id: str,
+        preferences: dict[str, dict[str, bool | None]],
+    ) -> UserNotificationPreferencesState:
+        context = await self._load_context(user_id=user_id)
+        current_preferences = context.preferences_by_type
+        normalized_preferences = self._normalize_preferences_payload(
+            preferences=preferences,
+            current_preferences=current_preferences,
+        )
+
+        requires_email = any(item.email for item in normalized_preferences.values())
+        requires_max = any(item.max for item in normalized_preferences.values())
+        touches_email_preferences = any(
+            NOTIFICATION_CHANNEL_EMAIL in channel_values
+            for channel_values in preferences.values()
+        )
+        if requires_email or touches_email_preferences:
+            context = await self._ensure_email_channel_for_preferences(context=context, user_id=user_id)
+        self._ensure_channel_requirements(
+            context=context,
+            requires_email=requires_email,
+            requires_max=requires_max,
+        )
+
+        await self._persist_preferences(
+            context=context,
+            preferences_by_type=normalized_preferences,
+        )
+
+        next_context = await self._load_context(user_id=user_id)
+        return self._build_state_from_context(next_context)
 
     async def is_channel_enabled(
         self,
@@ -184,14 +232,11 @@ class UserNotificationPreferencesService:
             for preference in preferences
         }
 
-        email_enabled = self._resolve_channel_enabled(
-            channel=email_channel,
-            available=email_available,
-            preference_map=preference_map,
-        )
-        max_enabled = self._resolve_channel_enabled(
-            channel=max_channel,
-            available=max_available,
+        preferences_by_type = self._resolve_preferences_by_type(
+            email_channel_id=email_channel.id if email_channel is not None and getattr(email_channel, "id", None) is not None else None,
+            max_channel_id=max_channel.id if max_channel is not None and getattr(max_channel, "id", None) is not None else None,
+            email_available=email_available,
+            max_available=max_available,
             preference_map=preference_map,
         )
 
@@ -202,8 +247,7 @@ class UserNotificationPreferencesService:
             max_available=max_available,
             email_value=email_value,
             max_value=max_value,
-            email_enabled=email_enabled,
-            max_enabled=max_enabled,
+            preferences_by_type=preferences_by_type,
         )
 
     def _build_state_from_context(
@@ -212,62 +256,134 @@ class UserNotificationPreferencesService:
         *,
         mode_override: str | None = None,
     ) -> UserNotificationPreferencesState:
-        mode = mode_override or self._resolve_mode(
-            email_available=context.email_available,
-            email_enabled=context.email_enabled,
-            max_available=context.max_available,
-            max_enabled=context.max_enabled,
-        )
+        mode = mode_override or self._resolve_mode(context=context)
         return UserNotificationPreferencesState(
             mode=mode,
             email_available=context.email_available,
             max_available=context.max_available,
             email=context.email_value,
             max_user_id=context.max_value,
+            preferences=context.preferences_by_type,
         )
 
     def _normalize_mode(self, mode: str) -> str:
         normalized_mode = mode.strip().lower()
         if normalized_mode not in NOTIFICATION_MODES:
-            raise Conflict("Неподдерживаемый режим уведомлений")
+            raise Conflict(_UNSUPPORTED_MODE_MESSAGE)
         return normalized_mode
 
-    def _resolve_mode(
-        self,
-        *,
-        email_available: bool,
-        email_enabled: bool,
-        max_available: bool,
-        max_enabled: bool,
-    ) -> str:
-        if email_available and email_enabled and max_available and max_enabled:
+    def _resolve_mode(self, *, context: "_PreferenceContext") -> str:
+        email_values = {item.email for item in context.preferences_by_type.values()}
+        max_values = {item.max for item in context.preferences_by_type.values()}
+        if len(email_values) > 1 or len(max_values) > 1:
+            return NOTIFICATION_MODE_CUSTOM
+
+        email_enabled = next(iter(email_values), False)
+        max_enabled = next(iter(max_values), False)
+        if context.email_available and email_enabled and context.max_available and max_enabled:
             return NOTIFICATION_MODE_ALL
-        if email_available and email_enabled and not (max_available and max_enabled):
+        if context.email_available and email_enabled and not (context.max_available and max_enabled):
             return NOTIFICATION_MODE_EMAIL_ONLY
-        if max_available and max_enabled and not (email_available and email_enabled):
+        if context.max_available and max_enabled and not (context.email_available and email_enabled):
             return NOTIFICATION_MODE_MAX_ONLY
         return NOTIFICATION_MODE_NONE
 
-    def _resolve_channel_enabled(
+    def _resolve_preferences_by_type(
         self,
         *,
-        channel: UserContactChannel | None,
+        email_channel_id: int | None,
+        max_channel_id: int | None,
+        email_available: bool,
+        max_available: bool,
+        preference_map: dict[tuple[int, str], bool],
+    ) -> dict[str, NotificationTypePreferenceState]:
+        preferences_by_type: dict[str, NotificationTypePreferenceState] = {}
+        for notification_type in NOTIFICATION_TYPES:
+            preferences_by_type[notification_type] = NotificationTypePreferenceState(
+                email=self._resolve_single_preference(
+                    available=email_available,
+                    channel_id=email_channel_id,
+                    notification_type=notification_type,
+                    preference_map=preference_map,
+                ),
+                max=self._resolve_single_preference(
+                    available=max_available,
+                    channel_id=max_channel_id,
+                    notification_type=notification_type,
+                    preference_map=preference_map,
+                ),
+            )
+        return preferences_by_type
+
+    def _resolve_single_preference(
+        self,
+        *,
         available: bool,
+        channel_id: int | None,
+        notification_type: str,
         preference_map: dict[tuple[int, str], bool],
     ) -> bool:
         if not available:
             return False
-        if channel is None or getattr(channel, "id", None) is None:
+        if channel_id is None:
             return True
+        return preference_map.get((channel_id, notification_type), True)
 
-        values = [
-            preference_map[(channel.id, notification_type)]
-            for notification_type in NOTIFICATION_TYPES
-            if (channel.id, notification_type) in preference_map
-        ]
-        if not values:
-            return True
-        return any(values)
+    def _normalize_preferences_payload(
+        self,
+        *,
+        preferences: dict[str, dict[str, bool | None]],
+        current_preferences: dict[str, NotificationTypePreferenceState],
+    ) -> dict[str, NotificationTypePreferenceState]:
+        unsupported_types = set(preferences) - set(NOTIFICATION_TYPES)
+        if unsupported_types:
+            raise Conflict(_UNSUPPORTED_TYPE_MESSAGE)
+
+        normalized = dict(current_preferences)
+        for notification_type, current_value in current_preferences.items():
+            channel_values = preferences.get(notification_type)
+            if channel_values is None:
+                continue
+            normalized[notification_type] = NotificationTypePreferenceState(
+                email=current_value.email
+                if channel_values.get(NOTIFICATION_CHANNEL_EMAIL) is None
+                else bool(channel_values.get(NOTIFICATION_CHANNEL_EMAIL)),
+                max=current_value.max
+                if channel_values.get(NOTIFICATION_CHANNEL_MAX) is None
+                else bool(channel_values.get(NOTIFICATION_CHANNEL_MAX)),
+            )
+        return normalized
+
+    async def _persist_preferences(
+        self,
+        *,
+        context: "_PreferenceContext",
+        preferences_by_type: dict[str, NotificationTypePreferenceState],
+    ) -> None:
+        for channel in filter(None, (context.email_channel, context.max_channel)):
+            for notification_type, notification_state in preferences_by_type.items():
+                is_enabled = (
+                    notification_state.email
+                    if channel.channel_type == NOTIFICATION_CHANNEL_EMAIL
+                    else notification_state.max
+                )
+                await self._user_notification_preferences.upsert(
+                    channel_id=channel.id,
+                    notification_type=notification_type,
+                    is_enabled=is_enabled,
+                )
+
+    def _ensure_channel_requirements(
+        self,
+        *,
+        context: "_PreferenceContext",
+        requires_email: bool,
+        requires_max: bool,
+    ) -> None:
+        if requires_email and not context.email_available:
+            raise Conflict(_EMAIL_REQUIRED_MESSAGE)
+        if requires_max and not context.max_available:
+            raise Conflict(_MAX_REQUIRED_MESSAGE)
 
     def _normalize_contact_value(self, value: str | None) -> str | None:
         normalized = (value or "").strip()
@@ -284,5 +400,4 @@ class _PreferenceContext:
     max_available: bool
     email_value: str | None
     max_value: str | None
-    email_enabled: bool
-    max_enabled: bool
+    preferences_by_type: dict[str, NotificationTypePreferenceState]

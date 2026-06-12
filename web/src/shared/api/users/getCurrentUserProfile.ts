@@ -72,6 +72,7 @@ type NotificationPreferencesPayload = {
   max_available?: boolean;
   email?: string | null;
   max_user_id?: string | null;
+  preferences?: Record<string, { email?: boolean; max?: boolean }>;
 };
 
 type NotificationPreferencesResponse = {
@@ -112,7 +113,9 @@ export type CurrentUserProfile = {
   actions: UserActions;
 };
 
-export type NotificationPreferencesMode = 'all' | 'email_only' | 'max_only' | 'none';
+export type NotificationPreferencesMode = 'all' | 'email_only' | 'max_only' | 'none' | 'custom';
+
+export type NotificationPreferenceType = 'chat' | 'request' | 'offer' | 'system';
 
 export type NotificationPreferences = {
   mode: NotificationPreferencesMode;
@@ -120,6 +123,7 @@ export type NotificationPreferences = {
   maxAvailable: boolean;
   email: string | null;
   maxUserId: string | null;
+  preferences: Record<NotificationPreferenceType, { email: boolean; max: boolean }>;
 };
 
 type UpdateCredentialsPayload = {
@@ -153,7 +157,8 @@ type UpdateCompanyContactsPayload = {
 };
 
 type UpdateNotificationPreferencesPayload = {
-  mode: NotificationPreferencesMode;
+  mode?: Exclude<NotificationPreferencesMode, 'custom'>;
+  preferences?: Partial<Record<NotificationPreferenceType, { email?: boolean; max?: boolean }>>;
 };
 
 const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfile => {
@@ -203,11 +208,32 @@ const mapNotificationPreferences = (response: NotificationPreferencesResponse): 
   const data = response.data ?? {};
   const mode = data.mode;
   return {
-    mode: mode === 'all' || mode === 'email_only' || mode === 'max_only' || mode === 'none' ? mode : 'none',
+    mode:
+      mode === 'all' || mode === 'email_only' || mode === 'max_only' || mode === 'none' || mode === 'custom'
+        ? mode
+        : 'none',
     emailAvailable: Boolean(data.email_available),
     maxAvailable: Boolean(data.max_available),
     email: data.email ?? null,
-    maxUserId: data.max_user_id ?? null
+    maxUserId: data.max_user_id ?? null,
+    preferences: {
+      chat: {
+        email: Boolean(data.preferences?.chat?.email),
+        max: Boolean(data.preferences?.chat?.max)
+      },
+      request: {
+        email: Boolean(data.preferences?.request?.email),
+        max: Boolean(data.preferences?.request?.max)
+      },
+      offer: {
+        email: Boolean(data.preferences?.offer?.email),
+        max: Boolean(data.preferences?.offer?.max)
+      },
+      system: {
+        email: Boolean(data.preferences?.system?.email),
+        max: Boolean(data.preferences?.system?.max)
+      }
+    }
   };
 };
 

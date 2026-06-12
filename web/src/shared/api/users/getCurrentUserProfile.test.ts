@@ -22,7 +22,13 @@ describe('getCurrentUserProfile notification preferences api', () => {
         email_available: true,
         max_available: false,
         email: 'user@example.com',
-        max_user_id: null
+        max_user_id: null,
+        preferences: {
+          chat: { email: true, max: false },
+          request: { email: true, max: false },
+          offer: { email: true, max: false },
+          system: { email: true, max: false }
+        }
       }
     });
 
@@ -31,28 +37,50 @@ describe('getCurrentUserProfile notification preferences api', () => {
       emailAvailable: true,
       maxAvailable: false,
       email: 'user@example.com',
-      maxUserId: null
+      maxUserId: null,
+      preferences: {
+        chat: { email: true, max: false },
+        request: { email: true, max: false },
+        offer: { email: true, max: false },
+        system: { email: true, max: false }
+      }
     });
   });
 
-  it('sends updated notification mode to backend', async () => {
+  it('sends updated detailed notification preferences to backend', async () => {
     vi.mocked(fetchJson).mockResolvedValue({
       data: {
-        mode: 'max_only',
+        mode: 'custom',
         email_available: true,
         max_available: true,
         email: 'user@example.com',
-        max_user_id: 'max-42'
+        max_user_id: 'max-42',
+        preferences: {
+          chat: { email: true, max: false },
+          request: { email: true, max: true },
+          offer: { email: false, max: true },
+          system: { email: true, max: false }
+        }
       }
     });
 
-    await updateMyNotificationPreferences({ mode: 'max_only' });
+    await updateMyNotificationPreferences({
+      preferences: {
+        chat: { email: true, max: false },
+        request: { email: true, max: true }
+      }
+    });
 
     expect(fetchJson).toHaveBeenCalledWith(
       '/api/v1/users/me/notification-preferences',
       {
         method: 'PUT',
-        body: JSON.stringify({ mode: 'max_only' })
+        body: JSON.stringify({
+          preferences: {
+            chat: { email: true, max: false },
+            request: { email: true, max: true }
+          }
+        })
       },
       'Не удалось сохранить настройки уведомлений'
     );

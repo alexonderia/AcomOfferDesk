@@ -1,7 +1,8 @@
 import EditOutlined from '@mui/icons-material/EditOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
@@ -11,6 +12,7 @@ import {
   DialogContent,
   Divider,
   FormControlLabel,
+  IconButton,
   Stack,
   Switch,
   Tooltip,
@@ -28,8 +30,8 @@ import {
   linkMyMaxAccount,
   setMyUnavailabilityPeriod,
   type CurrentUserProfile,
+  type NotificationPreferenceType,
   type NotificationPreferences,
-  type NotificationPreferencesMode,
   updateMyCompanyContacts,
   updateMyCredentials,
   updateMyNotificationPreferences,
@@ -196,6 +198,25 @@ type ProfileButtonProps = {
   sidebar?: boolean;
 };
 
+const NOTIFICATION_TYPE_META: Record<NotificationPreferenceType, { label: string; description: string }> = {
+  chat: {
+    label: 'Сообщения',
+    description: 'Новые сообщения в чате по заявкам и предложениям.'
+  },
+  request: {
+    label: 'Заявки',
+    description: 'Новые заявки и изменения статуса заявок, которые вам доступны.'
+  },
+  offer: {
+    label: 'Предложения',
+    description: 'Изменения статуса и другие важные обновления по вашим коммерческим предложениям.'
+  },
+  system: {
+    label: 'Системные',
+    description: 'Служебные уведомления: доступ, модерация и другие системные события.'
+  }
+};
+
 const DataRow = ({ label, value }: { label: string; value: string | null }) => (
   <Stack
     direction={{ xs: 'column', sm: 'row' }}
@@ -204,6 +225,47 @@ const DataRow = ({ label, value }: { label: string; value: string | null }) => (
   >
     <Typography sx={{ width: { sm: 170 }, color: 'text.primary' }}>{label}</Typography>
     <Typography color={value ? 'text.primary' : 'text.secondary'}>{value ?? fallbackText}</Typography>
+  </Stack>
+);
+
+const SectionHeader = ({
+  title,
+  onEdit,
+  showEdit = false,
+  infoContent
+}: {
+  title: string;
+  onEdit?: () => void;
+  showEdit?: boolean;
+  infoContent?: ReactNode;
+}) => (
+  <Stack
+    direction={{ xs: 'column', sm: 'row' }}
+    spacing={1}
+    alignItems={{ xs: 'flex-start', sm: 'center' }}
+    justifyContent="space-between"
+  >
+    <Stack direction="row" spacing={0.75} alignItems="center">
+      <Typography variant="h5" fontWeight={600} lineHeight={1}>
+        {title}
+      </Typography>
+      {infoContent ? (
+        <Tooltip title={infoContent} arrow placement="top-start">
+          <IconButton size="small" sx={{ color: 'text.secondary', p: 0.25 }}>
+            <InfoOutlinedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+    </Stack>
+    {showEdit && onEdit ? (
+      <Button
+        variant="outlined"
+        size="small"
+        startIcon={<EditOutlined fontSize="small" />}
+        sx={smallEditButtonSx}
+        onClick={onEdit}
+      />
+    ) : null}
   </Stack>
 );
 
@@ -217,6 +279,21 @@ const normalizeOptional = (value: string) => {
 
 const sanitizeDefaultValue = (value: string | null) => (value && isPlaceholderValue(value) ? '' : value ?? '');
 
+const renderNotificationInfo = (
+  <Box sx={{ maxWidth: 340, py: 0.5 }}>
+    <Typography variant="body2" sx={{ mb: 1 }}>
+      Настройки применяются отдельно для каждого типа уведомлений и для каждого канала доставки.
+    </Typography>
+    <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 600 }}>
+      Что означает каждый тип:
+    </Typography>
+    <Typography variant="body2">Сообщения: новые сообщения в чатах.</Typography>
+    <Typography variant="body2">Заявки: новые заявки и изменения по ним.</Typography>
+    <Typography variant="body2">Предложения: события по коммерческим предложениям.</Typography>
+    <Typography variant="body2">Системные: доступ, модерация и служебные оповещения.</Typography>
+  </Box>
+);
+
 export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButtonProps) => {
   const theme = useTheme();
   const { session } = useAuth();
@@ -225,6 +302,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const [openPassword, setOpenPassword] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
+  const [openMaxLink, setOpenMaxLink] = useState(false);
   const [openUnavailability, setOpenUnavailability] = useState(false);
   const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null);
@@ -342,6 +420,18 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const canEditCompany = Boolean(profile?.actions.manage_company_contacts);
   const canSetUnavailability = Boolean(profile?.actions.manage_own_unavailability);
 
+  const maxLinkButtonLabel = notificationPreferences?.maxUserId ? 'Изменить MAX' : 'Привязать MAX';
+
+  const notificationRows = useMemo(
+    () =>
+      (Object.keys(NOTIFICATION_TYPE_META) as NotificationPreferenceType[]).map((type) => ({
+        type,
+        label: NOTIFICATION_TYPE_META[type].label,
+        description: NOTIFICATION_TYPE_META[type].description
+      })),
+    []
+  );
+
   const onSubmitPassword = async (values: PasswordFormValues) => {
     setError(null);
     try {
@@ -412,18 +502,21 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       setProfile(nextProfile);
       setNotificationPreferences(nextPreferences);
       resetMaxLink({ code: '' });
+      setOpenMaxLink(false);
       showSuccessToast('MAX привязан к вашему аккаунту.');
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Не удалось привязать MAX');
     }
   };
 
-  const saveNotificationMode = async (mode: NotificationPreferencesMode) => {
+  const saveNotificationPreferences = async (
+    nextPreferences: Partial<Record<NotificationPreferenceType, { email?: boolean; max?: boolean }>>
+  ) => {
     setError(null);
     setIsSavingNotificationPreferences(true);
     try {
-      const nextPreferences = await updateMyNotificationPreferences({ mode });
-      setNotificationPreferences(nextPreferences);
+      const updatedPreferences = await updateMyNotificationPreferences({ preferences: nextPreferences });
+      setNotificationPreferences(updatedPreferences);
       showSuccessToast('Настройки уведомлений сохранены.');
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Не удалось сохранить настройки уведомлений');
@@ -432,29 +525,16 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
     }
   };
 
-  const handleNotificationChannelsChange = (channel: 'email' | 'max', checked: boolean) => {
-    if (!notificationPreferences) {
-      return;
-    }
-
-    const currentEmailEnabled =
-      notificationPreferences.mode === 'all' || notificationPreferences.mode === 'email_only';
-    const currentMaxEnabled =
-      notificationPreferences.mode === 'all' || notificationPreferences.mode === 'max_only';
-
-    const nextEmailEnabled = channel === 'email' ? checked : currentEmailEnabled;
-    const nextMaxEnabled = channel === 'max' ? checked : currentMaxEnabled;
-
-    let nextMode: NotificationPreferencesMode = 'none';
-    if (nextEmailEnabled && nextMaxEnabled) {
-      nextMode = 'all';
-    } else if (nextEmailEnabled) {
-      nextMode = 'email_only';
-    } else if (nextMaxEnabled) {
-      nextMode = 'max_only';
-    }
-
-    void saveNotificationMode(nextMode);
+  const handleNotificationTypeChannelChange = (
+    notificationType: NotificationPreferenceType,
+    channel: 'email' | 'max',
+    checked: boolean
+  ) => {
+    void saveNotificationPreferences({
+      [notificationType]: {
+        [channel]: checked
+      }
+    });
   };
 
   const onSubmitUnavailability = async (values: UnavailabilityFormValues) => {
@@ -471,11 +551,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить нерабочий период');
     }
   };
-
-  const isEmailNotificationsEnabled =
-    notificationPreferences?.mode === 'all' || notificationPreferences?.mode === 'email_only';
-  const isMaxNotificationsEnabled =
-    notificationPreferences?.mode === 'all' || notificationPreferences?.mode === 'max_only';
 
   return (
     <>
@@ -545,7 +620,12 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
           </Box>
         </Tooltip>
       ) : (
-        <Button variant="outlined" onClick={() => void openDialog()} startIcon={<PersonOutlineRounded fontSize="small" />} sx={{ minWidth: 124 }}>
+        <Button
+          variant="outlined"
+          onClick={() => void openDialog()}
+          startIcon={<PersonOutlineRounded fontSize="small" />}
+          sx={{ minWidth: 124 }}
+        >
           Профиль
         </Button>
       )}
@@ -561,35 +641,23 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
               {error ? <Alert severity="error">{error}</Alert> : null}
 
               <Stack spacing={1.5}>
-                <Stack
-                  direction={{ xs: 'column', sm: 'row' }}
-                  spacing={1}
-                  alignItems={{ xs: 'flex-start', sm: 'center' }}
-                  justifyContent="space-between"
-                >
-                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
-                    Личные данные
-                  </Typography>
-                  <Stack direction="row" spacing={1}>
-                    {canEditCredentials ? (
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<EditOutlined fontSize="small" />}
-                        sx={smallEditButtonSx}
-                        onClick={() => setOpenPassword(true)}
-                      />
-                    ) : null}
-                    {canEditProfile ? (
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<EditOutlined fontSize="small" />}
-                        sx={smallEditButtonSx}
-                        onClick={() => setOpenProfile(true)}
-                      />
-                    ) : null}
-                  </Stack>
+                <SectionHeader
+                  title="Личные данные"
+                  showEdit={canEditProfile}
+                  onEdit={() => setOpenProfile(true)}
+                />
+                <Stack direction="row" spacing={1}>
+                  {canEditCredentials ? (
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<EditOutlined fontSize="small" />}
+                      sx={smallEditButtonSx}
+                      onClick={() => setOpenPassword(true)}
+                    >
+                      Пароль
+                    </Button>
+                  ) : null}
                 </Stack>
                 <DataRow label="Логин" value={session?.login ?? profile?.userId ?? null} />
                 <DataRow label="ФИО" value={profile?.fullName ?? null} />
@@ -600,62 +668,51 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
               {showCompanyInfo ? <Divider /> : null}
 
               {canSetUnavailability ? (
-                <Stack spacing={1.5}>
-                  <UnavailabilityManagementSection
-                    currentPeriod={profile?.unavailablePeriod ?? null}
-                    periods={profile?.unavailablePeriods ?? []}
-                    canEdit
-                    isDialogOpen={openUnavailability}
-                    onOpenDialog={() => setOpenUnavailability(true)}
-                    onCloseDialog={() => setOpenUnavailability(false)}
-                    onSubmit={handleUnavailabilitySubmit((values) => void onSubmitUnavailability(values))}
-                    isSubmitting={isSubmittingUnavailability}
-                    dialogTitle="Установить нерабочий период"
-                    triggerLabel="Установить нерабочий период"
-                    submitLabel="Сохранить период"
-                    editor={
-                      <UnavailabilityPeriodEditor
-                        statusField={registerUnavailability('status')}
-                        startedAtField={registerUnavailability('started_at')}
-                        endedAtField={registerUnavailability('ended_at')}
-                        startedAtValue={watchUnavailability('started_at') ?? ''}
-                        endedAtValue={watchUnavailability('ended_at') ?? ''}
-                        onStartedAtChange={(value: string) =>
-                          setUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })
-                        }
-                        onEndedAtChange={(value: string) =>
-                          setUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })
-                        }
-                        statusError={unavailabilityErrors.status?.message}
-                        startedAtError={unavailabilityErrors.started_at?.message}
-                        endedAtError={unavailabilityErrors.ended_at?.message}
-                      />
-                    }
-                  />
-                </Stack>
+                <>
+                  <Stack spacing={1.5}>
+                    <UnavailabilityManagementSection
+                      currentPeriod={profile?.unavailablePeriod ?? null}
+                      periods={profile?.unavailablePeriods ?? []}
+                      canEdit
+                      isDialogOpen={openUnavailability}
+                      onOpenDialog={() => setOpenUnavailability(true)}
+                      onCloseDialog={() => setOpenUnavailability(false)}
+                      onSubmit={handleUnavailabilitySubmit((values) => void onSubmitUnavailability(values))}
+                      isSubmitting={isSubmittingUnavailability}
+                      dialogTitle="Установить нерабочий период"
+                      triggerLabel="Установить нерабочий период"
+                      submitLabel="Сохранить период"
+                      editor={
+                        <UnavailabilityPeriodEditor
+                          statusField={registerUnavailability('status')}
+                          startedAtField={registerUnavailability('started_at')}
+                          endedAtField={registerUnavailability('ended_at')}
+                          startedAtValue={watchUnavailability('started_at') ?? ''}
+                          endedAtValue={watchUnavailability('ended_at') ?? ''}
+                          onStartedAtChange={(value: string) =>
+                            setUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })
+                          }
+                          onEndedAtChange={(value: string) =>
+                            setUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })
+                          }
+                          statusError={unavailabilityErrors.status?.message}
+                          startedAtError={unavailabilityErrors.started_at?.message}
+                          endedAtError={unavailabilityErrors.ended_at?.message}
+                        />
+                      }
+                    />
+                  </Stack>
+                  <Divider />
+                </>
               ) : null}
 
               {showCompanyInfo ? (
                 <Stack spacing={1.5}>
-                  <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    spacing={1}
-                    alignItems={{ xs: 'flex-start', sm: 'center' }}
-                    justifyContent="space-between"
-                  >
-                    <Typography variant="h5" fontWeight={600} lineHeight={1}>
-                      Данные компании
-                    </Typography>
-                    {canEditCompany ? (
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<EditOutlined fontSize="small" />}
-                        sx={smallEditButtonSx}
-                        onClick={() => setOpenCompany(true)}
-                      />
-                    ) : null}
-                  </Stack>
+                  <SectionHeader
+                    title="Данные компании"
+                    showEdit={canEditCompany}
+                    onEdit={() => setOpenCompany(true)}
+                  />
                   <DataRow label="ИНН" value={profile?.company.inn ?? null} />
                   <DataRow label="Наименование" value={profile?.company.companyName ?? null} />
                   <DataRow label="Телефон" value={profile?.company.phone ?? null} />
@@ -665,70 +722,124 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                 </Stack>
               ) : null}
 
-              {canEditProfile && showContractorNotificationSettings ? <Divider /> : null}
+              {showCompanyInfo && showContractorNotificationSettings ? <Divider /> : null}
 
-              {canEditProfile && showContractorNotificationSettings ? (
-                <Stack spacing={1.5} component="form" onSubmit={handleMaxLinkSubmit((values) => void onSubmitMaxLink(values))}>
-                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
-                    Привязка MAX
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    По команде `/start` в MAX-боте можно узнать свой MAX ID и по нему привязать аккаунт для уведомлений.
-                  </Typography>
-                  <ValidatedTextField
-                    label="MAX ID"
-                    fieldName="code"
-                    registration={registerMaxLink('code')}
-                    error={Boolean(maxLinkErrors.code)}
-                    helperText={maxLinkErrors.code?.message}
-                    sx={inputFieldSx}
-                  />
-                  <Button type="submit" variant="contained" sx={primaryButtonSx} disabled={isSubmittingMaxLink}>
-                    Привязать MAX
-                  </Button>
-                </Stack>
-              ) : null}
-
-              {canEditProfile && showContractorNotificationSettings && notificationPreferences ? <Divider /> : null}
-
-              {canEditProfile && showContractorNotificationSettings && notificationPreferences ? (
+              {showContractorNotificationSettings && notificationPreferences ? (
                 <Stack spacing={1.5}>
-                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
-                    Уведомления
-                  </Typography>
+                  <SectionHeader title="Уведомления" infoContent={renderNotificationInfo} />
                   <Typography variant="body2" color="text.secondary">
-                    Выберите, как получать уведомления.
+                    Настройте каналы отдельно для каждого типа уведомлений.
                   </Typography>
-                  <Stack spacing={0.5}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={Boolean(isEmailNotificationsEnabled)}
-                          onChange={(_, checked) => handleNotificationChannelsChange('email', checked)}
-                          disabled={!notificationPreferences.emailAvailable || isSavingNotificationPreferences}
-                        />
-                      }
-                      label={`Email${notificationPreferences?.email ? `: ${notificationPreferences.email}` : ''}`}
-                      labelPlacement="start"
-                      sx={notificationSwitchSx}
-                    />
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={Boolean(isMaxNotificationsEnabled)}
-                          onChange={(_, checked) => handleNotificationChannelsChange('max', checked)}
-                          disabled={!notificationPreferences.maxAvailable || isSavingNotificationPreferences}
-                        />
-                      }
-                      label={`MAX${notificationPreferences?.maxUserId ? `: ${notificationPreferences.maxUserId}` : ''}`}
-                      labelPlacement="start"
-                      sx={notificationSwitchSx}
-                    />
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                  >
+                    <Stack spacing={0.25}>
+                      <Typography variant="body2" color="text.secondary">
+                        Почта: {notificationPreferences.email ?? fallbackText}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        MAX ID: {notificationPreferences.maxUserId ?? fallbackText}
+                      </Typography>
+                    </Stack>
+                    <Button
+                      variant={notificationPreferences.maxUserId ? 'outlined' : 'contained'}
+                      sx={primaryButtonSx}
+                      onClick={() => setOpenMaxLink(true)}
+                    >
+                      {maxLinkButtonLabel}
+                    </Button>
+                  </Stack>
+                  <Stack spacing={1}>
+                    {notificationRows.map((item) => (
+                      <Box
+                        key={item.type}
+                        sx={{
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          px: 1.5,
+                          py: 1.25
+                        }}
+                      >
+                        <Stack
+                          direction={{ xs: 'column', sm: 'row' }}
+                          spacing={1.5}
+                          justifyContent="space-between"
+                          alignItems={{ xs: 'flex-start', sm: 'center' }}
+                        >
+                          <Stack spacing={0.25} sx={{ pr: { sm: 2 } }}>
+                            <Typography fontWeight={600}>{item.label}</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              {item.description}
+                            </Typography>
+                          </Stack>
+                          <Stack sx={{ minWidth: { sm: 220 }, width: { xs: '100%', sm: 'auto' } }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  checked={notificationPreferences.preferences[item.type].email}
+                                  onChange={(_, checked) =>
+                                    handleNotificationTypeChannelChange(item.type, 'email', checked)
+                                  }
+                                  disabled={
+                                    !notificationPreferences.emailAvailable || isSavingNotificationPreferences
+                                  }
+                                />
+                              }
+                              label="Email"
+                              labelPlacement="start"
+                              sx={notificationSwitchSx}
+                            />
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  checked={notificationPreferences.preferences[item.type].max}
+                                  onChange={(_, checked) =>
+                                    handleNotificationTypeChannelChange(item.type, 'max', checked)
+                                  }
+                                  disabled={!notificationPreferences.maxAvailable || isSavingNotificationPreferences}
+                                />
+                              }
+                              label="MAX"
+                              labelPlacement="start"
+                              sx={notificationSwitchSx}
+                            />
+                          </Stack>
+                        </Stack>
+                      </Box>
+                    ))}
                   </Stack>
                 </Stack>
               ) : null}
             </Stack>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openMaxLink} onClose={() => setOpenMaxLink(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
+        <DialogContent sx={dialogContentSx}>
+          <Stack spacing={2} component="form" onSubmit={handleMaxLinkSubmit((values) => void onSubmitMaxLink(values))}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
+              {notificationPreferences?.maxUserId ? 'Изменение привязки MAX' : 'Привязка MAX'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              По команде `/start` в MAX-боте можно узнать свой MAX ID и по нему привязать аккаунт для уведомлений.
+            </Typography>
+            <ValidatedTextField
+              label="MAX ID"
+              fieldName="code"
+              registration={registerMaxLink('code')}
+              error={Boolean(maxLinkErrors.code)}
+              helperText={maxLinkErrors.code?.message}
+              sx={inputFieldSx}
+            />
+            <Button type="submit" variant="contained" sx={primaryButtonSx} disabled={isSubmittingMaxLink}>
+              Сохранить привязку MAX
+            </Button>
+          </Stack>
         </DialogContent>
       </Dialog>
 

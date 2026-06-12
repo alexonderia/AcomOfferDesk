@@ -266,6 +266,7 @@ class NotificationPreferencesData(BaseModel):
     max_available: bool
     email: str | None = None
     max_user_id: str | None = None
+    preferences: dict[str, dict[str, bool]]
 
 
 class NotificationPreferencesResponse(BaseModel):
@@ -273,7 +274,8 @@ class NotificationPreferencesResponse(BaseModel):
 
 
 class UpdateNotificationPreferencesRequest(BaseModel):
-    mode: str = Field(min_length=1, max_length=32)
+    mode: str | None = Field(default=None, min_length=1, max_length=32)
+    preferences: dict[str, dict[str, bool | None]] | None = None
 
 
 class SetMyUnavailabilityPeriodRequest(BaseModel):

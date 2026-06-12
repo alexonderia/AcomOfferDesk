@@ -378,6 +378,13 @@ def _notification_preferences_data(item) -> NotificationPreferencesData:
         max_available=item.max_available,
         email=item.email,
         max_user_id=item.max_user_id,
+        preferences={
+            notification_type: {
+                "email": notification_state.email,
+                "max": notification_state.max,
+            }
+            for notification_type, notification_state in item.preferences.items()
+        },
     )
 
 
@@ -453,7 +460,15 @@ async def update_my_notification_preferences(
             uow.user_notification_preferences,
             profiles=uow.profiles,
         )
-        state = await service.update_mode(user_id=current_user.user_id, mode=payload.mode)
+        if payload.preferences is not None:
+            state = await service.update_preferences(
+                user_id=current_user.user_id,
+                preferences=payload.preferences,
+            )
+        elif payload.mode is not None:
+            state = await service.update_mode(user_id=current_user.user_id, mode=payload.mode)
+        else:
+            state = await service.get_state(user_id=current_user.user_id)
 
     return NotificationPreferencesResponse(data=_notification_preferences_data(state))
 

@@ -40,6 +40,10 @@ async def test_get_state_defaults_to_all_when_both_channels_available() -> None:
     assert state.max_available is True
     assert state.email == "user@example.com"
     assert state.max_user_id == "max-user-1"
+    assert state.preferences["chat"].email is True
+    assert state.preferences["chat"].max is True
+    assert state.preferences["system"].email is True
+    assert state.preferences["system"].max is True
 
 
 @pytest.mark.asyncio
@@ -57,9 +61,24 @@ async def test_update_mode_creates_email_channel_for_profile_only_email() -> Non
     channels.list_by_user.side_effect = [
         [],
         [email_channel],
+        [email_channel],
     ]
     channels.upsert_channel.return_value = email_channel
-    preferences.list_by_channel_ids.return_value = []
+    preferences.list_by_channel_ids.side_effect = [
+        [],
+        [
+            SimpleNamespace(id_contact_channel=10, notification_type="chat", is_enabled=False),
+            SimpleNamespace(id_contact_channel=10, notification_type="request", is_enabled=False),
+            SimpleNamespace(id_contact_channel=10, notification_type="offer", is_enabled=False),
+            SimpleNamespace(id_contact_channel=10, notification_type="system", is_enabled=False),
+        ],
+        [
+            SimpleNamespace(id_contact_channel=10, notification_type="chat", is_enabled=False),
+            SimpleNamespace(id_contact_channel=10, notification_type="request", is_enabled=False),
+            SimpleNamespace(id_contact_channel=10, notification_type="offer", is_enabled=False),
+            SimpleNamespace(id_contact_channel=10, notification_type="system", is_enabled=False),
+        ],
+    ]
     profiles.get_by_id.return_value = SimpleNamespace(mail="user@example.com")
     service = UserNotificationPreferencesService(channels, preferences, profiles=profiles)
 
@@ -78,6 +97,62 @@ async def test_update_mode_creates_email_channel_for_profile_only_email() -> Non
         assert call.kwargs["is_enabled"] is False
     assert state.mode == "none"
     assert state.email_available is True
+    assert all(item.email is False and item.max is False for item in state.preferences.values())
+
+
+@pytest.mark.asyncio
+async def test_update_preferences_persists_detailed_matrix() -> None:
+    channels = AsyncMock()
+    preferences = AsyncMock()
+    profiles = AsyncMock()
+    channels.list_by_user.return_value = [
+        SimpleNamespace(
+            id=11,
+            channel_type="email",
+            channel_value="user@example.com",
+            is_active=True,
+            is_verified=True,
+        ),
+        SimpleNamespace(
+            id=12,
+            channel_type="max",
+            channel_value="max-user-1",
+            is_active=True,
+            is_verified=True,
+        ),
+    ]
+    preferences.list_by_channel_ids.side_effect = [
+        [],
+        [
+            SimpleNamespace(id_contact_channel=11, notification_type="chat", is_enabled=True),
+            SimpleNamespace(id_contact_channel=12, notification_type="chat", is_enabled=False),
+            SimpleNamespace(id_contact_channel=11, notification_type="request", is_enabled=True),
+            SimpleNamespace(id_contact_channel=12, notification_type="request", is_enabled=True),
+            SimpleNamespace(id_contact_channel=11, notification_type="offer", is_enabled=False),
+            SimpleNamespace(id_contact_channel=12, notification_type="offer", is_enabled=True),
+            SimpleNamespace(id_contact_channel=11, notification_type="system", is_enabled=True),
+            SimpleNamespace(id_contact_channel=12, notification_type="system", is_enabled=False),
+        ],
+    ]
+    profiles.get_by_id.return_value = SimpleNamespace(mail="user@example.com")
+    service = UserNotificationPreferencesService(channels, preferences, profiles=profiles)
+
+    state = await service.update_preferences(
+        user_id="user-1",
+        preferences={
+            "chat": {"email": True, "max": False},
+            "request": {"email": True, "max": True},
+            "offer": {"email": False, "max": True},
+            "system": {"email": True, "max": False},
+        },
+    )
+
+    assert preferences.upsert.await_count == 8
+    assert state.mode == "custom"
+    assert state.preferences["chat"].email is True
+    assert state.preferences["chat"].max is False
+    assert state.preferences["offer"].email is False
+    assert state.preferences["offer"].max is True
 
 
 @pytest.mark.asyncio

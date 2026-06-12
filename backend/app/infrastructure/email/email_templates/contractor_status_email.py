@@ -6,6 +6,7 @@ from app.infrastructure.email.email_message_payload import EmailMessagePayload
 from shared.notification_copy import (
     ACCESS_CLOSED_BODY,
     ACCESS_OPENED_BODY,
+    AUTHORIZATION_BUTTON_LABEL,
     REGISTRATION_COMPLETED_BODY,
     email_subject,
 )
@@ -67,7 +68,7 @@ def build_contractor_access_opened_email_payload(
                   <tr>
                     <td bgcolor="#0969da" style="border-radius:6px;">
                       <a href="{escaped_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
-                        Перейти к авторизации
+                        {AUTHORIZATION_BUTTON_LABEL}
                       </a>
                     </td>
                   </tr>

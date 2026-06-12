@@ -12,6 +12,7 @@ from shared.notification_copy import (
     ACCESS_CLOSED_BODY,
     ACCESS_OPENED_BODY,
     EXPIRED_REGISTRATION_LINK_BODY,
+    NOTIFICATION_BUTTON_LABEL,
     REGISTRATION_COMPLETED_BODY,
     message_created_body,
     new_request_outbound_body,
@@ -64,7 +65,7 @@ async def notify_new_message(*, tg_id: int, request_id: str) -> None:
     await _notify(
         tg_id=tg_id,
         text=message_created_body(request_id=request_id),
-        button_text="Открыть сервис",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=link,
     )
 
@@ -87,7 +88,7 @@ async def notify_new_request(
             _notify(
                 tg_id=tg_id,
                 text=text,
-                button_text="Перейти в сервис",
+                button_text=NOTIFICATION_BUTTON_LABEL,
                 button_url=link,
             )
         )
@@ -109,7 +110,7 @@ async def notify_request_status_changed(
             previous_status=previous_status,
             new_status=new_status,
         ),
-        button_text="Перейти в сервис",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(tg_id=tg_id),
     )
 
@@ -118,7 +119,7 @@ async def notify_offer_status_finalized(*, tg_id: int, request_id: str) -> None:
     await _notify(
         tg_id=tg_id,
         text=offer_status_changed_body(request_id=request_id),
-        button_text="Перейти в сервис",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(tg_id=tg_id),
     )
 

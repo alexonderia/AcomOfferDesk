@@ -111,7 +111,7 @@ async def handle_start(message: Message) -> None:
             
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="Перейти в сервис", url=link)],
+                    [InlineKeyboardButton(text="Перейти в систему", url=link)],
                 ]
             )
             deadline_text = _format_deadline(request.deadline_at)

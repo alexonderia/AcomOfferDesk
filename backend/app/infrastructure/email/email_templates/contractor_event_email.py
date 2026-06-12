@@ -4,6 +4,7 @@ from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
 from app.infrastructure.email.email_templates.email_contact_blocks import build_primary_button_html
+from shared.notification_copy import NOTIFICATION_BUTTON_LABEL
 
 
 def build_contractor_event_email_payload(
@@ -13,7 +14,7 @@ def build_contractor_event_email_payload(
     body_text: str,
     body_html: str,
     action_url: str | None = None,
-    action_label: str = "Открыть систему",
+    action_label: str = NOTIFICATION_BUTTON_LABEL,
 ) -> EmailMessagePayload:
     return EmailMessagePayload(
         to_email=to_email,

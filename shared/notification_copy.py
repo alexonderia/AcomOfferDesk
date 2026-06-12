@@ -5,6 +5,10 @@ from html import escape
 
 EMAIL_SUBJECT_PREFIX = "AcomOfferDesk — "
 
+NOTIFICATION_BUTTON_LABEL = "Перейти в систему"
+REGISTRATION_BUTTON_LABEL = "Перейти к регистрации"
+AUTHORIZATION_BUTTON_LABEL = "Перейти к авторизации"
+
 REGISTRATION_COMPLETED_BODY = "Регистрация пройдена. Данные отправлены на проверку."
 
 ACCESS_OPENED_BODY = "Доступ к системе открыт."

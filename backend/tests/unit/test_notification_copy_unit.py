@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from shared.notification_copy import (
     ACCESS_CLOSED_BODY,
     ACCESS_OPENED_BODY,
+    AUTHORIZATION_BUTTON_LABEL,
+    NOTIFICATION_BUTTON_LABEL,
+    REGISTRATION_BUTTON_LABEL,
     REGISTRATION_COMPLETED_BODY,
     message_created_body,
     new_request_outbound_body,
@@ -38,6 +41,12 @@ def test_new_request_outbound_body_starts_with_request_created_body() -> None:
 def test_offer_updated_and_status_use_same_request_wording() -> None:
     assert offer_updated_body(request_id="15") == "По заявке №15 обновлено коммерческое предложение."
     assert offer_status_changed_body(request_id="15") == "По заявке №15 изменён статус КП."
+
+
+def test_notification_button_labels_are_stable() -> None:
+    assert NOTIFICATION_BUTTON_LABEL == "Перейти в систему"
+    assert REGISTRATION_BUTTON_LABEL == "Перейти к регистрации"
+    assert AUTHORIZATION_BUTTON_LABEL == "Перейти к авторизации"
 
 
 def test_access_and_registration_messages_are_stable() -> None:

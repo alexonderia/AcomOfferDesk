@@ -378,7 +378,7 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
 
     assert verified_item["reply_token"]
     assert "/requests/33/contractor" in verified_item["text_content"]
-    assert "Открыть заявку:" in verified_item["text_content"]
+    assert "Перейти в систему:" in verified_item["text_content"]
     assert verified_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert verified_item["operation_expected_total"] == 2
     assert invite_item["reply_token"] is None
@@ -520,7 +520,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
     assert "Вы приглашены к работе в системе AcomOfferDesk." in event["text_content"]
     assert "Инструкция по получению доступа приложена к письму в виде презентации." in event["text_content"]
     assert "Поступила новая заявка №50." in event["text_content"]
-    assert "Перейти к системе:" in event["text_content"]
+    assert "Перейти в систему:" in event["text_content"]
     assert "/api/v1/auth/oidc/register" not in event["text_content"]
     assert event["attachments"][0].filename == "onboarding.pptx"
 

@@ -16,6 +16,7 @@ from app.services.max_notifications import (
 from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.normalization import normalize_optional_str as _normalize_optional_str
 from shared.notification_copy import (
+    NOTIFICATION_BUTTON_LABEL,
     email_subject,
     message_unread_email_body,
     message_unread_email_body_html,
@@ -80,7 +81,7 @@ async def _notify_contractor_channels(
     email_body_text: str | None = None,
     email_body_html: str | None = None,
     action_url: str | None = None,
-    action_label: str = "Открыть систему",
+    action_label: str = NOTIFICATION_BUTTON_LABEL,
     request_id: str | None = None,
     offer_id: int | None = None,
     max_notify,
@@ -204,7 +205,6 @@ async def notify_contractors_with_offers_about_request(
                     email_body_text=body_text,
                     email_body_html=body_html,
                     action_url=action_url,
-                    action_label="Открыть заявку",
                     request_id=request_id,
                     max_notify=max_notify,
                 )
@@ -249,7 +249,6 @@ async def notify_contractor_offer_updated(
             email_body_text=body_text,
             email_body_html=body_html,
             action_url=_resolve_action_url(offer_id=offer_id),
-            action_label="Открыть КП",
             request_id=request_id,
             offer_id=offer_id,
             max_notify=lambda *, max_user_id: notify_max_offer_updated(
@@ -305,7 +304,6 @@ async def send_unread_chat_email_if_needed(
             body_text=body_text,
             body_html=message_unread_email_body_html(request_id=request_id),
             action_url=_resolve_action_url(offer_id=offer_id),
-            action_label="Открыть чат",
         )
         await _build_email_service().send_email(
             to_email=payload.to_email,

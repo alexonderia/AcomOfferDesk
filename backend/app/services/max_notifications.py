@@ -13,6 +13,7 @@ from shared.notification_copy import (
     ACCESS_OPENED_BODY,
     EXPIRED_REGISTRATION_LINK_BODY,
     MAX_ACCOUNT_LINKED_BODY,
+    NOTIFICATION_BUTTON_LABEL,
     REGISTRATION_COMPLETED_BODY,
     message_created_body,
     new_request_outbound_body,
@@ -71,7 +72,7 @@ async def notify_new_message(*, max_user_id: str, request_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
         text=message_created_body(request_id=request_id),
-        button_text="Открыть систему",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=link,
     )
 
@@ -95,7 +96,7 @@ async def notify_new_request(
             _notify(
                 max_user_id=max_user_id,
                 text=text,
-                button_text="Открыть заявку",
+                button_text=NOTIFICATION_BUTTON_LABEL,
                 button_url=link,
             )
         )
@@ -118,7 +119,7 @@ async def notify_request_status_changed(
             previous_status=previous_status,
             new_status=new_status,
         ),
-        button_text="Открыть систему",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(),
     )
 
@@ -127,7 +128,7 @@ async def notify_request_deadline_changed(*, max_user_id: str, request_id: str) 
     await _notify(
         max_user_id=max_user_id,
         text=request_deadline_changed_body(request_id=request_id),
-        button_text="Открыть заявку",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(),
     )
 
@@ -136,7 +137,7 @@ async def notify_request_files_changed(*, max_user_id: str, request_id: str) -> 
     await _notify(
         max_user_id=max_user_id,
         text=request_files_changed_body(request_id=request_id),
-        button_text="Открыть заявку",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(),
     )
 
@@ -145,7 +146,7 @@ async def notify_offer_updated(*, max_user_id: str, request_id: str) -> None:
     await _notify(
         max_user_id=max_user_id,
         text=offer_updated_body(request_id=request_id),
-        button_text="Открыть КП",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(),
     )
 
@@ -154,7 +155,7 @@ async def notify_offer_status_finalized(*, max_user_id: str, request_id: str) ->
     await _notify(
         max_user_id=max_user_id,
         text=offer_status_changed_body(request_id=request_id),
-        button_text="Открыть систему",
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(),
     )
 

@@ -216,11 +216,6 @@ const NOTIFICATION_TYPE_META: Array<{
     type: 'offer',
     label: 'КП',
     description: 'Изменения статусов и важные события по коммерческим предложениям.'
-  },
-  {
-    type: 'system',
-    label: 'Системные',
-    description: 'Служебные уведомления: доступ, модерация и другие системные события.'
   }
 ];
 
@@ -297,7 +292,9 @@ const renderNotificationInfo = (
     <Typography variant="body2">Сообщения: события из рабочих чатов.</Typography>
     <Typography variant="body2">Заявки: новые заявки и изменения по ним.</Typography>
     <Typography variant="body2">КП: обновления по коммерческим предложениям.</Typography>
-    <Typography variant="body2">Системные: доступ, модерация и служебные уведомления.</Typography>
+    <Typography variant="body2" sx={{ mt: 1 }}>
+      Системные уведомления не настраиваются в этом блоке и остаются включёнными по умолчанию.
+    </Typography>
   </Box>
 );
 

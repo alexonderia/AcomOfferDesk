@@ -11,7 +11,6 @@ import {
   Dialog,
   DialogContent,
   Divider,
-  FormControlLabel,
   IconButton,
   Stack,
   Switch,
@@ -98,42 +97,36 @@ const submitButtonSx = {
   boxShadow: 'none'
 };
 
-const notificationSwitchSx = {
-  m: 0,
-  justifyContent: 'space-between',
-  width: '100%',
-  '& .MuiFormControlLabel-label': {
-    fontSize: 15
+const notificationMatrixSx = {
+  display: 'grid',
+  gridTemplateColumns: {
+    xs: 'minmax(170px, 1.5fr) minmax(100px, 1fr) minmax(100px, 1fr)',
+    sm: 'minmax(230px, 1.6fr) minmax(170px, 1fr) minmax(170px, 1fr)'
   },
-  '& .MuiSwitch-root': {
-    width: 46,
-    height: 28,
-    p: 0
-  },
-  '& .MuiSwitch-switchBase': {
-    p: '4px',
-    '&.Mui-checked': {
-      transform: 'translateX(18px)',
-      color: '#fff',
-      '& + .MuiSwitch-track': {
-        opacity: 1,
-        backgroundColor: 'primary.main',
-        borderColor: 'primary.main'
-      }
-    }
-  },
-  '& .MuiSwitch-thumb': {
-    width: 20,
-    height: 20,
-    boxShadow: 'none'
-  },
-  '& .MuiSwitch-track': {
-    borderRadius: '999px',
-    opacity: 1,
-    backgroundColor: 'action.selected',
-    border: '1px solid',
-    borderColor: 'divider'
-  }
+  border: '1px solid',
+  borderColor: 'divider',
+  borderRadius: 1,
+  overflow: 'hidden'
+};
+
+const notificationMatrixCellSx = {
+  px: { xs: 1.25, sm: 1.75 },
+  py: 1.25,
+  minHeight: 72,
+  display: 'flex',
+  alignItems: 'center'
+};
+
+const notificationMatrixHeaderCellSx = {
+  ...notificationMatrixCellSx,
+  alignItems: 'stretch',
+  backgroundColor: 'action.hover'
+};
+
+const notificationChannelTitleSx = {
+  fontSize: { xs: 18, sm: 20 },
+  fontWeight: 700,
+  lineHeight: 1.15
 };
 
 const isPlaceholderValue = (value: string) => value.trim().toLowerCase() === defaultDbPlaceholder;
@@ -176,6 +169,11 @@ const companySchema = z.object({
   note: z.string().trim()
 });
 
+const notificationContactsSchema = z.object({
+  notification_email: optionalEmail,
+  notification_max_id: z.string().trim()
+});
+
 const unavailabilitySchema = z
   .object({
     status: z.enum(['sick', 'vacation', 'fired', 'maternity', 'business_trip', 'unavailable']),
@@ -191,6 +189,7 @@ type PasswordFormValues = z.infer<typeof passwordSchema>;
 type ProfileFormValues = z.infer<typeof profileSchema>;
 type MaxLinkFormValues = z.infer<typeof maxLinkSchema>;
 type CompanyFormValues = z.infer<typeof companySchema>;
+type NotificationContactsFormValues = z.infer<typeof notificationContactsSchema>;
 type UnavailabilityFormValues = z.infer<typeof unavailabilitySchema>;
 
 type ProfileButtonProps = {
@@ -198,24 +197,32 @@ type ProfileButtonProps = {
   sidebar?: boolean;
 };
 
-const NOTIFICATION_TYPE_META: Record<NotificationPreferenceType, { label: string; description: string }> = {
-  chat: {
+const NOTIFICATION_TYPE_META: Array<{
+  type: NotificationPreferenceType;
+  label: string;
+  description: string;
+}> = [
+  {
+    type: 'chat',
     label: 'Сообщения',
-    description: 'Новые сообщения в чате по заявкам и предложениям.'
+    description: 'Новые сообщения в чатах по заявкам и коммерческим предложениям.'
   },
-  request: {
+  {
+    type: 'request',
     label: 'Заявки',
-    description: 'Новые заявки и изменения статуса заявок, которые вам доступны.'
+    description: 'Новые заявки и изменения по заявкам, которые вам доступны.'
   },
-  offer: {
-    label: 'Предложения',
-    description: 'Изменения статуса и другие важные обновления по вашим коммерческим предложениям.'
+  {
+    type: 'offer',
+    label: 'КП',
+    description: 'Изменения статусов и важные события по коммерческим предложениям.'
   },
-  system: {
+  {
+    type: 'system',
     label: 'Системные',
     description: 'Служебные уведомления: доступ, модерация и другие системные события.'
   }
-};
+];
 
 const DataRow = ({ label, value }: { label: string; value: string | null }) => (
   <Stack
@@ -282,15 +289,15 @@ const sanitizeDefaultValue = (value: string | null) => (value && isPlaceholderVa
 const renderNotificationInfo = (
   <Box sx={{ maxWidth: 340, py: 0.5 }}>
     <Typography variant="body2" sx={{ mb: 1 }}>
-      Настройки применяются отдельно для каждого типа уведомлений и для каждого канала доставки.
+      Для каждого типа уведомлений можно отдельно выбрать доставку по email и в MAX.
     </Typography>
     <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 600 }}>
-      Что означает каждый тип:
+      Подсказки по строкам:
     </Typography>
-    <Typography variant="body2">Сообщения: новые сообщения в чатах.</Typography>
+    <Typography variant="body2">Сообщения: события из рабочих чатов.</Typography>
     <Typography variant="body2">Заявки: новые заявки и изменения по ним.</Typography>
-    <Typography variant="body2">Предложения: события по коммерческим предложениям.</Typography>
-    <Typography variant="body2">Системные: доступ, модерация и служебные оповещения.</Typography>
+    <Typography variant="body2">КП: обновления по коммерческим предложениям.</Typography>
+    <Typography variant="body2">Системные: доступ, модерация и служебные уведомления.</Typography>
   </Box>
 );
 
@@ -302,6 +309,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const [openPassword, setOpenPassword] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
+  const [openNotificationContacts, setOpenNotificationContacts] = useState(false);
   const [openMaxLink, setOpenMaxLink] = useState(false);
   const [openUnavailability, setOpenUnavailability] = useState(false);
   const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
@@ -351,6 +359,19 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   });
 
   const {
+    register: registerNotificationContacts,
+    handleSubmit: handleNotificationContactsSubmit,
+    formState: {
+      errors: notificationContactsErrors,
+      isSubmitting: isSubmittingNotificationContacts
+    },
+    reset: resetNotificationContacts
+  } = useLiveValidatedForm<NotificationContactsFormValues>({
+    resolver: zodResolver(notificationContactsSchema),
+    defaultValues: { notification_email: '', notification_max_id: '' }
+  });
+
+  const {
     register: registerUnavailability,
     handleSubmit: handleUnavailabilitySubmit,
     watch: watchUnavailability,
@@ -382,13 +403,26 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       note: sanitizeDefaultValue(profile.company.note)
     });
 
+    resetNotificationContacts({
+      notification_email: sanitizeDefaultValue(profile.mail),
+      notification_max_id: notificationPreferences?.maxUserId ?? ''
+    });
+
     resetUnavailability({
       status: 'unavailable',
       started_at: '',
       ended_at: ''
     });
     resetMaxLink({ code: '' });
-  }, [profile, resetCompany, resetMaxLink, resetProfile, resetUnavailability]);
+  }, [
+    profile,
+    notificationPreferences,
+    resetCompany,
+    resetMaxLink,
+    resetNotificationContacts,
+    resetProfile,
+    resetUnavailability
+  ]);
 
   const loadProfile = async () => {
     setIsLoading(true);
@@ -420,17 +454,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const canEditCompany = Boolean(profile?.actions.manage_company_contacts);
   const canSetUnavailability = Boolean(profile?.actions.manage_own_unavailability);
 
-  const maxLinkButtonLabel = notificationPreferences?.maxUserId ? 'Изменить MAX' : 'Привязать MAX';
-
-  const notificationRows = useMemo(
-    () =>
-      (Object.keys(NOTIFICATION_TYPE_META) as NotificationPreferenceType[]).map((type) => ({
-        type,
-        label: NOTIFICATION_TYPE_META[type].label,
-        description: NOTIFICATION_TYPE_META[type].description
-      })),
-    []
-  );
+  const notificationRows = useMemo(() => NOTIFICATION_TYPE_META, []);
 
   const onSubmitPassword = async (values: PasswordFormValues) => {
     setError(null);
@@ -457,7 +481,8 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       const shouldRequestVerification = Boolean(normalizedMailLower) && normalizedMailLower !== currentMailLower;
       const nextProfile = await updateMyProfile({
         full_name: values.full_name.trim(),
-        phone: values.phone.trim()
+        phone: values.phone.trim(),
+        mail: normalizedMail
       });
       let verificationDetail: string | null = null;
       if (shouldRequestVerification && normalizedMail) {
@@ -506,6 +531,52 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       showSuccessToast('MAX привязан к вашему аккаунту.');
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Не удалось привязать MAX');
+    }
+  };
+
+  const onSubmitNotificationContacts = async (values: NotificationContactsFormValues) => {
+    if (!profile) {
+      return;
+    }
+
+    setError(null);
+    try {
+      const normalizedEmail = normalizeOptional(values.notification_email);
+      const normalizedMaxId = values.notification_max_id.trim();
+      const currentEmail = normalizeOptional(profile.mail ?? '');
+      const currentMaxId = notificationPreferences?.maxUserId?.trim() ?? '';
+
+      let nextProfile = profile;
+      let verificationDetail: string | null = null;
+
+      if (normalizedEmail && normalizedEmail.toLowerCase() !== (currentEmail ?? '').toLowerCase()) {
+        nextProfile = await updateMyProfile({
+          full_name: profile.fullName ?? '',
+          phone: profile.phone ?? '',
+          mail: normalizedEmail
+        });
+      }
+
+      if (normalizedEmail) {
+        const verificationResult = await requestEmailVerification(normalizedEmail);
+        verificationDetail = verificationResult.detail;
+      }
+
+      if (normalizedMaxId && normalizedMaxId !== currentMaxId) {
+        nextProfile = await linkMyMaxAccount({ code: normalizedMaxId });
+      }
+
+      const nextPreferences = await getMyNotificationPreferences();
+      setProfile(nextProfile);
+      setNotificationPreferences(nextPreferences);
+      setOpenNotificationContacts(false);
+
+      if (verificationDetail) {
+        showSystemToast({ severity: 'info', message: verificationDetail });
+      }
+      showSuccessToast('Способы уведомлений обновлены.');
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить способы уведомлений');
     }
   };
 
@@ -730,92 +801,166 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                   <Typography variant="body2" color="text.secondary">
                     Настройте каналы отдельно для каждого типа уведомлений.
                   </Typography>
-                  <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    spacing={1}
-                    justifyContent="space-between"
-                    alignItems={{ xs: 'flex-start', sm: 'center' }}
-                  >
-                    <Stack spacing={0.25}>
-                      <Typography variant="body2" color="text.secondary">
-                        Почта: {notificationPreferences.email ?? fallbackText}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        MAX ID: {notificationPreferences.maxUserId ?? fallbackText}
-                      </Typography>
-                    </Stack>
-                    <Button
-                      variant={notificationPreferences.maxUserId ? 'outlined' : 'contained'}
-                      sx={primaryButtonSx}
-                      onClick={() => setOpenMaxLink(true)}
-                    >
-                      {maxLinkButtonLabel}
-                    </Button>
-                  </Stack>
-                  <Stack spacing={1}>
-                    {notificationRows.map((item) => (
-                      <Box
-                        key={item.type}
-                        sx={{
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          borderRadius: 1,
-                          px: 1.5,
-                          py: 1.25
-                        }}
-                      >
-                        <Stack
-                          direction={{ xs: 'column', sm: 'row' }}
-                          spacing={1.5}
-                          justifyContent="space-between"
-                          alignItems={{ xs: 'flex-start', sm: 'center' }}
-                        >
-                          <Stack spacing={0.25} sx={{ pr: { sm: 2 } }}>
-                            <Typography fontWeight={600}>{item.label}</Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              {item.description}
-                            </Typography>
-                          </Stack>
-                          <Stack sx={{ minWidth: { sm: 220 }, width: { xs: '100%', sm: 'auto' } }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={notificationPreferences.preferences[item.type].email}
-                                  onChange={(_, checked) =>
-                                    handleNotificationTypeChannelChange(item.type, 'email', checked)
-                                  }
-                                  disabled={
-                                    !notificationPreferences.emailAvailable || isSavingNotificationPreferences
-                                  }
-                                />
-                              }
-                              label="Email"
-                              labelPlacement="start"
-                              sx={notificationSwitchSx}
-                            />
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={notificationPreferences.preferences[item.type].max}
-                                  onChange={(_, checked) =>
-                                    handleNotificationTypeChannelChange(item.type, 'max', checked)
-                                  }
-                                  disabled={!notificationPreferences.maxAvailable || isSavingNotificationPreferences}
-                                />
-                              }
-                              label="MAX"
-                              labelPlacement="start"
-                              sx={notificationSwitchSx}
-                            />
-                          </Stack>
+                  <Box sx={notificationMatrixSx}>
+                    <Box sx={{ ...notificationMatrixHeaderCellSx, borderRight: '1px solid', borderColor: 'divider' }} />
+
+                    <Box sx={{ ...notificationMatrixHeaderCellSx, borderRight: '1px solid', borderColor: 'divider' }}>
+                      <Stack spacing={1} justifyContent="space-between" sx={{ width: '100%' }}>
+                        <Stack spacing={0.35}>
+                          <Typography sx={notificationChannelTitleSx}>Email</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {notificationPreferences.email ?? fallbackText}
+                          </Typography>
                         </Stack>
-                      </Box>
-                    ))}
-                  </Stack>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          sx={smallEditButtonSx}
+                          onClick={() => setOpenNotificationContacts(true)}
+                        >
+                          Изменить
+                        </Button>
+                      </Stack>
+                    </Box>
+
+                    <Box sx={notificationMatrixHeaderCellSx}>
+                      <Stack spacing={1} justifyContent="space-between" sx={{ width: '100%' }}>
+                        <Stack spacing={0.35}>
+                          <Typography sx={notificationChannelTitleSx}>MAX</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {notificationPreferences.maxUserId ?? fallbackText}
+                          </Typography>
+                        </Stack>
+                        <Button
+                          variant={notificationPreferences.maxUserId ? 'outlined' : 'contained'}
+                          size="small"
+                          sx={smallEditButtonSx}
+                          onClick={() => setOpenNotificationContacts(true)}
+                        >
+                          Изменить
+                        </Button>
+                      </Stack>
+                    </Box>
+
+                    {notificationRows.map((item, index) => {
+                      const isLastRow = index === notificationRows.length - 1;
+                      return (
+                        <Box
+                          key={`${item.type}-label`}
+                          sx={{
+                            ...notificationMatrixCellSx,
+                            borderBottom: isLastRow ? 'none' : '1px solid',
+                            borderRight: '1px solid',
+                            borderColor: 'divider'
+                          }}
+                        >
+                          <Stack direction="row" spacing={0.75} alignItems="center">
+                            <Typography fontWeight={600}>{item.label}</Typography>
+                            <Tooltip title={item.description} arrow placement="top-start">
+                              <IconButton size="small" sx={{ color: 'text.secondary', p: 0.25 }}>
+                                <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
+                        </Box>
+                      );
+                    })}
+
+                    {notificationRows.map((item, index) => {
+                      const isLastRow = index === notificationRows.length - 1;
+                      return (
+                        <Box
+                          key={`${item.type}-email`}
+                          sx={{
+                            ...notificationMatrixCellSx,
+                            justifyContent: 'center',
+                            borderBottom: isLastRow ? 'none' : '1px solid',
+                            borderRight: '1px solid',
+                            borderColor: 'divider'
+                          }}
+                        >
+                          <Switch
+                            checked={notificationPreferences.preferences[item.type].email}
+                            onChange={(_, checked) => handleNotificationTypeChannelChange(item.type, 'email', checked)}
+                            disabled={!notificationPreferences.emailAvailable || isSavingNotificationPreferences}
+                          />
+                        </Box>
+                      );
+                    })}
+
+                    {notificationRows.map((item, index) => {
+                      const isLastRow = index === notificationRows.length - 1;
+                      return (
+                        <Box
+                          key={`${item.type}-max`}
+                          sx={{
+                            ...notificationMatrixCellSx,
+                            justifyContent: 'center',
+                            borderBottom: isLastRow ? 'none' : '1px solid',
+                            borderColor: 'divider'
+                          }}
+                        >
+                          <Switch
+                            checked={notificationPreferences.preferences[item.type].max}
+                            onChange={(_, checked) => handleNotificationTypeChannelChange(item.type, 'max', checked)}
+                            disabled={!notificationPreferences.maxAvailable || isSavingNotificationPreferences}
+                          />
+                        </Box>
+                      );
+                    })}
+                  </Box>
                 </Stack>
               ) : null}
             </Stack>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={openNotificationContacts}
+        onClose={() => setOpenNotificationContacts(false)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: dialogPaperSx }}
+      >
+        <DialogContent sx={dialogContentSx}>
+          <Stack
+            spacing={2}
+            component="form"
+            onSubmit={handleNotificationContactsSubmit((values) => void onSubmitNotificationContacts(values))}
+          >
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
+              Изменение способов уведомлений
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Здесь можно изменить email для уведомлений, заново отправить письмо на подтверждение и заменить MAX ID.
+            </Typography>
+            <ValidatedTextField
+              label="Email для уведомлений"
+              fieldName="notification_email"
+              registration={registerNotificationContacts('notification_email')}
+              error={Boolean(notificationContactsErrors.notification_email)}
+              helperText={notificationContactsErrors.notification_email?.message}
+              sx={inputFieldSx}
+            />
+            <ValidatedTextField
+              label="MAX ID"
+              fieldName="notification_max_id"
+              registration={registerNotificationContacts('notification_max_id')}
+              error={Boolean(notificationContactsErrors.notification_max_id)}
+              helperText={notificationContactsErrors.notification_max_id?.message}
+              sx={inputFieldSx}
+            />
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={submitButtonSx}
+              disabled={isSubmittingNotificationContacts}
+            >
+              Сохранить и подтвердить
+            </Button>
+          </Stack>
         </DialogContent>
       </Dialog>
 

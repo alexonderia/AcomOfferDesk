@@ -1,5 +1,6 @@
 ﻿import { ChangeEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import AddRounded from '@mui/icons-material/AddRounded';
+import DragIndicatorRounded from '@mui/icons-material/DragIndicatorRounded';
 import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded';
 import FilterAltRounded from '@mui/icons-material/FilterAltRounded';
@@ -11,6 +12,7 @@ import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import TableRowsRounded from '@mui/icons-material/TableRowsRounded';
 import UnfoldMoreRounded from '@mui/icons-material/UnfoldMoreRounded';
 import WindowRounded from '@mui/icons-material/WindowRounded';
+import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Divider from '@mui/material/Divider';
 import InputBase from '@mui/material/InputBase';
@@ -123,6 +125,7 @@ export type TableTemplateProps<T> = {
   onSettingsClick?: () => void;
   showViewToggle?: boolean;
   defaultViewMode?: DataViewMode;
+  lockViewMode?: DataViewMode;
   showSettingsAction?: boolean;
   rowsPerPageOptions?: number[];
   defaultRowsPerPage?: number;
@@ -137,6 +140,13 @@ export type TableTemplateProps<T> = {
     openLabel?: string;
     closeLabel?: string;
   };
+  toolbarBetweenSearchAndActions?: ReactNode;
+  toolbarBeforeAddActions?: ReactNode;
+  reorderableColumns?: boolean;
+  defaultColumnOrder?: string[];
+  initialVisibleColumnIds?: string[];
+  visibleColumnIds?: string[];
+  onVisibleColumnIdsChange?: (columnIds: string[]) => void;
 };
 
 function alignToFlex(align: CellAlign | undefined) {
@@ -349,6 +359,21 @@ function resolveDefaultColumnWidths<T>(
   });
 }
 
+function moveColumnOrder(columnIds: string[], fromId: string, toId: string) {
+  if (fromId === toId) {
+    return columnIds;
+  }
+  const next = [...columnIds];
+  const fromIndex = next.indexOf(fromId);
+  const toIndex = next.indexOf(toId);
+  if (fromIndex === -1 || toIndex === -1) {
+    return columnIds;
+  }
+  next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, fromId);
+  return next;
+}
+
 function getPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -384,6 +409,7 @@ export function TableTemplate<T>({
   onSettingsClick,
   showViewToggle = true,
   defaultViewMode,
+  lockViewMode,
   showSettingsAction = true,
   rowsPerPageOptions = [8, 16, 32],
   defaultRowsPerPage,
@@ -392,7 +418,14 @@ export function TableTemplate<T>({
   minTableWidth = 980,
   onSearchChange,
   resizableColumns = true,
-  cardExpansionControl
+  cardExpansionControl,
+  toolbarBetweenSearchAndActions,
+  toolbarBeforeAddActions,
+  reorderableColumns = false,
+  defaultColumnOrder,
+  initialVisibleColumnIds,
+  visibleColumnIds: controlledVisibleColumnIds,
+  onVisibleColumnIdsChange
 }: TableTemplateProps<T>) {
   const theme = useTheme();
   const isMobileViewport = useIsMobileViewport();
@@ -415,21 +448,41 @@ export function TableTemplate<T>({
   } = tableUiScale;
 
   const allColumnIds = useMemo(() => columns.map((column) => column.id), [columns]);
-  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>(allColumnIds);
+  const [internalVisibleColumnIds, setInternalVisibleColumnIds] = useState<string[]>(
+    () => initialVisibleColumnIds ?? allColumnIds
+  );
+  const visibleColumnIds = controlledVisibleColumnIds ?? internalVisibleColumnIds;
+  const setVisibleColumnIds = onVisibleColumnIdsChange ?? setInternalVisibleColumnIds;
+  const [orderedColumnIds, setOrderedColumnIds] = useState<string[]>(() => defaultColumnOrder ?? allColumnIds);
+  const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
   const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLElement | null>(null);
   const rowHorizontalPadding = Number.parseFloat(theme.spacing(rowPaddingX));
   const rowPaddingTotal = rowHorizontalPadding * 2;
 
   useEffect(() => {
-    setVisibleColumnIds((currentVisibleColumnIds) => {
+    if (controlledVisibleColumnIds) {
+      return;
+    }
+    setInternalVisibleColumnIds((currentVisibleColumnIds) => {
       const nextVisibleColumnIds = allColumnIds.filter((columnId) => currentVisibleColumnIds.includes(columnId));
       return nextVisibleColumnIds.length > 0 ? nextVisibleColumnIds : allColumnIds;
+    });
+  }, [allColumnIds, controlledVisibleColumnIds]);
+
+  useEffect(() => {
+    setOrderedColumnIds((currentOrder) => {
+      const preserved = currentOrder.filter((columnId) => allColumnIds.includes(columnId));
+      const missing = allColumnIds.filter((columnId) => !preserved.includes(columnId));
+      return [...preserved, ...missing];
     });
   }, [allColumnIds]);
 
   const visibleColumns = useMemo(
-    () => columns.filter((column) => visibleColumnIds.includes(column.id)),
-    [columns, visibleColumnIds]
+    () => orderedColumnIds
+      .filter((columnId) => visibleColumnIds.includes(columnId))
+      .map((columnId) => columns.find((column) => column.id === columnId))
+      .filter((column): column is TableTemplateColumn<T> => Boolean(column)),
+    [columns, orderedColumnIds, visibleColumnIds]
   );
 
   const getMinTableContentWidth = (targetColumns: TableTemplateColumn<T>[]) => {
@@ -810,14 +863,18 @@ export function TableTemplate<T>({
     setSettingsAnchorEl(null);
   };
 
+  const updateVisibleColumnIds = (updater: (current: string[]) => string[]) => {
+    setVisibleColumnIds(updater(visibleColumnIds));
+  };
+
   const handleToggleColumn = (columnId: string) => {
-    setVisibleColumnIds((currentVisibleColumnIds) => {
+    updateVisibleColumnIds((currentVisibleColumnIds) => {
       const isVisible = currentVisibleColumnIds.includes(columnId);
       if (isVisible) {
         if (currentVisibleColumnIds.length === 1) {
           return currentVisibleColumnIds;
         }
-        return currentVisibleColumnIds.filter((id) => id !== columnId);
+        return currentVisibleColumnIds.filter((id: string) => id !== columnId);
       }
       return allColumnIds.filter((id) => id === columnId || currentVisibleColumnIds.includes(id));
     });
@@ -870,9 +927,9 @@ export function TableTemplate<T>({
     }
     return column;
   }, [selectFilterAnchor, visibleColumns]);
-  const isCardsView = viewMode === 'cards';
+  const isCardsView = (lockViewMode ?? viewMode) === 'cards';
   const viewToggleButtonRadius = Math.max(8, controlRadius - 4);
-  const canToggleViewMode = showViewToggle;
+  const canToggleViewMode = showViewToggle && !lockViewMode;
   const showCardExpansionToggle = isCardsView && Boolean(cardExpansionControl);
   const shouldUseIconOnlyViewToggle = isMobileViewport || viewportWidth < 560;
   const shouldUseIconOnlyAddButton = isMobileViewport || viewportWidth < 500;
@@ -943,6 +1000,7 @@ export function TableTemplate<T>({
         justifyContent: isMobileViewport ? 'space-between' : 'flex-end'
       }}
     >
+      {toolbarBeforeAddActions}
       {showAddAction && onAddClick ? (
         <ActionButton
           kind="filled"
@@ -1101,6 +1159,7 @@ export function TableTemplate<T>({
         {isMobileViewport ? (
           <Stack spacing={1}>
             {toolbarActions}
+            {toolbarBetweenSearchAndActions}
             {toolbarSearch}
           </Stack>
         ) : (
@@ -1112,6 +1171,7 @@ export function TableTemplate<T>({
             flexWrap="wrap"
           >
             {toolbarSearch}
+            {toolbarBetweenSearchAndActions}
             {toolbarActions}
           </Stack>
         )}
@@ -1293,16 +1353,48 @@ export function TableTemplate<T>({
                 {visibleColumns.map((column, index) => (
                   <Stack
                     key={column.id}
+                    onDragOver={(event) => {
+                      if (!reorderableColumns) {
+                        return;
+                      }
+                      event.preventDefault();
+                    }}
+                    onDrop={() => {
+                      if (!reorderableColumns || !draggedColumnId) {
+                        return;
+                      }
+                      setOrderedColumnIds((prev) => moveColumnOrder(prev, draggedColumnId, column.id));
+                      setDraggedColumnId(null);
+                    }}
                     sx={{
                       position: 'relative',
                       minWidth: 0,
                       height: '100%',
                       px: cellPaddingX,
                       justifyContent: 'center',
-                      gap: 0.5
+                      gap: 0.5,
+                      backgroundColor: draggedColumnId === column.id
+                        ? alpha(theme.palette.primary.main, 0.22)
+                        : 'transparent',
                     }}
                   >
                     <Stack direction="row" alignItems="center" gap={0.5} sx={{ width: '100%', minWidth: 0 }}>
+                      {reorderableColumns ? (
+                        <Box
+                          draggable
+                          onDragStart={() => setDraggedColumnId(column.id)}
+                          onDragEnd={() => setDraggedColumnId(null)}
+                          aria-label={`Переместить столбец ${column.header}`}
+                          sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            cursor: 'grab',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <DragIndicatorRounded sx={{ fontSize: 16, color: 'text.secondary' }} />
+                        </Box>
+                      ) : null}
                       <Typography
                         sx={{
                           minWidth: 0,

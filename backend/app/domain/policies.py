@@ -217,6 +217,21 @@ class UserPolicy:
         )
 
     @staticmethod
+    def can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -> bool:
+        if current_role_id == settings.superadmin_role_id:
+            return True
+        if current_role_id == settings.project_manager_role_id:
+            return target_role_id in {
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+                settings.operator_role_id,
+            }
+        if current_role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
+            return target_role_id in {settings.economist_role_id, settings.operator_role_id}
+        return False
+
+    @staticmethod
     def can_manage_manual_contractors(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.CONTRACTORS_MANUAL_MANAGE)
 

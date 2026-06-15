@@ -1,10 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
+import { mapUserListItemToContractorListItem } from '@features/contractors/lib/mapUserListItemToContractorListItem';
 import type { UserListItem } from '@entities/user';
+import { listContractors } from '@shared/api/contractors/listContractors';
+import type { ContractorListItem } from '@shared/api/contractors/listContractors';
 import { registerUser } from '@shared/api/auth/registerUser';
 import { createManualContractor } from '@shared/api/users/createManualContractor';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
@@ -196,8 +199,10 @@ export const useAdminPage = () => {
     isLeadLike ? 'economists' : resolveUserTabFromParam(searchParams.get('users_tab'))
   );
   const [users, setUsers] = useState<UserListItem[]>([]);
+  const [contractors, setContractors] = useState<ContractorListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const loadUsersRequestIdRef = useRef(0);
   const [economistAndLeadManagers, setEconomistAndLeadManagers] = useState<UserListItem[]>([]);
   const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
   const [projectManagerRoleManagers, setProjectManagerRoleManagers] = useState<UserListItem[]>([]);
@@ -384,12 +389,33 @@ export const useAdminPage = () => {
   }, [managerOptions, requiresParent, selectedParentId, selectedRoleId, setValue]);
 
   const loadUsers = useCallback(async () => {
+    const requestId = loadUsersRequestIdRef.current + 1;
+    loadUsersRequestIdRef.current = requestId;
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      const response = await getUsers(isLeadLike ? undefined : roleByTab[activeTab]);
-      setUsers(response.items);
+      if (!isLeadLike && activeTab === 'contractors') {
+        const items = hasPermission(session, 'contractors.read')
+          ? await listContractors()
+          : (await getUsers(roleByTab.contractors)).items.map(mapUserListItemToContractorListItem);
+        if (loadUsersRequestIdRef.current !== requestId) {
+          return;
+        }
+        setContractors(items);
+        setUsers([]);
+      } else {
+        const response = await getUsers(isLeadLike ? undefined : roleByTab[activeTab]);
+        if (loadUsersRequestIdRef.current !== requestId) {
+          return;
+        }
+        setUsers(response.items);
+        setContractors([]);
+      }
+      setUsersError(null);
     } catch (error) {
+      if (loadUsersRequestIdRef.current !== requestId) {
+        return;
+      }
       setUsersError(
         error instanceof Error
           ? error.message
@@ -398,9 +424,11 @@ export const useAdminPage = () => {
             : employeePersonLabels.loadListError
       );
     } finally {
-      setIsLoadingUsers(false);
+      if (loadUsersRequestIdRef.current === requestId) {
+        setIsLoadingUsers(false);
+      }
     }
-  }, [activeTab, isLeadLike]);
+  }, [activeTab, isLeadLike, session]);
 
   useEffect(() => {
     void loadUsers();
@@ -501,6 +529,7 @@ export const useAdminPage = () => {
     activeTab,
     handleTabChange,
     users,
+    contractors,
     isLoadingUsers,
     usersError,
     canUpdateStatus,

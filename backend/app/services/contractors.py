@@ -8,7 +8,35 @@ from app.domain.exceptions import Conflict, NotFound
 from app.domain.policies import UserPolicy
 from app.repositories.profiles import ProfileRepository
 from app.repositories.users import UserRepository
-from app.services.users import UserListItem, UserStatusService, UserStatusUpdateResult
+from app.services.users import UserStatusService, UserStatusUpdateResult
+
+
+@dataclass(frozen=True, slots=True)
+class ContractorListItemResult:
+    user_id: str
+    max_user_id: str | None
+    role_id: int
+    status: str
+    full_name: str | None
+    phone: str | None
+    mail: str | None
+    company_name: str | None
+    inn: str | None
+    company_phone: str | None
+    company_mail: str | None
+    address: str | None
+    note: str | None
+    created_at: str | None
+    updated_at: str | None
+    registration_source: str
+
+
+@dataclass(frozen=True, slots=True)
+class ContractorListResult:
+    items: list[ContractorListItemResult]
+    total: int
+    limit: int
+    offset: int
 
 @dataclass(frozen=True, slots=True)
 class ContractorProfileResult:
@@ -36,15 +64,33 @@ class ContractorService:
         self._users = users
         self._profiles = profiles
 
-    async def list_contractors(self, *, current_user: CurrentUser) -> list[UserListItem]:
+    async def list_contractors(
+        self,
+        *,
+        current_user: CurrentUser,
+        search: str | None = None,
+        status: str | None = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        limit: int = 25,
+        offset: int = 0,
+    ) -> ContractorListResult:
         UserPolicy.ensure_can_list_contractors(current_user)
 
-        rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
-        return [
-            UserListItem(
+        rows, total = await self._users.list_contractors_page(
+            contractor_role_id=settings.contractor_role_id,
+            search=search,
+            status=status,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+        )
+        items = [
+            ContractorListItemResult(
                 user_id=user.id,
+                max_user_id=max_user_id,
                 role_id=user.id_role,
-                id_parent=user.id_parent,
                 status=user.status,
                 full_name=profile.full_name if profile else None,
                 phone=profile.phone if profile else None,
@@ -55,9 +101,18 @@ class ContractorService:
                 company_mail=company.mail if company else None,
                 address=company.address if company else None,
                 note=company.note if company else None,
+                created_at=str(user.created_at) if user.created_at is not None else None,
+                updated_at=str(user.updated_at) if user.updated_at is not None else None,
+                registration_source="telegram" if tg_user is not None else "manual",
             )
-            for user, profile, company, _tg_user in rows
+            for user, profile, company, tg_user, max_user_id in rows
         ]
+        return ContractorListResult(
+            items=items,
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     async def get_contractor(
         self,
@@ -98,6 +153,7 @@ class ContractorService:
         user_status: str,
         status_service: UserStatusService,
     ) -> UserStatusUpdateResult:
+        UserPolicy.ensure_can_update_contractor_profile_status(current_user)
         return await status_service.update_statuses(
             current_user=current_user,
             user_id=contractor_id,

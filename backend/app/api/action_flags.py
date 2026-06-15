@@ -279,12 +279,27 @@ class ChatActionBuilder:
 
 class UserActionBuilder:
     @staticmethod
+    def _requires_hierarchy_management(current_user: CurrentUser) -> bool:
+        if current_user.role_id not in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            return False
+        if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
+            return False
+        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
+            return False
+        return True
+
+    @staticmethod
     def build_list_item(
         current_user: CurrentUser,
         *,
         target_user_id: str,
         target_role_id: int,
         target_tg_user_id: int | None = None,
+        is_hierarchy_subordinate: bool | None = None,
     ) -> UserActionsSchema:
         can_manage_subordinate_target = _can_manage_subordinate_target(
             current_user,
@@ -296,6 +311,13 @@ class UserActionBuilder:
         }
         has_role_update_any = has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY)
         has_role_update_economy = has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY)
+        can_manage_subordinate_role = (
+            target_user_id != current_user.user_id
+            and UserPolicy.can_manage_subordinate_role(
+                current_role_id=current_user.role_id,
+                target_role_id=target_role_id,
+            )
+        )
         can_update_role = False
         if has_role_update_any and target_role_id != settings.superadmin_role_id:
             can_update_role = True
@@ -303,7 +325,7 @@ class UserActionBuilder:
             can_update_role = (
                 current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}
                 and target_role_id in ECONOMY_ROLE_IDS
-                and can_manage_subordinate_target
+                and can_manage_subordinate_role
             )
         can_update_status = UserPolicy.can_update_user_status(current_user)
         if current_user.role_id in {
@@ -311,14 +333,21 @@ class UserActionBuilder:
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            can_update_status = can_update_status and can_manage_subordinate_target
+            can_update_status = can_update_status and can_manage_subordinate_role
+        if (
+            UserActionBuilder._requires_hierarchy_management(current_user)
+            and is_hierarchy_subordinate is not True
+        ):
+            can_update_status = False
+            can_update_role = False
+            can_update_manager = False
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
             can_update_role=can_update_role,
             can_update_manager=(
                 UserPolicy.can_update_user_manager(current_user)
-                and can_manage_subordinate_target
+                and can_manage_subordinate_role
                 and can_update_manager_target_role
             ),
             can_manage_manual_contractor=(
@@ -373,10 +402,22 @@ class UserActionBuilder:
 
 class ContractorActionBuilder:
     @staticmethod
-    def build_contractor_actions(current_user: CurrentUser) -> UserActionsSchema:
+    def build_contractor_actions(
+        current_user: CurrentUser,
+        *,
+        target_tg_user_id: int | None = None,
+        is_manual: bool | None = None,
+    ) -> UserActionsSchema:
+        can_update_status = UserPolicy.can_update_contractor_profile_status(current_user)
+        can_manage_manual_contractor = UserPolicy.can_manage_manual_contractors(current_user)
+        if is_manual is not None:
+            can_manage_manual_contractor = can_manage_manual_contractor and is_manual
+        else:
+            can_manage_manual_contractor = can_manage_manual_contractor and target_tg_user_id is None
         return UserActionsSchema(
             can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
-            can_update_status=UserPolicy.can_update_contractor_profile_status(current_user),
+            can_update_status=can_update_status,
+            can_manage_manual_contractor=can_manage_manual_contractor,
         )
 
 

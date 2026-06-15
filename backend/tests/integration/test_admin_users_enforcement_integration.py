@@ -88,7 +88,7 @@ class _UsersRepo:
         for user in self._users.values():
             if user.id_role != contractor_role_id:
                 continue
-            rows.append((user, self._profiles.get(user.id), None, None))
+            rows.append((user, self._profiles.get(user.id), None, None, None))
         return rows
 
     async def list_active_user_parent_pairs(self):

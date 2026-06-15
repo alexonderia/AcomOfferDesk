@@ -91,16 +91,24 @@ USER_STATUS_RU = {
 def _ru_user_status(status: str) -> str:
     return USER_STATUS_RU.get(status, status)
 
-def _user_list_schema(current_user: CurrentUser, item) -> UserListItemSchema:
+def _user_list_schema(
+    current_user: CurrentUser,
+    item,
+    subordinate_ids: set[str] | None = None,
+) -> UserListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     data.pop("tg_user_id", None)
     data.pop("tg_status", None)
+    is_hierarchy_subordinate = None
+    if subordinate_ids is not None:
+        is_hierarchy_subordinate = item.user_id in subordinate_ids
     data["actions"] = UserActionBuilder.build_list_item(
         current_user,
         target_user_id=item.user_id,
         target_role_id=item.role_id,
         target_tg_user_id=item.tg_user_id,
+        is_hierarchy_subordinate=is_hierarchy_subordinate,
     )
     return UserListItemSchema(**data)
 
@@ -198,10 +206,11 @@ async def list_users(
     async with uow:
         service = UserQueryService(uow.users, uow.user_status_periods)
         users = await service.list_users(current_user=current_user, role_id=role_id)
+        subordinate_ids = await service.resolve_hierarchy_subordinate_user_ids(current_user=current_user)
 
     return UserListResponse(
         data=UserListData(
-            items=[_user_list_schema(current_user, item) for item in users],
+            items=[_user_list_schema(current_user, item, subordinate_ids) for item in users],
         ),
     )
 
@@ -839,7 +848,6 @@ async def update_manual_contractor(
             current_user=current_user,
             user_id=user_id,
             data=ManualContractorUpdateInput(
-                login=payload.login,
                 password=payload.password,
                 full_name=payload.full_name,
                 phone=payload.phone,

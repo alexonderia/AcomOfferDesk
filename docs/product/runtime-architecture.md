@@ -335,7 +335,7 @@ Frontend организован по feature-oriented схеме.
 
 ## Где искать важную информацию
 
-### Если меняется логин или регистрация
+### Если меняется аутентификация, регистрация или политика логина
 
 Смотрите:
 
@@ -344,6 +344,7 @@ Frontend организован по feature-oriented схеме.
 - `backend/app/services/identity_sync.py`
 - `web/src/app/providers/AuthProvider.tsx`
 - `docs/security/auth-and-onboarding.md`
+- `docs/security/permissions-matrix.md` (правило: `users.id` неизменяем после создания; переименование в `/admin` и `/contractors` не поддерживается)
 
 ### Если меняется заявка
 

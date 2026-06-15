@@ -7,6 +7,7 @@ import { useAdminPage } from './useAdminPage';
 
 const useAuthMock = vi.fn();
 const getUsersMock = vi.fn();
+const listContractorsMock = vi.fn();
 const getManagerCandidatesMock = vi.fn();
 const registerUserMock = vi.fn();
 const createManualContractorMock = vi.fn();
@@ -19,6 +20,10 @@ vi.mock('@app/providers/AuthProvider', () => ({
 
 vi.mock('@shared/api/users/getUsers', () => ({
   getUsers: (...args: unknown[]) => getUsersMock(...args),
+}));
+
+vi.mock('@shared/api/contractors/listContractors', () => ({
+  listContractors: (...args: unknown[]) => listContractorsMock(...args),
 }));
 
 vi.mock('@shared/api/users/getManagerCandidates', () => ({
@@ -63,6 +68,7 @@ describe('useAdminPage', () => {
   beforeEach(() => {
     useAuthMock.mockReset();
     getUsersMock.mockReset();
+    listContractorsMock.mockReset();
     getManagerCandidatesMock.mockReset();
     registerUserMock.mockReset();
     createManualContractorMock.mockReset();
@@ -71,7 +77,31 @@ describe('useAdminPage', () => {
 
     useAuthMock.mockReturnValue({ session: baseSession });
     getUsersMock.mockResolvedValue({ items: [] });
+    listContractorsMock.mockResolvedValue([]);
     getManagerCandidatesMock.mockResolvedValue({ items: [] });
+  });
+
+  it('loads contractors via users api when contractors.read is missing', async () => {
+    useAuthMock.mockReturnValue({
+      session: {
+        roleId: ROLE.ADMIN,
+        permissions: ['users.read', 'contractors.manual.create', 'contractors.manual.manage'],
+      },
+    });
+
+    const { result } = renderHook(() => useAdminPage(), { wrapper });
+
+    await waitFor(() => expect(result.current.activeTab).toBe('contractors'));
+    await waitFor(() => expect(getUsersMock).toHaveBeenCalled());
+    expect(listContractorsMock).not.toHaveBeenCalled();
+  });
+
+  it('loads contractors via contractors api on contractors tab', async () => {
+    const { result } = renderHook(() => useAdminPage(), { wrapper });
+
+    await waitFor(() => expect(result.current.activeTab).toBe('contractors'));
+    await waitFor(() => expect(listContractorsMock).toHaveBeenCalled());
+    expect(getUsersMock).not.toHaveBeenCalled();
   });
 
   it('opens the create dialog with the security officer role on the security tab for superadmin', async () => {

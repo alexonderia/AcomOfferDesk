@@ -152,21 +152,6 @@ def _collect_descendant_user_ids(
     return descendant_ids
 
 
-def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -> bool:
-    if current_role_id == settings.superadmin_role_id:
-        return True
-    if current_role_id == settings.project_manager_role_id:
-        return target_role_id in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-            settings.operator_role_id,
-        }
-    if current_role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
-        return target_role_id in {settings.economist_role_id, settings.operator_role_id}
-    return False
-
-
 def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
     if has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY):
         return {
@@ -783,6 +768,35 @@ class UserQueryService:
             target_user_id=subordinate_user_id,
         )
 
+    async def resolve_hierarchy_subordinate_user_ids(
+        self,
+        *,
+        current_user: CurrentUser,
+    ) -> set[str] | None:
+        if current_user.role_id not in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            return None
+        if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
+            return None
+        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
+            return None
+
+        rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=[
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+                settings.operator_role_id,
+            ],
+        )
+        return _collect_descendant_user_ids(
+            manager_user_id=current_user.user_id,
+            rows=rows,
+        )
+
     async def _resolve_internal_staff_scope_user_ids(
         self,
         *,
@@ -822,7 +836,7 @@ class UserQueryService:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Профиль подчиненного доступен только для разрешенных ролей")
 
-        if not _can_manage_subordinate_role(
+        if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
         ):
@@ -899,7 +913,7 @@ class UserQueryService:
                     address=company.address if company else None,
                     note=company.note if company else None,
                 )
-                for user, profile, company, tg_user in rows
+                for user, profile, company, tg_user, _max_user_id in rows
             ]
 
         rows = await self._users.list_users_with_profiles(role_id=role_id)
@@ -1083,7 +1097,7 @@ class UserQueryService:
                 mail=profile.mail if profile else None,
                 company_mail=company.mail if company else None,
             )
-            for user, profile, company, _ in rows
+            for user, profile, company, _, _max_user_id in rows
             if user.status == "active"
         ]
     
@@ -1185,7 +1199,6 @@ class UserManagerUpdateResult:
 
 @dataclass(frozen=True)
 class ManualContractorUpdateInput:
-    login: str | None = None
     password: str | None = None
     full_name: str | None = None
     phone: str | None = None
@@ -1437,32 +1450,10 @@ class ManualContractorService:
         profile = await self._profiles.get_by_id(user.id)
         if profile is None:
             raise NotFound("Профиль не найден")
+
         company_contact = await self._company_contacts.get_by_id(user.id)
-        if company_contact is None:
-            raise NotFound("Контакты компании не найдены")
 
-        next_login = self._normalize_value(data.login)
         next_password = self._normalize_value(data.password)
-        if next_login is not None and next_login != user.id:
-            if await self._users.exists(next_login):
-                raise Conflict("Пользователь уже существует")
-
-            cloned_user = User(
-                id=next_login,
-                id_role=user.id_role,
-                id_parent=user.id_parent,
-                status=user.status,
-                tg_user_id=user.tg_user_id,
-            )
-            await self._users.add(cloned_user)
-            await self._users.reassign_user_id(old_user_id=user.id, new_user_id=next_login)
-            await self._users.delete_by_id(user_id=user.id)
-            user = cloned_user
-            profile = await self._profiles.get_by_id(user.id)
-            company_contact = await self._company_contacts.get_by_id(user.id)
-            if profile is None or company_contact is None:
-                raise Conflict("Данные профиля контрагента неконсистентны")
-
         if next_password is not None:
             raise Forbidden("Пароль управляется провайдером аутентификации")
 
@@ -1482,18 +1473,35 @@ class ManualContractorService:
             profile.phone = phone
         if mail is not None:
             profile.mail = mail
-        if company_name is not None:
-            company_contact.company_name = company_name
-        if inn is not None:
-            company_contact.inn = inn
-        if company_phone is not None:
-            company_contact.phone = company_phone
-        if company_mail is not None:
-            company_contact.mail = company_mail
-        if address is not None:
-            company_contact.address = address
-        if note is not None:
-            company_contact.note = note
+
+        if company_contact is None:
+            await self._company_contacts.add(
+                CompanyContact(
+                    id=user.id,
+                    company_name=company_name or PLACEHOLDER_TEXT,
+                    inn=inn or PLACEHOLDER_TEXT,
+                    phone=company_phone or PLACEHOLDER_TEXT,
+                    mail=company_mail or PLACEHOLDER_TEXT,
+                    address=address or PLACEHOLDER_TEXT,
+                    note=note or PLACEHOLDER_TEXT,
+                )
+            )
+            company_contact = await self._company_contacts.get_by_id(user.id)
+            if company_contact is None:
+                raise Conflict("Не удалось создать контакты компании")
+        else:
+            if company_name is not None:
+                company_contact.company_name = company_name
+            if inn is not None:
+                company_contact.inn = inn
+            if company_phone is not None:
+                company_contact.phone = company_phone
+            if company_mail is not None:
+                company_contact.mail = company_mail
+            if address is not None:
+                company_contact.address = address
+            if note is not None:
+                company_contact.note = note
 
         keycloak_name_parts = _split_full_name_for_keycloak(profile.full_name)
         keycloak_user = await self._keycloak_admin.ensure_user(
@@ -1558,7 +1566,7 @@ class UserRoleService:
         if not has_role_update_any and has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):
             if user.id == current_user.user_id:
                 raise Forbidden("Вы можете обновлять роль только своих подчиненных")
-            if not _can_manage_subordinate_role(
+            if not UserPolicy.can_manage_subordinate_role(
                 current_role_id=current_user.role_id,
                 target_role_id=user.id_role,
             ):
@@ -1617,7 +1625,7 @@ class UserManagerService:
         if user is None:
             raise NotFound("Пользователь не найден")
 
-        if not _can_manage_subordinate_role(
+        if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=user.id_role,
         ):
@@ -1783,7 +1791,7 @@ class UserStatusService:
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            if not _can_manage_subordinate_role(
+            if not UserPolicy.can_manage_subordinate_role(
                 current_role_id=current_user.role_id,
                 target_role_id=user.id_role,
             ):
@@ -1962,7 +1970,7 @@ class UserSelfService:
     ) -> None:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Данными подчиненного можно управлять только для разрешенных ролей подчиненных")
-        if not _can_manage_subordinate_role(
+        if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
         ):

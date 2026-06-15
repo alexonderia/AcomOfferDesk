@@ -111,7 +111,7 @@
 | 88 | `review_contractor[unavailability.manage_own]` | Review contractor не управляет own unavailability в текущем onboarding-safe списке. | То же. |
 | 89 | `review_contractor[unavailability.manage_subordinate]` | Review contractor не управляет subordinate unavailability. | То же. |
 | 90 | `review_contractor[users.create]` | Review contractor не создает пользователей. | То же. |
-| 91 | `review_contractor[users.login.update]` | Review contractor не меняет login. | То же. |
+| 91 | `review_contractor[users.login.update]` | Review contractor не меняет login; смена логина не доступна ни одной роли в UI/API. | То же. |
 | 92 | `review_contractor[users.manager.update]` | Review contractor не меняет manager. | То же. |
 | 93 | `review_contractor[users.password.update]` | Review contractor не меняет password. | То же. |
 | 94 | `review_contractor[users.read]` | Review contractor не читает users list. | То же. |

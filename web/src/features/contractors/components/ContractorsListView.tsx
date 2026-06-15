@@ -1,17 +1,21 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import EditOutlined from '@mui/icons-material/EditOutlined';
+import SaveOutlined from '@mui/icons-material/SaveOutlined';
 import {
   Alert,
   Box,
   Button,
   Dialog,
   DialogContent,
+  InputBase,
   MenuItem,
   Stack,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useTheme } from '@mui/material/styles';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
@@ -23,11 +27,16 @@ import {
   dialogPaperSx,
   normalizeUserStatus,
 } from '@features/admin/components/UserCardPrimitives';
+import {
+  useContractorTableEditing,
+  type ContractorEditField,
+} from '@features/contractors/hooks/useContractorTableEditing';
+import type { ContractorListItem } from '@shared/api/contractors/listContractors';
 import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
-import { updateUserStatus } from '@shared/api/users/updateUserStatus';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { ContractorMobileCard } from './ContractorMobileCard';
+import { ContractorEditableFieldFrame, ContractorReadOnlyFieldFrame } from './contractorFieldValidation';
 import {
   ContractorStatusPill,
   ContractorTableCell,
@@ -42,29 +51,101 @@ const statusSchema = z.object({
 
 type StatusFormValues = z.infer<typeof statusSchema>;
 
+const VIEW_COLUMN_IDS = [
+  'status',
+  'login',
+  'full_name',
+  'phone',
+  'mail',
+  'company_phone',
+  'company_mail',
+] as const;
+
+const ALL_COLUMN_IDS = [
+  ...VIEW_COLUMN_IDS,
+  'max_user_id',
+  'company_name',
+  'inn',
+  'address',
+  'note',
+  'created_at',
+  'updated_at',
+] as const;
+
+const toUserListItem = (row: ContractorListItem): UserListItem => ({
+  user_id: row.userId,
+  role_id: row.roleId,
+  id_parent: null,
+  status: row.status,
+  full_name: row.fullName,
+  phone: row.phone,
+  mail: row.mail,
+  company_name: row.companyName,
+  inn: row.inn,
+  company_phone: row.companyPhone,
+  company_mail: row.companyMail,
+  address: row.address,
+  note: row.note,
+  actions: row.actions,
+});
+
+const formatDateTime = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
+};
+
 export type ContractorsListViewProps = {
-  users: UserListItem[];
+  contractors: ContractorListItem[];
   isLoading?: boolean;
   emptyMessage: string;
   onStatusUpdated: () => Promise<void>;
   onAddClick?: () => void;
-  useContractorsStatusApi?: boolean;
 };
 
 export const ContractorsListView = ({
-  users,
+  contractors,
   isLoading = false,
   emptyMessage,
   onStatusUpdated,
   onAddClick,
-  useContractorsStatusApi = false,
 }: ContractorsListViewProps) => {
+  const theme = useTheme();
   const { showSystemToast } = useSystemToasts();
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([...VIEW_COLUMN_IDS]);
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [expandedContractorCardsById, setExpandedContractorCardsById] = useState<
     Record<string, { contact: boolean; company: boolean }>
   >({});
+
+  const {
+    dirtyRowCount,
+    isSaving,
+    updateDraftValue,
+    handleCancel,
+    handleSave,
+    getDraft,
+    getFieldError,
+    isFieldDirty,
+    getFieldValue,
+  } = useContractorTableEditing({
+    rows: contractors,
+    isEditMode,
+    onSaved: onStatusUpdated,
+  });
 
   const {
     register,
@@ -84,69 +165,219 @@ export const ContractorsListView = ({
     setSubmitError(null);
   }, [reset, selectedUser]);
 
+  const canEditContractorData = useMemo(
+    () => contractors.some((row) => row.actions.manage_manual_contractor),
+    [contractors],
+  );
+
+  useEffect(() => {
+    setVisibleColumnIds(isEditMode ? [...ALL_COLUMN_IDS] : [...VIEW_COLUMN_IDS]);
+  }, [isEditMode]);
+
+  useEffect(() => {
+    if (!canEditContractorData && isEditMode) {
+      handleCancel();
+      setIsEditMode(false);
+    }
+  }, [canEditContractorData, isEditMode, handleCancel]);
+
+  const handleEnterEditMode = () => {
+    setIsEditMode(true);
+  };
+
+  const handleCancelEdits = () => {
+    handleCancel();
+    setIsEditMode(false);
+  };
+
+  const handleSaveEdits = async () => {
+    await handleSave();
+  };
+
   const contractorStatusFilterOptions = useMemo(
-    () => Array.from(new Set(users.map((user) => statusLabelForFilter(user.status)))).map((status) => ({
+    () => Array.from(new Set(contractors.map((row) => statusLabelForFilter(row.status)))).map((status) => ({
       label: status,
       value: status,
     })),
-    [users]
+    [contractors],
   );
 
-  const contractorColumnsTemplate = useMemo<TableTemplateColumn<UserListItem>[]>(
+  const renderLockedCell = useCallback((content: ReactNode) => {
+    if (!isEditMode) {
+      return content;
+    }
+    return <ContractorReadOnlyFieldFrame locked>{content}</ContractorReadOnlyFieldFrame>;
+  }, [isEditMode]);
+
+  const renderEditableField = useCallback((
+    row: ContractorListItem,
+    field: ContractorEditField,
+    editable: boolean,
+  ) => {
+    const draft = getDraft(row);
+    const value = (draft[field] as string | undefined) ?? getFieldValue(row, field);
+    const error = getFieldError(row, field);
+    const dirty = isFieldDirty(row, field, draft);
+
+    if (!isEditMode || !editable) {
+      const content = <ContractorTableCell value={value || null} />;
+
+      if (isEditMode && !editable) {
+        return <ContractorReadOnlyFieldFrame locked>{content}</ContractorReadOnlyFieldFrame>;
+      }
+      return content;
+    }
+
+    return (
+      <ContractorEditableFieldFrame error={error} dirty={dirty}>
+        <InputBase
+          value={value}
+          onChange={(event) => updateDraftValue(row, field, event.target.value)}
+          disabled={isSaving}
+          inputProps={{ 'aria-label': `${row.userId}-${field}` }}
+          sx={{
+            width: '100%',
+            fontSize: 14,
+            px: 0.25,
+          }}
+        />
+      </ContractorEditableFieldFrame>
+    );
+  }, [
+    getDraft,
+    getFieldError,
+    getFieldValue,
+    isEditMode,
+    isFieldDirty,
+    isSaving,
+    updateDraftValue,
+  ]);
+
+  const contractorColumnsTemplate = useMemo<TableTemplateColumn<ContractorListItem>[]>(
     () => [
-      { id: 'login', header: 'Логин', field: 'user_id', minWidth: 170 },
-      {
-        id: 'full_name',
-        header: 'ФИО',
-        field: 'full_name',
-        minWidth: 190,
-        renderValue: (value) => <ContractorTableCell value={value as string | null} />,
-      },
-      {
-        id: 'phone',
-        header: 'Телефон',
-        field: 'phone',
-        minWidth: 150,
-        renderValue: (value) => <ContractorTableCell value={formatPhoneForView(value as string | null)} />,
-      },
-      {
-        id: 'mail',
-        header: 'E-mail',
-        field: 'mail',
-        minWidth: 190,
-        renderValue: (value) => <ContractorTableCell value={value as string | null} />,
-      },
-      {
-        id: 'company_phone',
-        header: 'Телефон компании',
-        field: 'company_phone',
-        minWidth: 170,
-        renderValue: (value) => <ContractorTableCell value={formatPhoneForView(value as string | null)} />,
-      },
-      {
-        id: 'company_mail',
-        header: 'E-mail компании',
-        field: 'company_mail',
-        minWidth: 190,
-        renderValue: (value) => <ContractorTableCell value={value as string | null} />,
-      },
       {
         id: 'status',
         header: 'Статус',
-        field: 'status',
         minWidth: 150,
         filterKind: 'select',
         filterOptions: contractorStatusFilterOptions,
         getFilterValue: (row) => statusLabelForFilter(row.status),
         getSearchValue: (row) => statusLabelForFilter(row.status),
-        renderCell: (row) => <ContractorStatusPill value={row.status} />,
+        getSortValue: (row) => statusLabelForFilter(row.status),
+        renderCell: (row) => (
+          isEditMode
+            ? renderLockedCell(<ContractorStatusPill value={row.status} />)
+            : <ContractorStatusPill value={row.status} />
+        ),
+      },
+      {
+        id: 'login',
+        header: 'Логин',
+        field: 'userId',
+        minWidth: 170,
+        getSearchValue: (row) => row.userId,
+        renderCell: (row) => renderLockedCell(<ContractorTableCell value={row.userId} />),
+      },
+      {
+        id: 'full_name',
+        header: 'ФИО',
+        minWidth: 190,
+        getSearchValue: (row) => row.fullName ?? '',
+        getSortValue: (row) => row.fullName ?? '',
+        renderCell: (row) => renderEditableField(row, 'full_name', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'phone',
+        header: 'Телефон',
+        minWidth: 150,
+        getSearchValue: (row) => formatPhoneForView(row.phone) ?? '',
+        getSortValue: (row) => formatPhoneForView(row.phone) ?? '',
+        renderCell: (row) => renderEditableField(row, 'phone', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'mail',
+        header: 'E-mail',
+        minWidth: 190,
+        getSearchValue: (row) => row.mail ?? '',
+        getSortValue: (row) => row.mail ?? '',
+        renderCell: (row) => renderEditableField(row, 'mail', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'company_phone',
+        header: 'Телефон компании',
+        minWidth: 170,
+        getSearchValue: (row) => formatPhoneForView(row.companyPhone) ?? '',
+        getSortValue: (row) => formatPhoneForView(row.companyPhone) ?? '',
+        renderCell: (row) => renderEditableField(row, 'company_phone', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'company_mail',
+        header: 'E-mail компании',
+        minWidth: 190,
+        getSearchValue: (row) => row.companyMail ?? '',
+        getSortValue: (row) => row.companyMail ?? '',
+        renderCell: (row) => renderEditableField(row, 'company_mail', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'max_user_id',
+        header: 'MAX ID',
+        minWidth: 170,
+        getSearchValue: (row) => row.maxUserId ?? '',
+        getSortValue: (row) => row.maxUserId ?? '',
+        renderCell: (row) => renderLockedCell(<ContractorTableCell value={row.maxUserId} />),
+      },
+      {
+        id: 'company_name',
+        header: 'Компания',
+        minWidth: 190,
+        getSearchValue: (row) => row.companyName ?? '',
+        getSortValue: (row) => row.companyName ?? '',
+        renderCell: (row) => renderEditableField(row, 'company_name', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'inn',
+        header: 'ИНН',
+        minWidth: 150,
+        getSearchValue: (row) => row.inn ?? '',
+        getSortValue: (row) => row.inn ?? '',
+        renderCell: (row) => renderEditableField(row, 'inn', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'address',
+        header: 'Адрес',
+        minWidth: 190,
+        getSearchValue: (row) => row.address ?? '',
+        getSortValue: (row) => row.address ?? '',
+        renderCell: (row) => renderEditableField(row, 'address', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'note',
+        header: 'Примечание',
+        minWidth: 200,
+        sortable: false,
+        getSearchValue: (row) => row.note ?? '',
+        renderCell: (row) => renderEditableField(row, 'note', row.actions.manage_manual_contractor),
+      },
+      {
+        id: 'created_at',
+        header: 'Создан',
+        minWidth: 165,
+        getSortValue: (row) => row.createdAt ?? '',
+        renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.createdAt)} />),
+      },
+      {
+        id: 'updated_at',
+        header: 'Обновлен',
+        minWidth: 165,
+        getSortValue: (row) => row.updatedAt ?? '',
+        renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions]
+    [contractorStatusFilterOptions, isEditMode, renderEditableField, renderLockedCell],
   );
 
-  const openContractorDetails = (user: UserListItem) => {
-    setSelectedUser(user);
+  const openContractorDetails = (row: ContractorListItem) => {
+    setSelectedUser(toUserListItem(row));
     setSubmitError(null);
   };
 
@@ -157,11 +388,7 @@ export const ContractorsListView = ({
     setSubmitError(null);
 
     try {
-      if (useContractorsStatusApi) {
-        await updateContractorStatus(selectedUser.user_id, { user_status: values.user_status });
-      } else {
-        await updateUserStatus(selectedUser.user_id, { user_status: values.user_status });
-      }
+      await updateContractorStatus(selectedUser.user_id, { user_status: values.user_status });
       showSystemToast({
         severity: 'success',
         message: 'Статус успешно обновлён.',
@@ -173,7 +400,7 @@ export const ContractorsListView = ({
               ...prev,
               status: values.user_status,
             }
-          : prev
+          : prev,
       );
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Не удалось обновить статус');
@@ -184,69 +411,120 @@ export const ContractorsListView = ({
     <>
       <TableTemplate
         columns={contractorColumnsTemplate}
-        rows={users}
-        getRowId={(row) => row.user_id}
-        isLoading={isLoading}
+        rows={contractors}
+        getRowId={(row) => row.userId}
+        isLoading={isLoading || isSaving}
         noRowsLabel={emptyMessage}
         searchPlaceholder="Найти контрагента"
         addButtonLabel="Добавить контрагента"
         onAddClick={onAddClick}
         showAddAction={Boolean(onAddClick)}
+        showViewToggle={!isEditMode}
+        lockViewMode={isEditMode ? 'table' : undefined}
         minTableWidth={980}
+        reorderableColumns
+        defaultColumnOrder={[...ALL_COLUMN_IDS]}
+        initialVisibleColumnIds={[...VIEW_COLUMN_IDS]}
+        visibleColumnIds={visibleColumnIds}
+        onVisibleColumnIdsChange={setVisibleColumnIds}
+        toolbarBeforeAddActions={canEditContractorData ? (
+          isEditMode ? (
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              variant="outlined"
+              onClick={handleCancelEdits}
+              disabled={isSaving}
+              sx={{ textTransform: 'none', minHeight: 44, borderRadius: `${theme.acomShape.controlRadius}px` }}
+            >
+              Отменить
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => void handleSaveEdits()}
+              disabled={dirtyRowCount === 0 || isSaving}
+              startIcon={<SaveOutlined fontSize="small" />}
+              sx={{
+                textTransform: 'none',
+                minHeight: 44,
+                minWidth: 150,
+                boxShadow: 'none',
+                borderRadius: `${theme.acomShape.controlRadius}px`,
+              }}
+            >
+              {isSaving ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          </Stack>
+        ) : (
+          <Button
+            variant="outlined"
+            onClick={handleEnterEditMode}
+            startIcon={<EditOutlined fontSize="small" />}
+            sx={{
+              textTransform: 'none',
+              minHeight: 44,
+              flexShrink: 0,
+              borderRadius: `${theme.acomShape.controlRadius}px`,
+            }}
+          >
+            Редактировать
+          </Button>
+          )
+        ) : undefined}
         cardExpansionControl={{
           checked:
-            users.length > 0
-            && users.every(
+            contractors.length > 0
+            && contractors.every(
               (row) =>
-                Boolean(expandedContractorCardsById[row.user_id]?.contact)
-                && Boolean(expandedContractorCardsById[row.user_id]?.company)
+                Boolean(expandedContractorCardsById[row.userId]?.contact)
+                && Boolean(expandedContractorCardsById[row.userId]?.company),
             ),
           onChange: (checked) => {
             setExpandedContractorCardsById(
               Object.fromEntries(
-                users.map((row) => [
-                  row.user_id,
+                contractors.map((row) => [
+                  row.userId,
                   {
                     contact: checked,
                     company: checked,
                   },
-                ])
-              )
+                ]),
+              ),
             );
           },
           openLabel: 'Развернуть все',
           closeLabel: 'Свернуть все',
         }}
-        getCardPrimaryText={(row) => row.company_name ?? row.full_name ?? row.user_id}
-        getCardSecondaryText={(row) => row.user_id}
+        getCardPrimaryText={(row) => row.companyName ?? row.fullName ?? row.userId}
+        getCardSecondaryText={(row) => row.userId}
         cardExcludedColumnIds={['login']}
-        renderCard={(row) => (
-          <ContractorMobileCard
-            row={row}
-            isContactExpanded={Boolean(expandedContractorCardsById[row.user_id]?.contact)}
-            isCompanyExpanded={Boolean(expandedContractorCardsById[row.user_id]?.company)}
-            onToggleContact={() =>
-              setExpandedContractorCardsById((prev) => ({
-                ...prev,
-                [row.user_id]: {
-                  contact: !prev[row.user_id]?.contact,
-                  company: Boolean(prev[row.user_id]?.company),
-                },
-              }))
-            }
-            onToggleCompany={() =>
-              setExpandedContractorCardsById((prev) => ({
-                ...prev,
-                [row.user_id]: {
-                  contact: Boolean(prev[row.user_id]?.contact),
-                  company: !prev[row.user_id]?.company,
-                },
-              }))
-            }
-            onOpenDetails={openContractorDetails}
-          />
-        )}
-        onRowClick={openContractorDetails}
+        renderCard={(row) => {
+          const userRow = toUserListItem(row);
+          return (
+            <ContractorMobileCard
+              row={userRow}
+              isContactExpanded={Boolean(expandedContractorCardsById[row.userId]?.contact)}
+              isCompanyExpanded={Boolean(expandedContractorCardsById[row.userId]?.company)}
+              onToggleContact={() =>
+                setExpandedContractorCardsById((prev) => ({
+                  ...prev,
+                  [row.userId]: {
+                    contact: !prev[row.userId]?.contact,
+                    company: Boolean(prev[row.userId]?.company),
+                  },
+                }))}
+              onToggleCompany={() =>
+                setExpandedContractorCardsById((prev) => ({
+                  ...prev,
+                  [row.userId]: {
+                    contact: Boolean(prev[row.userId]?.contact),
+                    company: !prev[row.userId]?.company,
+                  },
+                }))}
+              onOpenDetails={() => openContractorDetails(row)}
+            />
+          );
+        }}
+        onRowClick={isEditMode ? undefined : openContractorDetails}
       />
 
       <Dialog
@@ -436,9 +714,7 @@ export const ContractorsListView = ({
                     </Button>
                   </Stack>
                 </Stack>
-              ) : (
-                <Alert severity="info">Изменение статуса недоступно: backend не вернул доступное действие.</Alert>
-              )}
+              ) : null}
             </Stack>
           ) : null}
         </DialogContent>

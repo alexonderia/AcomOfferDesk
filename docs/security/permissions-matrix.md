@@ -4,6 +4,11 @@ Source of truth: `backend/app/domain/permissions.py`.
 
 Legend: `Y` = granted, `N` = not granted.
 
+Footnotes:
+
+1. `users.login.update` остаётся в bootstrap ролей `superadmin`/`admin`, но **смена логина не реализована**: `users.id` неизменяем после создания. В UI логин только для чтения (`/admin`, `/contractors`, карточка контрагента); `PATCH /api/v1/users/{id}/manual-contractor` не принимает `login`.
+2. `users.password.update` — пароль управляется Keycloak; смена через приложение отключена.
+
 ## Access Matrix
 
 | Permission | SA | AD | PM | LE | EC | OP | CT |
@@ -13,8 +18,8 @@ Legend: `Y` = granted, `N` = not granted.
 | `users.status.update` | Y | Y | Y | Y | Y | N | N |
 | `users.role.update_any` | Y | Y | N | N | N | N | N |
 | `users.role.update_economy` | Y | N | Y | Y | N | N | N |
-| `users.login.update` | Y | Y | N | N | N | N | N |
-| `users.password.update` | Y | Y | N | N | N | N | N |
+| `users.login.update` | Y¹ | Y¹ | N | N | N | N | N |
+| `users.password.update` | Y² | Y² | N | N | N | N | N |
 | `users.manager.update` | Y | N | Y | Y | Y | N | N |
 | `profile.manage_own` | Y | Y | Y | Y | Y | Y | Y |
 | `profile.manage_any` | Y | Y | N | Y | N | N | N |
@@ -73,7 +78,7 @@ Legend: `Y` = granted, `N` = not granted.
 | Role | Main sections in web app | Typical allowed actions |
 |---|---|---|
 | `superadmin` | `/admin`, `/requests`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/feedback` | Full management across users, requests, offers, contractors, dashboards, normative files and statuses |
-| `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
+| `admin` | `/admin` | User administration (без смены логина/пароля), manual contractors create/manage, no request/offer workflow operations |
 | `security_officer` | `/contractors` | Read contractor list/profile, update contractor status, use own profile and feedback, no `/admin`, requests, offers, chats, dashboards or normative files |
 | `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Read requests/offers/chats across department; change request owner; read contractors and manage users hierarchy/manual contractors/subordinate unavailability/economy-role changes for subordinates |
 | `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Full request/offer workflow, create manual offers, manage normative files, read contractors, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
@@ -91,6 +96,7 @@ Legend: `Y` = granted, `N` = not granted.
 6. Frontend использует permissions/actions только для UX. Финальное enforcement-решение всегда принимает backend endpoint/policy/service слой.
 7. Backend contractor-view path (`GET /api/v1/requests/{id}/contractor-view`) должен проверять `requests.contractor_view.read` на service-level.
 8. Backend offer lifecycle path (`PATCH /api/v1/offers/{id}/status`) должен отклонять `accepted`, если связанная заявка уже `closed` или `cancelled`.
+9. Логин пользователя (`users.id`) **неизменяем** после создания. Для manual-контрагентов логин генерируется при `contractors.manual.create`; `contractors.manual.manage` меняет профиль и контакты компании, но не логин. В таблице контрагентов и админке поле «Логин» read-only.
 
 ## Test Policy
 

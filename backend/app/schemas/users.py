@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.domain.contractor_validation import (
     validate_inn,
     validate_optional_email,
+    validate_optional_inn,
+    validate_optional_phone,
     validate_password_bcrypt_bytes,
     validate_ru_phone,
 )
@@ -339,7 +341,6 @@ class ManualContractorCreateResponse(BaseModel):
 
 
 class ManualContractorUpdateRequest(BaseModel):
-    login: str | None = Field(default=None, min_length=3, max_length=128)
     password: str | None = Field(default=None, min_length=6, max_length=72)
     full_name: str | None = Field(default=None, max_length=256)
     phone: str | None = Field(default=None, max_length=64)
@@ -352,7 +353,6 @@ class ManualContractorUpdateRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1024)
 
     @field_validator(
-        "login",
         "password",
         "full_name",
         "phone",
@@ -388,7 +388,7 @@ class ManualContractorUpdateRequest(BaseModel):
     def _validate_phone(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_ru_phone(value)
+        return validate_optional_phone(value, allow_placeholder=True)
 
     @field_validator("mail", "company_mail")
     @classmethod
@@ -402,7 +402,7 @@ class ManualContractorUpdateRequest(BaseModel):
     def _validate_inn(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_inn(value)
+        return validate_optional_inn(value, allow_placeholder=True)
 
 
 class ManualContractorUpdateData(BaseModel):

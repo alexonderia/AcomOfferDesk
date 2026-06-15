@@ -41,6 +41,147 @@ class UserRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    def _build_contractors_stmt(
+        self,
+        *,
+        contractor_role_id: int,
+    ):
+        telegram_account = aliased(UserAuthAccount)
+        telegram_channel = aliased(UserContactChannel)
+        max_account = aliased(UserAuthAccount)
+        max_channel = aliased(UserContactChannel)
+        stmt = (
+            select(
+                User,
+                Profile,
+                CompanyContact,
+                telegram_account.is_active,
+                telegram_channel.is_verified,
+                telegram_channel.is_active,
+                max_account.external_subject_id,
+                max_channel.channel_value,
+            )
+            .options(
+                with_expression(
+                    User.tg_user_id,
+                    cast(telegram_account.external_subject_id, BigInteger),
+                )
+            )
+            .outerjoin(Profile, Profile.id == User.id)
+            .outerjoin(CompanyContact, CompanyContact.id == User.id)
+            .outerjoin(
+                telegram_account,
+                and_(
+                    telegram_account.id_user == User.id,
+                    telegram_account.provider == "telegram",
+                ),
+            )
+            .outerjoin(
+                telegram_channel,
+                and_(
+                    telegram_channel.id_user == User.id,
+                    telegram_channel.channel_type == "telegram",
+                    telegram_channel.is_primary.is_(True),
+                ),
+            )
+            .outerjoin(
+                max_account,
+                and_(
+                    max_account.id_user == User.id,
+                    max_account.provider == "max",
+                    max_account.is_active.is_(True),
+                ),
+            )
+            .outerjoin(
+                max_channel,
+                and_(
+                    max_channel.id_user == User.id,
+                    max_channel.channel_type == "max",
+                    max_channel.is_active.is_(True),
+                    max_channel.is_primary.is_(True),
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+        )
+        return stmt, max_account.external_subject_id, max_channel.channel_value
+
+    def _apply_contractors_filters(
+        self,
+        stmt,
+        *,
+        search: str | None,
+        status: str | None,
+        max_subject_column=None,
+        max_channel_column=None,
+    ):
+        normalized_search = (search or "").strip().lower()
+        if normalized_search:
+            like_value = f"%{normalized_search}%"
+            search_clauses = [
+                func.lower(User.id).like(like_value),
+                func.lower(func.coalesce(Profile.full_name, "")).like(like_value),
+                func.lower(func.coalesce(Profile.phone, "")).like(like_value),
+                func.lower(func.coalesce(Profile.mail, "")).like(like_value),
+                func.lower(func.coalesce(CompanyContact.company_name, "")).like(like_value),
+                func.lower(func.coalesce(CompanyContact.inn, "")).like(like_value),
+                func.lower(func.coalesce(CompanyContact.phone, "")).like(like_value),
+                func.lower(func.coalesce(CompanyContact.mail, "")).like(like_value),
+            ]
+            if max_subject_column is not None:
+                search_clauses.append(
+                    func.lower(func.coalesce(max_subject_column, "")).like(like_value)
+                )
+            if max_channel_column is not None:
+                search_clauses.append(
+                    func.lower(func.coalesce(max_channel_column, "")).like(like_value)
+                )
+            stmt = stmt.where(
+                or_(*search_clauses)
+            )
+        normalized_status = (status or "").strip().lower()
+        if normalized_status:
+            stmt = stmt.where(User.status == normalized_status)
+        return stmt
+
+    @staticmethod
+    def _map_contractor_rows(
+        result_rows,
+    ) -> list[tuple[User, Profile | None, CompanyContact | None, TgUser | None, str | None]]:
+        rows: list[tuple[User, Profile | None, CompanyContact | None, TgUser | None, str | None]] = []
+        for (
+            user,
+            profile,
+            company_contact,
+            account_is_active,
+            channel_is_verified,
+            channel_is_active,
+            max_subject_id,
+            max_channel_value,
+        ) in result_rows:
+            linked_max_user_id: str | None = None
+            for candidate in (max_subject_id, max_channel_value):
+                if candidate is None:
+                    continue
+                normalized_candidate = str(candidate).strip()
+                if normalized_candidate:
+                    linked_max_user_id = normalized_candidate
+                    break
+            rows.append(
+                (
+                    user,
+                    profile,
+                    company_contact,
+                    build_tg_user(
+                        tg_id=user.tg_user_id,
+                        account_is_active=account_is_active,
+                        channel_is_verified=channel_is_verified,
+                        channel_is_active=channel_is_active,
+                    ),
+                    linked_max_user_id,
+                )
+            )
+        return rows
+
     async def get_by_id(self, user_id: str) -> User | None:
         stmt = (
             select(User)
@@ -187,11 +328,6 @@ class UserRepository:
     async def flush(self) -> None:
         await self._session.flush()
 
-    async def delete_by_id(self, *, user_id: str) -> None:
-        user = await self.get_by_id(user_id)
-        if user is not None:
-            await self._session.delete(user)
-
     async def list_subordinates_with_profiles(self, *, manager_user_id: str) -> list[tuple[User, Profile | None]]:
         stmt = (
             select(User, Profile)
@@ -237,62 +373,93 @@ class UserRepository:
     async def list_contractors(
         self,
         contractor_role_id: int,
-    ) -> list[tuple[User, Profile | None, CompanyContact | None, TgUser | None]]:
-        telegram_account = aliased(UserAuthAccount)
-        telegram_channel = aliased(UserContactChannel)
-        stmt = (
-            select(
-                User,
-                Profile,
-                CompanyContact,
-                telegram_account.is_active,
-                telegram_channel.is_verified,
-                telegram_channel.is_active,
-            )
-            .options(
-                with_expression(
-                    User.tg_user_id,
-                    cast(telegram_account.external_subject_id, BigInteger),
-                )
-            )
+    ) -> list[tuple[User, Profile | None, CompanyContact | None, TgUser | None, str | None]]:
+        stmt, _, _ = self._build_contractors_stmt(contractor_role_id=contractor_role_id)
+        stmt = stmt.order_by(User.id)
+        result = await self._session.execute(stmt)
+        return self._map_contractor_rows(result.all())
+
+    async def list_contractors_page(
+        self,
+        *,
+        contractor_role_id: int,
+        search: str | None = None,
+        status: str | None = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        limit: int = 25,
+        offset: int = 0,
+    ) -> tuple[list[tuple[User, Profile | None, CompanyContact | None, TgUser | None, str | None]], int]:
+        stmt, max_subject_column, max_channel_column = self._build_contractors_stmt(
+            contractor_role_id=contractor_role_id
+        )
+        stmt = self._apply_contractors_filters(
+            stmt,
+            search=search,
+            status=status,
+            max_subject_column=max_subject_column,
+            max_channel_column=max_channel_column,
+        )
+
+        sort_columns = {
+            "user_id": User.id,
+            "max_user_id": func.coalesce(max_subject_column, max_channel_column),
+            "status": User.status,
+            "full_name": Profile.full_name,
+            "phone": Profile.phone,
+            "mail": Profile.mail,
+            "company_name": CompanyContact.company_name,
+            "inn": CompanyContact.inn,
+            "company_phone": CompanyContact.phone,
+            "company_mail": CompanyContact.mail,
+            "address": CompanyContact.address,
+            "created_at": User.created_at,
+            "updated_at": User.updated_at,
+        }
+        sort_column = sort_columns.get(sort_by, User.created_at)
+        if (sort_order or "").lower() == "asc":
+            stmt = stmt.order_by(sort_column.asc(), User.id.asc())
+        else:
+            stmt = stmt.order_by(sort_column.desc(), User.id.asc())
+        stmt = stmt.limit(limit).offset(offset)
+
+        count_max_account = aliased(UserAuthAccount)
+        count_max_channel = aliased(UserContactChannel)
+        count_stmt = (
+            select(func.count(func.distinct(User.id)))
+            .select_from(User)
             .outerjoin(Profile, Profile.id == User.id)
             .outerjoin(CompanyContact, CompanyContact.id == User.id)
             .outerjoin(
-                telegram_account,
+                count_max_account,
                 and_(
-                    telegram_account.id_user == User.id,
-                    telegram_account.provider == "telegram",
+                    count_max_account.id_user == User.id,
+                    count_max_account.provider == "max",
+                    count_max_account.is_active.is_(True),
                 ),
             )
             .outerjoin(
-                telegram_channel,
+                count_max_channel,
                 and_(
-                    telegram_channel.id_user == User.id,
-                    telegram_channel.channel_type == "telegram",
-                    telegram_channel.is_primary.is_(True),
+                    count_max_channel.id_user == User.id,
+                    count_max_channel.channel_type == "max",
+                    count_max_channel.is_active.is_(True),
+                    count_max_channel.is_primary.is_(True),
                 ),
             )
             .where(User.id_role == contractor_role_id)
-            .order_by(User.id)
         )
-        result = await self._session.execute(stmt)
+        count_stmt = self._apply_contractors_filters(
+            count_stmt,
+            search=search,
+            status=status,
+            max_subject_column=count_max_account.external_subject_id,
+            max_channel_column=count_max_channel.channel_value,
+        )
 
-        rows: list[tuple[User, Profile | None, CompanyContact | None, TgUser | None]] = []
-        for user, profile, company_contact, account_is_active, channel_is_verified, channel_is_active in result.all():
-            rows.append(
-                (
-                    user,
-                    profile,
-                    company_contact,
-                    build_tg_user(
-                        tg_id=user.tg_user_id,
-                        account_is_active=account_is_active,
-                        channel_is_verified=channel_is_verified,
-                        channel_is_active=channel_is_active,
-                    ),
-                )
-            )
-        return rows
+        total_result = await self._session.execute(count_stmt)
+        rows_result = await self._session.execute(stmt)
+        return self._map_contractor_rows(rows_result.all()), int(total_result.scalar_one() or 0)
 
     async def list_by_role_ids_with_profiles_and_roles(
         self,
@@ -379,54 +546,6 @@ class UserRepository:
 
     async def update_parent(self, user: User, parent_user_id: str | None) -> None:
         user.id_parent = parent_user_id
-
-    async def reassign_user_id(self, *, old_user_id: str, new_user_id: str) -> None:
-        await self._session.execute(
-            update(Profile).where(Profile.id == old_user_id).values(id=new_user_id)
-        )
-        await self._session.execute(
-            update(CompanyContact).where(CompanyContact.id == old_user_id).values(id=new_user_id)
-        )
-        await self._session.execute(
-            update(UserAuthAccount).where(UserAuthAccount.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(UserContactChannel).where(UserContactChannel.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(Request).where(Request.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(RequestHiddenContractor)
-            .where(RequestHiddenContractor.contractor_user_id == old_user_id)
-            .values(contractor_user_id=new_user_id)
-        )
-        await self._session.execute(
-            update(Offer).where(Offer.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(Message).where(Message.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(ChatParticipant).where(ChatParticipant.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(MessageReceipt).where(MessageReceipt.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(UserStatusPeriod).where(UserStatusPeriod.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(EconomyPlan).where(EconomyPlan.id_user == old_user_id).values(id_user=new_user_id)
-        )
-        await self._session.execute(
-            update(EconomyPlan)
-            .where(EconomyPlan.id_parent_user_snapshot == old_user_id)
-            .values(id_parent_user_snapshot=new_user_id)
-        )
-        await self._session.execute(
-            update(User).where(User.id_parent == old_user_id).values(id_parent=new_user_id)
-        )
 
     async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int) -> int | None:
         stmt = (

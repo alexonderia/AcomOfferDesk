@@ -68,13 +68,31 @@ def request_status_changed_title() -> str:
     return "Статус заявки изменён"
 
 
+_REQUEST_STATUS_LABELS: dict[str, str] = {
+    "open": "Открыта",
+    "review": "На рассмотрении",
+    "closed": "Закрыта",
+    "cancelled": "Отменена",
+}
+
+
+def format_request_status_label(status: str | None) -> str:
+    """Return a human-readable Russian label for a request status code."""
+    normalized = (status or "").strip().lower()
+    if not normalized or normalized == "-":
+        return "-"
+    return _REQUEST_STATUS_LABELS.get(normalized, normalized)
+
+
 def request_status_changed_body(
     *,
     request_id: str | None,
     previous_status: str | None,
     new_status: str | None,
 ) -> str:
-    transition = format_status_transition(previous=previous_status, new=new_status)
+    prev_label = format_request_status_label(previous_status)
+    new_label = format_request_status_label(new_status)
+    transition = format_status_transition(previous=prev_label, new=new_label)
     if request_id is None:
         return f"{request_status_changed_title()}: {transition}."
     return f"Заявка №{request_id}: {transition}."

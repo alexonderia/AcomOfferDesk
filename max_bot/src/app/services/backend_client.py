@@ -63,9 +63,15 @@ class BackendClient:
         return resolved
 
     async def _post(self, path: str, payload: dict) -> dict:
+        headers: dict[str, str] = {}
+        shared_secret = (settings.bot_api_shared_secret or "").strip()
+        if shared_secret:
+            headers["X-Bot-Api-Secret"] = shared_secret
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             try:
-                response = await client.post(f"{self.base_url.rstrip('/')}{path}", json=payload)
+                response = await client.post(
+                    f"{self.base_url.rstrip('/')}{path}", json=payload, headers=headers
+                )
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 raise BackendClientError("Backend request failed") from exc

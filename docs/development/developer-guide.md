@@ -24,13 +24,15 @@
 ```text
 backend/               Backend API и бизнес-логика
 web/                   Frontend SPA
-notifications_worker/  Фоновая отправка уведомлений
-tg_bot/                Legacy Telegram-интеграция
+notifications_worker/  Фоновая отправка уведомлений (email + MAX push)
+max_bot/               MAX messenger bot (активный)
+file_guard/            Сервис безопасности файлов (MIME/signature/AV checks)
+tg_bot/                Legacy Telegram-интеграция (выключена по умолчанию)
 infra/keycloak/        Конфигурация и bootstrap Keycloak
 deploy/order_database/ Снимок Flyway V*.sql для деплоя на VPS (синхронизировать с alexonderia/order_database)
 docs/                  Документация
 scripts/               Вспомогательные скрипты
-shared/                Общие runtime-артефакты
+shared/                Общие runtime-артефакты (notification_copy.py и др.)
 ```
 
 ## Как ориентироваться по backend
@@ -160,7 +162,19 @@ Backend в основном организован по схеме:
 - DB engine;
 - email transport;
 - notification publisher;
-- MinIO client.
+- MinIO client;
+- `file_guard` HTTP-клиент (`infrastructure/file_guard_client.py`).
+
+### Поток загрузки файлов
+
+При любом upload backend выполняет следующий порядок:
+
+1. Принимает байты файла.
+2. Отправляет их на `POST /scan` в `file_guard` (сервис на отдельном порту).
+3. Если `file_guard` вернул `ok=true` — продолжает; иначе возвращает 422 с причиной.
+4. Сохраняет файл в MinIO и создаёт запись в БД.
+
+Если `FILE_GUARD_ENABLED=true` и `file_guard` недоступен — upload fail-closed (403).
 
 ### `realtime/`
 

@@ -222,7 +222,17 @@ async def lifespan(_: FastAPI):
             leader_lock.release()
 
 
-app = FastAPI(title="Order Backend", version="0.1.0", lifespan=lifespan)
+# API docs (Swagger/ReDoc/OpenAPI) are disabled in production to reduce the
+# exposed API surface; available in dev/test for developer convenience.
+_docs_enabled = settings.app_env != "production"
+app = FastAPI(
+    title="Order Backend",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 cors_allow_origins = settings.resolved_cors_allow_origins
 if cors_allow_origins:
@@ -298,6 +308,17 @@ async def service_unavailable_handler(request: Request, exc: ServiceUnavailable)
             "detail": _normalize_public_error_detail(status_code=exc.status_code, detail=exc.detail),
             "reason_code": exc.reason_code,
         },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Log full technical detail server-side; never leak it to the client.
+    logger.exception("unhandled_exception path=%s method=%s", request.url.path, request.method)
+    _ = exc
+    return JSONResponse(
+        status_code=500,
+        content={"detail": _normalize_public_error_detail(status_code=500, detail=None)},
     )
 
 

@@ -55,6 +55,9 @@ curl -fsSL https://app.example.com/iam/realms/acom-offerdesk/.well-known/openid-
 | `EMAIL_APP_PASSWORD` | backend/worker | пароль приложения для SMTP | да | пароль приложения от провайдера | да | backend, notifications_worker |
 | `SMTP_HOST` / `SMTP_PORT` / SMTP creds | backend/worker/keycloak | исходящая почта | да | TLS endpoint + валидная auth | да | backend, notifications_worker, keycloak |
 | `IMAP_HOST` / `IMAP_PORT` / IMAP creds | backend/worker | mailbox polling | опционально | выделенный read account | да | backend, notifications_worker |
+| `MAX_BOT_TOKEN` | max_bot | токен MAX Bot API | да (при `MAX_BOT_ENABLED=true`) | токен от платформы MAX | да | max_bot, notifications_worker |
+| `BOT_API_SHARED_SECRET` | backend, max_bot, tg_bot | shared secret для inter-service bot → backend вызовов | да (при включённом max_bot или tg_bot) | 32+ случайных символов | да (обновить во всех сервисах одновременно) | backend, max_bot, tg_bot |
+| `FILE_GUARD_REQUIRE_ANTIVIRUS` | file_guard | требовать антивирус при старте и проверке | опционально (рекомендуется `true` в prod) | `true`/`false` | n/a | file_guard |
 
 ## Политика по credentials
 

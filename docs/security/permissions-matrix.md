@@ -11,67 +11,70 @@ Footnotes:
 
 ## Access Matrix
 
-| Permission | SA | AD | PM | LE | EC | OP | CT |
-|---|---|---|---|---|---|---|---|
-| `users.read` | Y | Y | Y | Y | Y | N | N |
-| `users.create` | Y | Y | N | Y | N | N | N |
-| `users.status.update` | Y | Y | Y | Y | Y | N | N |
-| `users.role.update_any` | Y | Y | N | N | N | N | N |
-| `users.role.update_economy` | Y | N | Y | Y | N | N | N |
-| `users.login.update` | Y¹ | Y¹ | N | N | N | N | N |
-| `users.password.update` | Y² | Y² | N | N | N | N | N |
-| `users.manager.update` | Y | N | Y | Y | Y | N | N |
-| `profile.manage_own` | Y | Y | Y | Y | Y | Y | Y |
-| `profile.manage_any` | Y | Y | N | Y | N | N | N |
-| `company_contacts.manage_own` | Y | N | N | N | N | N | Y |
-| `company_contacts.manage_any` | Y | Y | N | Y | N | N | N |
-| `requests.read` | Y | N | Y | Y | Y | Y | N |
-| `requests.amounts.read` | Y | N | Y | Y | Y | Y | N |
-| `requests.create` | Y | N | N | Y | Y | Y | N |
-| `requests.update` | Y | N | N | Y | Y | Y | N |
-| `requests.pricing.update` | Y | N | N | Y | Y | Y | N |
-| `requests.deadline.update` | Y | N | N | Y | Y | Y | N |
-| `requests.status.update` | Y | N | N | Y | Y | Y | N |
-| `requests.owner.change` | Y | N | Y | Y | N | N | N |
-| `requests.files.upload` | Y | N | N | Y | Y | N | N |
-| `requests.files.delete` | Y | N | N | Y | Y | N | N |
-| `requests.open.read` | Y | N | N | N | N | N | Y |
-| `requests.offered.read` | Y | N | N | N | N | N | Y |
-| `requests.contractor_view.read` | Y | N | N | N | N | N | Y |
-| `requests.email_notifications.send` | Y | N | N | Y | Y | N | N |
-| `requests.deleted_alerts.mark_viewed` | Y | N | N | Y | Y | N | N |
-| `offers.create` | Y | N | N | N | N | N | Y |
-| `offers.manual.create` | Y | N | N | Y | Y | N | N |
-| `offers.workspace.read` | Y | N | Y | Y | Y | N | Y |
-| `offers.update` | Y | N | N | Y | Y | N | Y |
-| `offers.amount.update` | Y | N | N | Y | Y | N | Y |
-| `offers.details.update` | Y | N | N | Y | Y | N | Y |
-| `offers.status.update` | Y | N | N | Y | Y | N | Y |
-| `offers.files.upload` | Y | N | N | N | N | N | Y |
-| `offers.files.delete` | Y | N | N | N | N | N | Y |
-| `offers.contractor_info.read` | Y | N | Y | Y | Y | Y | Y |
-| `chat.read` | Y | N | Y | Y | Y | N | Y |
-| `chat.message.send` | Y | N | N | Y | Y | N | Y |
-| `chat.message.attach` | Y | N | N | Y | Y | N | Y |
-| `chat.receipts.mark_received` | Y | N | N | Y | Y | N | Y |
-| `chat.receipts.mark_read` | Y | N | N | Y | Y | N | Y |
-| `feedback.read` | Y | N | N | N | N | N | N |
-| `feedback.create` | Y | Y | Y | Y | Y | Y | Y |
-| `dashboard.process.read` | Y | N | Y | Y | Y | N | N |
-| `dashboard.savings.read` | Y | N | Y | Y | Y | N | N |
-| `dashboard.plans.read` | Y | N | Y | Y | Y | N | N |
-| `normative_files.read` | Y | N | Y | Y | Y | Y | N |
-| `normative_files.create` | Y | N | N | Y | N | N | N |
-| `normative_files.manage` | Y | N | N | Y | N | N | N |
-| `files.download` | Y | N | Y | Y | Y | N | Y |
-| `unavailability.manage_all` | Y | N | N | N | N | N | N |
-| `unavailability.manage_own` | Y | N | Y | Y | Y | N | N |
-| `unavailability.manage_subordinate` | Y | N | Y | Y | Y | N | N |
-| `contractors.read` | Y | N | Y | Y | Y | N | N |
-| `contractors.profile.read` | Y | N | Y | Y | Y | N | N |
-| `contractors.profile.status.update` | Y | N | N | N | N | N | N |
-| `contractors.manual.create` | Y | Y | Y | Y | Y | N | N |
-| `contractors.manual.manage` | Y | Y | Y | Y | Y | N | N |
+Legend: `SA`=superadmin, `AD`=admin, `SO`=security_officer, `PM`=project_manager, `LE`=lead_economist, `EC`=economist, `OP`=operator, `CT`=contractor.
+
+| Permission | SA | AD | SO | PM | LE | EC | OP | CT |
+|---|---|---|---|---|---|---|---|---|
+| `users.read` | Y | Y | N | Y | Y | Y | N | N |
+| `users.create` | Y | Y | N | N | Y | N | N | N |
+| `users.status.update` | Y | Y | N | Y | Y | Y | N | N |
+| `users.role.update_any` | Y | Y | N | N | N | N | N | N |
+| `users.role.update_economy` | Y | N | N | Y | Y | N | N | N |
+| `users.login.update` | Y¹ | Y¹ | N | N | N | N | N | N |
+| `users.password.update` | Y² | Y² | N | N | N | N | N | N |
+| `users.manager.update` | Y | N | N | Y | Y | Y | N | N |
+| `profile.manage_own` | Y | Y | Y | Y | Y | Y | Y | Y |
+| `profile.manage_any` | Y | Y | N | N | Y | N | N | N |
+| `company_contacts.manage_own` | Y | N | N | N | N | N | N | Y |
+| `company_contacts.manage_any` | Y | Y | N | N | Y | N | N | N |
+| `requests.read` | Y | N | N | Y | Y | Y | Y | N |
+| `requests.amounts.read` | Y | N | N | Y | Y | Y | Y | N |
+| `requests.create` | Y | N | N | N | Y | Y | Y | N |
+| `requests.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.pricing.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.deadline.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.status.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.owner.change` | Y | N | N | Y | Y | N | N | N |
+| `requests.files.upload` | Y | N | N | N | Y | Y | N | N |
+| `requests.files.delete` | Y | N | N | N | Y | Y | N | N |
+| `requests.open.read` | Y | N | N | N | N | N | N | Y |
+| `requests.offered.read` | Y | N | N | N | N | N | N | Y |
+| `requests.contractor_view.read` | Y | N | N | N | N | N | N | Y |
+| `requests.email_notifications.send` | Y | N | N | N | Y | Y | N | N |
+| `requests.deleted_alerts.mark_viewed` | Y | N | N | N | Y | Y | N | N |
+| `offers.create` | Y | N | N | N | N | N | N | Y |
+| `offers.manual.create` | Y | N | N | N | Y | Y | N | N |
+| `offers.workspace.read` | Y | N | N | Y | Y | Y | N | Y |
+| `offers.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.amount.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.details.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.status.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.files.upload` | Y | N | N | N | N | N | N | Y |
+| `offers.files.delete` | Y | N | N | N | N | N | N | Y |
+| `offers.contractor_info.read` | Y | N | N | Y | Y | Y | Y | Y |
+| `chat.read` | Y | N | N | Y | Y | Y | N | Y |
+| `chat.message.send` | Y | N | N | N | Y | Y | N | Y |
+| `chat.message.attach` | Y | N | N | N | Y | Y | N | Y |
+| `chat.receipts.mark_received` | Y | N | N | N | Y | Y | N | Y |
+| `chat.receipts.mark_read` | Y | N | N | N | Y | Y | N | Y |
+| `feedback.read` | Y | N | N | N | N | N | N | N |
+| `feedback.create` | Y | Y | Y | Y | Y | Y | Y | Y |
+| `dashboard.process.read` | Y | N | N | Y | Y | Y | N | N |
+| `dashboard.savings.read` | Y | N | N | Y | Y | Y | N | N |
+| `dashboard.plans.read` | Y | N | N | Y | Y | Y | N | N |
+| `normative_files.read` | Y | N | N | Y | Y | Y | Y | N |
+| `normative_files.create` | Y | N | N | N | Y | N | N | N |
+| `normative_files.manage` | Y | N | N | N | Y | N | N | N |
+| `normative_files.status.update` | Y | N | N | N | Y | N | N | N |
+| `files.download` | Y | N | N | Y | Y | Y | N | Y |
+| `unavailability.manage_all` | Y | N | N | N | N | N | N | N |
+| `unavailability.manage_own` | Y | N | N | Y | Y | Y | N | N |
+| `unavailability.manage_subordinate` | Y | N | N | Y | Y | Y | N | N |
+| `contractors.read` | Y | N | Y | Y | Y | Y | N | N |
+| `contractors.profile.read` | Y | N | Y | Y | Y | Y | N | N |
+| `contractors.profile.status.update` | Y | N | Y | N | N | N | N | N |
+| `contractors.manual.create` | Y | Y | N | Y | Y | Y | N | N |
+| `contractors.manual.manage` | Y | Y | N | Y | Y | Y | N | N |
 
 ## Web App Behavior by Role
 

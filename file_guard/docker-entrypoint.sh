@@ -26,7 +26,23 @@ chown -R clamav:clamav /run/clamav /var/lib/clamav /var/log/clamav
 if [ "${FILE_GUARD_ANTIVIRUS_ENABLED:-true}" = "true" ]; then
   if [ "${FILE_GUARD_CLAMAV_UPDATE_ON_START:-true}" = "true" ]; then
     echo "[file_guard] Обновляем антивирусные базы ClamAV перед запуском"
-    freshclam --config-file=/etc/clamav/freshclam.conf || true
+    freshclam_attempts="${FILE_GUARD_FRESHCLAM_ATTEMPTS:-3}"
+    freshclam_ok=0
+    i=1
+    while [ "${i}" -le "${freshclam_attempts}" ]; do
+      if freshclam --config-file=/etc/clamav/freshclam.conf; then
+        freshclam_ok=1
+        break
+      fi
+      echo "[file_guard] freshclam: попытка ${i}/${freshclam_attempts} не удалась, повтор через 5с"
+      sleep 5
+      i=$((i + 1))
+    done
+    # Не валим старт: clamd может обновить базы позже. Но readiness-проба
+    # держит /health в 503, пока clamd реально не готов сканировать.
+    if [ "${freshclam_ok}" != "1" ]; then
+      echo "[file_guard] ВНИМАНИЕ: не удалось обновить базы ClamAV при старте; clamd попробует позже"
+    fi
   fi
 
   echo "[file_guard] Запускаем локальный процесс clamd"

@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import RedirectResponse
 
-from app.api.dependencies import get_uow
+from app.api.dependencies import get_uow, require_bot_api_secret
 from app.core.config import settings
 from app.core.max_links import decode_max_token
 from app.core.max_shortcodes import MaxShortcodeCodec
@@ -50,6 +50,7 @@ def _build_registration_link_status_url(reason: str) -> str:
 async def handle_max_start(
     payload: MaxStartRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> MaxStartResponse:
     async with uow:
         service = MaxStartService(uow.max_users, uow.users, uow.requests)
@@ -76,6 +77,7 @@ async def handle_max_start(
 async def create_register_link(
     payload: MaxLinkRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> MaxLinkResponse:
     if not settings.max_link_secret:
         raise Forbidden("Ссылки MAX не настроены")

@@ -59,6 +59,7 @@
 
 - [ ] Нет default credentials (`guest/guest`, `minioadmin/minioadmin`).
 - [ ] Заполнены все обязательные секреты из [production-env.md](./production-env.md).
+- [ ] В том числе: `BOT_API_SHARED_SECRET` (при включённом max_bot/tg_bot) и `MAX_BOT_TOKEN`.
 - [ ] Реальные `.env` файлы не закоммичены.
 - [ ] Назначены владельцы секретов и политика ротации.
 
@@ -82,7 +83,9 @@
 - [ ] Открывается карточка заявки.
 - [ ] Открывается workspace оффера (если есть тестовые данные).
 - [ ] WebSocket работает через HTTPS (без ticket hardening на этом этапе).
-- [ ] Работает upload-сценарий (если предусмотрен).
+- [ ] `GET /api/file-guard/health` возвращает 200 (или 503 с понятным телом, если антивирус не поднят и `REQUIRE_ANTIVIRUS=true`).
+- [ ] Работает upload-сценарий (если предусмотрен); файл проходит через `file_guard` без ошибок.
+- [ ] MAX bot: `GET /api/v1/max/health` (или аналог) отвечает корректно при `MAX_BOT_ENABLED=true`.
 - [ ] RabbitMQ UI и MinIO Console недоступны из публичного интернета.
 - [ ] E2E smoke выполнен вручную через `scripts/e2e-smoke.*` или workflow `E2E Smoke (Manual)` на поднятом стенде.
 - [ ] Extended e2e suites (`@roles`, `@registration`, `@request-offer`, `@dashboard`, `@files-chat`) выполнены вручную, если релиз затрагивает role UX/access, dashboard behavior, request-offer lifecycle или files/chat.

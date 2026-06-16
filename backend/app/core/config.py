@@ -154,6 +154,7 @@ class Settings(BaseSettings):
     max_bot_token: str | None = Field(default=None, validation_alias="MAX_BOT_TOKEN")
     max_bot_public_url: str | None = Field(default=None, validation_alias="MAX_BOT_PUBLIC_URL")
     max_link_secret: str | None = Field(default=None, validation_alias="MAX_LINK_SECRET")
+    bot_api_shared_secret: str | None = Field(default=None, validation_alias="BOT_API_SHARED_SECRET")
     max_register_ttl_seconds: int = Field(default=86400, validation_alias="MAX_REGISTER_TTL_SECONDS")
     max_auth_ttl_seconds: int = Field(default=600, validation_alias="MAX_AUTH_TTL_SECONDS")
     max_request_ttl_seconds: int = Field(default=604800, validation_alias="MAX_REQUEST_TTL_SECONDS")
@@ -374,6 +375,14 @@ class Settings(BaseSettings):
                 raise ValueError("MAX_BOT_TOKEN is required when MAX_BOT_ENABLED=true")
             if not (self.max_link_secret or "").strip():
                 raise ValueError("MAX_LINK_SECRET is required when MAX_BOT_ENABLED=true")
+
+        # Bot ↔ backend endpoints (/api/v1/max/*, /api/v1/tg/*) must not be callable
+        # unauthenticated in production: they expose request data by messenger id.
+        if self.app_env == "production" and (self.max_bot_enabled or self.telegram_legacy_enabled):
+            if not (self.bot_api_shared_secret or "").strip():
+                raise ValueError(
+                    "BOT_API_SHARED_SECRET is required in production when a bot integration is enabled"
+                )
 
         if self.keycloak_enabled and self.app_env == "production":
             if not self.keycloak_public_base_url:

@@ -15,7 +15,8 @@ export const ProtectedRoute = () => {
   }
 
   if (status === 'anonymous' || (!session && !isAuthenticated)) {
-    return <Navigate to="/login" replace />;
+    const next = location.pathname !== '/' ? `?next=${encodeURIComponent(location.pathname + location.search)}` : '';
+    return <Navigate to={`/login${next}`} replace />;
   }
 
   if (session && !session.businessAccess && location.pathname !== '/account') {

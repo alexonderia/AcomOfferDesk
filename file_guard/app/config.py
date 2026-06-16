@@ -38,7 +38,12 @@ class Settings:
     max_file_size_bytes: int = _env_int("FILE_GUARD_MAX_FILE_SIZE_BYTES", _env_int("MAX_UPLOAD_SIZE_BYTES", 5 * 1024 * 1024))
     allow_libmagic_fallback: bool = _env_bool("FILE_GUARD_ALLOW_LIBMAGIC_FALLBACK", True)
     antivirus_enabled: bool = _env_bool("FILE_GUARD_ANTIVIRUS_ENABLED", True)
+    # When true, the service refuses to operate (health 503, scans rejected) while the
+    # antivirus is disabled. Set to true in production to guarantee malware scanning.
+    require_antivirus: bool = _env_bool("FILE_GUARD_REQUIRE_ANTIVIRUS", False)
     antivirus_timeout_seconds: float = _env_float("FILE_GUARD_ANTIVIRUS_TIMEOUT_SECONDS", 10.0)
+    # End-to-end deadline for a single /scan (parsing + structural checks + AV).
+    scan_timeout_seconds: float = _env_float("FILE_GUARD_SCAN_TIMEOUT_SECONDS", 30.0)
     clamd_socket_path: str = os.getenv("FILE_GUARD_CLAMD_SOCKET_PATH", "/run/clamav/clamd.sock").strip() or "/run/clamav/clamd.sock"
     clamd_stream_chunk_bytes: int = _env_int("FILE_GUARD_CLAMD_STREAM_CHUNK_BYTES", 65536)
     office_max_entries: int = _env_int("FILE_GUARD_OFFICE_MAX_ENTRIES", 200)

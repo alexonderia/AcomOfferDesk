@@ -770,6 +770,27 @@ class OfferService:
             )
             await self._offers.attach_file(offer_id=offer.id, file_id=db_file.id)
 
+        # Notify the responsible staff user (request owner) that a manual offer was created,
+        # matching the notification behaviour of the regular contractor-initiated create_offer flow.
+        event = build_process_notification_event(
+            event_type="offer.created",
+            actor_user_id=current_user.user_id,
+            entity_type="offer",
+            entity_id=offer.id,
+            request_id=request.id,
+            offer_id=offer.id,
+            dedupe_key=f"offer.created:{offer.id}",
+            payload={"recipient_user_id": request.id_user},
+        )
+        is_scheduled = self._schedule_process_notification_event(event)
+        if not is_scheduled and self._notifications is not None:
+            await self._notifications.notify_offer_created(
+                actor_user_id=current_user.user_id,
+                recipient_user_id=request.id_user,
+                request_id=request.id,
+                offer_id=offer.id,
+            )
+
         return ManualOfferCreateResult(
             offer_id=offer.id,
             request_id=request.id,

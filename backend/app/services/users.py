@@ -1924,21 +1924,12 @@ class UserStatusService:
                 },
             )
             self._schedule_process_notification_event(event)
-            if user.status == "review":
-                self._schedule_process_notification_event(
-                    build_process_notification_event(
-                        event_type="user.review_required",
-                        actor_user_id=current_user.user_id,
-                        entity_type="user",
-                        entity_id=user.id,
-                        dedupe_key=f"user.review_required:{user.id}:{old_status}->review",
-                        payload={
-                            "target_user_id": user.id,
-                            "target_role": user.id_role,
-                            "source": "user_status_service",
-                        },
-                    )
-                )
+            # user.status_changed already notifies admins about the transition to
+            # "review" with full context (who changed, old→new).  Firing a second
+            # user.review_required event from this code path would produce a
+            # duplicate ping for the same admin recipients.  New-registration
+            # paths call registration_admin_notify which issues user.review_required
+            # independently and is NOT suppressed here.
 
         return result
     

@@ -24,17 +24,21 @@ backend
   |-- PostgreSQL (external order_database)
   |-- RabbitMQ
   |-- MinIO
+  |-- file_guard  (file security scan service; fail-closed if unavailable)
   |-- Chat realtime runtime
   |-- Email / mailbox integrations
 
+file_guard
+  `-- ClamAV/clamd (optional, контролируется REQUIRE_ANTIVIRUS)
+
 notifications_worker
-  `-- RabbitMQ
+  `-- RabbitMQ (queues: notify.email, notify.max)
 
 max_bot
-  `-- backend /api/v1/max/*
+  `-- backend /api/v1/max/*  (+ X-Bot-Api-Secret header)
 
 tg_bot (legacy, optional)
-  `-- backend / gateway
+  `-- backend / gateway      (+ X-Bot-Api-Secret header)
 ```
 
 ## Периметр по режимам

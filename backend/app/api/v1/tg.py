@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 
-from app.api.dependencies import get_uow
+from app.api.dependencies import get_uow, require_bot_api_secret
 from app.core.config import settings
 from app.core.tg_links import decode_token
 from app.core.tg_shortcodes import TgShortcodeCodec
@@ -65,6 +65,7 @@ def _build_registration_link_status_url(reason: str) -> str:
 async def create_register_link(
     payload: TgLinkRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> TgLinkResponse:
     if not settings.tg_link_secret:
         raise Forbidden("TG links are not configured")
@@ -86,6 +87,7 @@ async def create_register_link(
 async def register_tg_user(
     payload: TgUserStartRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> TgUserStartResponse:
     async with uow:
         service = TgUserRegistrationService(uow.tg_users)
@@ -101,6 +103,7 @@ async def register_tg_user(
 async def handle_tg_start(
     payload: TgStartRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> TgStartResponse:
     async with uow:
         service = TgStartService(uow.tg_users, uow.users, uow.requests)

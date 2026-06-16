@@ -78,12 +78,14 @@
 - `app.economist`
 - `app.operator`
 - `app.contractor`
+- `app.security_officer`
 
-3. `delegation.*` (опционально, не используется в текущем bootstrap)
+3. `delegation.*` (создаются bootstrap-скриптом, назначаются вручную)
 - Backend поддерживает парсинг ролей с префиксом `delegation.` и отдаёт их в `delegation_roles`.
-- В текущем проектном bootstrap по умолчанию `delegation.*` не создаются и не назначаются.
-- Если понадобится, их можно добавить вручную/скриптом как расширение.
-- Роли `delegation.*` сами по себе не считаются atomic permissions: чтобы давать действия, их нужно делать composite и включать в них permission-коды из `PermissionCodes`.
+- `infra/keycloak/bootstrap.sh` создаёт все `delegation.department.*` роли (14 штук) и `delegation.contractors.profile.status.update`.
+- `delegation.*` назначаются конкретным пользователям вручную (не входят в дефолтные `app.*`).
+- `keycloak_user_role_sync` синхронизирует только `app.*` и не удаляет вручную назначенные `delegation.*`.
+- Роли `delegation.*` сами по себе не считаются atomic permissions: они composite и содержат permission-коды из `PermissionCodes`.
 
 ## Регистрация и онбординг: текущие потоки
 
@@ -278,7 +280,7 @@ Manual/stage-only часть, которая остается вне backend int
 
 ## Ограничения текущей реализации
 
-- `delegation.*` не участвуют в bootstrap по умолчанию.
+- `delegation.*` создаются в bootstrap, но назначаются пользователям только вручную.
 - Frontend не должен получать admin secret/token.
 - `_links` не считаются primary контрактом authorization; основа — `permissions + actions`.
 - Audit protected endpoints (2026-05-11): для `requests/offers/users/plans/dashboard/feedback/normative-files` доступ проходит через `get_current_user` и backend policy/service checks; frontend route guards остаются UX-слоем и не являются enforcement.

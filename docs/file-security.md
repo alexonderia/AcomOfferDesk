@@ -126,26 +126,29 @@ Backend также блокирует сохранение, если сам `fil
 
 ## Health и готовность
 
-`/health` возвращает успех только когда:
+`/health` возвращает `200` только когда:
 
 * FastAPI запущен
 * антивирус либо явно отключён настройкой, либо готов к сканированию
 
-Если ClamAV включён, но недоступен, health `file_guard` деградирует, и контейнер нельзя считать готовым к безопасной обработке загрузок.
+Если `FILE_GUARD_REQUIRE_ANTIVIRUS=true`, а ClamAV не готов, `/health` возвращает `503` — контейнер считается неготовым к безопасной обработке загрузок.
 
-Для production недопустимо `FILE_GUARD_ANTIVIRUS_ENABLED=false`. В production-like конфигурации используйте `FILE_GUARD_ANTIVIRUS_ENABLED=true`.
+Для production недопустимо `FILE_GUARD_ANTIVIRUS_ENABLED=false`. В production-like конфигурации используйте `FILE_GUARD_ANTIVIRUS_ENABLED=true` и `FILE_GUARD_REQUIRE_ANTIVIRUS=true`.
 
 ## Переменные окружения
 
 Важные переменные backend:
 
-* `FILE_GUARD_ENABLED`
-* `FILE_GUARD_URL`
-* `FILE_GUARD_TIMEOUT_SECONDS`
-* `MAX_UPLOAD_SIZE_BYTES`
+* `FILE_GUARD_ENABLED` — направлять upload через `file_guard` (fail-closed при `true` и недоступном сервисе)
+* `FILE_GUARD_URL` — внутренний URL сервиса (по умолчанию `http://file_guard:8080`)
+* `FILE_GUARD_TIMEOUT_SECONDS` — HTTP-таймаут клиента backend при вызове `/scan` (по умолчанию `10`)
+* `MAX_UPLOAD_SIZE_BYTES` — лимит размера одного файла
 
 Важные переменные `file_guard`:
 
+* `FILE_GUARD_REQUIRE_ANTIVIRUS` — если `true`, `/health` и `/scan` отклоняют работу без готового антивируса (`503` / `file_scan_unavailable`)
+* `FILE_GUARD_SCAN_TIMEOUT_SECONDS` — end-to-end дедлайн одного `/scan` (парсинг + структурные проверки + AV; по умолчанию `30`)
+* `FILE_GUARD_ANTIVIRUS_TIMEOUT_SECONDS` — таймаут одного вызова ClamAV внутри сканирования (по умолчанию `10`)
 * `FILE_GUARD_MAX_FILE_SIZE_BYTES`
 * `FILE_GUARD_UPLOAD_READ_CHUNK_BYTES`
 * `FILE_GUARD_ALLOW_LIBMAGIC_FALLBACK`
@@ -165,6 +168,8 @@ Backend также блокирует сохранение, если сам `fil
 
 ## Ручной smoke-тест
 
+`file_guard` не публикует порт наружу (только `expose: 8080` внутри `project_net`). Прямые проверки `/health` и `/scan` выполняйте **из контейнера** или через backend upload.
+
 Проверка compose-конфигурации и сборки:
 
 ```bash
@@ -174,10 +179,10 @@ docker compose up -d file_guard
 docker compose logs -f file_guard
 ```
 
-Проверка health (с хоста, если порт опубликован, иначе через `docker compose exec file_guard curl ...`):
+Проверка health (внутри контейнера):
 
 ```bash
-curl http://localhost:8080/health
+docker compose exec file_guard curl -fsS http://localhost:8080/health
 ```
 
 Ожидаемый ответ при готовом антивирусе:
@@ -189,10 +194,12 @@ curl http://localhost:8080/health
 }
 ```
 
+При `FILE_GUARD_REQUIRE_ANTIVIRUS=true` и неготовом ClamAV ожидается `503`.
+
 Проверка EICAR:
 
 ```bash
-curl -F "file=@eicar_test_file.txt" http://localhost:8080/scan
+docker compose exec file_guard sh -c 'printf "%s\n" "X5O!P%@AP[4\\PZX54(P^)7CC)7}\$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!\$H+H*" > /tmp/eicar.txt && curl -fsS -F "file=@/tmp/eicar.txt" http://localhost:8080/scan'
 ```
 
 Ожидаемый ответ:
@@ -204,10 +211,11 @@ curl -F "file=@eicar_test_file.txt" http://localhost:8080/scan
 }
 ```
 
-Загрузка валидного PNG/PDF:
+Загрузка валидного PNG/PDF (файл должен быть доступен внутри контейнера, например через `docker compose cp`):
 
 ```bash
-curl -F "file=@valid.png" http://localhost:8080/scan
+docker compose cp ./valid.png file_guard:/tmp/valid.png
+docker compose exec file_guard curl -fsS -F "file=@/tmp/valid.png" http://localhost:8080/scan
 ```
 
 Ожидаемый ответ:
@@ -218,6 +226,8 @@ curl -F "file=@valid.png" http://localhost:8080/scan
   "reason_code": null
 }
 ```
+
+Проверка полного пути через backend (upload к заявке/КП) — отдельный сценарий в [release-checklist.md](./release/release-checklist.md).
 
 ## Примечания
 

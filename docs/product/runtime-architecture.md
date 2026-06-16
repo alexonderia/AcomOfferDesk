@@ -92,7 +92,21 @@ Frontend:
 - управление заявками, офферами, файлами и пользователями;
 - вычисление разрешенных действий для UI;
 - realtime-чат;
-- фоновые задачи, связанные с обработкой reply mailbox.
+- in-process фоновые задачи (см. ниже).
+
+#### In-process consumers и фоновые задачи backend
+
+Помимо `notifications_worker`, часть асинхронной обработки выполняется **внутри процесса backend** (`backend/app/main.py`, `lifespan`):
+
+| Компонент | Назначение | Транспорт / триггер |
+|---|---|---|
+| `EmailDeliveryConsumerRuntime` | доставка email из очереди `notify.email` | RabbitMQ |
+| `ProcessNotificationConsumerRuntime` | in-app уведомления из process events (`offer.created`, `request.status_changed` и т.д.) | RabbitMQ |
+| `DelayedNotificationConsumerRuntime` | отложенные уведомления (например, напоминание о непрочитанном чате) | RabbitMQ |
+| `_request_reply_polling_worker` | polling IMAP mailbox для reply-to заявок | периодический asyncio task (leader lock) |
+| `ChatRealtimeRuntime` / `UnifiedRealtimeRuntime` | WebSocket realtime (чат, уведомления) | in-memory pub/sub |
+
+Если consumer не стартует (например, RabbitMQ недоступен), backend продолжает работу, но соответствующий канал доставки отключается — ошибка логируется.
 
 ### `keycloak`
 
@@ -243,6 +257,18 @@ Legacy-модуль. По умолчанию в основном compose вык�
 6. Статусы оффера обновляются по ролям и permissions.
 
 ## 5. Поток чата
+
+### WebSocket ticket flow
+
+WebSocket не использует refresh cookie напрямую. Клиент получает одноразовый ticket через HTTP:
+
+1. Аутентифицированный клиент вызывает `POST /api/v1/ws/tickets` с `{ "purpose": "realtime_ws" }`.
+2. Backend проверяет сессию (`get_current_user`), выпускает ticket с TTL `WS_TICKET_TTL_SECONDS` (30–60 с).
+3. Клиент открывает `wss://<host>/api/v1/ws/realtime?ticket=<ticket>`.
+4. Backend потребляет ticket (одноразовый), проверяет `purpose`, строит `CurrentUser` из claims ticket.
+5. Клиент получает `connection.ready`, затем может подписываться на чаты и получать `notification.created`.
+
+Допустимые `purpose`: `realtime_ws`, `notifications_ws`. Повторное использование ticket или истёкший ticket → закрытие с кодом `4401`.
 
 ### Запись сообщения
 

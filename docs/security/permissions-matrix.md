@@ -76,6 +76,29 @@ Legend: `SA`=superadmin, `AD`=admin, `SO`=security_officer, `PM`=project_manager
 | `contractors.manual.create` | Y | Y | N | Y | Y | Y | N | N |
 | `contractors.manual.manage` | Y | Y | N | Y | Y | Y | N | N |
 
+### Department permissions (`department.*`)
+
+Эти 14 atomic permission-кодов **не входят** в матрицу `app.*` ролей выше. Они расширяют scope только при ручном назначении соответствующей `delegation.department.*` composite role в Keycloak (`acom-api`).
+
+| Permission | Keycloak delegation role |
+|---|---|
+| `department.requests.read` | `delegation.department.requests.read` |
+| `department.requests.update` | `delegation.department.requests.update` |
+| `department.requests.status_update` | `delegation.department.requests.status_update` |
+| `department.requests.assign` | `delegation.department.requests.assign` |
+| `department.offers.update` | `delegation.department.offers.update` |
+| `department.offers.accept` | `delegation.department.offers.accept` |
+| `department.offers.reject` | `delegation.department.offers.reject` |
+| `department.chats.read` | `delegation.department.chats.read` |
+| `department.files.read` | `delegation.department.files.read` |
+| `department.files.upload` | `delegation.department.files.upload` |
+| `department.files.delete` | `delegation.department.files.delete` |
+| `department.dashboard.read` | `delegation.department.dashboard.read` |
+| `department.plans.read` | `delegation.department.plans.read` |
+| `department.plans.manage` | `delegation.department.plans.manage` |
+
+Подробные правила enforcement — в разделе [Department Delegation Model](#department-delegation-model-2026-05) ниже.
+
 ## Web App Behavior by Role
 
 | Role | Main sections in web app | Typical allowed actions |
@@ -98,7 +121,7 @@ Legend: `SA`=superadmin, `AD`=admin, `SO`=security_officer, `PM`=project_manager
 5. Для `status=review` разрешены только onboarding-safe contractor действия (`profile.manage_own`, `company_contacts.manage_own`); `inactive`/`blacklist` не проходят protected проверки.
 6. Frontend использует permissions/actions только для UX. Финальное enforcement-решение всегда принимает backend endpoint/policy/service слой.
 7. Backend contractor-view path (`GET /api/v1/requests/{id}/contractor-view`) должен проверять `requests.contractor_view.read` на service-level.
-8. Backend offer lifecycle path (`PATCH /api/v1/offers/{id}/status`) должен отклонять `accepted`, если связанная заявка уже `closed` или `cancelled`.
+8. Backend offer lifecycle path (`PATCH /api/v1/offers/{id}/status`) должен отклонять **любую** смену статуса КП, если связанная заявка уже `closed` или `cancelled` (сообщение: «КП нельзя изменить, если заявка уже закрыта или отклонена»).
 9. Логин пользователя (`users.id`) **неизменяем** после создания. Для manual-контрагентов логин генерируется при `contractors.manual.create`; `contractors.manual.manage` меняет профиль и контакты компании, но не логин. В таблице контрагентов и админке поле «Логин» read-only.
 
 ## Test Policy

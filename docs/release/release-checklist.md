@@ -82,8 +82,9 @@
 - [ ] Открывается `/requests`.
 - [ ] Открывается карточка заявки.
 - [ ] Открывается workspace оффера (если есть тестовые данные).
-- [ ] WebSocket работает через HTTPS (без ticket hardening на этом этапе).
-- [ ] `GET /api/file-guard/health` возвращает 200 (или 503 с понятным телом, если антивирус не поднят и `REQUIRE_ANTIVIRUS=true`).
+- [ ] WebSocket работает через HTTPS с одноразовым ticket: `POST /api/v1/ws/tickets` → подключение к `/api/v1/ws/realtime?ticket=...` → `connection.ready`.
+- [ ] Повторное использование того же WS ticket отклоняется (код `4401`).
+- [ ] `docker compose exec file_guard curl -fsS http://localhost:8080/health` возвращает 200 (или 503, если `FILE_GUARD_REQUIRE_ANTIVIRUS=true` и ClamAV не готов).
 - [ ] Работает upload-сценарий (если предусмотрен); файл проходит через `file_guard` без ошибок.
 - [ ] MAX bot: `GET /api/v1/max/health` (или аналог) отвечает корректно при `MAX_BOT_ENABLED=true`.
 - [ ] RabbitMQ UI и MinIO Console недоступны из публичного интернета.

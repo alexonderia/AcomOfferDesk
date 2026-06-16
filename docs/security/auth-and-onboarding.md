@@ -129,6 +129,20 @@
   - provider logout refresh token;
   - попытка завершить Keycloak-сессии через Admin API.
 
+## 5) WebSocket tickets (realtime)
+
+Для WebSocket backend **не** передаёт refresh cookie в WS handshake. Вместо этого:
+
+1. После восстановления HTTP-сессии (`POST /api/v1/auth/refresh`) frontend запрашивает `POST /api/v1/ws/tickets` с `{ "purpose": "realtime_ws" }`.
+2. Backend возвращает одноразовый `ticket`, `expires_in`, `expires_at`. TTL задаётся `WS_TICKET_TTL_SECONDS` (30–60 с).
+3. Frontend подключается к `/api/v1/ws/realtime?ticket=...`.
+4. Backend валидирует и **потребляет** ticket, проверяет `purpose`, строит `CurrentUser`.
+5. При успехе клиент получает `connection.ready` и может работать с чатом/уведомлениями по WS.
+
+Ошибки ticket (отсутствует, истёк, неверный purpose, повторное использование) → закрытие WS с кодом `4401`.
+
+Реализация: `backend/app/api/v1/ws.py`, `backend/app/services/ws_ticket_service.py`, `web/src/shared/ws/chatSocket.ts`.
+
 ## Контракт backend -> frontend
 
 Frontend получает авторизационные данные только от backend:

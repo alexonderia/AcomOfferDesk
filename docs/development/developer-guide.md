@@ -65,6 +65,11 @@ Backend в основном организован по схеме:
 - `backend/app/api/v1/users.py`
 - `backend/app/api/v1/requests.py`
 - `backend/app/api/v1/offers.py`
+- `backend/app/api/v1/contractors.py`
+- `backend/app/api/v1/notifications.py`
+- `backend/app/api/v1/normative_files.py`
+- `backend/app/api/v1/plans.py`
+- `backend/app/api/v1/max.py`
 - `backend/app/api/v1/dashboard.py`
 - `backend/app/api/v1/ws.py`
 - `backend/app/api/dependencies.py`
@@ -448,7 +453,7 @@ Frontend организован по feature-oriented структуре. Иск
 1. `README.md`
 2. `docs/product/project-overview.md`
 3. `docs/product/runtime-architecture.md`
-4. `backend/REAME.md`
+4. `backend/app/main.py` (lifespan, in-process consumers, routing)
 5. `web/README.md`
 6. конкретные `api`, `services`, `features` по вашему сценарию
 

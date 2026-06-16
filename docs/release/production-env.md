@@ -58,6 +58,20 @@ curl -fsSL https://app.example.com/iam/realms/acom-offerdesk/.well-known/openid-
 | `MAX_BOT_TOKEN` | max_bot | токен MAX Bot API | да (при `MAX_BOT_ENABLED=true`) | токен от платформы MAX | да | max_bot, notifications_worker |
 | `BOT_API_SHARED_SECRET` | backend, max_bot, tg_bot | shared secret для inter-service bot → backend вызовов | да (при включённом max_bot или tg_bot) | 32+ случайных символов | да (обновить во всех сервисах одновременно) | backend, max_bot, tg_bot |
 | `FILE_GUARD_REQUIRE_ANTIVIRUS` | file_guard | требовать антивирус при старте и проверке | опционально (рекомендуется `true` в prod) | `true`/`false` | n/a | file_guard |
+| `MAX_LINK_SECRET` | backend | подпись токенов привязки MAX-аккаунта | да (при `MAX_BOT_ENABLED=true`) | 32+ случайных символов | да (старые ссылки привязки станут недействительны) | backend |
+
+## Конфигурационные переменные (не секреты)
+
+| Переменная | Сервис | Назначение | Рекомендуемое значение |
+|---|---|---|---|
+| `WS_TICKET_TTL_SECONDS` | backend | TTL одноразового websocket-билета (`POST /api/v1/ws/tickets`) | `30` (допустимый диапазон: 30–60) |
+| `INVITATION_PORTAL_URL` | backend | URL входа в портал, подставляемый в invite-письма контрагентам | публичный `https://<domain>/login` |
+| `INVITATION_CONTACT_NAME` | backend | имя контактного лица в invite-письмах | строка |
+| `INVITATION_CONTACT_EMAIL` | backend | email контактного лица в invite-письмах | валидный email |
+| `INVITATION_CONTACT_PHONE` | backend | телефон контактного лица в invite-письмах | строка |
+| `INVITATION_CONTACT_TEXT` | backend | дополнительный текст в invite-письмах | опционально, пустая строка по умолчанию |
+| `FILE_GUARD_ENABLED` | backend | направлять upload через `file_guard` | `true` в test/prod |
+| `FILE_GUARD_SCAN_TIMEOUT_SECONDS` | backend, file_guard | таймаут сканирования файла | `30` |
 
 ## Политика по credentials
 

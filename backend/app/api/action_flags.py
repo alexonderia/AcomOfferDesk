@@ -334,6 +334,11 @@ class UserActionBuilder:
             settings.economist_role_id,
         }:
             can_update_status = can_update_status and can_manage_subordinate_role
+        can_update_manager = (
+            UserPolicy.can_update_user_manager(current_user)
+            and can_manage_subordinate_role
+            and can_update_manager_target_role
+        )
         if (
             UserActionBuilder._requires_hierarchy_management(current_user)
             and is_hierarchy_subordinate is not True
@@ -345,11 +350,7 @@ class UserActionBuilder:
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
             can_update_role=can_update_role,
-            can_update_manager=(
-                UserPolicy.can_update_user_manager(current_user)
-                and can_manage_subordinate_role
-                and can_update_manager_target_role
-            ),
+            can_update_manager=can_update_manager,
             can_manage_manual_contractor=(
                 UserPolicy.can_manage_manual_contractors(current_user)
                 and target_role_id == settings.contractor_role_id

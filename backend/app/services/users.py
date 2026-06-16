@@ -1475,20 +1475,16 @@ class ManualContractorService:
             profile.mail = mail
 
         if company_contact is None:
-            await self._company_contacts.add(
-                CompanyContact(
-                    id=user.id,
-                    company_name=company_name or PLACEHOLDER_TEXT,
-                    inn=inn or PLACEHOLDER_TEXT,
-                    phone=company_phone or PLACEHOLDER_TEXT,
-                    mail=company_mail or PLACEHOLDER_TEXT,
-                    address=address or PLACEHOLDER_TEXT,
-                    note=note or PLACEHOLDER_TEXT,
-                )
+            company_contact = CompanyContact(
+                id=user.id,
+                company_name=company_name or PLACEHOLDER_TEXT,
+                inn=inn or PLACEHOLDER_TEXT,
+                phone=company_phone or PLACEHOLDER_TEXT,
+                mail=company_mail or PLACEHOLDER_TEXT,
+                address=address or PLACEHOLDER_TEXT,
+                note=note or PLACEHOLDER_TEXT,
             )
-            company_contact = await self._company_contacts.get_by_id(user.id)
-            if company_contact is None:
-                raise Conflict("Не удалось создать контакты компании")
+            await self._company_contacts.add(company_contact)
         else:
             if company_name is not None:
                 company_contact.company_name = company_name

@@ -24,7 +24,7 @@ def test_request_status_changed_body_is_shared_across_channels() -> None:
         previous_status="open",
         new_status="review",
     )
-    assert body == "Заявка №42: open → review."
+    assert body == "Заявка №42: Открыта → На рассмотрении."
 
 
 def test_new_request_outbound_body_starts_with_request_created_body() -> None:

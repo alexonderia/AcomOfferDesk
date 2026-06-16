@@ -240,7 +240,7 @@ async def test_security_officer_can_change_contractor_status_via_contractor_serv
     service = ContractorService(users_repo, profiles_repo)
     status_service = AsyncMock()
     status_service.update_statuses = AsyncMock(
-        return_value=UserStatusUpdateResult(user_id="contractor-1", user_status="active", tg_status=None),
+        return_value=UserStatusUpdateResult(user_id="contractor-1", user_status="active", tg_user_id=None, tg_status=None),
     )
     current_user = make_current_user(
         user_id="security-1",

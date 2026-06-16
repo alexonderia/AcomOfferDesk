@@ -1,4 +1,5 @@
 #!/bin/sh
+# Keep LF line endings: this script is executed directly in a Linux container.
 set -eu
 
 CLAMD_PID=""

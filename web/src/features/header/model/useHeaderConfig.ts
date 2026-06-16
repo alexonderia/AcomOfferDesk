@@ -4,6 +4,7 @@ import { useAuth } from '@app/providers/AuthProvider';
 import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { matchContractorRequestDetailsPath, matchRequestDetailsPath } from '@shared/lib/routing/parseRequestRoutes';
+import { resolveUserTabFromParam } from '@features/admin/model/helpers';
 import { buildHeaderConfig } from './buildHeaderConfig';
 
 export const useHeaderConfig = () => {
@@ -15,13 +16,7 @@ export const useHeaderConfig = () => {
   const contractorTabParam = searchParams.get('tab');
   const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
 
-  const adminUsersTabParam = searchParams.get('users_tab');
-  const adminUsersTab: 'contractors' | 'economists' | 'admins' | 'security_officers' =
-    adminUsersTabParam === 'economists'
-    || adminUsersTabParam === 'admins'
-    || adminUsersTabParam === 'security_officers'
-      ? adminUsersTabParam
-      : 'contractors';
+  const adminUsersTab = resolveUserTabFromParam(searchParams.get('users_tab'));
 
   const canCreateRequest = hasPermission(session, 'requests.create');
   const canLoadOpenRequests = hasPermission(session, 'requests.open.read');
@@ -146,7 +141,6 @@ export const useHeaderConfig = () => {
         canViewDashboardPlans,
         breadcrumbs,
         contractorTab,
-        adminUsersTab,
         onNavigateToDashboard: () => navigate('/pm-dashboard'),
         onNavigateToSavings: () => navigate('/pm-dashboard/savings'),
         onNavigateToPlan: () => navigate('/pm-dashboard/plan'),
@@ -175,13 +169,6 @@ export const useHeaderConfig = () => {
             return next;
           }, { replace: true });
         },
-        onSetAdminUsersTab: (value) => {
-          setSearchParams((prev) => {
-            const next = new URLSearchParams(prev);
-            next.set('users_tab', value);
-            return next;
-          }, { replace: true });
-        }
       }),
     [
       adminUsersTab,

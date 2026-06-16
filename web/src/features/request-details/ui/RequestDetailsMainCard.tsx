@@ -17,6 +17,7 @@ import { useState, type MutableRefObject, type ReactNode } from 'react';
 import type { RequestDetailsFile } from '@shared/api/requests/getRequestDetails';
 import { StatusPill, type StatusPillTone } from '@shared/components/StatusPill';
 import { formatDate } from '@shared/lib/formatters';
+import { getFileKey } from '@shared/lib/files';
 import { RequestDetailsInfoPanel } from '@shared/components/RequestDetailsInfoPanel';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 import type { RequestStatus } from '../model/requestDetailsUtils';
@@ -59,10 +60,10 @@ type RequestDetailsMainCardProps = {
   canDeleteRequestFiles: boolean;
   onDownloadFile: (downloadUrl: string, fileName: string) => void;
   onRemoveExistingFile: (fileId: number) => void;
-  newFile: File | null;
-  onClearNewFile: () => void;
+  newFiles: File[];
+  onRemoveNewFile: (file: File) => void;
   canUploadRequestFiles: boolean;
-  onNewFileSelected: (file: File | null) => void;
+  onNewFilesAdded: (files: File[]) => void;
   canViewRequestAmounts: boolean;
   deadline: string;
   initialAmount: string;
@@ -108,10 +109,10 @@ export const RequestDetailsMainCard = ({
   canDeleteRequestFiles,
   onDownloadFile,
   onRemoveExistingFile,
-  newFile,
-  onClearNewFile,
+  newFiles,
+  onRemoveNewFile,
   canUploadRequestFiles,
-  onNewFileSelected,
+  onNewFilesAdded,
   canViewRequestAmounts,
   deadline,
   initialAmount,
@@ -311,20 +312,21 @@ export const RequestDetailsMainCard = ({
           ) : (
             <Typography variant="body2">Файлы не прикреплены</Typography>
           )}
-          {newFile ? (
+          {newFiles.map((file) => (
             <Chip
-              label={newFile.name}
+              key={getFileKey(file)}
+              label={file.name}
               variant="outlined"
               color="primary"
-              onDelete={onClearNewFile}
+              onDelete={() => onRemoveNewFile(file)}
               sx={{ borderRadius: 999 }}
             />
-          ) : null}
+          ))}
           {isEditMode && canUploadRequestFiles ? (
             <IconButton
               component="label"
               size="small"
-              aria-label="Добавить файл"
+              aria-label="Добавить файлы"
               sx={{
                 alignSelf: 'center',
                 color: 'primary.main',
@@ -340,8 +342,9 @@ export const RequestDetailsMainCard = ({
               <input
                 hidden
                 type="file"
+                multiple
                 onChange={(event) => {
-                  onNewFileSelected(event.target.files?.[0] ?? null);
+                  onNewFilesAdded(Array.from(event.target.files ?? []));
                   event.target.value = '';
                 }}
               />

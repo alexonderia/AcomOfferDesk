@@ -21,6 +21,8 @@ import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
 import { getPlanOptions, type PlanOption } from '@shared/api/plans';
 import { downloadFile } from '@shared/api/fileDownload';
+import { getFileKey, mergeUniqueFiles } from '@shared/lib/files';
+import { formatSettledTaskErrors, joinUserFacingErrors } from '@shared/lib/errors';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { ToggleSection } from '@shared/components/ToggleSection';
@@ -77,7 +79,7 @@ export const RequestDetailsView = () => {
     const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
-    const [newFile, setNewFile] = useState<File | null>(null);
+    const [newFiles, setNewFiles] = useState<File[]>([]);
     const [isEditMode, setIsEditMode] = useState(false);
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
     const [isDescriptionOverflowing, setIsDescriptionOverflowing] = useState(false);
@@ -104,7 +106,7 @@ export const RequestDetailsView = () => {
     const pollIntervalMs = 10000;
 
     const hasDeletedAlert = (requestDetails?.count_deleted_alert ?? 0) > 0;
-    const hasFileChanges = deletedFileIds.length > 0 || Boolean(newFile);
+    const hasFileChanges = deletedFileIds.length > 0 || newFiles.length > 0;
     const todayDate = useMemo(() => {
         const now = new Date();
         const offsetMs = now.getTimezoneOffset() * 60000;
@@ -197,7 +199,7 @@ export const RequestDetailsView = () => {
         || (hasNonStatusRequestFieldChanges && canEditRequest)
         || (hasOwnerChange && canEditOwner)
         || (deletedFileIds.length > 0 && canDeleteRequestFiles)
-        || (Boolean(newFile) && canUploadRequestFiles);
+        || (newFiles.length > 0 && canUploadRequestFiles);
     const canEnterEditMode =
         canEditRequest
         || canUpdateRequestStatus
@@ -493,15 +495,33 @@ export const RequestDetailsView = () => {
             });
 
             await Promise.all(deletedFileIds.map((fileId) => deleteRequestFile(currentRequest.id, fileId)));
-            if (newFile) {
-                await uploadRequestFile(currentRequest.id, newFile);
+
+            let uploadErrors: string[] = [];
+            let failedUploadFiles: File[] = [];
+            if (newFiles.length > 0) {
+                const uploadResults = await Promise.allSettled(
+                    newFiles.map((file) => uploadRequestFile(currentRequest.id, file)),
+                );
+                uploadErrors = formatSettledTaskErrors(
+                    uploadResults,
+                    newFiles.map((file) => file.name),
+                    'Не удалось загрузить файл',
+                );
+                failedUploadFiles = newFiles.filter((_, index) => uploadResults[index]?.status === 'rejected');
             }
 
             const refreshed = await getRequestDetails(currentRequest.id);
             syncRequestState(refreshed, true);
+
+            if (uploadErrors.length > 0) {
+                setNewFiles(failedUploadFiles);
+                showErrorToast(joinUserFacingErrors(uploadErrors) ?? 'Не удалось загрузить файлы');
+                return;
+            }
+
             setIsEditMode(false);
             setDeletedFileIds([]);
-            setNewFile(null);
+            setNewFiles([]);
             closeSnackbar();
             showSuccessToast('Изменения сохранены');
         } catch (error) {
@@ -660,7 +680,7 @@ export const RequestDetailsView = () => {
         setPlanId(baselinePlanId);
         setExistingFiles(requestDetails?.files ?? []);
         setDeletedFileIds([]);
-        setNewFile(null);
+        setNewFiles([]);
         setIsEditMode(false);
         setIsStatusChangeSaveConfirmed(false);
     };
@@ -787,10 +807,12 @@ export const RequestDetailsView = () => {
                 canDeleteRequestFiles={canDeleteRequestFiles}
                 onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
                 onRemoveExistingFile={handleRemoveExistingFile}
-                newFile={newFile}
-                onClearNewFile={() => setNewFile(null)}
+                newFiles={newFiles}
+                onRemoveNewFile={(file) =>
+                    setNewFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
                 canUploadRequestFiles={canUploadRequestFiles}
-                onNewFileSelected={setNewFile}
+                onNewFilesAdded={(addedFiles) =>
+                    setNewFiles((prev) => mergeUniqueFiles(prev, addedFiles))}
                 canViewRequestAmounts={canViewRequestAmounts}
                 deadline={deadline}
                 initialAmount={initialAmount}

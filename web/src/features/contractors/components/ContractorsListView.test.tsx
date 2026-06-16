@@ -64,6 +64,13 @@ const buildContractor = () => ({
   },
 });
 
+const buildContractorsPage = (count: number) => Array.from({ length: count }, (_, index) => ({
+  ...buildContractor(),
+  userId: `contractor-${index + 1}`,
+  fullName: `Контрагент ${index + 1}`,
+  companyName: `Компания ${index + 1}`,
+}));
+
 const renderView = (props: { contractors?: ReturnType<typeof buildContractor>[] } = {}) => render(
   <ThemeProvider theme={appTheme}>
     <ContractorsListView
@@ -93,6 +100,23 @@ describe('ContractorsListView editing', () => {
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeInTheDocument();
     expect(screen.queryByLabelText('contractor-1-company_name')).not.toBeInTheDocument();
     expect(screen.queryByText('max-42')).not.toBeInTheDocument();
+  });
+
+  it('keeps current page while editing a row on another page', async () => {
+    renderView({
+      contractors: buildContractorsPage(10),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    expect(screen.getByText('Показаны строки 9-10 из 10')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }));
+
+    const companyInput = await screen.findByLabelText('contractor-9-company_name');
+    fireEvent.change(companyInput, { target: { value: 'ООО Обновлено' } });
+
+    expect(screen.getByText('Показаны строки 9-10 из 10')).toBeInTheDocument();
+    expect(screen.queryByText('Показаны строки 1-8 из 10')).not.toBeInTheDocument();
   });
 
   it('saves edited manual contractor fields in edit mode', async () => {

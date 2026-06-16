@@ -257,6 +257,92 @@ async def test_plan_request_stats_aggregate_by_hierarchy_existing_logic():
     assert stats.completion_percent == Decimal("60.00")
 
 
+def _make_plan_tree_node(*, plan_id: int, user_id: str, children: list[PlanTreeNode] | None = None) -> PlanTreeNode:
+    return PlanTreeNode(
+        plan_id=plan_id,
+        plan_name=f"Plan {plan_id}",
+        id_parent_plan=None,
+        user_id=user_id,
+        user_name=f"User {user_id}",
+        user_role="lead",
+        parent_user_id_snapshot=None,
+        period_start=_dt().date(),
+        period_end=_dt().date(),
+        plan_amount=Decimal("200.00"),
+        delegated_amount=Decimal("0.00"),
+        personal_plan_amount=Decimal("200.00"),
+        unallocated_amount=Decimal("200.00"),
+        fact_amount_self=Decimal("0.00"),
+        fact_amount_subtree=Decimal("0.00"),
+        period_fact_amount=Decimal("0.00"),
+        period_progress_percent=Decimal("0.00"),
+        in_progress_requests_count=0,
+        remaining_amount=Decimal("200.00"),
+        progress_percent=Decimal("0.00"),
+        available_actions=PlanNodeActions(
+            create_child_plan=True,
+            create_subplan=True,
+            delegate_plan=True,
+            edit_plan=True,
+            delete_child_plan=False,
+            activate_plan=False,
+            close_plan=False,
+            view_plan=True,
+        ),
+        children=children or [],
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_request_stats_for_selected_plan_uses_attached_plan_ids(make_current_user):
+    captured: dict[str, object] = {}
+
+    class _CapturingPlanRequestsRepo(_PlanRequestsRepo):
+        async def aggregate_plan_request_stats(self, **kwargs):
+            captured.update(kwargs)
+            return await super().aggregate_plan_request_stats(**kwargs)
+
+    child = _make_plan_tree_node(plan_id=2, user_id="econ-1")
+    root = _make_plan_tree_node(plan_id=1, user_id="lead-1", children=[child])
+    service = PlanService(
+        plans=SimpleNamespace(),
+        users=SimpleNamespace(),
+        requests=_CapturingPlanRequestsRepo(),
+    )
+
+    async def _fake_load_relevant_period_plans(*, period_start, period_end):
+        _ = (period_start, period_end)
+        return [SimpleNamespace(id=1, id_user="lead-1")]
+
+    async def _fake_build_trees_for_roots(
+        *,
+        period_plans,
+        root_plans,
+        period_start,
+        period_end,
+        current_user,
+    ):
+        _ = (period_plans, root_plans, period_start, period_end, current_user)
+        return [root]
+
+    service._load_relevant_period_plans = _fake_load_relevant_period_plans
+    service._build_trees_for_roots = _fake_build_trees_for_roots
+
+    current_user = make_current_user(
+        role_id=settings.project_manager_role_id,
+        permissions={PermissionCodes.DASHBOARD_PLANS_READ},
+    )
+    await service.get_request_stats(
+        period_start=_dt().date(),
+        period_end=_dt().date(),
+        current_user=current_user,
+        plan_id=1,
+    )
+
+    assert set(captured["distributed_plan_ids"]) == {1, 2}
+    assert captured["distributed_owner_ids"] is None
+
+
 class _PlanUsersRepo:
     def __init__(self) -> None:
         self._users = {

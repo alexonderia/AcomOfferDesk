@@ -447,7 +447,14 @@ export function TableTemplate<T>({
     cellPaddingX
   } = tableUiScale;
 
-  const allColumnIds = useMemo(() => columns.map((column) => column.id), [columns]);
+  const allColumnIdsKey = useMemo(
+    () => columns.map((column) => column.id).join('\0'),
+    [columns],
+  );
+  const allColumnIds = useMemo(
+    () => (allColumnIdsKey.length > 0 ? allColumnIdsKey.split('\0') : []),
+    [allColumnIdsKey],
+  );
   const [internalVisibleColumnIds, setInternalVisibleColumnIds] = useState<string[]>(
     () => initialVisibleColumnIds ?? allColumnIds
   );
@@ -473,9 +480,16 @@ export function TableTemplate<T>({
     setOrderedColumnIds((currentOrder) => {
       const preserved = currentOrder.filter((columnId) => allColumnIds.includes(columnId));
       const missing = allColumnIds.filter((columnId) => !preserved.includes(columnId));
-      return [...preserved, ...missing];
+      const nextOrder = [...preserved, ...missing];
+      if (
+        nextOrder.length === currentOrder.length
+        && nextOrder.every((columnId, index) => columnId === currentOrder[index])
+      ) {
+        return currentOrder;
+      }
+      return nextOrder;
     });
-  }, [allColumnIds]);
+  }, [allColumnIdsKey, allColumnIds]);
 
   const visibleColumns = useMemo(
     () => orderedColumnIds
@@ -543,11 +557,15 @@ export function TableTemplate<T>({
   }, [defaultViewMode, isMobileViewport]);
 
   useEffect(() => {
+    const allowedColumnIds = new Set(allColumnIds);
     setColumnFilters((currentFilters) => {
-      const nextFilters = Object.entries(currentFilters).filter(([columnId]) => allColumnIds.includes(columnId));
-      return Object.fromEntries(nextFilters);
+      const nextEntries = Object.entries(currentFilters).filter(([columnId]) => allowedColumnIds.has(columnId));
+      if (nextEntries.length === Object.keys(currentFilters).length) {
+        return currentFilters;
+      }
+      return Object.fromEntries(nextEntries);
     });
-  }, [allColumnIds]);
+  }, [allColumnIdsKey, allColumnIds]);
 
   useEffect(() => {
     if (!sortState) {
@@ -701,9 +719,11 @@ export function TableTemplate<T>({
     });
   }, [filteredRows, sortState, visibleColumns]);
 
+  const activeColumnFiltersKey = useMemo(() => JSON.stringify(columnFilters), [columnFilters]);
+
   useEffect(() => {
     setPage(1);
-  }, [columnFilters, normalizedSearch, rowsPerPage]);
+  }, [activeColumnFiltersKey, normalizedSearch, rowsPerPage]);
 
   const effectiveRowsPerPage = rowsPerPage;
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / effectiveRowsPerPage));
@@ -989,51 +1009,41 @@ export function TableTemplate<T>({
     </Paper>
   ) : null;
 
-  const toolbarActions = (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
-      flexWrap="nowrap"
+  const shouldGroupTrailingToolbarActionsOnMobile = isMobileViewport && Boolean(toolbarBeforeAddActions);
+
+  const addToolbarAction = showAddAction && onAddClick ? (
+    <ActionButton
+      kind="filled"
+      showNavigationIcons={false}
+      startIcon={<AddRounded />}
+      aria-label={addButtonLabel}
+      onClick={onAddClick}
       sx={{
-        width: { xs: '100%', md: 'auto' },
-        justifyContent: isMobileViewport ? 'space-between' : 'flex-end'
+        minHeight: searchHeight,
+        px: shouldUseIconOnlyAddButton ? 0 : 2.5,
+        width: shouldUseIconOnlyAddButton ? searchHeight : 'auto',
+        minWidth: shouldUseIconOnlyAddButton ? searchHeight : undefined,
+        borderRadius: `${controlRadius}px`,
+        fontSize
       }}
     >
-      {toolbarBeforeAddActions}
-      {showAddAction && onAddClick ? (
-        <ActionButton
-          kind="filled"
-          showNavigationIcons={false}
-          startIcon={<AddRounded />}
-          aria-label={addButtonLabel}
-          onClick={onAddClick}
-          sx={{
-            minHeight: searchHeight,
-            px: shouldUseIconOnlyAddButton ? 0 : 2.5,
-            width: shouldUseIconOnlyAddButton ? searchHeight : 'auto',
-            minWidth: shouldUseIconOnlyAddButton ? searchHeight : undefined,
-            borderRadius: `${controlRadius}px`,
-            fontSize
-          }}
-        >
-          {shouldUseIconOnlyAddButton ? null : addButtonLabel}
-        </ActionButton>
-      ) : null}
+      {shouldUseIconOnlyAddButton ? null : addButtonLabel}
+    </ActionButton>
+  ) : null;
 
-      {canToggleViewMode || showCardExpansionToggle ? (
-        <Paper
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            p: 0.5,
-            flex: isMobileViewport ? 1 : 'initial',
-            borderRadius: `${controlRadius}px`,
-            border: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper'
-          }}
-        >
+  const viewToolbarAction = canToggleViewMode || showCardExpansionToggle ? (
+    <Paper
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        p: 0.5,
+        flex: isMobileViewport && !shouldGroupTrailingToolbarActionsOnMobile ? 1 : 'initial',
+        borderRadius: `${controlRadius}px`,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper'
+      }}
+    >
           {canToggleViewMode ? (
             <>
               <ActionButton
@@ -1122,26 +1132,66 @@ export function TableTemplate<T>({
             </Stack>
           ) : null}
         </Paper>
-      ) : null}
+  ) : null;
 
-      {showSettingsAction ? (
-        <ActionButton
-          kind="outlined"
-          showNavigationIcons={false}
-          onClick={handleSettingsButtonClick}
-          sx={{
-            minHeight: searchHeight,
-            width: searchHeight,
-            minWidth: searchHeight,
-            px: 0,
-            borderRadius: `${controlRadius}px`,
-            borderColor: 'divider',
-            color: 'text.secondary'
-          }}
-        >
-          <SettingsOutlined sx={{ fontSize: iconSize }} />
-        </ActionButton>
-      ) : null}
+  const settingsToolbarAction = showSettingsAction ? (
+    <ActionButton
+      kind="outlined"
+      showNavigationIcons={false}
+      onClick={handleSettingsButtonClick}
+      sx={{
+        minHeight: searchHeight,
+        width: searchHeight,
+        minWidth: searchHeight,
+        px: 0,
+        borderRadius: `${controlRadius}px`,
+        borderColor: 'divider',
+        color: 'text.secondary'
+      }}
+    >
+      <SettingsOutlined sx={{ fontSize: iconSize }} />
+    </ActionButton>
+  ) : null;
+
+  const trailingToolbarActions = (
+    <>
+      {addToolbarAction}
+      {viewToolbarAction}
+      {settingsToolbarAction}
+    </>
+  );
+
+  const toolbarActions = shouldGroupTrailingToolbarActionsOnMobile ? (
+    <Stack
+      direction="row"
+      alignItems="center"
+      flexWrap="nowrap"
+      sx={{
+        width: '100%',
+        justifyContent: 'space-between',
+        gap: 1,
+      }}
+    >
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flexShrink: 1 }}>
+        {toolbarBeforeAddActions}
+      </Stack>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+        {trailingToolbarActions}
+      </Stack>
+    </Stack>
+  ) : (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      flexWrap="nowrap"
+      sx={{
+        width: { xs: '100%', md: 'auto' },
+        justifyContent: isMobileViewport ? 'space-between' : 'flex-end',
+      }}
+    >
+      {toolbarBeforeAddActions}
+      {trailingToolbarActions}
     </Stack>
   );
 

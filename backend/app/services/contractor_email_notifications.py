@@ -95,13 +95,27 @@ async def notify_contractor_status_changed_email(
 ) -> bool:
     normalized_status = (user_status or "").strip().lower()
     if normalized_status == "active":
-        subject = email_subject("доступ открыт")
-        text = ACCESS_OPENED_BODY
+        payload = build_contractor_access_opened_email_payload(
+            to_email=to_email,
+            authorization_url=_build_authorization_link(),
+        )
     elif normalized_status in {"inactive", "review", "blacklist"}:
         subject = email_subject("доступ ограничен")
         text = ACCESS_CLOSED_BODY
     else:
         return False
+
+    if normalized_status == "active":
+        await _build_email_service().send_email(
+            to_email=payload.to_email,
+            subject=payload.subject,
+            text_content=payload.text_content,
+            html_content=payload.html_content,
+            recipient_user_id=recipient_user_id,
+            initiator_user_id=initiator_user_id,
+            suppress_delivery_notification=True,
+        )
+        return True
 
     await _build_email_service().send_email(
         to_email=to_email,

@@ -18,7 +18,6 @@ type BuildHeaderConfigArgs = {
   canViewDashboardPlans: boolean;
   breadcrumbs?: { key: string; label: string; to?: string }[];
   contractorTab: 'my' | 'open';
-  adminUsersTab: 'contractors' | 'economists' | 'admins' | 'security_officers';
   onNavigateToDashboard: () => void;
   onNavigateToSavings: () => void;
   onNavigateToPlan: () => void;
@@ -30,7 +29,6 @@ type BuildHeaderConfigArgs = {
   onNavigateToAdminCreate: () => void;
   onNavigateBackToRequests: () => void;
   onSetContractorTab: (_value: 'my' | 'open') => void;
-  onSetAdminUsersTab: (_value: 'contractors' | 'economists' | 'admins' | 'security_officers') => void;
 };
 
 type MoreMenuOptions = {
@@ -318,27 +316,6 @@ const buildSecurityOfficerMobileNavItems = (canOpenContractorsPage: boolean): He
   return items;
 };
 
-const buildAdminUsersMobileNavItems = (): HeaderMobileNavItem[] => [
-  {
-    key: 'users',
-    label: 'Пользователи',
-    to: '/admin',
-    children: [
-      { key: 'contractors', label: 'Контрагенты', tabValue: 'contractors' },
-      { key: 'economists', label: 'Экономисты', tabValue: 'economists' },
-      { key: 'admins', label: 'Админы', tabValue: 'admins' },
-      { key: 'security_officers', label: 'Служба безопасности', tabValue: 'security_officers' },
-    ],
-  },
-  buildMoreNavItem({
-    showProfile: true,
-    showNormative: false,
-    showRoleGuide: true,
-    showFeedback: true,
-    showLogout: true,
-  }),
-];
-
 const resolveDefaultMobileNavItems = ({
   isSuperadmin,
   isProjectManager,
@@ -440,7 +417,6 @@ export const buildHeaderConfig = ({
   canViewDashboardPlans,
   breadcrumbs = [],
   contractorTab,
-  adminUsersTab,
   onNavigateToDashboard,
   onNavigateToSavings,
   onNavigateToPlan,
@@ -452,7 +428,6 @@ export const buildHeaderConfig = ({
   onNavigateToAdminCreate: _onNavigateToAdminCreate,
   onNavigateBackToRequests: _onNavigateBackToRequests,
   onSetContractorTab,
-  onSetAdminUsersTab
 }: BuildHeaderConfigArgs): HeaderConfig => {
   const isSuperadmin = roleId === ROLE.SUPERADMIN;
   const isAdmin = roleId === ROLE.ADMIN;
@@ -883,15 +858,9 @@ export const buildHeaderConfig = ({
     return {
       mode: 'sidebar',
       breadcrumbs,
-      mobileNavItems: buildAdminUsersMobileNavItems(),
-      tabs: [
-        { key: 'contractors', value: 'contractors', label: 'Контрагенты' },
-        { key: 'economists', value: 'economists', label: 'Экономисты' },
-        { key: 'admins', value: 'admins', label: 'Администраторы' },
-        { key: 'security_officers', value: 'security_officers', label: 'Служба безопасности' }
-      ],
-      activeTab: adminUsersTab,
-      onTabChange: (value) => onSetAdminUsersTab(value as 'contractors' | 'economists' | 'admins' | 'security_officers'),
+      mobileNavItems: buildAdminMobileNavItems(canOpenUsersPage),
+      tabs: [{ key: 'users', value: 'users', label: 'Пользователи' }],
+      activeTab: 'users',
       actions: [],
       showFeedback: true,
       showRoleGuide: true,

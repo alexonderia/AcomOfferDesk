@@ -327,12 +327,19 @@ class UserActionBuilder:
                 and target_role_id in ECONOMY_ROLE_IDS
                 and can_manage_subordinate_role
             )
-        can_update_status = UserPolicy.can_update_user_status(current_user)
-        if current_user.role_id in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
+        can_update_status = (
+            UserPolicy.can_update_contractor_profile_status(current_user)
+            if target_role_id == settings.contractor_role_id
+            else UserPolicy.can_update_user_status(current_user)
+        )
+        if (
+            target_role_id != settings.contractor_role_id
+            and current_user.role_id in {
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+            }
+        ):
             can_update_status = can_update_status and can_manage_subordinate_role
         can_update_manager = (
             UserPolicy.can_update_user_manager(current_user)

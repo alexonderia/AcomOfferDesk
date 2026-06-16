@@ -196,10 +196,14 @@ Keycloak composite delegation role in client `acom-api`:
 Rules:
 
 1. `delegation.contractors.profile.status.update` is not included in any `app.*` role by default.
-2. Only `superadmin` can assign or revoke this delegation for users with role `lead_economist` (ВЭ).
+2. `superadmin` and `admin` can assign or revoke this delegation for users with role `lead_economist` (ВЭ).
 3. `contractors.*` permissions are granted only via `delegation.contractors.profile.status.update`, not via bare atomic codes in token claims.
-4. Frontend section `/contractors` is shown only when `contractors.read` is present; status changes require `contractors.profile.status.update`.
+4. Frontend section `/contractors` is shown only when `contractors.read` is present; status changes require `contractors.profile.status.update` (from delegation or `security_officer` app role).
 5. `PATCH /api/v1/contractors/{id}/status` changes status only for users with role `contractor`.
+6. Backend enforcement for contractor status updates accepts any of:
+   - `contractors.profile.status.update` (including permissions expanded from `delegation.contractors.profile.status.update`);
+   - `delegation.contractors.profile.status.update` in token delegation roles;
+   - `users.status.update` for `admin` / `superadmin` only.
 
 ## Business Scope Rules (2026-05)
 

@@ -271,15 +271,8 @@ export const useAdminPage = () => {
 
   const userTabs = useMemo(() => {
     if (isLeadLike) return tabOptions.filter((tab) => tab.value === 'economists');
-    if (session?.roleId === ROLE.SUPERADMIN) return tabOptions;
-    return tabOptions.filter(
-      (tab) =>
-        tab.value === 'contractors'
-        || tab.value === 'economists'
-        || tab.value === 'admins'
-        || tab.value === 'security_officers'
-    );
-  }, [isLeadLike, session?.roleId]);
+    return tabOptions;
+  }, [isLeadLike]);
 
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
   const { showErrorToast, showSuccessToast } = useSystemToasts();

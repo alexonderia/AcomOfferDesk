@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { describe, expect, it, vi } from 'vitest';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
@@ -120,5 +120,63 @@ describe('RequestsTable states', () => {
     expect(screen.getByText('Owner One')).toBeInTheDocument();
     expect(screen.getByText('Owner Two')).toBeInTheDocument();
     expect(screen.getAllByRole('combobox')).toHaveLength(baseComboboxCount + 1);
+  });
+
+  it('shows only latest contractor offer and dropdown for remaining offers', async () => {
+    const offerActions = {
+      open_workspace: false,
+      view_contractor_info: false,
+      edit_amount: false,
+      accept: false,
+      reject: false,
+      delete: false,
+      upload_file: false,
+      delete_file: false,
+    };
+
+    const contractorRequest: RequestWithOfferStats = {
+      ...baseRequest(),
+      id: '202',
+      id_user: 'contractor-1',
+      owner_full_name: 'Contractor One',
+      actions: baseRequest().actions,
+      offers: [
+        {
+          id: 1,
+          status: 'accepted',
+          unread_messages_count: 0,
+          actions: offerActions,
+        },
+        {
+          id: 2,
+          status: 'rejected',
+          unread_messages_count: 0,
+          actions: offerActions,
+        },
+      ],
+    };
+
+    render(
+      <ThemeProvider theme={appTheme}>
+        <RequestsTable
+          requests={[contractorRequest]}
+          isLoading={false}
+          isContractor
+          showContractorOffersColumn
+          showContractorNotificationColumn={false}
+        />
+      </ThemeProvider>
+    );
+
+    // Latest offer (highest id) should be visible.
+    expect(screen.getByText('КП № 2 Отклонено')).toBeInTheDocument();
+    // Dropdown toggle should show remaining count.
+    expect(screen.getByText('Ещё: 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('contractor-offers-dropdown-toggle'));
+
+    await waitFor(() => {
+      expect(screen.getByText('КП № 1 Принято')).toBeInTheDocument();
+    });
   });
 });

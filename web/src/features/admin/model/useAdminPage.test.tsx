@@ -125,4 +125,26 @@ describe('useAdminPage', () => {
     expect(result.current.form.getValues('role_id')).toBe(ROLE.SECURITY_OFFICER);
     expect(result.current.isContractorRole).toBe(false);
   });
+
+  it('shows all role tabs for admin', async () => {
+    useAuthMock.mockReturnValue({
+      session: {
+        roleId: ROLE.ADMIN,
+        permissions: ['users.read', 'users.create', 'users.role.update_any', 'users.status.update'],
+      },
+    });
+
+    const { result } = renderHook(() => useAdminPage(), { wrapper });
+
+    await waitFor(() => expect(result.current.activeTab).toBe('contractors'));
+    expect(result.current.userTabs.map((tab) => tab.value)).toEqual([
+      'contractors',
+      'admins',
+      'security_officers',
+      'economists',
+      'lead_economists',
+      'project_managers',
+      'operators',
+    ]);
+  });
 });

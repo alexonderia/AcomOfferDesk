@@ -18,7 +18,6 @@ const baseArgs = () => ({
   canViewDashboardPlans: false,
   breadcrumbs: [],
   contractorTab: 'my' as const,
-  adminUsersTab: 'contractors' as const,
   onNavigateToDashboard: vi.fn(),
   onNavigateToSavings: vi.fn(),
   onNavigateToPlan: vi.fn(),
@@ -30,7 +29,6 @@ const baseArgs = () => ({
   onNavigateToAdminCreate: vi.fn(),
   onNavigateBackToRequests: vi.fn(),
   onSetContractorTab: vi.fn(),
-  onSetAdminUsersTab: vi.fn(),
 });
 
 const mobileKeys = (config: ReturnType<typeof buildHeaderConfig>) =>
@@ -215,18 +213,20 @@ describe('buildHeaderConfig role navigation', () => {
     expect(mobileKeys(config)).toEqual(['contractors', 'more']);
   });
 
-  it('uses the full security officer label on admin user tabs', () => {
+  it('shows only users tab for admin', () => {
     const config = buildHeaderConfig({
       ...baseArgs(),
       roleId: ROLE.ADMIN,
       pathname: '/admin',
       canOpenUsersPage: true,
-      adminUsersTab: 'security_officers',
     });
 
-    expect(config.tabs.find((tab) => tab.key === 'security_officers')?.label).toBe('Служба безопасности');
+    expect(tabKeys(config)).toEqual(['users']);
+    expect(config.activeTab).toBe('users');
+
     const usersNav = config.mobileNavItems?.find((item) => item.key === 'users');
-    expect(usersNav?.children?.find((item) => item.key === 'security_officers')?.label).toBe('Служба безопасности');
+    expect(usersNav?.label).toBe('Пользователи');
+    expect(usersNav?.children).toBeUndefined();
   });
 
   it('shows only requests section for operator', () => {

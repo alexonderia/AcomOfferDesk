@@ -2,7 +2,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import SaveOutlined from '@mui/icons-material/SaveOutlined';
 import {
-  Alert,
   Box,
   Button,
   Dialog,
@@ -122,11 +121,10 @@ export const ContractorsListView = ({
   onAddClick,
 }: ContractorsListViewProps) => {
   const theme = useTheme();
-  const { showSystemToast } = useSystemToasts();
+  const { showSystemToast, showErrorToast } = useSystemToasts();
   const [isEditMode, setIsEditMode] = useState(false);
   const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([...VIEW_COLUMN_IDS]);
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const [expandedContractorCardsById, setExpandedContractorCardsById] = useState<
     Record<string, { contact: boolean; company: boolean }>
   >({});
@@ -162,7 +160,6 @@ export const ContractorsListView = ({
       return;
     }
     reset({ user_status: normalizeUserStatus(selectedUser.status) });
-    setSubmitError(null);
   }, [reset, selectedUser]);
 
   const canEditContractorData = useMemo(
@@ -378,14 +375,12 @@ export const ContractorsListView = ({
 
   const openContractorDetails = (row: ContractorListItem) => {
     setSelectedUser(toUserListItem(row));
-    setSubmitError(null);
   };
 
   const handleStatusSubmit = async (values: StatusFormValues) => {
     if (!selectedUser) {
       return;
     }
-    setSubmitError(null);
 
     try {
       await updateContractorStatus(selectedUser.user_id, { user_status: values.user_status });
@@ -403,7 +398,7 @@ export const ContractorsListView = ({
           : prev,
       );
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Не удалось обновить статус');
+      showErrorToast(error instanceof Error ? error.message : 'Не удалось обновить статус');
     }
   };
 
@@ -695,7 +690,6 @@ export const ContractorsListView = ({
                     </Tooltip>
                   </Stack>
 
-                  {submitError ? <Alert severity="error">{submitError}</Alert> : null}
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
                     <Button
                       variant="outlined"

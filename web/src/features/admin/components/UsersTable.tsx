@@ -898,7 +898,10 @@ export const UsersTable = ({
     selectedUser
     && !isContractorsTab
     && selectedUser.role_id === ROLE.LEAD_ECONOMIST
-    && session?.roleId === ROLE.SUPERADMIN
+    && (
+      session?.roleId === ROLE.SUPERADMIN
+      || session?.roleId === ROLE.ADMIN
+    ),
   );
 
   useEffect(() => {
@@ -1732,7 +1735,7 @@ export const UsersTable = ({
                     <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                       Управление контрагентами
                     </Typography>
-                    <Stack spacing={1}>
+                    <FormGroup>
                       {contractorDelegations.accesses.map((item) => (
                         <FormControlLabel
                           key={item.code}
@@ -1743,15 +1746,10 @@ export const UsersTable = ({
                               disabled={!contractorDelegations.canManage || isSavingContractorDelegations}
                             />
                           )}
-                          label={(
-                            <Stack spacing={0.2}>
-                              <Typography variant="body2">{item.label}</Typography>
-                              <Typography variant="caption" color="text.secondary">{item.description}</Typography>
-                            </Stack>
-                          )}
+                          label={item.label}
                         />
                       ))}
-                    </Stack>
+                    </FormGroup>
                     {contractorDelegationsError ? <Alert severity="error">{contractorDelegationsError}</Alert> : null}
                     <Stack direction="row" justifyContent="flex-end">
                       <Button

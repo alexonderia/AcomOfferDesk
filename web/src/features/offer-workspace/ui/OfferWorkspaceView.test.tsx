@@ -221,7 +221,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Изменить" }));
 
     expect(screen.getByRole("button", { name: "Удалить отклик" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Добавить файл")).toBeInTheDocument();
+    expect(screen.getByLabelText("Добавить файлы")).toBeInTheDocument();
   }, 15_000);
 
   it("hides contractor workspace CTAs when backend action flags deny them", () => {

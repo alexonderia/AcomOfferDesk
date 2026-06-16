@@ -11,7 +11,8 @@ import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest'
 import { deleteOfferFile, updateOfferAmount, uploadOfferFile } from '@shared/api/offers/offerWorkspaceActions';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { ROLE } from '@shared/constants/roles';
-import { getErrorMessage } from '@shared/lib/errors';
+import { getErrorMessage, formatSettledTaskErrors, joinUserFacingErrors } from '@shared/lib/errors';
+import { mergeUniqueFiles } from '@shared/lib/files';
 import { useOfferMessages } from './useOfferMessages';
 
 const workspacePollIntervalMs = 7000;
@@ -109,7 +110,7 @@ export const useOfferWorkspace = () => {
   const [baselineOfferAmount, setBaselineOfferAmount] = useState('');
   const [existingOfferFiles, setExistingOfferFiles] = useState<Array<{ id: number; name: string; download_url: string }>>([]);
   const [deletedOfferFileIds, setDeletedOfferFileIds] = useState<number[]>([]);
-  const [newOfferFile, setNewOfferFile] = useState<File | null>(null);
+  const [newOfferFiles, setNewOfferFiles] = useState<File[]>([]);
 
   const sortedOffers = useMemo(
     () => [...(workspace?.offers ?? [])].sort((left, right) => new Date(right.created_at ?? 0).getTime() - new Date(left.created_at ?? 0).getTime()),
@@ -228,7 +229,7 @@ export const useOfferWorkspace = () => {
     setBaselineOfferAmount(nextOfferAmount);
     setExistingOfferFiles(selectedOffer?.files ?? []);
     setDeletedOfferFileIds([]);
-    setNewOfferFile(null);
+    setNewOfferFiles([]);
   }, [selectedOffer?.offer_amount, selectedOffer?.offer_id, selectedOfferFilesKey]);
 
   useEffect(() => {
@@ -291,11 +292,11 @@ export const useOfferWorkspace = () => {
   const acceptedOfferId = sortedOffers.find((item) => item.status === 'accepted')?.offer_id ?? null;
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const addedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (!file || !selectedOffer) return;
+    if (addedFiles.length === 0 || !selectedOffer) return;
     setErrorMessage(null);
-    setNewOfferFile(file);
+    setNewOfferFiles((prev) => mergeUniqueFiles(prev, addedFiles));
   };
 
   const handleDeleteFile = async (fileId: number) => {
@@ -309,7 +310,7 @@ export const useOfferWorkspace = () => {
     setBaselineOfferAmount(nextOfferAmount);
     setExistingOfferFiles(selectedOffer?.files ?? []);
     setDeletedOfferFileIds([]);
-    setNewOfferFile(null);
+    setNewOfferFiles([]);
     setErrorMessage(null);
   };
 
@@ -352,7 +353,7 @@ export const useOfferWorkspace = () => {
 
     const parsedOfferAmount = parseAmountInput(offerAmountInput);
     const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
-    const hasFileChanges = deletedOfferFileIds.length > 0 || Boolean(newOfferFile);
+    const hasFileChanges = deletedOfferFileIds.length > 0 || newOfferFiles.length > 0;
     if (!hasOfferAmountChanges && !hasFileChanges) {
       return;
     }
@@ -379,9 +380,21 @@ export const useOfferWorkspace = () => {
       if (deletedOfferFileIds.length > 0) {
         await Promise.all(deletedOfferFileIds.map((fileId) => deleteOfferFile(selectedOffer.offer_id, fileId)));
       }
-      if (newOfferFile) {
-        await uploadOfferFile(selectedOffer.offer_id, newOfferFile);
+
+      let uploadErrors: string[] = [];
+      let failedUploadFiles: File[] = [];
+      if (newOfferFiles.length > 0) {
+        const uploadResults = await Promise.allSettled(
+          newOfferFiles.map((file) => uploadOfferFile(selectedOffer.offer_id, file)),
+        );
+        uploadErrors = formatSettledTaskErrors(
+          uploadResults,
+          newOfferFiles.map((file) => file.name),
+          'Не удалось загрузить файл',
+        );
+        failedUploadFiles = newOfferFiles.filter((_, index) => uploadResults[index]?.status === 'rejected');
       }
+
       const nextWorkspace = await refreshWorkspace(selectedOffer.offer_id);
       const updatedOffer =
         nextWorkspace.offers.find((item) => item.offer_id === selectedOffer.offer_id) ??
@@ -391,7 +404,14 @@ export const useOfferWorkspace = () => {
       setOfferAmountInput(nextOfferAmount);
       setBaselineOfferAmount(nextOfferAmount);
       setDeletedOfferFileIds([]);
-      setNewOfferFile(null);
+      setNewOfferFiles(failedUploadFiles);
+
+      if (uploadErrors.length > 0) {
+        setErrorMessage(joinUserFacingErrors(uploadErrors));
+        return;
+      }
+
+      setNewOfferFiles([]);
       setLastOfferSaveSuccessAt(Date.now());
     } catch (error) {
       setErrorMessage(getErrorMessage(error, 'Не удалось сохранить изменения.'));
@@ -461,8 +481,8 @@ export const useOfferWorkspace = () => {
     baselineOfferAmount,
     existingOfferFiles,
     deletedOfferFileIds,
-    newOfferFile,
-    setNewOfferFile,
+    newOfferFiles,
+    setNewOfferFiles,
     handleCancelOfferEditing,
     handleUpload,
     handleDeleteFile,

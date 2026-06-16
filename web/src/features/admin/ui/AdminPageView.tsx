@@ -65,7 +65,6 @@ const sectionTitleSx = {
 export const AdminPageView = () => {
   const {
     isLeadLike,
-    isAdmin,
     canViewRoleIds,
     isDialogOpen,
     openCreateDialog,
@@ -135,7 +134,7 @@ export const AdminPageView = () => {
 
   return (
     <Stack spacing={2}>
-      {!isLeadLike && !isAdmin ? (
+      {!isLeadLike ? (
         <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap" sx={{ width: '100%' }}>
           <Select
             size="small"

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Keep LF line endings: this script is executed directly in a Linux container.
+# Важно: у файла должны быть LF-переносы, потому что скрипт исполняется прямо в Linux-контейнере.
 set -eu
 
 CLAMD_PID=""

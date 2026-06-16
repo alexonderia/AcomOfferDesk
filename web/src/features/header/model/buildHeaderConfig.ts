@@ -450,7 +450,7 @@ export const buildHeaderConfig = ({
   onNavigateToContractors,
   onNavigateToNormativeFiles,
   onNavigateToAdminCreate: _onNavigateToAdminCreate,
-  onNavigateBackToRequests,
+  onNavigateBackToRequests: _onNavigateBackToRequests,
   onSetContractorTab,
   onSetAdminUsersTab
 }: BuildHeaderConfigArgs): HeaderConfig => {
@@ -547,7 +547,6 @@ export const buildHeaderConfig = ({
     canViewDashboardSavings,
     canViewDashboardPlans,
   });
-
   if (isSuperadmin) {
     const tabs = canUseSuperadminTabs
       ? [
@@ -676,17 +675,20 @@ export const buildHeaderConfig = ({
     };
   }
 
-  if (isRequestDetailsPage) {
+  if (
+    isRequestDetailsPage
+    && !isSuperadmin
+    && !canUseProjectManagerTabs
+    && !canUseLeadTabs
+    && !canUseEconomistTabs
+    && !canUseOperatorTabs
+  ) {
     return {
       mode: 'sidebar',
       breadcrumbs,
       tabs: [],
       actions: [],
       mobileNavItems: defaultMobileNavItems,
-      backAction: {
-        label: 'К списку заявок',
-        onClick: onNavigateBackToRequests
-      },
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
@@ -789,16 +791,37 @@ export const buildHeaderConfig = ({
         canOpenContractorsPage
       ),
       tabs: [
+        ...(canViewDashboardProcess ? [{ key: 'dashboard', value: 'dashboard', label: 'Дашборд' as const }] : []),
+        ...(canViewDashboardSavings ? [{ key: 'savings', value: 'savings', label: 'Экономия' as const }] : []),
+        ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: 'План' as const }] : []),
         { key: 'requests', value: 'requests', label: '\u0417\u0430\u044f\u0432\u043a\u0438' },
         ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: 'Сотрудники' }] : []),
         ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: 'Контрагенты' }] : []),
       ],
-      activeTab: pathname.startsWith('/admin')
-        ? 'economists'
-        : pathname.startsWith('/contractors')
-          ? 'contractors'
-          : 'requests',
+      activeTab: isResponsibilityDashboard
+        ? 'dashboard'
+        : isResponsibilitySavings
+          ? 'savings'
+          : isResponsibilityPlan
+            ? 'plan'
+            : pathname.startsWith('/admin')
+              ? 'economists'
+              : pathname.startsWith('/contractors')
+                ? 'contractors'
+                : 'requests',
       onTabChange: (value) => {
+        if (value === 'dashboard' && canViewDashboardProcess) {
+          onNavigateToDashboard();
+          return;
+        }
+        if (value === 'savings' && canViewDashboardSavings) {
+          onNavigateToSavings();
+          return;
+        }
+        if (value === 'plan' && canViewDashboardPlans) {
+          onNavigateToPlan();
+          return;
+        }
         if (value === 'economists' && canOpenUsersPage) {
           onNavigateToAdmin();
           return;

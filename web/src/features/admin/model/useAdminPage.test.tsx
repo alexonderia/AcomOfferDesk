@@ -48,6 +48,7 @@ vi.mock('@shared/ui/toasts', () => ({
 const baseSession = {
   roleId: ROLE.SUPERADMIN,
   permissions: [
+    'contractors.read',
     'users.create',
     'contractors.manual.create',
     'users.role.update_any',

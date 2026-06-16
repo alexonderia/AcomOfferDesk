@@ -700,6 +700,9 @@ export const RequestDetailsView = () => {
         : planId
             ? `План #${planId}`
             : 'Без плана';
+    const resolvedPlanDisplayLabel = selectedPlanOption
+        ? planDisplayLabel
+        : requestDetails?.plan_name ?? (planId ? planDisplayLabel.replace('#', '') : planDisplayLabel);
     const descriptionText = requestDetails?.description?.trim() ?? '';
     const canExpandDescription = isDescriptionOverflowing;
     const handleStatusSelection = (nextStatus: RequestStatus) => {
@@ -834,7 +837,7 @@ export const RequestDetailsView = () => {
                         >
                             <MenuItem value="">Без плана</MenuItem>
                             {planId && !planOptions.some((option) => String(option.plan_id) === planId) ? (
-                                <MenuItem value={planId}>{planDisplayLabel}</MenuItem>
+                                <MenuItem value={planId}>{resolvedPlanDisplayLabel}</MenuItem>
                             ) : null}
                             {planOptions.map((option) => (
                                 <MenuItem
@@ -849,7 +852,7 @@ export const RequestDetailsView = () => {
                     ) : (
                         <TextField
                             size="small"
-                            value={planDisplayLabel}
+                            value={resolvedPlanDisplayLabel}
                             fullWidth
                             InputProps={{ readOnly: true }}
                         />

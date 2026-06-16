@@ -165,6 +165,50 @@ class _PreparedFileService:
         return None
 
 
+class _NullUserContactChannelsRepo:
+    async def get_primary_by_type(self, *, user_id: str, channel_type: str, include_inactive: bool = False):
+        _ = (user_id, channel_type, include_inactive)
+        return None
+
+    async def list_by_user(self, *, user_id: str, channel_types: list[str], include_inactive: bool = True):
+        _ = (user_id, channel_types, include_inactive)
+        return []
+
+    async def upsert_channel(
+        self,
+        *,
+        user_id: str,
+        channel_type: str,
+        channel_value: str,
+        is_verified: bool,
+        is_primary: bool,
+    ):
+        _ = (user_id, is_primary)
+        return SimpleNamespace(
+            id=1,
+            channel_type=channel_type,
+            channel_value=channel_value,
+            is_active=True,
+            is_verified=is_verified,
+        )
+
+    async def flush(self) -> None:
+        return None
+
+
+class _NullUserNotificationPreferencesRepo:
+    async def get_by_channel_id_and_type(self, *, channel_id: int, notification_type: str):
+        _ = (channel_id, notification_type)
+        return None
+
+    async def list_by_channel_ids(self, *, channel_ids: list[int]):
+        _ = channel_ids
+        return []
+
+    async def upsert(self, *, channel_id: int, notification_type: str, is_enabled: bool) -> None:
+        _ = (channel_id, notification_type, is_enabled)
+
+
 class _RequestFilesRepo:
     def __init__(self, *, detached: bool = True) -> None:
         self.attached: list[tuple[int, int]] = []
@@ -188,6 +232,8 @@ class _RequestFilesUow:
         self.users = object()
         self.offers = object()
         self.user_status_periods = object()
+        self.user_contact_channels = None
+        self.user_notification_preferences = None
 
     async def __aenter__(self):
         return self
@@ -335,6 +381,10 @@ class _OfferFilesUsersRepo:
             id_parent=None,
         )
 
+    async def get_active_approved_contractor_max_id(self, *, user_id: str, contractor_role_id: int):
+        _ = (user_id, contractor_role_id)
+        return None
+
 
 class _OfferFilesUow:
     def __init__(self, *, offers_repo=None, users_repo=None) -> None:
@@ -346,6 +396,8 @@ class _OfferFilesUow:
         self.messages = object()
         self.profiles = object()
         self.company_contacts = object()
+        self.user_contact_channels = _NullUserContactChannelsRepo()
+        self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
 
     async def __aenter__(self):
         return self
@@ -399,8 +451,16 @@ class _NormativeUow:
 
 
 class _ManualEmailNotifications:
-    def __init__(self, profiles, requests, files=None, *, after_commit_hook_registrar=None) -> None:
-        _ = (profiles, requests, files, after_commit_hook_registrar)
+    def __init__(
+        self,
+        profiles,
+        requests,
+        files=None,
+        *,
+        notification_preferences=None,
+        after_commit_hook_registrar=None,
+    ) -> None:
+        _ = (profiles, requests, files, notification_preferences, after_commit_hook_registrar)
         self.calls: list[dict] = []
 
     async def notify_request_to_additional_emails(
@@ -432,6 +492,8 @@ class _ManualEmailUow:
         self.offers = object()
         self.user_status_periods = object()
         self.profiles = object()
+        self.user_contact_channels = None
+        self.user_notification_preferences = None
 
     async def __aenter__(self):
         return self
@@ -462,6 +524,7 @@ class _ProfilesRepo:
 class _ProfilesUow:
     def __init__(self, repo: _ProfilesRepo) -> None:
         self.profiles = repo
+        self.user_contact_channels = None
 
     async def __aenter__(self):
         return self
@@ -1580,12 +1643,20 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
 ):
     fake_notifications: _ManualEmailNotifications | None = None
 
-    def _factory(profiles, requests, files=None, *, after_commit_hook_registrar=None):
+    def _factory(
+        profiles,
+        requests,
+        files=None,
+        *,
+        notification_preferences=None,
+        after_commit_hook_registrar=None,
+    ):
         nonlocal fake_notifications
         fake_notifications = _ManualEmailNotifications(
             profiles,
             requests,
             files,
+            notification_preferences=notification_preferences,
             after_commit_hook_registrar=after_commit_hook_registrar,
         )
         return fake_notifications

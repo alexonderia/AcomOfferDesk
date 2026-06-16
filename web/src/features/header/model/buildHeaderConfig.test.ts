@@ -176,10 +176,14 @@ describe('buildHeaderConfig role navigation', () => {
       pathname: '/contractors',
       canOpenUsersPage: true,
       canOpenContractorsPage: true,
+      canViewDashboardProcess: true,
+      canViewDashboardSavings: true,
+      canViewDashboardPlans: true,
     });
 
-    expect(tabKeys(config)).toEqual(['requests', 'economists', 'contractors']);
+    expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'economists', 'contractors']);
     expect(config.activeTab).toBe('contractors');
+    expect(mobileKeys(config)).toContain('dashboard');
     expect(mobileKeys(config)).toContain('employees');
     expect(mobileKeys(config)).toContain('more');
   });
@@ -235,6 +239,22 @@ describe('buildHeaderConfig role navigation', () => {
     expect(tabKeys(config)).toEqual(['requests']);
     expect(mobileKeys(config)).toContain('requests');
     expect(tabKeys(config)).not.toEqual(expect.arrayContaining(['dashboard', 'users', 'offers', 'chat']));
+  });
+
+  it('keeps request tabs on the request details page without a back action', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ECONOMIST,
+      pathname: '/requests/er',
+      canOpenUsersPage: true,
+      canViewDashboardProcess: true,
+      canViewDashboardSavings: true,
+      canViewDashboardPlans: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'economists']);
+    expect(config.activeTab).toBe('requests');
+    expect(config.backAction).toBeUndefined();
   });
 
   it('does not highlight requests tab on normative files page', () => {

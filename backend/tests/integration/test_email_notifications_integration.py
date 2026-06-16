@@ -87,6 +87,15 @@ class _FakeUsersRepo:
         _ = (contractor_role_id, exclude_user_ids)
         return []
 
+    async def list_active_approved_contractor_max_recipients(
+        self,
+        *,
+        contractor_role_id: int,
+        exclude_user_ids: list[str],
+    ):
+        _ = (contractor_role_id, exclude_user_ids)
+        return []
+
     async def list_active_user_parent_pairs(self):
         return []
 

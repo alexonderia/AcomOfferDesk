@@ -12,6 +12,7 @@ from app.domain.authorization import has_permission, require_any_permission, req
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
+from app.repositories.economy_plans import EconomyPlanRepository
 from app.repositories.files import FileRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
@@ -191,6 +192,7 @@ class RequestDetailItem:
     count_accepted_total: int
     count_rejected_total: int
     unread_messages_count: int
+    plan_name: str | None = None
     files: list[RequestFileItem] = field(default_factory=list)
     offers: list[OfferItem] = field(default_factory=list)
 
@@ -216,6 +218,7 @@ class RequestService:
         users: UserRepository,
         offers: OfferRepository,
         user_status_periods: UserStatusPeriodRepository,
+        plans: EconomyPlanRepository | None = None,
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
         notifications: NotificationService | None = None,
@@ -228,6 +231,7 @@ class RequestService:
         self._users = users
         self._offers = offers
         self._user_status_periods = user_status_periods
+        self._plans = plans
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
         self._notifications = notifications
@@ -1050,6 +1054,10 @@ class RequestService:
             current_user=current_user,
             request_owner_user_id=request.id_user,
         )
+        plan_name: str | None = None
+        if request.id_plan is not None and self._plans is not None:
+            plan = await self._plans.get_by_id(plan_id=request.id_plan)
+            plan_name = plan.name if plan is not None else None
         request_files = await self._requests.list_files(request_id=request_id)
         request_file_items = [
             RequestFileItem(id=file.id, path=file.path, name=file.name)
@@ -1115,6 +1123,7 @@ class RequestService:
             owner_mail=owner_profile.mail if owner_profile else None,
             chosen_offer_id=request.id_offer,
             id_plan=request.id_plan,
+            plan_name=plan_name,
             count_submitted=stats.count_submitted if stats else 0,
             count_deleted_alert=stats.count_deleted_alert if stats else 0,
             count_accepted_total=stats.count_accepted_total if stats else 0,

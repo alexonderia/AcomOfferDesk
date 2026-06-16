@@ -133,14 +133,29 @@ class _UserStatusPeriodsRepo:
         return []
 
 
+class _NullUserContactChannelsRepo:
+    async def get_primary_by_type(self, *, user_id: str, channel_type: str, include_inactive: bool = False):
+        _ = (user_id, channel_type, include_inactive)
+        return None
+
+
+class _NullUserNotificationPreferencesRepo:
+    async def get_by_channel_id_and_type(self, *, channel_id: int, notification_type: str):
+        _ = (channel_id, notification_type)
+        return None
+
+
 class _UsersUow:
     def __init__(self) -> None:
         self.users = _UsersRepo()
         self.profiles = _ProfilesRepo(self.users)
         self.user_auth_accounts = _UserAuthAccountsRepo()
         self.tg_users = object()
+        self.max_users = None
         self.user_status_periods = _UserStatusPeriodsRepo()
         self.company_contacts = object()
+        self.user_contact_channels = _NullUserContactChannelsRepo()
+        self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
 
     async def __aenter__(self):
         return self

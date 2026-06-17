@@ -6,8 +6,6 @@ Focus:
 - permission prerequisites and role-specific denials.
 """
 
-import pytest
-
 from app.core.config import settings
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import OfferPolicy, RequestPolicy, UserPolicy
@@ -97,3 +95,45 @@ def test_user_policy_manage_requests_allowed_for_lead_with_permissions(make_curr
     )
 
     assert UserPolicy.can_manage_requests(lead) is True
+
+
+def test_user_policy_contractor_status_via_delegation_role(make_current_user):
+    lead = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions=set(),
+        keycloak_roles={"delegation.contractors.profile.status.update"},
+    )
+
+    assert UserPolicy.can_update_contractor_profile_status(lead) is True
+
+
+def test_user_policy_contractor_status_via_delegation_permission(make_current_user):
+    pm = make_current_user(
+        role_id=settings.project_manager_role_id,
+        permissions={
+            PermissionCodes.CONTRACTORS_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+        },
+        keycloak_roles={"delegation.contractors.profile.status.update"},
+    )
+
+    assert UserPolicy.can_update_contractor_profile_status(pm) is True
+
+
+def test_user_policy_contractor_status_via_admin_users_status_update(make_current_user):
+    admin = make_current_user(
+        role_id=settings.admin_role_id,
+        permissions={PermissionCodes.USERS_STATUS_UPDATE},
+    )
+
+    assert UserPolicy.can_update_contractor_profile_status(admin) is True
+
+
+def test_user_policy_contractor_status_denied_for_economist_users_status_update(make_current_user):
+    economist = make_current_user(
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.USERS_STATUS_UPDATE},
+    )
+
+    assert UserPolicy.can_update_contractor_profile_status(economist) is False

@@ -1,6 +1,5 @@
 ﻿from __future__ import annotations
 
-import smtplib
 from dataclasses import dataclass
 from urllib.parse import quote
 
@@ -20,10 +19,17 @@ from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
 from app.infrastructure.email_service import SMTPEmailService
 from app.repositories.profiles import ActiveContractorEmailRecipient, ProfileRepository
 from app.repositories.requests import RequestRepository
+from app.services.email_delivery_events import (
+    BATCH_OPERATION_KIND_REQUEST_ADDITIONAL,
+    record_email_batch_operation_state,
+)
 from app.services.files import FileService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
+from app.services.user_notification_preferences import UserNotificationPreferencesService
+from shared.email_delivery import generate_correlation_id
 
 MAX_EMAIL_ATTACHMENT_SIZE_MB = 20
+_GENERIC_QUEUE_ERROR_MESSAGE = "Не удалось поставить письмо в очередь на отправку."
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +39,14 @@ class NotificationRecipient:
     tg_id: int | None
     is_verified_user: bool
     has_economist_created_account: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class EmailBatchDispatchResult:
+    operation_id: str | None
+    expected_total: int
+    immediate_failure_count: int
+    first_error_message: str | None
 
 
 class SendRequestNotificationEmailUseCase:
@@ -45,6 +59,8 @@ class SendRequestNotificationEmailUseCase:
         app_url: str,
         file_service: FileService | None = None,
         presentation_attachment_service: NormativeEmailAttachmentService | None = None,
+        notification_preferences: UserNotificationPreferencesService | None = None,
+        after_commit_hook_registrar=None,
     ) -> None:
         self._request_repository = request_repository
         self._profile_repository = profile_repository
@@ -52,6 +68,8 @@ class SendRequestNotificationEmailUseCase:
         self._app_url = app_url.rstrip("/")
         self._file_service = file_service or FileService()
         self._presentation_attachment_service = presentation_attachment_service
+        self._notification_preferences = notification_preferences
+        self._after_commit_hook_registrar = after_commit_hook_registrar
 
     async def execute(
         self,
@@ -62,10 +80,15 @@ class SendRequestNotificationEmailUseCase:
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
         include_verified_contractors: bool = True,
-    ) -> None:
+    ) -> EmailBatchDispatchResult:
         request = await self._request_repository.get_by_id(request_id=request_id)
         if request is None:
-            return
+            return EmailBatchDispatchResult(
+                operation_id=None,
+                expected_total=0,
+                immediate_failure_count=0,
+                first_error_message=None,
+            )
 
         active_contractors = await self._profile_repository.list_active_contractor_email_recipients(
             contractor_role_id=contractor_role_id,
@@ -78,11 +101,21 @@ class SendRequestNotificationEmailUseCase:
             contractor_role_id=contractor_role_id,
         )
         if not recipients:
-            return
+            return EmailBatchDispatchResult(
+                operation_id=None,
+                expected_total=0,
+                immediate_failure_count=0,
+                first_error_message=None,
+            )
 
         reply_secret = settings.reply_email_token_secret
         if not reply_secret and any(recipient.is_verified_user for recipient in recipients):
-            return
+            return EmailBatchDispatchResult(
+                operation_id=None,
+                expected_total=0,
+                immediate_failure_count=0,
+                first_error_message=None,
+            )
 
         token_codec = ReplyTokenCodec(secret=reply_secret) if reply_secret else None
         invite_token_codec = RegistrationInviteTokenCodec(
@@ -99,6 +132,9 @@ class SendRequestNotificationEmailUseCase:
             contact_phone=settings.invitation_contact_phone,
         )
         portal_url = self._resolve_portal_url()
+        operation_id = generate_correlation_id() if initiator_user_id else None
+        immediate_failure_count = 0
+        first_error_message: str | None = None
 
         for recipient in recipients:
             reply_token: str | None = None
@@ -154,9 +190,6 @@ class SendRequestNotificationEmailUseCase:
                 attachments = request_attachments
 
             try:
-                # TODO(notification-center): worker-level SMTP delivery status is async.
-                # To emit precise `email.sent` / `email.failed` center notifications,
-                # add a feedback event from notifications_worker to backend service layer.
                 await self._email_service.send_email(
                     to_email=payload.to_email,
                     subject=payload.subject,
@@ -169,6 +202,9 @@ class SendRequestNotificationEmailUseCase:
                     request_id=request_id,
                     offer_id=None,
                     initiator_user_id=initiator_user_id,
+                    operation_id=operation_id,
+                    operation_kind=BATCH_OPERATION_KIND_REQUEST_ADDITIONAL if operation_id else None,
+                    operation_expected_total=len(recipients) if operation_id else None,
                     recipient_context={
                         "user_login": recipient.user_login,
                         "tg_id": recipient.tg_id,
@@ -176,8 +212,31 @@ class SendRequestNotificationEmailUseCase:
                     if recipient.user_login is not None
                     else None,
                 )
-            except smtplib.SMTPException:
+            except Exception:
+                immediate_failure_count += 1
+                if first_error_message is None:
+                    first_error_message = _GENERIC_QUEUE_ERROR_MESSAGE
                 continue
+
+        if operation_id and self._after_commit_hook_registrar is not None:
+            self._after_commit_hook_registrar(
+                lambda: record_email_batch_operation_state(
+                    recipient_user_id=initiator_user_id or "",
+                    operation_id=operation_id,
+                    operation_kind=BATCH_OPERATION_KIND_REQUEST_ADDITIONAL,
+                    expected_total=len(recipients),
+                    request_id=str(request_id),
+                    immediate_failure_count=immediate_failure_count,
+                    first_error_message=first_error_message,
+                )
+            )
+
+        return EmailBatchDispatchResult(
+            operation_id=operation_id,
+            expected_total=len(recipients),
+            immediate_failure_count=immediate_failure_count,
+            first_error_message=first_error_message,
+        )
 
     async def _build_recipients(
         self,
@@ -199,6 +258,15 @@ class SendRequestNotificationEmailUseCase:
             if contractor.user_id in hidden_contractor_id_set:
                 hidden_emails.add(normalized_email)
                 continue
+            if self._notification_preferences is not None:
+                is_enabled = await self._notification_preferences.is_channel_enabled(
+                    user_id=contractor.user_id,
+                    channel_type="email",
+                    notification_type="request",
+                )
+                if not is_enabled:
+                    hidden_emails.add(normalized_email)
+                    continue
             recipient = NotificationRecipient(
                 email=normalized_email,
                 user_login=contractor.user_id,

@@ -7,12 +7,6 @@
     <#if section = "header">
         Регистрация в AcomOfferDesk
     <#elseif section = "form">
-        <div class="aod-page-copy aod-page-copy--quiet">
-          <p>
-            Заполните форму и подтвердите почту.
-          </p>
-        </div>
-
         <form id="kc-register-form" class="${properties.kcFormClass!}" action="${url.registrationAction}" method="post">
             <@userProfileCommons.userProfileFormFields; callback, attribute>
                 <#if callback = "afterField">

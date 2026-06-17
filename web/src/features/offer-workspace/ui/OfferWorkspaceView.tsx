@@ -23,6 +23,7 @@ import { useTheme } from '@mui/material/styles';
 import { useMediaQuery } from '@mui/material';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
+import { getFileKey } from '@shared/lib/files';
 import { downloadFile } from '@shared/api/fileDownload';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
@@ -138,8 +139,8 @@ export const OfferWorkspaceView = () => {
     baselineOfferAmount,
     existingOfferFiles = [],
     deletedOfferFileIds = [],
-    newOfferFile = null,
-    setNewOfferFile,
+    newOfferFiles = [],
+    setNewOfferFiles,
     handleCancelOfferEditing,
     handleUpload,
     handleDeleteFile,
@@ -304,10 +305,10 @@ export const OfferWorkspaceView = () => {
             void downloadFile(downloadUrl, fileName);
           }}
           onRemoveExistingFile={() => undefined}
-          newFile={null}
-          onClearNewFile={() => undefined}
+          newFiles={[]}
+          onRemoveNewFile={() => undefined}
           canUploadRequestFiles={false}
-          onNewFileSelected={() => undefined}
+          onNewFilesAdded={() => undefined}
           canViewRequestAmounts={canViewRequestAmounts}
           deadline=""
           initialAmount={formatAmount(workspace.request.initial_amount ?? null)}
@@ -450,7 +451,7 @@ export const OfferWorkspaceView = () => {
           const isCurrent = offerItem.offer_id === selectedOffer.offer_id;
           const isCurrentInEditMode = isCurrent && isOfferEditMode && canEnterOfferEditMode;
           const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
-          const hasOfferFileChanges = deletedOfferFileIds.length > 0 || Boolean(newOfferFile);
+          const hasOfferFileChanges = deletedOfferFileIds.length > 0 || newOfferFiles.length > 0;
           const canSaveOfferChanges = hasOfferAmountChanges || hasOfferFileChanges;
           const itemBadgeStyle = getOfferStatusBadgeStyle(offerItem.status ?? null);
           const offerStatusLabel = getOfferStatusLabel(offerItem.status ?? null);
@@ -640,18 +641,22 @@ export const OfferWorkspaceView = () => {
                     />
                   ))
                 )}
-                {isCurrentInEditMode && newOfferFile ? (
-                  <Chip
-                    label={newOfferFile.name}
-                    color="primary"
-                    variant="outlined"
-                    onDelete={() => setNewOfferFile(null)}
-                  />
-                ) : null}
+                {isCurrentInEditMode
+                  ? newOfferFiles.map((file) => (
+                    <Chip
+                      key={getFileKey(file)}
+                      label={file.name}
+                      color="primary"
+                      variant="outlined"
+                      onDelete={() =>
+                        setNewOfferFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
+                    />
+                  ))
+                  : null}
                 {canUpload && isCurrentInEditMode ? (
                   <IconButton
                     size="small"
-                    aria-label="Добавить файл"
+                    aria-label="Добавить файлы"
                     sx={{
                       alignSelf: 'center',
                       color: 'primary.main',
@@ -737,7 +742,15 @@ export const OfferWorkspaceView = () => {
                 </Stack>
               </Stack>
 
-              {isCurrent ? <input ref={fileInputRef} type="file" hidden onChange={(event) => void handleUpload(event)} /> : null}
+              {isCurrent ? (
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  hidden
+                  multiple
+                  onChange={(event) => void handleUpload(event)}
+                />
+              ) : null}
 
             </Paper>
           );

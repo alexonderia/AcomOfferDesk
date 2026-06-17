@@ -135,6 +135,10 @@ class _NoopUsersRepo:
         _ = (user_id, contractor_role_id)
         return None
 
+    async def get_active_approved_contractor_max_id(self, *, user_id: str, contractor_role_id: int):
+        _ = (user_id, contractor_role_id)
+        return None
+
 
 class _NoopChatsRepo:
     async def get_chat_state_for_user(self, *, chat_id: int, user_id: str):
@@ -157,6 +161,50 @@ class _NoopCompanyContactsRepo:
         return None
 
 
+class _NullUserContactChannelsRepo:
+    async def get_primary_by_type(self, *, user_id: str, channel_type: str, include_inactive: bool = False):
+        _ = (user_id, channel_type, include_inactive)
+        return None
+
+    async def list_by_user(self, *, user_id: str, channel_types: list[str], include_inactive: bool = True):
+        _ = (user_id, channel_types, include_inactive)
+        return []
+
+    async def upsert_channel(
+        self,
+        *,
+        user_id: str,
+        channel_type: str,
+        channel_value: str,
+        is_verified: bool,
+        is_primary: bool,
+    ):
+        _ = (user_id, is_primary)
+        return SimpleNamespace(
+            id=1,
+            channel_type=channel_type,
+            channel_value=channel_value,
+            is_active=True,
+            is_verified=is_verified,
+        )
+
+    async def flush(self) -> None:
+        return None
+
+
+class _NullUserNotificationPreferencesRepo:
+    async def get_by_channel_id_and_type(self, *, channel_id: int, notification_type: str):
+        _ = (channel_id, notification_type)
+        return None
+
+    async def list_by_channel_ids(self, *, channel_ids: list[int]):
+        _ = channel_ids
+        return []
+
+    async def upsert(self, *, channel_id: int, notification_type: str, is_enabled: bool) -> None:
+        _ = (channel_id, notification_type, is_enabled)
+
+
 class _OfferLifecycleUow:
     def __init__(self, *, request_row: SimpleNamespace | None = None, visible_open: bool = True) -> None:
         self.requests = _OfferRequestsRepo(request_row=request_row, visible_open=visible_open)
@@ -171,7 +219,8 @@ class _OfferLifecycleUow:
         self.feedback = None
         self.tg_users = None
         self.user_auth_accounts = None
-        self.user_contact_channels = None
+        self.user_contact_channels = _NullUserContactChannelsRepo()
+        self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
         self.economy_plans = None
 
     async def __aenter__(self):

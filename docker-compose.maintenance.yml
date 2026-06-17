@@ -1,0 +1,9 @@
+services:
+  gateway:
+    volumes:
+      - ./infra/maintenance/gateway.maintenance.conf:/etc/nginx/conf.d/default.conf:ro
+
+networks:
+  project_net:
+    name: project_net
+    external: true

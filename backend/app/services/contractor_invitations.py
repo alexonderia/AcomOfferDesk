@@ -13,7 +13,12 @@ from app.infrastructure.email.email_templates.contractor_invitation_email import
     build_contractor_invitation_email_payload,
 )
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
+from app.services.email_delivery_events import (
+    BATCH_OPERATION_KIND_CONTRACTOR_INVITE,
+    record_email_batch_operation_state,
+)
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
+from shared.email_delivery import generate_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,7 @@ class ContractorInvitationService:
         *,
         email_service: SMTPEmailService | None = None,
         attachment_service: NormativeEmailAttachmentService,
+        after_commit_hook_registrar=None,
     ) -> None:
         self._email_service = email_service or SMTPEmailService(
             smtp_host=settings.smtp_host,
@@ -52,6 +58,7 @@ class ContractorInvitationService:
             from_name=settings.email_from_name,
         )
         self._attachment_service = attachment_service
+        self._after_commit_hook_registrar = after_commit_hook_registrar
 
     async def invite_contractors(
         self,
@@ -84,6 +91,8 @@ class ContractorInvitationService:
         portal_url = self._resolve_portal_url()
         failed: list[InviteFailure] = []
         sent: list[str] = []
+        operation_id = generate_correlation_id()
+        first_error_message: str | None = None
 
         for email in normalized_valid:
             payload = build_contractor_invitation_email_payload(
@@ -103,6 +112,9 @@ class ContractorInvitationService:
                     attachments=[presentation_attachment],
                     recipient_user_id=current_user.user_id,
                     initiator_user_id=current_user.user_id,
+                    operation_id=operation_id,
+                    operation_kind=BATCH_OPERATION_KIND_CONTRACTOR_INVITE,
+                    operation_expected_total=len(normalized_valid),
                 )
                 sent.append(email)
             except Exception as exc:
@@ -117,6 +129,20 @@ class ContractorInvitationService:
                         reason="Не удалось поставить письмо в очередь на отправку",
                     )
                 )
+                if first_error_message is None:
+                    first_error_message = "Не удалось поставить письмо в очередь на отправку"
+
+        if self._after_commit_hook_registrar is not None and normalized_valid:
+            self._after_commit_hook_registrar(
+                lambda: record_email_batch_operation_state(
+                    recipient_user_id=current_user.user_id,
+                    operation_id=operation_id,
+                    operation_kind=BATCH_OPERATION_KIND_CONTRACTOR_INVITE,
+                    expected_total=len(normalized_valid),
+                    immediate_failure_count=len(failed),
+                    first_error_message=first_error_message,
+                )
+            )
 
         return ContractorInviteResult(
             sent=sent,

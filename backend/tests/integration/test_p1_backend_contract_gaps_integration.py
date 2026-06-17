@@ -24,6 +24,7 @@ from app.core.email_token import EmailVerificationTokenCodec
 from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import UserPolicy
+from app.services import file_upload_guard as file_upload_guard_module
 from app.services import offers as offers_service_module
 from app.services import requests as requests_service_module
 
@@ -164,6 +165,50 @@ class _PreparedFileService:
         return None
 
 
+class _NullUserContactChannelsRepo:
+    async def get_primary_by_type(self, *, user_id: str, channel_type: str, include_inactive: bool = False):
+        _ = (user_id, channel_type, include_inactive)
+        return None
+
+    async def list_by_user(self, *, user_id: str, channel_types: list[str], include_inactive: bool = True):
+        _ = (user_id, channel_types, include_inactive)
+        return []
+
+    async def upsert_channel(
+        self,
+        *,
+        user_id: str,
+        channel_type: str,
+        channel_value: str,
+        is_verified: bool,
+        is_primary: bool,
+    ):
+        _ = (user_id, is_primary)
+        return SimpleNamespace(
+            id=1,
+            channel_type=channel_type,
+            channel_value=channel_value,
+            is_active=True,
+            is_verified=is_verified,
+        )
+
+    async def flush(self) -> None:
+        return None
+
+
+class _NullUserNotificationPreferencesRepo:
+    async def get_by_channel_id_and_type(self, *, channel_id: int, notification_type: str):
+        _ = (channel_id, notification_type)
+        return None
+
+    async def list_by_channel_ids(self, *, channel_ids: list[int]):
+        _ = channel_ids
+        return []
+
+    async def upsert(self, *, channel_id: int, notification_type: str, is_enabled: bool) -> None:
+        _ = (channel_id, notification_type, is_enabled)
+
+
 class _RequestFilesRepo:
     def __init__(self, *, detached: bool = True) -> None:
         self.attached: list[tuple[int, int]] = []
@@ -187,6 +232,9 @@ class _RequestFilesUow:
         self.users = object()
         self.offers = object()
         self.user_status_periods = object()
+        self.economy_plans = None
+        self.user_contact_channels = None
+        self.user_notification_preferences = None
 
     async def __aenter__(self):
         return self
@@ -334,6 +382,10 @@ class _OfferFilesUsersRepo:
             id_parent=None,
         )
 
+    async def get_active_approved_contractor_max_id(self, *, user_id: str, contractor_role_id: int):
+        _ = (user_id, contractor_role_id)
+        return None
+
 
 class _OfferFilesUow:
     def __init__(self, *, offers_repo=None, users_repo=None) -> None:
@@ -345,6 +397,8 @@ class _OfferFilesUow:
         self.messages = object()
         self.profiles = object()
         self.company_contacts = object()
+        self.user_contact_channels = _NullUserContactChannelsRepo()
+        self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
 
     async def __aenter__(self):
         return self
@@ -398,12 +452,32 @@ class _NormativeUow:
 
 
 class _ManualEmailNotifications:
-    def __init__(self, profiles, requests, files=None) -> None:
-        _ = (profiles, requests, files)
+    def __init__(
+        self,
+        profiles,
+        requests,
+        files=None,
+        *,
+        notification_preferences=None,
+        after_commit_hook_registrar=None,
+    ) -> None:
+        _ = (profiles, requests, files, notification_preferences, after_commit_hook_registrar)
         self.calls: list[dict] = []
 
-    async def notify_request_to_additional_emails(self, *, request_id: str, additional_emails: list[str]) -> None:
-        self.calls.append({"request_id": request_id, "additional_emails": additional_emails})
+    async def notify_request_to_additional_emails(
+        self,
+        *,
+        request_id: str,
+        additional_emails: list[str],
+        initiator_user_id: str | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "request_id": request_id,
+                "additional_emails": additional_emails,
+                "initiator_user_id": initiator_user_id,
+            }
+        )
 
 
 class _ManualEmailRequestsRepo:
@@ -418,7 +492,10 @@ class _ManualEmailUow:
         self.users = object()
         self.offers = object()
         self.user_status_periods = object()
+        self.economy_plans = None
         self.profiles = object()
+        self.user_contact_channels = None
+        self.user_notification_preferences = None
 
     async def __aenter__(self):
         return self
@@ -449,6 +526,7 @@ class _ProfilesRepo:
 class _ProfilesUow:
     def __init__(self, repo: _ProfilesRepo) -> None:
         self.profiles = repo
+        self.user_contact_channels = None
 
     async def __aenter__(self):
         return self
@@ -1062,12 +1140,13 @@ def test_request_file_delete_missing_attachment_returns_404(
 @pytest.mark.parametrize(
     ("filename", "payload", "expected_status"),
     [
-        ("bad.exe", b"not allowed", 409),
-        ("empty.txt", b"", 409),
+        ("bad.exe", b"not allowed", 422),
+        ("empty.pdf", b"", 422),
     ],
 )
 def test_request_file_upload_rejects_unsupported_and_empty_files(
     test_client,
+    monkeypatch,
     set_current_user,
     set_uow,
     make_current_user,
@@ -1075,6 +1154,19 @@ def test_request_file_upload_rejects_unsupported_and_empty_files(
     payload,
     expected_status,
 ):
+    async def _scan(self, *, original_name: str, content_bytes: bytes, content_type: str | None):
+        _ = (self, content_bytes, content_type)
+        if original_name.endswith(".exe"):
+            raise file_upload_guard_module.UploadRejected(
+                reason_code="file_type_not_allowed",
+                detail="Тип файла не разрешен.",
+            )
+        raise file_upload_guard_module.UploadRejected(
+            reason_code="empty_file",
+            detail="Файл пустой.",
+        )
+
+    monkeypatch.setattr(file_upload_guard_module.FileUploadGuardService, "scan_bytes", _scan)
     set_uow(_RequestFilesUow())
     set_current_user(
         make_current_user(
@@ -1086,7 +1178,7 @@ def test_request_file_upload_rejects_unsupported_and_empty_files(
 
     response = test_client.post(
         "/api/v1/requests/10/files",
-        files={"file": (filename, payload, "text/plain")},
+        files={"file": (filename, payload, "application/pdf")},
     )
 
     assert response.status_code == expected_status
@@ -1111,10 +1203,10 @@ def test_request_file_upload_rejects_oversized_file(
 
     response = test_client.post(
         "/api/v1/requests/10/files",
-        files={"file": ("big.txt", b"ab", "text/plain")},
+        files={"file": ("big.pdf", b"ab", "application/pdf")},
     )
 
-    assert response.status_code == 409
+    assert response.status_code == 422
 
 
 def test_offer_file_upload_delete_and_missing_attachment_contracts(
@@ -1553,9 +1645,22 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
 ):
     fake_notifications: _ManualEmailNotifications | None = None
 
-    def _factory(profiles, requests, files=None):
+    def _factory(
+        profiles,
+        requests,
+        files=None,
+        *,
+        notification_preferences=None,
+        after_commit_hook_registrar=None,
+    ):
         nonlocal fake_notifications
-        fake_notifications = _ManualEmailNotifications(profiles, requests, files)
+        fake_notifications = _ManualEmailNotifications(
+            profiles,
+            requests,
+            files,
+            notification_preferences=notification_preferences,
+            after_commit_hook_registrar=after_commit_hook_registrar,
+        )
         return fake_notifications
 
     monkeypatch.setattr(requests_api, "EmailNotificationService", _factory)
@@ -1582,7 +1687,11 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
     }
     assert fake_notifications is not None
     assert fake_notifications.calls == [
-        {"request_id": "55", "additional_emails": ["user@example.com", "second@example.com"]}
+        {
+            "request_id": "55",
+            "additional_emails": ["user@example.com", "second@example.com"],
+            "initiator_user_id": "owner-1",
+        }
     ]
 
 

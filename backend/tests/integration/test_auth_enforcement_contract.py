@@ -41,6 +41,7 @@ class _FileDownloadUow(_NoopUow):
 class _EmailVerificationUow(_NoopUow):
     def __init__(self, profiles=None) -> None:
         self.profiles = profiles if profiles is not None else object()
+        self.user_contact_channels = None
 
 
 class _EmailVerificationProfilesRepo:

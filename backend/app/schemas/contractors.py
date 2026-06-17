@@ -5,6 +5,7 @@ from app.schemas.actions import UserActionsSchema
 
 class ContractorListItemSchema(BaseModel):
     user_id: str
+    max_user_id: str | None = None
     role_id: int
     status: str
     full_name: str | None = None
@@ -16,11 +17,17 @@ class ContractorListItemSchema(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    registration_source: str | None = None
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class ContractorListData(BaseModel):
     items: list[ContractorListItemSchema]
+    total: int = 0
+    limit: int = 25
+    offset: int = 0
 
 
 class ContractorListResponse(BaseModel):

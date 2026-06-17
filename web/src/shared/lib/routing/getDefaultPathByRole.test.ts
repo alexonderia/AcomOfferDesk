@@ -15,6 +15,10 @@ describe('getDefaultPathByRole', () => {
     expect(getDefaultPathByRole(ROLE.ADMIN, [])).toBe('/account');
   });
 
+  it('sends security officer with contractors.read to /contractors', () => {
+    expect(getDefaultPathByRole(ROLE.SECURITY_OFFICER, ['contractors.read'])).toBe('/contractors');
+  });
+
   it('sends users with requests.read to /requests', () => {
     expect(getDefaultPathByRole(ROLE.OPERATOR, ['requests.read'])).toBe('/requests');
   });

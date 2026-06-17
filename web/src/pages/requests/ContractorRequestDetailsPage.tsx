@@ -190,10 +190,10 @@ export const ContractorRequestDetailsPage = () => {
         canDeleteRequestFiles={false}
         onDownloadFile={(downloadUrl, fileName) => void downloadFile(downloadUrl, fileName)}
         onRemoveExistingFile={() => undefined}
-        newFile={null}
-        onClearNewFile={() => undefined}
+        newFiles={[]}
+        onRemoveNewFile={() => undefined}
         canUploadRequestFiles={false}
-        onNewFileSelected={() => undefined}
+        onNewFilesAdded={() => undefined}
         canViewRequestAmounts={false}
         deadline={request.deadline_at ?? ''}
         initialAmount=""

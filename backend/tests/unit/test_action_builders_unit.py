@@ -7,7 +7,7 @@ Focus:
 """
 
 from app.core.config import settings
-from app.api.action_flags import ChatActionBuilder, OfferActionBuilder, RequestActionBuilder, UserActionBuilder
+from app.api.action_flags import ChatActionBuilder, ContractorActionBuilder, OfferActionBuilder, RequestActionBuilder, UserActionBuilder
 from app.domain.permissions import PermissionCodes
 
 
@@ -305,6 +305,179 @@ def test_user_action_builder_contractor_not_given_internal_controls(make_current
     assert actions.can_update_role is False
     assert actions.can_update_manager is False
     assert actions.can_manage_manual_contractor is False
+
+
+def test_user_action_builder_hierarchy_peer_cannot_manage_status_or_role(make_current_user):
+    lead_economist = make_current_user(
+        user_id="le-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.USERS_STATUS_UPDATE,
+            PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
+            PermissionCodes.USERS_MANAGER_UPDATE,
+        },
+    )
+
+    actions = UserActionBuilder.build_list_item(
+        lead_economist,
+        target_user_id="eco-peer-1",
+        target_role_id=settings.economist_role_id,
+        is_hierarchy_subordinate=False,
+    )
+
+    assert actions.can_update_status is False
+    assert actions.can_update_role is False
+    assert actions.can_update_manager is False
+
+
+def test_user_action_builder_profile_manage_any_does_not_allow_lead_status_for_lead_economist(make_current_user):
+    lead_economist = make_current_user(
+        user_id="le-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.USERS_STATUS_UPDATE,
+            PermissionCodes.PROFILE_MANAGE_ANY,
+        },
+    )
+
+    actions = UserActionBuilder.build_list_item(
+        lead_economist,
+        target_user_id="le-peer-1",
+        target_role_id=settings.lead_economist_role_id,
+        is_hierarchy_subordinate=True,
+    )
+
+    assert actions.can_update_status is False
+    assert actions.can_view_profile is True
+
+
+def test_user_action_builder_hierarchy_subordinate_can_manage_status_and_role(make_current_user):
+    lead_economist = make_current_user(
+        user_id="le-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.USERS_STATUS_UPDATE,
+            PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
+            PermissionCodes.USERS_MANAGER_UPDATE,
+        },
+    )
+
+    actions = UserActionBuilder.build_list_item(
+        lead_economist,
+        target_user_id="eco-sub-1",
+        target_role_id=settings.economist_role_id,
+        is_hierarchy_subordinate=True,
+    )
+
+    assert actions.can_update_status is True
+    assert actions.can_update_role is True
+    assert actions.can_update_manager is True
+
+
+def test_user_action_builder_admin_can_update_contractor_status_with_users_status_update(make_current_user):
+    admin = make_current_user(
+        user_id="admin-1",
+        role_id=settings.admin_role_id,
+        permissions={PermissionCodes.USERS_STATUS_UPDATE},
+    )
+
+    actions = UserActionBuilder.build_list_item(
+        admin,
+        target_user_id="contractor-1",
+        target_role_id=settings.contractor_role_id,
+    )
+
+    assert actions.can_update_status is True
+
+
+def test_user_action_builder_economist_cannot_update_contractor_status_with_users_status_update(make_current_user):
+    economist = make_current_user(
+        user_id="eco-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.USERS_STATUS_UPDATE},
+    )
+
+    actions = UserActionBuilder.build_list_item(
+        economist,
+        target_user_id="contractor-1",
+        target_role_id=settings.contractor_role_id,
+    )
+
+    assert actions.can_update_status is False
+
+
+def test_user_action_builder_delegated_lead_can_update_contractor_status(make_current_user):
+    lead = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.CONTRACTORS_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+        },
+        keycloak_roles={"delegation.contractors.profile.status.update"},
+    )
+
+    actions = UserActionBuilder.build_list_item(
+        lead,
+        target_user_id="contractor-1",
+        target_role_id=settings.contractor_role_id,
+    )
+
+    assert actions.can_update_status is True
+
+
+def test_contractor_action_builder_allows_status_with_delegation_role_only(make_current_user):
+    lead = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions=set(),
+        keycloak_roles={"delegation.contractors.profile.status.update"},
+    )
+
+    actions = ContractorActionBuilder.build_contractor_actions(lead, is_manual=False)
+
+    assert actions.can_update_status is True
+
+
+def test_contractor_action_builder_allows_manual_edit_only_for_manual_rows(make_current_user):
+    current_user = make_current_user(
+        user_id="admin-1",
+        role_id=settings.admin_role_id,
+        permissions={
+            PermissionCodes.CONTRACTORS_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
+        },
+    )
+
+    manual_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=True)
+    telegram_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=False)
+
+    assert manual_actions.can_view_profile is True
+    assert manual_actions.can_update_status is True
+    assert manual_actions.can_manage_manual_contractor is True
+    assert telegram_actions.can_manage_manual_contractor is False
+
+
+def test_contractor_action_builder_allows_status_with_delegation_permission(make_current_user):
+    current_user = make_current_user(
+        user_id="security-1",
+        role_id=settings.security_officer_role_id,
+        permissions={
+            PermissionCodes.CONTRACTORS_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
+        },
+    )
+
+    actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=True)
+
+    assert actions.can_view_profile is True
+    assert actions.can_manage_manual_contractor is True
+    assert actions.can_update_status is True
 
 
 def test_request_action_builder_project_manager_never_gets_edit_even_in_scope(make_current_user):

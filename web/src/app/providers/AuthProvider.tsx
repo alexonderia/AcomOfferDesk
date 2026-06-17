@@ -14,7 +14,8 @@ const roleById: Record<number, string> = {
   4: 'project_manager',
   5: 'lead_economist',
   6: 'economist',
-  7: 'operator'
+  7: 'operator',
+  8: 'security_officer'
 };
 
 export type AuthSession = {
@@ -46,7 +47,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const IDLE_WINDOW_MS = 30 * 60 * 1000;
-const SESSION_SYNC_POLL_MS = 10000;
+const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
 
 const mapSession = (response: AuthSessionResponse): AuthSession => ({
   token: response.data.access_token,
@@ -72,6 +73,8 @@ const buildLoginUrl = (nextPath: string, forcePrompt: boolean) => {
   }
   return `/api/v1/auth/oidc/login?${query.toString()}`;
 };
+
+const isLoginRoute = (pathname: string) => pathname === '/login' || pathname === '/auth/login';
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -212,24 +215,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     bootstrapStartedRef.current = true;
+    if (isLoginRoute(location.pathname)) {
+      applySession(null, 'anonymous');
+      return;
+    }
     void refresh('bootstrap').then((restored: boolean) => {
       if (!restored) {
         applySession(null, 'anonymous');
       }
     });
-  }, [applySession, refresh]);
+  }, [applySession, location.pathname, refresh]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session?.token) {
+    if (status !== 'authenticated' || !session?.token || !session.tokenExpiresAt) {
       return;
     }
-    const timerId = window.setInterval(() => {
+
+    const refreshAt = (session.tokenExpiresAt * 1000) - ACCESS_TOKEN_REFRESH_LEEWAY_MS;
+    const delayMs = Math.max(1000, refreshAt - Date.now());
+    const timerId = window.setTimeout(() => {
       void refresh('http_401');
-    }, SESSION_SYNC_POLL_MS);
+    }, delayMs);
+
     return () => {
-      window.clearInterval(timerId);
+      window.clearTimeout(timerId);
     };
-  }, [refresh, session?.token, status]);
+  }, [refresh, session?.token, session?.tokenExpiresAt, status]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

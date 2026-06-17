@@ -48,6 +48,7 @@ export type RequestDetails = {
   closed_at: string | null;
   id_offer: number | null;
   id_plan: number | null;
+  plan_name?: string | null;
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -124,6 +125,7 @@ export const getRequestDetails = async (requestId: string): Promise<RequestDetai
     closed_at: item.closed_at,
     id_offer: item.chosen_offer_id,
     id_plan: item.id_plan ?? null,
+    plan_name: item.plan_name ?? null,
     description: item.description,
     created_at: item.created_at,
     updated_at: item.updated_at,

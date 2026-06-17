@@ -1,9 +1,11 @@
 ﻿import {
   GENERIC_ERROR_MESSAGE,
   NETWORK_ERROR_MESSAGE,
+  NOT_FOUND_ERROR_MESSAGE,
   fallbackByActionHint,
   fallbackByHttpStatus,
   normalizeUserFacingText,
+  translateApiReasonCode,
 } from '@shared/lib/errors/userFacing';
 
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
@@ -50,28 +52,28 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Partner card file is not configured': 'Не загружен нормативный документ для карты партнера',
   'Insufficient permissions to create manual offers': 'Недостаточно прав для ручного создания КП',
   'Insufficient permissions to edit request':
-    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ Р·Р°СЏРІРєРё: РґРѕСЃС‚СѓРї РѕРіСЂР°РЅРёС‡РµРЅ РёРµСЂР°СЂС…РёРµР№/РїРѕРґСЂР°Р·РґРµР»РµРЅРёРµРј',
+    'Недостаточно прав для редактирования заявки: доступ ограничен иерархией/подразделением',
   'Insufficient permissions to update request status':
-    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ СЃС‚Р°С‚СѓСЃР° Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ РёР·РјРµРЅРµРЅРёСЏ СЃС‚Р°С‚СѓСЃР° РІ РІР°С€РµРј РєРѕРЅС‚СѓСЂРµ РґРѕСЃС‚СѓРїР°',
+    'Недостаточно прав для изменения статуса заявки: требуется право изменения статуса в вашем контуре доступа',
   'Offer status cannot be changed for closed request': 'КП нельзя изменить, если заявка уже закрыта или отклонена',
   'КП нельзя изменить, если заявка уже закрыта или отклонена': 'КП нельзя изменить, если заявка уже закрыта или отклонена',
   'Insufficient permissions to update request amounts':
-    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ СЃСѓРјРј Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ РЅР° СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ С†РµРЅ РІ РІР°С€РµРј РєРѕРЅС‚СѓСЂРµ РґРѕСЃС‚СѓРїР°',
+    'Недостаточно прав для изменения сумм заявки: требуется право редактирования цен в допустимом контуре',
   'Insufficient permissions to update request deadline':
-    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РґРµРґР»Р°Р№РЅР° Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ РґРµРґР»Р°Р№РЅР° РІ РІР°С€РµРј РєРѕРЅС‚СѓСЂРµ РґРѕСЃС‚СѓРїР°',
+    'Недостаточно прав для изменения дедлайна заявки: требуется право редактирования дедлайна в допустимом контуре',
   'Insufficient permissions to upload request files':
-    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ РІ Р·Р°СЏРІРєСѓ: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ Рё РґРѕСЃС‚СѓРї Рє Р·Р°СЏРІРєРµ',
+    'Недостаточно прав для загрузки файлов в заявку: требуется право загрузки файлов и доступ к заявке',
   'Insufficient permissions to delete request files':
-    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Рё РґРѕСЃС‚СѓРї Рє Р·Р°СЏРІРєРµ',
+    'Недостаточно прав для удаления файлов заявки: требуется право удаления файлов и доступ к заявке',
   'Insufficient permissions to send request email notifications':
-    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РѕС‚РїСЂР°РІРєРё РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№ РїРѕ Р·Р°СЏРІРєРµ',
+    'Недостаточно прав для отправки дополнительных уведомлений по заявке',
   'Insufficient permissions to view chat': 'Недостаточно прав для просмотра чата',
   'Insufficient permissions to send chat message': 'Недостаточно прав для отправки сообщения в чат',
   'Insufficient permissions to view workspace': 'Недостаточно прав для просмотра рабочего пространства',
   'Operator can update status only for own requests':
-    'РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР° РѕРїРµСЂР°С‚РѕСЂРѕРј РґРѕСЃС‚СѓРїРЅРѕ С‚РѕР»СЊРєРѕ РґР»СЏ СЃРѕР±СЃС‚РІРµРЅРЅС‹С… Р·Р°СЏРІРѕРє',
+    'Изменение статуса оператором доступно только для собственных заявок',
   'Request is outside your management scope':
-    'Р”РµР№СЃС‚РІРёРµ РЅРµРґРѕСЃС‚СѓРїРЅРѕ: Р·Р°СЏРІРєР° РІРЅРµ РІР°С€РµРіРѕ РєРѕРЅС‚СѓСЂР° СѓРїСЂР°РІР»РµРЅРёСЏ',
+    'Действие недоступно: заявка вне вашего контура управления',
   'Economist can create manual offers only for own requests': 'Экономист может создавать КП вручную только для своих заявок',
   'Manual offer can be created only for open request': 'Ручное КП можно создать только для открытой заявки',
   'Accepted offer amount is required when request is closed with accepted offer': 'У принятого КП должна быть указана сумма',
@@ -172,10 +174,25 @@ export const setAuthRuntime = (runtime: AuthRuntime | null) => {
 
 const getErrorMessage = async (response: Response, fallback: string) => {
   const data = await response.json().catch(() => null);
-  if (data && typeof data === 'object' && 'detail' in data) {
-    const detailMessage = extractDetailMessage((data as { detail?: unknown }).detail);
+  if (data && typeof data === 'object') {
+    const detailMessage = 'detail' in data ? extractDetailMessage((data as { detail?: unknown }).detail) : null;
+    const reasonCodeMessage = 'reason_code' in data
+      ? translateApiReasonCode((data as { reason_code?: string | null }).reason_code)
+      : null;
+
+    if (
+      reasonCodeMessage
+      && (!detailMessage || detailMessage === GENERIC_ERROR_MESSAGE || detailMessage === NOT_FOUND_ERROR_MESSAGE)
+    ) {
+      return reasonCodeMessage;
+    }
+
     if (detailMessage) {
       return detailMessage;
+    }
+
+    if (reasonCodeMessage) {
+      return reasonCodeMessage;
     }
   }
 

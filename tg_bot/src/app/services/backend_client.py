@@ -21,6 +21,7 @@ class BackendClient:
                 response = await client.post(
                     f"{self.base_url}/api/v1/tg/start",
                     json={"tg_id": tg_id},
+                    headers=_bot_api_headers(),
                 )
                 response.raise_for_status()
             except httpx.HTTPError as exc:
@@ -50,6 +51,7 @@ class BackendClient:
                 response = await client.post(
                     f"{self.base_url}/api/v1/tg/links/register",
                     json={"tg_id": tg_id},
+                    headers=_bot_api_headers(),
                 )
                 response.raise_for_status()
             except httpx.HTTPError as exc:
@@ -73,6 +75,13 @@ class TgStartResponse:
     requests: list[TgOpenRequestItem]
     tg_status: str | None
     user_status: str | None
+
+
+def _bot_api_headers() -> dict[str, str]:
+    shared_secret = (settings.bot_api_shared_secret or "").strip()
+    if shared_secret:
+        return {"X-Bot-Api-Secret": shared_secret}
+    return {}
 
 
 def get_backend_client() -> BackendClient:

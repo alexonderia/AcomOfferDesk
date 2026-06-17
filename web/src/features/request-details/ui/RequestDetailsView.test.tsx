@@ -123,6 +123,7 @@ const buildRequestDetails = (overrides?:
   closed_at: null,
   id_offer: null,
   id_plan: null,
+  plan_name: null,
   description: "Request details",
   created_at: "2026-05-19T00:00:00Z",
   updated_at: "2026-05-20T00:00:00Z",
@@ -239,6 +240,19 @@ describe("RequestDetailsView action-driven CTAs", () => {
 
     const sendEmailButton = screen.getByRole("button", { name: "Отправить" });
     expect(sendEmailButton).toBeDisabled();
+  });
+
+  it("shows plan name from request details when plan options are unavailable", async () => {
+    vi.mocked(getRequestDetails).mockResolvedValueOnce({
+      ...buildRequestDetails(),
+      id_plan: 3,
+      plan_name: "План закупок",
+    } as never);
+
+    renderWithTheme();
+
+    expect(await screen.findByDisplayValue("План закупок")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("План #3")).not.toBeInTheDocument();
   });
 
   it("enables edit entry point when backend allows owner change even if direct edit is disabled", async () => {

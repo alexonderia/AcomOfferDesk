@@ -42,11 +42,12 @@ from app.schemas.requests import (
     RequestStatsSchema,
 )
 from app.services.email_notifications import EmailNotificationService
-from app.services.files import FileService
+from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
 from app.services.department_scope import DepartmentScopeService
-from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
+from app.services.requests import RequestEditInput, RequestService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 router = APIRouter()
 
@@ -62,6 +63,16 @@ def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:
     return NotificationService(notifications_repo)
 
 
+def _build_notification_preferences_service(uow: UnitOfWork) -> UserNotificationPreferencesService | None:
+    if uow.user_contact_channels is None or uow.user_notification_preferences is None:
+        return None
+    return UserNotificationPreferencesService(
+        uow.user_contact_channels,
+        uow.user_notification_preferences,
+        profiles=uow.profiles,
+    )
+
+
 def _build_request_service(
     uow: UnitOfWork,
     *,
@@ -75,9 +86,11 @@ def _build_request_service(
         uow.users,
         uow.offers,
         uow.user_status_periods,
+        uow.economy_plans,
         email_notifications=email_notifications,
         file_service=file_service,
         notifications=_build_notification_service(uow),
+        notification_preferences=_build_notification_preferences_service(uow),
         after_commit_hook_registrar=after_commit_hook_registrar,
     )
 
@@ -666,6 +679,7 @@ async def get_request_details(
                 owner_mail=item.owner_mail,
                 chosen_offer_id=item.chosen_offer_id,
                 id_plan=item.id_plan,
+                plan_name=item.plan_name,
                 stats=_request_stats_schema(item),
                 unread_messages_count=item.unread_messages_count,
                 files=[_request_file_schema(file_item) for file_item in item.files],
@@ -691,22 +705,21 @@ async def create_request(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestCreateResponse:
     validator = FileService()
-    file_inputs: list[RequestFileCreateInput] = []
+    file_inputs: list[PreparedUpload] = []
     for file in files:
         prepared = await validator.prepare_upload(file)
-        file_inputs.append(
-            RequestFileCreateInput(
-                original_name=prepared.original_name,
-                content_bytes=prepared.content_bytes,
-                mime_type=prepared.mime_type,
-            )
-        )
+        file_inputs.append(prepared)
 
     request_file_service: FileService | None = None
     try:
         async with uow:
             request_file_service = FileService(uow.files)
-            email_notifications = EmailNotificationService(uow.profiles, uow.requests, uow.files)
+            email_notifications = EmailNotificationService(
+                uow.profiles,
+                uow.requests,
+                uow.files,
+                notification_preferences=_build_notification_preferences_service(uow),
+            )
             service = _build_request_service(
                 uow,
                 email_notifications=email_notifications,
@@ -770,7 +783,13 @@ async def send_request_email_notifications(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEmailNotificationResponse:
     async with uow:
-        email_notifications = EmailNotificationService(uow.profiles, uow.requests, uow.files)
+        email_notifications = EmailNotificationService(
+            uow.profiles,
+            uow.requests,
+            uow.files,
+            notification_preferences=_build_notification_preferences_service(uow),
+            after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
+        )
         service = _build_request_service(
             uow,
             email_notifications=email_notifications,
@@ -806,11 +825,7 @@ async def add_request_file(
             file_id = await service.attach_file(
                 current_user=current_user,
                 request_id=request_id,
-                file_data=RequestFileCreateInput(
-                    original_name=prepared.original_name,
-                    content_bytes=prepared.content_bytes,
-                    mime_type=prepared.mime_type,
-                ),
+                file_data=prepared,
             )
     except Exception:
         if request_file_service is not None:

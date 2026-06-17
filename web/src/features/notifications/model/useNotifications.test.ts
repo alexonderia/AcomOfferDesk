@@ -79,6 +79,36 @@ describe('useNotifications', () => {
     expect(result.current.items[0]?.id).toBe(101);
   });
 
+  it('ignores tracking-only realtime notification rows', async () => {
+    getUnreadCountMock.mockResolvedValue({ count: 0 });
+
+    const { result } = renderHook(() => useNotifications({ enabled: true, pollingIntervalMs: 10_000 }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      result.current.applyRealtimeNotificationCreated({
+        id: 303,
+        type: 'system.warning',
+        severity: 'info',
+        title: 'Tracking email operation',
+        body: 'Tracking email operation',
+        entity_type: 'request',
+        entity_id: 77,
+        link_url: '/requests/77',
+        payload: { tracking_only: 'true', operation_id: 'op-1' },
+        read_at: null,
+        created_at: '2026-05-18T10:00:00Z',
+      });
+    });
+
+    expect(result.current.hasUnread).toBe(false);
+    expect(result.current.items).toEqual([]);
+  });
+
   it('markAllAsRead clears unread dot state', async () => {
     getUnreadCountMock.mockResolvedValue({ count: 0 });
     markAllNotificationsReadMock.mockResolvedValue({ updated_count: 1 });

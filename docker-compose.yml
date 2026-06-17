@@ -7,6 +7,7 @@ services:
     <<: *runtime-env
     image: quay.io/keycloak/keycloak:26.5
     container_name: keycloak
+    restart: unless-stopped
     entrypoint:
       - /bin/sh
       - -ec
@@ -42,6 +43,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: backend
+    restart: unless-stopped
+    stop_grace_period: 30s
     # Keycloak admin credentials: only via env_file (KC_BOOTSTRAP_* / KEYCLOAK_ADMIN_*).
     # Do not set KEYCLOAK_ADMIN_USERNAME/PASSWORD to "" here — empty compose overrides
     # block bootstrap fallback and break manual user/contractor creation (regression dc660e0).
@@ -55,10 +58,49 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      file_guard:
+        condition: service_healthy
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - project_net
+
+  file_guard:
+    build:
+      context: .
+      dockerfile: file_guard/Dockerfile
+    container_name: file_guard
+    restart: unless-stopped
+    volumes:
+      - clamav_data:/var/lib/clamav
+    environment:
+      FILE_GUARD_MAX_FILE_SIZE_BYTES: ${FILE_GUARD_MAX_FILE_SIZE_BYTES:-${MAX_UPLOAD_SIZE_BYTES:-5242880}}
+      FILE_GUARD_ALLOW_LIBMAGIC_FALLBACK: ${FILE_GUARD_ALLOW_LIBMAGIC_FALLBACK:-true}
+      FILE_GUARD_ANTIVIRUS_ENABLED: ${FILE_GUARD_ANTIVIRUS_ENABLED:-true}
+      FILE_GUARD_REQUIRE_ANTIVIRUS: ${FILE_GUARD_REQUIRE_ANTIVIRUS:-false}
+      FILE_GUARD_ANTIVIRUS_TIMEOUT_SECONDS: ${FILE_GUARD_ANTIVIRUS_TIMEOUT_SECONDS:-10}
+      FILE_GUARD_SCAN_TIMEOUT_SECONDS: ${FILE_GUARD_SCAN_TIMEOUT_SECONDS:-30}
+      FILE_GUARD_CLAMD_SOCKET_PATH: ${FILE_GUARD_CLAMD_SOCKET_PATH:-/run/clamav/clamd.sock}
+      FILE_GUARD_CLAMAV_UPDATE_ON_START: ${FILE_GUARD_CLAMAV_UPDATE_ON_START:-true}
+      FILE_GUARD_OFFICE_MAX_ENTRIES: ${FILE_GUARD_OFFICE_MAX_ENTRIES:-200}
+      FILE_GUARD_OFFICE_MAX_TOTAL_UNCOMPRESSED_BYTES: ${FILE_GUARD_OFFICE_MAX_TOTAL_UNCOMPRESSED_BYTES:-41943040}
+      FILE_GUARD_OFFICE_MAX_ENTRY_UNCOMPRESSED_BYTES: ${FILE_GUARD_OFFICE_MAX_ENTRY_UNCOMPRESSED_BYTES:-12582912}
+      FILE_GUARD_OFFICE_MAX_COMPRESSION_RATIO: ${FILE_GUARD_OFFICE_MAX_COMPRESSION_RATIO:-120}
+      FILE_GUARD_OFFICE_MAX_XML_SCAN_BYTES: ${FILE_GUARD_OFFICE_MAX_XML_SCAN_BYTES:-1048576}
+      FILE_GUARD_OFFICE_MAX_ENTRY_NAME_LENGTH: ${FILE_GUARD_OFFICE_MAX_ENTRY_NAME_LENGTH:-255}
+      FILE_GUARD_UPLOAD_READ_CHUNK_BYTES: ${FILE_GUARD_UPLOAD_READ_CHUNK_BYTES:-1048576}
+      FILE_GUARD_IMAGE_MAX_WIDTH: ${FILE_GUARD_IMAGE_MAX_WIDTH:-12000}
+      FILE_GUARD_IMAGE_MAX_HEIGHT: ${FILE_GUARD_IMAGE_MAX_HEIGHT:-12000}
+      FILE_GUARD_IMAGE_MAX_PIXELS: ${FILE_GUARD_IMAGE_MAX_PIXELS:-40000000}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -69,6 +111,7 @@ services:
     build:
       context: ./web
     container_name: web
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
@@ -82,6 +125,25 @@ services:
     networks:
       - project_net
 
+  maintenance:
+    image: nginx:1.27-alpine
+    container_name: maintenance
+    restart: unless-stopped
+    volumes:
+      - ./infra/maintenance/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infra/maintenance/index.html:/usr/share/nginx/html/index.html:ro
+      - ./infra/keycloak/themes/acom-offerdesk/login/resources/img/bitrix24-logo.png:/usr/share/nginx/html/maintenance-assets/bitrix24-logo.png:ro
+      - ./infra/keycloak/themes/acom-offerdesk/login/resources/img/max-logo-2025.png:/usr/share/nginx/html/maintenance-assets/max-logo-2025.png:ro
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - project_net
+
   gateway:
     image: nginx:1.27-alpine
     container_name: gateway
@@ -89,14 +151,15 @@ services:
     volumes:
       - ./backend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      keycloak:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-      web:
+      maintenance:
         condition: service_healthy
     ports:
       - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD-SHELL", "pidof nginx >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     networks:
       - project_net
 
@@ -115,9 +178,24 @@ services:
   #   networks:
   #     - project_net
 
+  max_bot:
+    <<: *runtime-env
+    build:
+      context: ./max_bot
+    container_name: max_bot
+    environment:
+      BACKEND_BASE_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - project_net
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
+    restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
@@ -135,6 +213,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -159,11 +238,17 @@ services:
       dockerfile: notifications_worker/Dockerfile
     container_name: notifications_worker
     restart: unless-stopped
+    stop_grace_period: 30s
     volumes:
       - ./shared:/app/shared:ro
     depends_on:
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'app.main' >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - project_net
 
@@ -175,3 +260,4 @@ networks:
 volumes:
   minio_data:
   keycloak_data:
+  clamav_data:

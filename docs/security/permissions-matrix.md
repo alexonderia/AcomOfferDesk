@@ -4,76 +4,108 @@ Source of truth: `backend/app/domain/permissions.py`.
 
 Legend: `Y` = granted, `N` = not granted.
 
+Footnotes:
+
+1. `users.login.update` остаётся в bootstrap ролей `superadmin`/`admin`, но **смена логина не реализована**: `users.id` неизменяем после создания. В UI логин только для чтения (`/admin`, `/contractors`, карточка контрагента); `PATCH /api/v1/users/{id}/manual-contractor` не принимает `login`.
+2. `users.password.update` — пароль управляется Keycloak; смена через приложение отключена.
+
 ## Access Matrix
 
-| Permission | SA | AD | PM | LE | EC | OP | CT |
-|---|---|---|---|---|---|---|---|
-| `users.read` | Y | Y | Y | Y | Y | N | N |
-| `users.create` | Y | Y | N | Y | N | N | N |
-| `users.status.update` | Y | Y | Y | Y | Y | N | N |
-| `users.role.update_any` | Y | Y | N | N | N | N | N |
-| `users.role.update_economy` | Y | N | Y | Y | N | N | N |
-| `users.login.update` | Y | Y | N | N | N | N | N |
-| `users.password.update` | Y | Y | N | N | N | N | N |
-| `users.manager.update` | Y | N | Y | Y | Y | N | N |
-| `profile.manage_own` | Y | Y | Y | Y | Y | Y | Y |
-| `profile.manage_any` | Y | Y | N | Y | N | N | N |
-| `company_contacts.manage_own` | Y | N | N | N | N | N | Y |
-| `company_contacts.manage_any` | Y | Y | N | Y | N | N | N |
-| `requests.read` | Y | N | Y | Y | Y | Y | N |
-| `requests.amounts.read` | Y | N | Y | Y | Y | Y | N |
-| `requests.create` | Y | N | N | Y | Y | Y | N |
-| `requests.update` | Y | N | N | Y | Y | Y | N |
-| `requests.pricing.update` | Y | N | N | Y | Y | Y | N |
-| `requests.deadline.update` | Y | N | N | Y | Y | Y | N |
-| `requests.status.update` | Y | N | N | Y | Y | Y | N |
-| `requests.owner.change` | Y | N | Y | Y | N | N | N |
-| `requests.files.upload` | Y | N | N | Y | Y | N | N |
-| `requests.files.delete` | Y | N | N | Y | Y | N | N |
-| `requests.open.read` | Y | N | N | N | N | N | Y |
-| `requests.offered.read` | Y | N | N | N | N | N | Y |
-| `requests.contractor_view.read` | Y | N | N | N | N | N | Y |
-| `requests.email_notifications.send` | Y | N | N | Y | Y | N | N |
-| `requests.deleted_alerts.mark_viewed` | Y | N | N | Y | Y | N | N |
-| `offers.create` | Y | N | N | N | N | N | Y |
-| `offers.manual.create` | Y | N | N | Y | Y | N | N |
-| `offers.workspace.read` | Y | N | Y | Y | Y | N | Y |
-| `offers.update` | Y | N | N | Y | Y | N | Y |
-| `offers.amount.update` | Y | N | N | Y | Y | N | Y |
-| `offers.details.update` | Y | N | N | Y | Y | N | Y |
-| `offers.status.update` | Y | N | N | Y | Y | N | Y |
-| `offers.files.upload` | Y | N | N | N | N | N | Y |
-| `offers.files.delete` | Y | N | N | N | N | N | Y |
-| `offers.contractor_info.read` | Y | N | Y | Y | Y | Y | Y |
-| `chat.read` | Y | N | Y | Y | Y | N | Y |
-| `chat.message.send` | Y | N | N | Y | Y | N | Y |
-| `chat.message.attach` | Y | N | N | Y | Y | N | Y |
-| `chat.receipts.mark_received` | Y | N | N | Y | Y | N | Y |
-| `chat.receipts.mark_read` | Y | N | N | Y | Y | N | Y |
-| `feedback.read` | Y | N | N | N | N | N | N |
-| `feedback.create` | Y | Y | Y | Y | Y | Y | Y |
-| `dashboard.process.read` | Y | N | Y | Y | Y | N | N |
-| `dashboard.savings.read` | Y | N | Y | Y | Y | N | N |
-| `dashboard.plans.read` | Y | N | Y | Y | Y | N | N |
-| `normative_files.read` | Y | N | Y | Y | Y | Y | N |
-| `normative_files.create` | Y | N | N | Y | N | N | N |
-| `normative_files.manage` | Y | N | N | Y | N | N | N |
-| `files.download` | Y | N | Y | Y | Y | N | Y |
-| `unavailability.manage_all` | Y | N | N | N | N | N | N |
-| `unavailability.manage_own` | Y | N | Y | Y | Y | N | N |
-| `unavailability.manage_subordinate` | Y | N | Y | Y | Y | N | N |
-| `contractors.read` | Y | N | Y | Y | Y | N | N |
-| `contractors.profile.read` | Y | N | Y | Y | Y | N | N |
-| `contractors.profile.status.update` | Y | N | N | N | N | N | N |
-| `contractors.manual.create` | Y | Y | Y | Y | Y | N | N |
-| `contractors.manual.manage` | Y | Y | Y | Y | Y | N | N |
+Legend: `SA`=superadmin, `AD`=admin, `SO`=security_officer, `PM`=project_manager, `LE`=lead_economist, `EC`=economist, `OP`=operator, `CT`=contractor.
+
+| Permission | SA | AD | SO | PM | LE | EC | OP | CT |
+|---|---|---|---|---|---|---|---|---|
+| `users.read` | Y | Y | N | Y | Y | Y | N | N |
+| `users.create` | Y | Y | N | N | Y | N | N | N |
+| `users.status.update` | Y | Y | N | Y | Y | Y | N | N |
+| `users.role.update_any` | Y | Y | N | N | N | N | N | N |
+| `users.role.update_economy` | Y | N | N | Y | Y | N | N | N |
+| `users.login.update` | Y¹ | Y¹ | N | N | N | N | N | N |
+| `users.password.update` | Y² | Y² | N | N | N | N | N | N |
+| `users.manager.update` | Y | N | N | Y | Y | Y | N | N |
+| `profile.manage_own` | Y | Y | Y | Y | Y | Y | Y | Y |
+| `profile.manage_any` | Y | Y | N | N | Y | N | N | N |
+| `company_contacts.manage_own` | Y | N | N | N | N | N | N | Y |
+| `company_contacts.manage_any` | Y | Y | N | N | Y | N | N | N |
+| `requests.read` | Y | N | N | Y | Y | Y | Y | N |
+| `requests.amounts.read` | Y | N | N | Y | Y | Y | Y | N |
+| `requests.create` | Y | N | N | N | Y | Y | Y | N |
+| `requests.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.pricing.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.deadline.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.status.update` | Y | N | N | N | Y | Y | Y | N |
+| `requests.owner.change` | Y | N | N | Y | Y | N | N | N |
+| `requests.files.upload` | Y | N | N | N | Y | Y | N | N |
+| `requests.files.delete` | Y | N | N | N | Y | Y | N | N |
+| `requests.open.read` | Y | N | N | N | N | N | N | Y |
+| `requests.offered.read` | Y | N | N | N | N | N | N | Y |
+| `requests.contractor_view.read` | Y | N | N | N | N | N | N | Y |
+| `requests.email_notifications.send` | Y | N | N | N | Y | Y | N | N |
+| `requests.deleted_alerts.mark_viewed` | Y | N | N | N | Y | Y | N | N |
+| `offers.create` | Y | N | N | N | N | N | N | Y |
+| `offers.manual.create` | Y | N | N | N | Y | Y | N | N |
+| `offers.workspace.read` | Y | N | N | Y | Y | Y | N | Y |
+| `offers.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.amount.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.details.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.status.update` | Y | N | N | N | Y | Y | N | Y |
+| `offers.files.upload` | Y | N | N | N | N | N | N | Y |
+| `offers.files.delete` | Y | N | N | N | N | N | N | Y |
+| `offers.contractor_info.read` | Y | N | N | Y | Y | Y | Y | Y |
+| `chat.read` | Y | N | N | Y | Y | Y | N | Y |
+| `chat.message.send` | Y | N | N | N | Y | Y | N | Y |
+| `chat.message.attach` | Y | N | N | N | Y | Y | N | Y |
+| `chat.receipts.mark_received` | Y | N | N | N | Y | Y | N | Y |
+| `chat.receipts.mark_read` | Y | N | N | N | Y | Y | N | Y |
+| `feedback.read` | Y | N | N | N | N | N | N | N |
+| `feedback.create` | Y | Y | Y | Y | Y | Y | Y | Y |
+| `dashboard.process.read` | Y | N | N | Y | Y | Y | N | N |
+| `dashboard.savings.read` | Y | N | N | Y | Y | Y | N | N |
+| `dashboard.plans.read` | Y | N | N | Y | Y | Y | N | N |
+| `normative_files.read` | Y | N | N | Y | Y | Y | Y | N |
+| `normative_files.create` | Y | N | N | N | Y | N | N | N |
+| `normative_files.manage` | Y | N | N | N | Y | N | N | N |
+| `normative_files.status.update` | Y | N | N | N | Y | N | N | N |
+| `files.download` | Y | N | N | Y | Y | Y | N | Y |
+| `unavailability.manage_all` | Y | N | N | N | N | N | N | N |
+| `unavailability.manage_own` | Y | N | N | Y | Y | Y | N | N |
+| `unavailability.manage_subordinate` | Y | N | N | Y | Y | Y | N | N |
+| `contractors.read` | Y | N | Y | Y | Y | Y | N | N |
+| `contractors.profile.read` | Y | N | Y | Y | Y | Y | N | N |
+| `contractors.profile.status.update` | Y | N | Y | N | N | N | N | N |
+| `contractors.manual.create` | Y | Y | N | Y | Y | Y | N | N |
+| `contractors.manual.manage` | Y | Y | N | Y | Y | Y | N | N |
+
+### Department permissions (`department.*`)
+
+Эти 14 atomic permission-кодов **не входят** в матрицу `app.*` ролей выше. Они расширяют scope только при ручном назначении соответствующей `delegation.department.*` composite role в Keycloak (`acom-api`).
+
+| Permission | Keycloak delegation role |
+|---|---|
+| `department.requests.read` | `delegation.department.requests.read` |
+| `department.requests.update` | `delegation.department.requests.update` |
+| `department.requests.status_update` | `delegation.department.requests.status_update` |
+| `department.requests.assign` | `delegation.department.requests.assign` |
+| `department.offers.update` | `delegation.department.offers.update` |
+| `department.offers.accept` | `delegation.department.offers.accept` |
+| `department.offers.reject` | `delegation.department.offers.reject` |
+| `department.chats.read` | `delegation.department.chats.read` |
+| `department.files.read` | `delegation.department.files.read` |
+| `department.files.upload` | `delegation.department.files.upload` |
+| `department.files.delete` | `delegation.department.files.delete` |
+| `department.dashboard.read` | `delegation.department.dashboard.read` |
+| `department.plans.read` | `delegation.department.plans.read` |
+| `department.plans.manage` | `delegation.department.plans.manage` |
+
+Подробные правила enforcement — в разделе [Department Delegation Model](#department-delegation-model-2026-05) ниже.
 
 ## Web App Behavior by Role
 
 | Role | Main sections in web app | Typical allowed actions |
 |---|---|---|
 | `superadmin` | `/admin`, `/requests`, `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/feedback` | Full management across users, requests, offers, contractors, dashboards, normative files and statuses |
-| `admin` | `/admin` | User administration (`users.*` incl. login/password), manual contractors create/manage, no request/offer workflow operations |
+| `admin` | `/admin` | User administration (без смены логина/пароля), manual contractors create/manage, no request/offer workflow operations |
+| `security_officer` | `/contractors` | Read contractor list/profile, update contractor status, use own profile and feedback, no `/admin`, requests, offers, chats, dashboards or normative files |
 | `project_manager` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Read requests/offers/chats across department; change request owner; read contractors and manage users hierarchy/manual contractors/subordinate unavailability/economy-role changes for subordinates |
 | `lead_economist` | `/pm-dashboard`, `/pm-dashboard/savings`, `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Full request/offer workflow, create manual offers, manage normative files, read contractors, manage contractor data (`profile.manage_any`, `company_contacts.manage_any`), economy-role changes for subordinates |
 | `economist` | `/pm-dashboard/plan`, `/requests`, `/admin`, `/contractors` | Request/offers processing in scope, manual offers, subordinate unavailability, read contractors, manual contractors create/manage, plan dashboard (only delegated branch and below) |
@@ -89,7 +121,8 @@ Legend: `Y` = granted, `N` = not granted.
 5. Для `status=review` разрешены только onboarding-safe contractor действия (`profile.manage_own`, `company_contacts.manage_own`); `inactive`/`blacklist` не проходят protected проверки.
 6. Frontend использует permissions/actions только для UX. Финальное enforcement-решение всегда принимает backend endpoint/policy/service слой.
 7. Backend contractor-view path (`GET /api/v1/requests/{id}/contractor-view`) должен проверять `requests.contractor_view.read` на service-level.
-8. Backend offer lifecycle path (`PATCH /api/v1/offers/{id}/status`) должен отклонять `accepted`, если связанная заявка уже `closed` или `cancelled`.
+8. Backend offer lifecycle path (`PATCH /api/v1/offers/{id}/status`) должен отклонять **любую** смену статуса КП, если связанная заявка уже `closed` или `cancelled` (сообщение: «КП нельзя изменить, если заявка уже закрыта или отклонена»).
+9. Логин пользователя (`users.id`) **неизменяем** после создания. Для manual-контрагентов логин генерируется при `contractors.manual.create`; `contractors.manual.manage` меняет профиль и контакты компании, но не логин. В таблице контрагентов и админке поле «Логин» read-only.
 
 ## Test Policy
 
@@ -163,10 +196,14 @@ Keycloak composite delegation role in client `acom-api`:
 Rules:
 
 1. `delegation.contractors.profile.status.update` is not included in any `app.*` role by default.
-2. Only `superadmin` can assign or revoke this delegation for users with role `lead_economist` (ВЭ).
+2. `superadmin` and `admin` can assign or revoke this delegation for users with role `lead_economist` (ВЭ).
 3. `contractors.*` permissions are granted only via `delegation.contractors.profile.status.update`, not via bare atomic codes in token claims.
-4. Frontend section `/contractors` is shown only when `contractors.read` is present; status changes require `contractors.profile.status.update`.
+4. Frontend section `/contractors` is shown only when `contractors.read` is present; status changes require `contractors.profile.status.update` (from delegation or `security_officer` app role).
 5. `PATCH /api/v1/contractors/{id}/status` changes status only for users with role `contractor`.
+6. Backend enforcement for contractor status updates accepts any of:
+   - `contractors.profile.status.update` (including permissions expanded from `delegation.contractors.profile.status.update`);
+   - `delegation.contractors.profile.status.update` in token delegation roles;
+   - `users.status.update` for `admin` / `superadmin` only.
 
 ## Business Scope Rules (2026-05)
 

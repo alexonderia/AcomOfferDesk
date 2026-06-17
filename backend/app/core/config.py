@@ -145,10 +145,19 @@ class Settings(BaseSettings):
     lead_economist_role_id: int = 5
     economist_role_id: int = 6
     operator_role_id: int = 7
+    security_officer_role_id: int = 8
     telegram_legacy_enabled: bool = Field(
         default=False,
         validation_alias="LEGACY_TELEGRAM_ENABLED",
     )
+    max_bot_enabled: bool = Field(default=False, validation_alias="MAX_BOT_ENABLED")
+    max_bot_token: str | None = Field(default=None, validation_alias="MAX_BOT_TOKEN")
+    max_bot_public_url: str | None = Field(default=None, validation_alias="MAX_BOT_PUBLIC_URL")
+    max_link_secret: str | None = Field(default=None, validation_alias="MAX_LINK_SECRET")
+    bot_api_shared_secret: str | None = Field(default=None, validation_alias="BOT_API_SHARED_SECRET")
+    max_register_ttl_seconds: int = Field(default=86400, validation_alias="MAX_REGISTER_TTL_SECONDS")
+    max_auth_ttl_seconds: int = Field(default=600, validation_alias="MAX_AUTH_TTL_SECONDS")
+    max_request_ttl_seconds: int = Field(default=604800, validation_alias="MAX_REQUEST_TTL_SECONDS")
     tg_link_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TG_LINK_SECRET", "TG_LINK_SALT"),
@@ -215,6 +224,10 @@ class Settings(BaseSettings):
         default=60,
         validation_alias="REQUEST_MAILBOX_POLL_INTERVAL_SECONDS",
     )
+    chat_unread_email_delay_seconds: int = Field(
+        default=3600,
+        validation_alias="CHAT_UNREAD_EMAIL_DELAY_SECONDS",
+    )
     s3_endpoint: str = Field(..., validation_alias="S3_ENDPOINT")
     s3_public_endpoint: str | None = Field(default=None, validation_alias="S3_PUBLIC_ENDPOINT")
     s3_access_key: str = Field(..., validation_alias="S3_ACCESS_KEY")
@@ -223,6 +236,9 @@ class Settings(BaseSettings):
     s3_secure: bool = Field(default=False, validation_alias="S3_SECURE")
     s3_presigned_get_ttl_seconds: int = Field(default=300, validation_alias="S3_PRESIGNED_GET_TTL_SECONDS")
     max_upload_size_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
+    file_guard_enabled: bool = Field(default=True, validation_alias="FILE_GUARD_ENABLED")
+    file_guard_url: str = Field(default="http://file_guard:8080", validation_alias="FILE_GUARD_URL")
+    file_guard_timeout_seconds: float = Field(default=10.0, validation_alias="FILE_GUARD_TIMEOUT_SECONDS")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
     tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
@@ -272,6 +288,7 @@ class Settings(BaseSettings):
         self.lead_economist_role_id = 5
         self.economist_role_id = 6
         self.operator_role_id = 7
+        self.security_officer_role_id = 8
 
         self.refresh_cookie_samesite = self.refresh_cookie_samesite.lower().strip() or "lax"
         if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
@@ -296,6 +313,9 @@ class Settings(BaseSettings):
             self.s3_presigned_get_ttl_seconds = 300
         if self.max_upload_size_bytes <= 0:
             self.max_upload_size_bytes = 5 * 1024 * 1024
+        self.file_guard_url = self.file_guard_url.rstrip("/") or "http://file_guard:8080"
+        if self.file_guard_timeout_seconds <= 0:
+            self.file_guard_timeout_seconds = 10.0
         if self.contractor_invite_max_emails_per_request <= 0:
             self.contractor_invite_max_emails_per_request = 50
         if self.invitation_portal_url is not None:
@@ -349,6 +369,20 @@ class Settings(BaseSettings):
             )
         if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
             raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
+
+        if self.max_bot_enabled:
+            if not (self.max_bot_token or "").strip():
+                raise ValueError("MAX_BOT_TOKEN is required when MAX_BOT_ENABLED=true")
+            if not (self.max_link_secret or "").strip():
+                raise ValueError("MAX_LINK_SECRET is required when MAX_BOT_ENABLED=true")
+
+        # Bot ↔ backend endpoints (/api/v1/max/*, /api/v1/tg/*) must not be callable
+        # unauthenticated in production: they expose request data by messenger id.
+        if self.app_env == "production" and (self.max_bot_enabled or self.telegram_legacy_enabled):
+            if not (self.bot_api_shared_secret or "").strip():
+                raise ValueError(
+                    "BOT_API_SHARED_SECRET is required in production when a bot integration is enabled"
+                )
 
         if self.keycloak_enabled and self.app_env == "production":
             if not self.keycloak_public_base_url:

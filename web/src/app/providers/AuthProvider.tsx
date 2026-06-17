@@ -74,6 +74,8 @@ const buildLoginUrl = (nextPath: string, forcePrompt: boolean) => {
   return `/api/v1/auth/oidc/login?${query.toString()}`;
 };
 
+const isLoginRoute = (pathname: string) => pathname === '/login' || pathname === '/auth/login';
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -213,12 +215,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     bootstrapStartedRef.current = true;
+    if (isLoginRoute(location.pathname)) {
+      applySession(null, 'anonymous');
+      return;
+    }
     void refresh('bootstrap').then((restored: boolean) => {
       if (!restored) {
         applySession(null, 'anonymous');
       }
     });
-  }, [applySession, refresh]);
+  }, [applySession, location.pathname, refresh]);
 
   useEffect(() => {
     if (status !== 'authenticated' || !session?.token || !session.tokenExpiresAt) {

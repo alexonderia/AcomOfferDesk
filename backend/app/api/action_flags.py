@@ -350,7 +350,8 @@ class UserActionBuilder:
             UserActionBuilder._requires_hierarchy_management(current_user)
             and is_hierarchy_subordinate is not True
         ):
-            can_update_status = False
+            if target_role_id != settings.contractor_role_id:
+                can_update_status = False
             can_update_role = False
             can_update_manager = False
         return UserActionsSchema(

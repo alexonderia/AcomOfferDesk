@@ -304,9 +304,20 @@ async def test_get_request_stats_for_selected_plan_uses_attached_plan_ids(make_c
 
     child = _make_plan_tree_node(plan_id=2, user_id="econ-1")
     root = _make_plan_tree_node(plan_id=1, user_id="lead-1", children=[child])
+
+    class _UsersRepo:
+        async def get_by_id(self, user_id: str):
+            if user_id == "lead-1":
+                return SimpleNamespace(id="lead-1", id_parent="pm-1")
+            if user_id == "econ-1":
+                return SimpleNamespace(id="econ-1", id_parent="lead-1")
+            if user_id == "pm-1":
+                return SimpleNamespace(id="pm-1", id_parent=None)
+            return None
+
     service = PlanService(
         plans=SimpleNamespace(),
-        users=SimpleNamespace(),
+        users=_UsersRepo(),
         requests=_CapturingPlanRequestsRepo(),
     )
 
@@ -329,6 +340,7 @@ async def test_get_request_stats_for_selected_plan_uses_attached_plan_ids(make_c
     service._build_trees_for_roots = _fake_build_trees_for_roots
 
     current_user = make_current_user(
+        user_id="pm-1",
         role_id=settings.project_manager_role_id,
         permissions={PermissionCodes.DASHBOARD_PLANS_READ},
     )

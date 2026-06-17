@@ -232,6 +232,7 @@ class _RequestFilesUow:
         self.users = object()
         self.offers = object()
         self.user_status_periods = object()
+        self.economy_plans = None
         self.user_contact_channels = None
         self.user_notification_preferences = None
 
@@ -491,6 +492,7 @@ class _ManualEmailUow:
         self.users = object()
         self.offers = object()
         self.user_status_periods = object()
+        self.economy_plans = None
         self.profiles = object()
         self.user_contact_channels = None
         self.user_notification_preferences = None

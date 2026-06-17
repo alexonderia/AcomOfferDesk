@@ -66,15 +66,36 @@ async def test_consumer_handles_valid_email_payload_and_uses_no_requeue(monkeypa
     monkeypatch.setattr(worker_consumers, "send_email", _fake_send_email)
     monkeypatch.setattr(worker_consumers, "publish_email_delivery_result", _fake_publish)
     message = _FakeIncomingMessage(
-        body=json.dumps({"to_email": "a@example.com", "subject": "Hi", "text_content": "Body"}).encode("utf-8"),
+        body=json.dumps(
+            {
+                "to_email": "a@example.com",
+                "subject": "Hi",
+                "text_content": "Body",
+                "operation_id": "op-1",
+                "operation_kind": "request.additional_email",
+                "operation_expected_total": 2,
+            }
+        ).encode("utf-8"),
         routing_key=RK_EMAIL,
     )
 
     await worker_consumers.handle_message(message)
 
-    assert sent_payloads == [{"to_email": "a@example.com", "subject": "Hi", "text_content": "Body"}]
+    assert sent_payloads == [
+        {
+            "to_email": "a@example.com",
+            "subject": "Hi",
+            "text_content": "Body",
+            "operation_id": "op-1",
+            "operation_kind": "request.additional_email",
+            "operation_expected_total": 2,
+        }
+    ]
     assert len(published_events) == 1
     assert published_events[0].event_type == "email.delivery.succeeded"
+    assert published_events[0].operation_id == "op-1"
+    assert published_events[0].operation_kind == "request.additional_email"
+    assert published_events[0].operation_expected_total == 2
     assert message.process_requeue_args == [False]
     assert message.process_enter_count == 1
     assert message.process_exit_count == 1
@@ -229,3 +250,22 @@ async def test_email_sender_spam_rejection_activates_recipient_cooldown(monkeypa
     await worker_email_sender.send_email(payload)
 
     assert len(attempts) == 1
+
+
+def test_format_recipient_log_uses_recipient_user_id_when_context_missing() -> None:
+    formatted = worker_email_sender._format_recipient_log(
+        {
+            "to_email": "user@example.com",
+            "recipient_user_id": "contractor-1",
+        }
+    )
+
+    assert "зарегистрированный пользователь" in formatted
+    assert "login=contractor-1" in formatted
+    assert "не зарегистрирован" not in formatted
+
+
+def test_format_recipient_log_marks_unknown_recipient_as_external() -> None:
+    formatted = worker_email_sender._format_recipient_log({"to_email": "guest@example.com"})
+
+    assert "внешний получатель" in formatted

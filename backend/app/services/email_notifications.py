@@ -7,6 +7,7 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 
 class EmailNotificationService:
@@ -15,10 +16,15 @@ class EmailNotificationService:
         profiles: ProfileRepository,
         requests: RequestRepository,
         files: FileRepository | None = None,
+        *,
+        notification_preferences: UserNotificationPreferencesService | None = None,
+        after_commit_hook_registrar=None,
     ) -> None:
         self._profiles = profiles
         self._requests = requests
         self._files = files
+        self._notification_preferences = notification_preferences
+        self._after_commit_hook_registrar = after_commit_hook_registrar
         self._email_service = SMTPEmailService(
             smtp_host=settings.smtp_host,
             smtp_port=settings.smtp_port,
@@ -44,6 +50,8 @@ class EmailNotificationService:
             email_service=self._email_service,
             app_url=settings.web_base_url,
             presentation_attachment_service=self._presentation_attachment_service(),
+            notification_preferences=self._notification_preferences,
+            after_commit_hook_registrar=self._after_commit_hook_registrar,
         )
         await use_case.execute(
             request_id=request_id,
@@ -68,6 +76,8 @@ class EmailNotificationService:
             email_service=self._email_service,
             app_url=settings.web_base_url,
             presentation_attachment_service=self._presentation_attachment_service(),
+            notification_preferences=self._notification_preferences,
+            after_commit_hook_registrar=self._after_commit_hook_registrar,
         )
         await use_case.execute(
             request_id=request_id,

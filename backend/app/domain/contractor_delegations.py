@@ -4,9 +4,11 @@ from dataclasses import dataclass
 
 from app.domain.permissions import PermissionCodes
 
+CONTRACTOR_STATUS_DELEGATION_ROLE = "delegation.contractors.profile.status.update"
+
 
 CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS: dict[str, frozenset[str]] = {
-    "delegation.contractors.profile.status.update": frozenset(
+    CONTRACTOR_STATUS_DELEGATION_ROLE: frozenset(
         {
             PermissionCodes.CONTRACTORS_READ,
             PermissionCodes.CONTRACTORS_PROFILE_READ,
@@ -26,8 +28,8 @@ class ContractorDelegationDefinition:
 
 CONTRACTOR_DELEGATIONS: tuple[ContractorDelegationDefinition, ...] = (
     ContractorDelegationDefinition(
-        role_code="delegation.contractors.profile.status.update",
-        permission_codes=CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS["delegation.contractors.profile.status.update"],
+        role_code=CONTRACTOR_STATUS_DELEGATION_ROLE,
+        permission_codes=CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS[CONTRACTOR_STATUS_DELEGATION_ROLE],
         label="Управление статусом контрагентов",
         description="Позволяет открыть раздел контрагентов, просматривать данные контрагентов и менять статус их профиля.",
     ),
@@ -44,3 +46,7 @@ def get_contractor_delegation_permission_codes() -> frozenset[str]:
         for permissions in CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS.values()
         for permission in permissions
     )
+
+
+def user_has_contractor_status_delegation(delegation_roles: frozenset[str]) -> bool:
+    return CONTRACTOR_STATUS_DELEGATION_ROLE in delegation_roles

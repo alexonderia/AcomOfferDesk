@@ -114,6 +114,17 @@ describe("AuthProvider", () => {
     expect(setAuthToken).toHaveBeenCalledWith(null);
   });
 
+  it("skips bootstrap refresh on login route and immediately stays anonymous", async () => {
+    renderProvider("/login?next=%2Frequests%2F333%2Fcontractor");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status")).toHaveTextContent("anonymous");
+    });
+
+    expect(refreshWebSession).not.toHaveBeenCalled();
+    expect(screen.getByTestId("is-authenticated")).toHaveTextContent("false");
+  });
+
   it("keeps business access and onboarding state from backend session payload", async () => {
     vi.mocked(refreshWebSession).mockResolvedValue({
       data: {
@@ -297,6 +308,44 @@ describe("AuthProvider", () => {
       expect(assignSpy).toHaveBeenCalledWith("/api/v1/auth/oidc/login?next_path=%2Frequests%2F42");
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not poll refresh every few seconds while authenticated", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-06-04T12:00:00Z"));
+      vi.mocked(refreshWebSession).mockResolvedValue({
+        data: {
+          access_token: "token-7",
+          token_type: "bearer",
+          access_token_expires_at: Math.floor(Date.now() / 1000) + 300,
+          user_id: "u-7",
+          login: "u-7",
+          role_id: 3,
+          status: "review",
+          auth_provider: "keycloak",
+          business_access: false,
+          onboarding_state: "review",
+          permissions: ["profile.manage_own"],
+          app_roles: ["app.contractor"],
+          delegation_roles: [],
+        },
+      });
+
+      renderProvider("/account");
+
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+
+      expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
+      expect(refreshWebSession).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(refreshWebSession).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

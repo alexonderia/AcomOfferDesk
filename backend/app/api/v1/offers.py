@@ -35,8 +35,8 @@ from app.schemas.offers import (
 )
 from app.schemas.requests import RequestFileSchema
 from app.services.chat_realtime import ChatRealtimeService, build_offer_service
-from app.services.files import FileService
-from app.services.offers import AttachmentFileInput, ManualContractorCreateInput
+from app.services.files import FileService, PreparedUpload
+from app.services.offers import ManualContractorCreateInput
 
 router = APIRouter()
 
@@ -216,16 +216,10 @@ async def create_manual_offer(
         )
 
     validator = FileService()
-    prepared_uploads: list[AttachmentFileInput] = []
+    prepared_uploads: list[PreparedUpload] = []
     for file in files:
         prepared = await validator.prepare_upload(file)
-        prepared_uploads.append(
-            AttachmentFileInput(
-                original_name=prepared.original_name,
-                content_bytes=prepared.content_bytes,
-                mime_type=prepared.mime_type,
-            )
-        )
+        prepared_uploads.append(prepared)
 
     offer_file_service: FileService | None = None
     try:
@@ -405,11 +399,7 @@ async def add_offer_file(
             file_id = await service.add_file(
                 current_user=current_user,
                 offer_id=offer_id,
-                upload=AttachmentFileInput(
-                    original_name=prepared.original_name,
-                    content_bytes=prepared.content_bytes,
-                    mime_type=prepared.mime_type,
-                ),
+                upload=prepared,
             )
     except Exception:
         if offer_file_service is not None:
@@ -520,11 +510,7 @@ async def upload_offer_message_file(
     uploaded = await realtime_service.upload_message_file(
         current_user=current_user,
         offer_id=offer_id,
-        upload=AttachmentFileInput(
-            original_name=prepared.original_name,
-            content_bytes=prepared.content_bytes,
-            mime_type=prepared.mime_type,
-        ),
+        upload=prepared,
     )
 
     return OfferMessageFileUploadResponse(
@@ -543,20 +529,14 @@ async def create_offer_message_with_attachments(
     if len(files) > _MAX_ATTACHMENTS_PER_MESSAGE:
         raise Conflict("Too many attachments")
 
-    attachments: list[AttachmentFileInput] = []
+    attachments: list[PreparedUpload] = []
     total_size = 0
     for file in files:
         prepared = await FileService().prepare_upload(file)
         total_size += len(prepared.content_bytes)
         if total_size > _MAX_TOTAL_ATTACHMENT_SIZE_BYTES:
             raise Conflict("Attachments total size exceeded")
-        attachments.append(
-            AttachmentFileInput(
-                original_name=prepared.original_name,
-                content_bytes=prepared.content_bytes,
-                mime_type=prepared.mime_type,
-            )
-        )
+        attachments.append(prepared)
 
     offer_file_service: FileService | None = None
     try:

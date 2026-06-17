@@ -1,5 +1,6 @@
 ﻿import { ChangeEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import AddRounded from '@mui/icons-material/AddRounded';
+import DragIndicatorRounded from '@mui/icons-material/DragIndicatorRounded';
 import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded';
 import FilterAltRounded from '@mui/icons-material/FilterAltRounded';
@@ -11,6 +12,7 @@ import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import TableRowsRounded from '@mui/icons-material/TableRowsRounded';
 import UnfoldMoreRounded from '@mui/icons-material/UnfoldMoreRounded';
 import WindowRounded from '@mui/icons-material/WindowRounded';
+import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Divider from '@mui/material/Divider';
 import InputBase from '@mui/material/InputBase';
@@ -123,6 +125,7 @@ export type TableTemplateProps<T> = {
   onSettingsClick?: () => void;
   showViewToggle?: boolean;
   defaultViewMode?: DataViewMode;
+  lockViewMode?: DataViewMode;
   showSettingsAction?: boolean;
   rowsPerPageOptions?: number[];
   defaultRowsPerPage?: number;
@@ -137,6 +140,13 @@ export type TableTemplateProps<T> = {
     openLabel?: string;
     closeLabel?: string;
   };
+  toolbarBetweenSearchAndActions?: ReactNode;
+  toolbarBeforeAddActions?: ReactNode;
+  reorderableColumns?: boolean;
+  defaultColumnOrder?: string[];
+  initialVisibleColumnIds?: string[];
+  visibleColumnIds?: string[];
+  onVisibleColumnIdsChange?: (columnIds: string[]) => void;
 };
 
 function alignToFlex(align: CellAlign | undefined) {
@@ -349,6 +359,21 @@ function resolveDefaultColumnWidths<T>(
   });
 }
 
+function moveColumnOrder(columnIds: string[], fromId: string, toId: string) {
+  if (fromId === toId) {
+    return columnIds;
+  }
+  const next = [...columnIds];
+  const fromIndex = next.indexOf(fromId);
+  const toIndex = next.indexOf(toId);
+  if (fromIndex === -1 || toIndex === -1) {
+    return columnIds;
+  }
+  next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, fromId);
+  return next;
+}
+
 function getPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -384,6 +409,7 @@ export function TableTemplate<T>({
   onSettingsClick,
   showViewToggle = true,
   defaultViewMode,
+  lockViewMode,
   showSettingsAction = true,
   rowsPerPageOptions = [8, 16, 32],
   defaultRowsPerPage,
@@ -392,7 +418,14 @@ export function TableTemplate<T>({
   minTableWidth = 980,
   onSearchChange,
   resizableColumns = true,
-  cardExpansionControl
+  cardExpansionControl,
+  toolbarBetweenSearchAndActions,
+  toolbarBeforeAddActions,
+  reorderableColumns = false,
+  defaultColumnOrder,
+  initialVisibleColumnIds,
+  visibleColumnIds: controlledVisibleColumnIds,
+  onVisibleColumnIdsChange
 }: TableTemplateProps<T>) {
   const theme = useTheme();
   const isMobileViewport = useIsMobileViewport();
@@ -414,22 +447,56 @@ export function TableTemplate<T>({
     cellPaddingX
   } = tableUiScale;
 
-  const allColumnIds = useMemo(() => columns.map((column) => column.id), [columns]);
-  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>(allColumnIds);
+  const allColumnIdsKey = useMemo(
+    () => columns.map((column) => column.id).join('\0'),
+    [columns],
+  );
+  const allColumnIds = useMemo(
+    () => (allColumnIdsKey.length > 0 ? allColumnIdsKey.split('\0') : []),
+    [allColumnIdsKey],
+  );
+  const [internalVisibleColumnIds, setInternalVisibleColumnIds] = useState<string[]>(
+    () => initialVisibleColumnIds ?? allColumnIds
+  );
+  const visibleColumnIds = controlledVisibleColumnIds ?? internalVisibleColumnIds;
+  const setVisibleColumnIds = onVisibleColumnIdsChange ?? setInternalVisibleColumnIds;
+  const [orderedColumnIds, setOrderedColumnIds] = useState<string[]>(() => defaultColumnOrder ?? allColumnIds);
+  const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
   const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLElement | null>(null);
   const rowHorizontalPadding = Number.parseFloat(theme.spacing(rowPaddingX));
   const rowPaddingTotal = rowHorizontalPadding * 2;
 
   useEffect(() => {
-    setVisibleColumnIds((currentVisibleColumnIds) => {
+    if (controlledVisibleColumnIds) {
+      return;
+    }
+    setInternalVisibleColumnIds((currentVisibleColumnIds) => {
       const nextVisibleColumnIds = allColumnIds.filter((columnId) => currentVisibleColumnIds.includes(columnId));
       return nextVisibleColumnIds.length > 0 ? nextVisibleColumnIds : allColumnIds;
     });
-  }, [allColumnIds]);
+  }, [allColumnIds, controlledVisibleColumnIds]);
+
+  useEffect(() => {
+    setOrderedColumnIds((currentOrder) => {
+      const preserved = currentOrder.filter((columnId) => allColumnIds.includes(columnId));
+      const missing = allColumnIds.filter((columnId) => !preserved.includes(columnId));
+      const nextOrder = [...preserved, ...missing];
+      if (
+        nextOrder.length === currentOrder.length
+        && nextOrder.every((columnId, index) => columnId === currentOrder[index])
+      ) {
+        return currentOrder;
+      }
+      return nextOrder;
+    });
+  }, [allColumnIdsKey, allColumnIds]);
 
   const visibleColumns = useMemo(
-    () => columns.filter((column) => visibleColumnIds.includes(column.id)),
-    [columns, visibleColumnIds]
+    () => orderedColumnIds
+      .filter((columnId) => visibleColumnIds.includes(columnId))
+      .map((columnId) => columns.find((column) => column.id === columnId))
+      .filter((column): column is TableTemplateColumn<T> => Boolean(column)),
+    [columns, orderedColumnIds, visibleColumnIds]
   );
 
   const getMinTableContentWidth = (targetColumns: TableTemplateColumn<T>[]) => {
@@ -490,11 +557,15 @@ export function TableTemplate<T>({
   }, [defaultViewMode, isMobileViewport]);
 
   useEffect(() => {
+    const allowedColumnIds = new Set(allColumnIds);
     setColumnFilters((currentFilters) => {
-      const nextFilters = Object.entries(currentFilters).filter(([columnId]) => allColumnIds.includes(columnId));
-      return Object.fromEntries(nextFilters);
+      const nextEntries = Object.entries(currentFilters).filter(([columnId]) => allowedColumnIds.has(columnId));
+      if (nextEntries.length === Object.keys(currentFilters).length) {
+        return currentFilters;
+      }
+      return Object.fromEntries(nextEntries);
     });
-  }, [allColumnIds]);
+  }, [allColumnIdsKey, allColumnIds]);
 
   useEffect(() => {
     if (!sortState) {
@@ -648,9 +719,11 @@ export function TableTemplate<T>({
     });
   }, [filteredRows, sortState, visibleColumns]);
 
+  const activeColumnFiltersKey = useMemo(() => JSON.stringify(columnFilters), [columnFilters]);
+
   useEffect(() => {
     setPage(1);
-  }, [columnFilters, normalizedSearch, rowsPerPage]);
+  }, [activeColumnFiltersKey, normalizedSearch, rowsPerPage]);
 
   const effectiveRowsPerPage = rowsPerPage;
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / effectiveRowsPerPage));
@@ -810,14 +883,18 @@ export function TableTemplate<T>({
     setSettingsAnchorEl(null);
   };
 
+  const updateVisibleColumnIds = (updater: (current: string[]) => string[]) => {
+    setVisibleColumnIds(updater(visibleColumnIds));
+  };
+
   const handleToggleColumn = (columnId: string) => {
-    setVisibleColumnIds((currentVisibleColumnIds) => {
+    updateVisibleColumnIds((currentVisibleColumnIds) => {
       const isVisible = currentVisibleColumnIds.includes(columnId);
       if (isVisible) {
         if (currentVisibleColumnIds.length === 1) {
           return currentVisibleColumnIds;
         }
-        return currentVisibleColumnIds.filter((id) => id !== columnId);
+        return currentVisibleColumnIds.filter((id: string) => id !== columnId);
       }
       return allColumnIds.filter((id) => id === columnId || currentVisibleColumnIds.includes(id));
     });
@@ -870,9 +947,9 @@ export function TableTemplate<T>({
     }
     return column;
   }, [selectFilterAnchor, visibleColumns]);
-  const isCardsView = viewMode === 'cards';
+  const isCardsView = (lockViewMode ?? viewMode) === 'cards';
   const viewToggleButtonRadius = Math.max(8, controlRadius - 4);
-  const canToggleViewMode = showViewToggle;
+  const canToggleViewMode = showViewToggle && !lockViewMode;
   const showCardExpansionToggle = isCardsView && Boolean(cardExpansionControl);
   const shouldUseIconOnlyViewToggle = isMobileViewport || viewportWidth < 560;
   const shouldUseIconOnlyAddButton = isMobileViewport || viewportWidth < 500;
@@ -932,50 +1009,41 @@ export function TableTemplate<T>({
     </Paper>
   ) : null;
 
-  const toolbarActions = (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
-      flexWrap="nowrap"
+  const shouldGroupTrailingToolbarActionsOnMobile = isMobileViewport && Boolean(toolbarBeforeAddActions);
+
+  const addToolbarAction = showAddAction && onAddClick ? (
+    <ActionButton
+      kind="filled"
+      showNavigationIcons={false}
+      startIcon={<AddRounded />}
+      aria-label={addButtonLabel}
+      onClick={onAddClick}
       sx={{
-        width: { xs: '100%', md: 'auto' },
-        justifyContent: isMobileViewport ? 'space-between' : 'flex-end'
+        minHeight: searchHeight,
+        px: shouldUseIconOnlyAddButton ? 0 : 2.5,
+        width: shouldUseIconOnlyAddButton ? searchHeight : 'auto',
+        minWidth: shouldUseIconOnlyAddButton ? searchHeight : undefined,
+        borderRadius: `${controlRadius}px`,
+        fontSize
       }}
     >
-      {showAddAction && onAddClick ? (
-        <ActionButton
-          kind="filled"
-          showNavigationIcons={false}
-          startIcon={<AddRounded />}
-          aria-label={addButtonLabel}
-          onClick={onAddClick}
-          sx={{
-            minHeight: searchHeight,
-            px: shouldUseIconOnlyAddButton ? 0 : 2.5,
-            width: shouldUseIconOnlyAddButton ? searchHeight : 'auto',
-            minWidth: shouldUseIconOnlyAddButton ? searchHeight : undefined,
-            borderRadius: `${controlRadius}px`,
-            fontSize
-          }}
-        >
-          {shouldUseIconOnlyAddButton ? null : addButtonLabel}
-        </ActionButton>
-      ) : null}
+      {shouldUseIconOnlyAddButton ? null : addButtonLabel}
+    </ActionButton>
+  ) : null;
 
-      {canToggleViewMode || showCardExpansionToggle ? (
-        <Paper
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            p: 0.5,
-            flex: isMobileViewport ? 1 : 'initial',
-            borderRadius: `${controlRadius}px`,
-            border: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper'
-          }}
-        >
+  const viewToolbarAction = canToggleViewMode || showCardExpansionToggle ? (
+    <Paper
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        p: 0.5,
+        flex: isMobileViewport && !shouldGroupTrailingToolbarActionsOnMobile ? 1 : 'initial',
+        borderRadius: `${controlRadius}px`,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper'
+      }}
+    >
           {canToggleViewMode ? (
             <>
               <ActionButton
@@ -1064,26 +1132,66 @@ export function TableTemplate<T>({
             </Stack>
           ) : null}
         </Paper>
-      ) : null}
+  ) : null;
 
-      {showSettingsAction ? (
-        <ActionButton
-          kind="outlined"
-          showNavigationIcons={false}
-          onClick={handleSettingsButtonClick}
-          sx={{
-            minHeight: searchHeight,
-            width: searchHeight,
-            minWidth: searchHeight,
-            px: 0,
-            borderRadius: `${controlRadius}px`,
-            borderColor: 'divider',
-            color: 'text.secondary'
-          }}
-        >
-          <SettingsOutlined sx={{ fontSize: iconSize }} />
-        </ActionButton>
-      ) : null}
+  const settingsToolbarAction = showSettingsAction ? (
+    <ActionButton
+      kind="outlined"
+      showNavigationIcons={false}
+      onClick={handleSettingsButtonClick}
+      sx={{
+        minHeight: searchHeight,
+        width: searchHeight,
+        minWidth: searchHeight,
+        px: 0,
+        borderRadius: `${controlRadius}px`,
+        borderColor: 'divider',
+        color: 'text.secondary'
+      }}
+    >
+      <SettingsOutlined sx={{ fontSize: iconSize }} />
+    </ActionButton>
+  ) : null;
+
+  const trailingToolbarActions = (
+    <>
+      {addToolbarAction}
+      {viewToolbarAction}
+      {settingsToolbarAction}
+    </>
+  );
+
+  const toolbarActions = shouldGroupTrailingToolbarActionsOnMobile ? (
+    <Stack
+      direction="row"
+      alignItems="center"
+      flexWrap="nowrap"
+      sx={{
+        width: '100%',
+        justifyContent: 'space-between',
+        gap: 1,
+      }}
+    >
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flexShrink: 1 }}>
+        {toolbarBeforeAddActions}
+      </Stack>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+        {trailingToolbarActions}
+      </Stack>
+    </Stack>
+  ) : (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      flexWrap="nowrap"
+      sx={{
+        width: { xs: '100%', md: 'auto' },
+        justifyContent: isMobileViewport ? 'space-between' : 'flex-end',
+      }}
+    >
+      {toolbarBeforeAddActions}
+      {trailingToolbarActions}
     </Stack>
   );
 
@@ -1101,6 +1209,7 @@ export function TableTemplate<T>({
         {isMobileViewport ? (
           <Stack spacing={1}>
             {toolbarActions}
+            {toolbarBetweenSearchAndActions}
             {toolbarSearch}
           </Stack>
         ) : (
@@ -1112,6 +1221,7 @@ export function TableTemplate<T>({
             flexWrap="wrap"
           >
             {toolbarSearch}
+            {toolbarBetweenSearchAndActions}
             {toolbarActions}
           </Stack>
         )}
@@ -1293,16 +1403,48 @@ export function TableTemplate<T>({
                 {visibleColumns.map((column, index) => (
                   <Stack
                     key={column.id}
+                    onDragOver={(event) => {
+                      if (!reorderableColumns) {
+                        return;
+                      }
+                      event.preventDefault();
+                    }}
+                    onDrop={() => {
+                      if (!reorderableColumns || !draggedColumnId) {
+                        return;
+                      }
+                      setOrderedColumnIds((prev) => moveColumnOrder(prev, draggedColumnId, column.id));
+                      setDraggedColumnId(null);
+                    }}
                     sx={{
                       position: 'relative',
                       minWidth: 0,
                       height: '100%',
                       px: cellPaddingX,
                       justifyContent: 'center',
-                      gap: 0.5
+                      gap: 0.5,
+                      backgroundColor: draggedColumnId === column.id
+                        ? alpha(theme.palette.primary.main, 0.22)
+                        : 'transparent',
                     }}
                   >
                     <Stack direction="row" alignItems="center" gap={0.5} sx={{ width: '100%', minWidth: 0 }}>
+                      {reorderableColumns ? (
+                        <Box
+                          draggable
+                          onDragStart={() => setDraggedColumnId(column.id)}
+                          onDragEnd={() => setDraggedColumnId(null)}
+                          aria-label={`Переместить столбец ${column.header}`}
+                          sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            cursor: 'grab',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <DragIndicatorRounded sx={{ fontSize: 16, color: 'text.secondary' }} />
+                        </Box>
+                      ) : null}
                       <Typography
                         sx={{
                           minWidth: 0,

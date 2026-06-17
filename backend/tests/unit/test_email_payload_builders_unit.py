@@ -41,7 +41,7 @@ def test_request_notification_payload_contains_subject_urls_token_and_warning() 
 
     assert payload.subject == "AcomOfferDesk — новая заявка №42"
     assert payload.reply_token == "reply.token"
-    assert "Открыть заявку: https://acom.example/requests/42/contractor" in payload.text_content
+    assert "Перейти в систему: https://acom.example/requests/42/contractor" in payload.text_content
     assert "Если кнопка не работает, откройте ссылку вручную" in payload.html_content
     assert "reply.token" in payload.text_content
     assert "reply.token" in payload.html_content
@@ -125,10 +125,10 @@ def test_contractor_invitation_payload_contains_button_and_contact_block() -> No
     )
 
     assert payload.subject == "Приглашение в AcomOfferDesk"
-    assert "Перейти к системе" in payload.text_content
+    assert "Перейти в систему" in payload.text_content
     assert "Инструкция по получению доступа приложена к письму в виде презентации." in payload.text_content
     assert "Владислав Хлистун" in payload.text_content
-    assert "Перейти к системе" in payload.html_content
+    assert "Перейти в систему" in payload.html_content
     assert "Для доступа к сервису зарегистрируйтесь по ссылке ниже" not in payload.text_content
     assert "Для доступа к сервису зарегистрируйтесь по ссылке ниже" not in payload.html_content
     assert "Если удобнее, вы можете связаться с контактным лицом напрямую" in payload.html_content
@@ -156,7 +156,7 @@ def test_request_invited_contractor_payload_combines_invitation_and_request() ->
     assert "Вы приглашены к работе в системе AcomOfferDesk." in payload.text_content
     assert "Инструкция по получению доступа приложена к письму в виде презентации." in payload.text_content
     assert "Поступила новая заявка №15." in payload.text_content
-    assert "Перейти к системе: https://acom.example/login" in payload.text_content
+    assert "Перейти в систему: https://acom.example/login" in payload.text_content
     assert "Для доступа к сервису зарегистрируйтесь" not in payload.text_content
     assert "Для доступа к заявке зарегистрируйтесь" not in payload.text_content
     assert "Владислав Хлистун" in payload.html_content
@@ -168,8 +168,9 @@ def test_contractor_access_opened_payload_includes_manual_link_when_url_exists()
         authorization_url="https://acom.example/login?next=/",
     )
 
-    assert payload.subject == "AcomOfferDesk — доступ в сервис открыт"
+    assert payload.subject == "AcomOfferDesk — доступ открыт"
     assert "https://acom.example/login?next=/" in payload.text_content
+    assert "Перейти к авторизации" in payload.html_content
     assert "Если кнопка не работает, откройте ссылку вручную" in payload.html_content
 
 

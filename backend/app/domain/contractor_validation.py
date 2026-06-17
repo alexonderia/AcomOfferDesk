@@ -27,6 +27,30 @@ def validate_inn(value: str) -> str:
     return value
 
 
+def validate_optional_phone(
+    value: str | None,
+    *,
+    allow_placeholder: bool = True,
+) -> str | None:
+    if value is None:
+        return None
+    if allow_placeholder and value == NOT_SPECIFIED_TEXT:
+        return value
+    return validate_ru_phone(value)
+
+
+def validate_optional_inn(
+    value: str | None,
+    *,
+    allow_placeholder: bool = True,
+) -> str | None:
+    if value is None:
+        return None
+    if allow_placeholder and value == NOT_SPECIFIED_TEXT:
+        return value
+    return validate_inn(value)
+
+
 def validate_optional_email(
     value: str | None,
     *,

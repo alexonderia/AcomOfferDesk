@@ -54,6 +54,20 @@ export const toStatusLabel = (value: string | null | undefined): string => {
 
 export { userStatusLabelByValue, statusToneKeyByValue };
 
+export const userStatusMemoText = `Статусы пользователя:
+
+1) На проверке
+Вход в систему недоступен.
+
+2) Активен
+Вход в систему разрешён. Доступ к функциям определяется ролью.
+
+3) Неактивен
+Вход в систему запрещён. Работа в системе недоступна.
+
+4) В чёрном списке
+Вход в систему запрещён. Пользователь заблокирован.`;
+
 export const UserStatusPill = ({ value }: { value: string | null | undefined }) => {
   const normalized = normalizeAnyStatus(value);
   const tone = statusToneKeyByValue[normalized] ?? 'info';

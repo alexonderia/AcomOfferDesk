@@ -6,7 +6,7 @@
 Единый источник правды по окружениям/запуску:
 - `docs/operations/environments.md`
 
-`notifications_worker` - отдельный процесс, который доставляет уведомления, отправляя письма (и опционально legacy Telegram-сообщения) на основе событий из RabbitMQ.
+`notifications_worker` - отдельный процесс, который доставляет уведомления, отправляя письма (и опционально legacy Telegram- или MAX-сообщения) на основе событий из RabbitMQ.
 
 Это вынесенный асинхронный слой: тяжелая внешняя доставка (SMTP / Telegram HTTP API) не выполняется в request/response потоке backend.
 
@@ -15,7 +15,8 @@
 В runtime воркер используется для доставки уведомлений, которые backend публикует в очередь:
 
 - email-уведомления для событий бизнес-доменов (например, по заявкам/офертам);
-- legacy Telegram-уведомления для отката/совместимости (обычно выключены).
+- legacy Telegram-уведомления для отката/совместимости (обычно выключены);
+- MAX push-уведомления, если включен `MAX_BOT_ENABLED`.
 
 ## Что делает воркер (high-level)
 
@@ -23,10 +24,11 @@
 2. Создает/подписывается на exchange `app.events`.
 3. Потребляет очереди:
    - `notify.email` по routing key `email.send`;
-   - `notify.tg` по routing key `telegram.send` (только если включен `LEGACY_TELEGRAM_ENABLED`).
+   - `notify.tg` по routing key `telegram.send` (только если включен `LEGACY_TELEGRAM_ENABLED`);
+   - `notify.max` по routing key `max.send` (только если включен `MAX_BOT_ENABLED`).
 4. Для каждого сообщения:
    - распаковывает JSON payload;
-   - вызывает `send_email(payload)` или `send_tg(payload)`.
+   - вызывает `send_email(payload)`, `send_tg(payload)` или `send_max(payload)`.
 
 ## Где лежит код
 
@@ -37,6 +39,7 @@ notifications_worker/
     consumers.py     # обработчик входящих сообщений (routing по routing_key)
     email_sender.py  # SMTP-отправка email с дедупликацией и анти-spam кулдауном
     tg_sender.py     # legacy Telegram отправка через Telegram Bot API
+    max_sender.py    # MAX push через MAX Bot API
   requirements.txt
   Dockerfile
 ```
@@ -73,6 +76,8 @@ Backend публикует email через `shared.broker.EXCHANGE` и `shared.
 - routing key email: `email.send`
 - очередь legacy telegram: `notify.tg` (rollback compatibility)
 - routing key telegram: `telegram.send` (legacy)
+- очередь MAX: `notify.max`
+- routing key MAX: `max.send`
 
 ## ENV-переменные воркера
 
@@ -85,6 +90,20 @@ Backend публикует email через `shared.broker.EXCHANGE` и `shared.
 - `LEGACY_TELEGRAM_ENABLED` (default: `false`)
 
 Если выключен, воркер подписывается только на email очередь и legacy Telegram события пропускает.
+
+### MAX push
+
+- `MAX_BOT_ENABLED` (default: `false`)
+- `MAX_BOT_TOKEN` — токен бота MAX (обязателен для доставки)
+- `MAX_API_BASE_URL` (default: `https://platform-api.max.ru`)
+
+Если выключен, воркер не подписывается на очередь `notify.max`.
+
+Ожидаемый payload для MAX (`notify.max`):
+
+- `user_id`: MAX user id (строка)
+- `text`: текст сообщения
+- `button_text` / `button_url`: опциональная inline-кнопка-ссылка
 
 ### SMTP email
 

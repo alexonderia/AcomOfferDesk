@@ -356,6 +356,7 @@ app.project_manager
 app.lead_economist
 app.economist
 app.operator
+app.security_officer
 app.contractor
 EOF
 )
@@ -570,6 +571,14 @@ requests.status.update
 requests.amounts.read
 offers.contractor_info.read
 normative_files.read
+EOF
+)
+ROLE_APP_SECURITY_OFFICER=$(cat <<'EOF'
+profile.manage_own
+feedback.create
+contractors.read
+contractors.profile.read
+contractors.profile.status.update
 EOF
 )
 ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE=$(cat <<'EOF'
@@ -1066,6 +1075,7 @@ ensure_api_roles_model() {
   sync_composite_role "app.lead_economist" "$ROLE_APP_LEAD_ECONOMIST"
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
+  sync_composite_role "app.security_officer" "$ROLE_APP_SECURITY_OFFICER"
   sync_composite_role "delegation.contractors.profile.status.update" "$ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE"
   sync_composite_role "delegation.department.requests.read" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ"
   sync_composite_role "delegation.department.requests.update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE"

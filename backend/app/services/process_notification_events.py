@@ -8,16 +8,29 @@ from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.repositories.notifications import NotificationRepository
 from app.services.notifications import NotificationService
+from shared.normalization import as_optional_int as _as_optional_int
+from shared.normalization import normalize_optional_str as _normalize_optional_str
+from shared.notification_copy import (
+    message_created_body,
+    message_created_title,
+    offer_created_body,
+    offer_created_title,
+    offer_status_changed_body,
+    offer_status_changed_title,
+    offer_updated_body,
+    offer_updated_title,
+    request_created_body,
+    request_created_title,
+    request_deadline_changed_body,
+    request_deadline_changed_title,
+    request_files_changed_body,
+    request_files_changed_title,
+    request_status_changed_body,
+    request_status_changed_title,
+)
 from shared.process_notifications import ProcessNotificationEvent
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_optional_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
 
 
 def _normalize_user_ids(values: Sequence[Any]) -> list[str]:
@@ -44,6 +57,14 @@ def _status_severity(status: str | None) -> str:
 
 
 _PROFILE_PLACEHOLDER_VALUES = frozenset({"не указано", "-"})
+_CONTRACTOR_REGISTRATION_SOURCES = frozenset({"contractor_tg", "oidc_invite"})
+_CONTRACTOR_CREATION_SOURCES = frozenset({"manual_contractor"})
+_USER_STATUS_LABELS = {
+    "review": "На проверке",
+    "active": "Активен",
+    "inactive": "Неактивен",
+    "blacklist": "В черном списке",
+}
 
 
 def _is_missing_profile_value(value: str | None) -> bool:
@@ -71,6 +92,27 @@ def _resolve_user_target_descriptor(
         return mail
 
     return login
+
+
+def _is_contractor_lifecycle_target(*, payload: dict[str, Any]) -> bool:
+    target_role = payload.get("target_role")
+    if target_role == settings.contractor_role_id:
+        return True
+    if payload.get("target_is_contractor") is True:
+        return True
+    source = _normalize_optional_str(payload.get("source"))
+    return source in _CONTRACTOR_REGISTRATION_SOURCES or source in _CONTRACTOR_CREATION_SOURCES
+
+
+def _format_user_status_label(value: str | None) -> str:
+    normalized = _normalize_optional_str(value)
+    if normalized is None:
+        return "-"
+    return _USER_STATUS_LABELS.get(normalized, normalized)
+
+
+def _request_entity_id(request_id: str | None) -> int | None:
+    return _as_optional_int(request_id)
 
 
 class ProcessNotificationEventHandler:
@@ -174,8 +216,8 @@ class ProcessNotificationEventHandler:
             user_id=recipient_user_id,
             notification_type="offer.created",
             severity="info",
-            title="Новое коммерческое предложение",
-            body=f"По заявке №{event.request_id} создано новое КП." if event.request_id is not None else "Создано новое КП.",
+            title=offer_created_title(),
+            body=offer_created_body(request_id=event.request_id),
             entity_type="offer",
             entity_id=event.offer_id,
             link_url=link_url,
@@ -230,8 +272,8 @@ class ProcessNotificationEventHandler:
             user_ids=filtered_recipients,
             notification_type="message.created",
             severity="info",
-            title="Новое сообщение",
-            body=f"В чате по заявке №{event.request_id} появилось новое сообщение."
+            title=message_created_title(),
+            body=message_created_body(request_id=event.request_id)
             if event.request_id is not None
             else "В чате появилось новое сообщение.",
             entity_type="message",
@@ -258,12 +300,7 @@ class ProcessNotificationEventHandler:
     ) -> None:
         payload = event.payload or {}
         new_status = _normalize_optional_str(payload.get("new_status")) or ""
-        title_map = {
-            "accepted": "Коммерческое предложение принято",
-            "rejected": "Коммерческое предложение отклонено",
-            "deleted": "Коммерческое предложение удалено",
-        }
-        title = title_map.get(new_status, "Статус коммерческого предложения изменен")
+        title = offer_status_changed_title(new_status=new_status)
         recipients = _normalize_user_ids(payload.get("recipient_user_ids") or payload.get("recipients") or [])
         if not recipients and uow.requests is not None and event.request_id is not None:
             request_row = await uow.requests.get_by_id(request_id=event.request_id)
@@ -290,7 +327,7 @@ class ProcessNotificationEventHandler:
             notification_type="offer.status_changed",
             severity="info",
             title=title,
-            body=f"По заявке №{event.request_id} изменен статус КП." if event.request_id is not None else "Изменен статус коммерческого предложения.",
+            body=offer_status_changed_body(request_id=event.request_id),
             entity_type="offer",
             entity_id=event.offer_id,
             link_url=f"/offers/{event.offer_id}/workspace" if event.offer_id is not None else None,
@@ -356,12 +393,14 @@ class ProcessNotificationEventHandler:
             user_ids=filtered_recipients,
             notification_type="request.status_changed",
             severity="info",
-            title="Статус заявки изменен",
-            body=f"Заявка №{event.request_id}: {previous_status} -> {new_status}."
-            if event.request_id is not None
-            else f"Статус заявки изменен: {previous_status} -> {new_status}.",
+            title=request_status_changed_title(),
+            body=request_status_changed_body(
+                request_id=event.request_id,
+                previous_status=previous_status,
+                new_status=new_status,
+            ),
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,
@@ -417,10 +456,10 @@ class ProcessNotificationEventHandler:
             user_ids=filtered_recipients,
             notification_type="request.created",
             severity="info",
-            title="Новая заявка",
-            body=f"Создана новая заявка №{event.request_id}." if event.request_id is not None else "Создана новая заявка.",
+            title=request_created_title(),
+            body=request_created_body(request_id=event.request_id),
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,
@@ -476,10 +515,10 @@ class ProcessNotificationEventHandler:
             user_ids=filtered_recipients,
             notification_type="request.files_changed",
             severity="info",
-            title="Изменены файлы заявки",
-            body=f"По заявке №{event.request_id} обновлены вложения.",
+            title=request_files_changed_title(),
+            body=request_files_changed_body(request_id=event.request_id),
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}",
             payload={
                 "event_id": event.event_id,
@@ -538,8 +577,8 @@ class ProcessNotificationEventHandler:
             user_ids=filtered_recipients,
             notification_type="offer.updated",
             severity="info",
-            title="КП обновлено",
-            body="По коммерческому предложению сохранены изменения.",
+            title=offer_updated_title(),
+            body=offer_updated_body(request_id=request_id),
             entity_type="offer",
             entity_id=event.offer_id,
             link_url=f"/offers/{event.offer_id}/workspace" if event.offer_id is not None else None,
@@ -573,9 +612,13 @@ class ProcessNotificationEventHandler:
         target_user_id = _normalize_optional_str(payload.get("target_user_id"))
         old_status = _normalize_optional_str(payload.get("old_status"))
         new_status = _normalize_optional_str(payload.get("new_status"))
+        is_contractor_target = _is_contractor_lifecycle_target(payload=payload)
 
+        recipient_role_ids = [settings.admin_role_id, settings.superadmin_role_id]
+        if is_contractor_target:
+            recipient_role_ids.append(settings.security_officer_role_id)
         rows = await uow.users.list_by_role_ids_with_profiles_and_roles(
-            role_ids=[settings.admin_role_id, settings.superadmin_role_id],
+            role_ids=recipient_role_ids,
         )
         recipients = _normalize_user_ids(
             user.id for user, _, _ in rows if user.id != actor_user_id
@@ -596,16 +639,25 @@ class ProcessNotificationEventHandler:
             target_user_id=target_user_id,
             target_profile=target_profile,
         )
+        old_status_label = _format_user_status_label(old_status)
+        new_status_label = _format_user_status_label(new_status)
+        title = "Изменен статус контрагента" if is_contractor_target else "Изменен статус пользователя"
+        body = (
+            f"Изменен статус контрагента {target_descriptor}: {old_status_label} -> {new_status_label}."
+            if is_contractor_target
+            else f"Изменен статус пользователя {target_descriptor}."
+        )
+        link_url = "/contractors" if is_contractor_target else "/admin/users"
 
         await service.create_many_for_users(
             user_ids=filtered_recipients,
             notification_type="user.status_changed",
             severity=_status_severity(new_status),
-            title="Изменен статус пользователя",
-            body=f"Изменен статус пользователя {target_descriptor}.",
+            title=title,
+            body=body,
             entity_type="user",
             entity_id=None,
-            link_url="/admin/users",
+            link_url=link_url,
             payload={
                 "event_id": event.event_id,
                 "dedupe_key": event.dedupe_key,
@@ -633,13 +685,16 @@ class ProcessNotificationEventHandler:
         payload = event.payload or {}
         target_user_id = _normalize_optional_str(payload.get("target_user_id"))
         actor_user_id = event.actor_user_id
+        is_contractor_target = _is_contractor_lifecycle_target(payload=payload)
+        source = _normalize_optional_str(payload.get("source"))
 
+        recipient_role_ids = [settings.admin_role_id, settings.superadmin_role_id]
+        if is_contractor_target:
+            recipient_role_ids.append(settings.security_officer_role_id)
         rows = await uow.users.list_by_role_ids_with_profiles_and_roles(
-            role_ids=[settings.admin_role_id, settings.superadmin_role_id],
+            role_ids=recipient_role_ids,
         )
-        recipients = _normalize_user_ids(
-            user.id for user, _, _ in rows if user.id != actor_user_id
-        )
+        recipients = _normalize_user_ids(user.id for user, _, _ in rows)
         if not recipients:
             return
 
@@ -656,23 +711,34 @@ class ProcessNotificationEventHandler:
             target_user_id=target_user_id,
             target_profile=target_profile,
         )
+        title = "Пользователь ожидает модерации"
+        body = f"Требуется проверка пользователя {target_descriptor}."
+        link_url = "/admin/users"
+        if is_contractor_target and source in _CONTRACTOR_REGISTRATION_SOURCES:
+            title = "Зарегистрирован новый контрагент"
+            body = f"Зарегистрирован новый контрагент: {target_descriptor}."
+            link_url = "/contractors"
+        elif is_contractor_target and source in _CONTRACTOR_CREATION_SOURCES:
+            title = "Создан новый контрагент"
+            body = f"Создан новый контрагент: {target_descriptor}."
+            link_url = "/contractors"
 
         await service.create_many_for_users(
             user_ids=filtered_recipients,
             notification_type="user.review_required",
             severity="warning",
-            title="Пользователь ожидает модерации",
-            body=f"Требуется проверка пользователя {target_descriptor}.",
+            title=title,
+            body=body,
             entity_type="user",
             entity_id=None,
-            link_url="/admin/users",
+            link_url=link_url,
             payload={
                 "event_id": event.event_id,
                 "dedupe_key": event.dedupe_key,
                 "target_user_id": target_user_id,
                 "target_role": payload.get("target_role"),
                 "actor_user_id": actor_user_id,
-                "source": payload.get("source"),
+                "source": source,
             },
         )
 
@@ -709,7 +775,7 @@ class ProcessNotificationEventHandler:
             title=title,
             body=body,
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,
@@ -820,10 +886,10 @@ class ProcessNotificationEventHandler:
             user_id=recipient_user_id,
             notification_type="request.deadline_changed",
             severity="info",
-            title="Изменен срок заявки",
-            body=f"По заявке №{event.request_id} изменен срок." if event.request_id is not None else "Изменен срок заявки.",
+            title=request_deadline_changed_title(),
+            body=request_deadline_changed_body(request_id=event.request_id),
             entity_type="request",
-            entity_id=event.request_id,
+            entity_id=_request_entity_id(event.request_id),
             link_url=f"/requests/{event.request_id}" if event.request_id is not None else None,
             payload={
                 "event_id": event.event_id,

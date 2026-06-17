@@ -44,10 +44,9 @@ class ReplyTokenCodec:
         if str(payload.get("purpose", "")).strip() not in {"", self.PURPOSE}:
             raise Unauthorized("Invalid reply token payload")
 
-        try:
-            request_id = int(payload.get("request_id"))
-        except (TypeError, ValueError) as exc:
-            raise Unauthorized("Invalid reply token payload") from exc
+        request_id = str(payload.get("request_id", "")).strip()
+        if not request_id:
+            raise Unauthorized("Invalid reply token payload")
 
         user_id = str(payload.get("user_id", "")).strip()
         if not user_id:

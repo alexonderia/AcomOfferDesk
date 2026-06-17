@@ -5,6 +5,7 @@ export const resolveUserTabFromParam = (value: string | null): UserTab => {
   if (
     value === 'economists' ||
     value === 'admins' ||
+    value === 'security_officers' ||
     value === 'lead_economists' ||
     value === 'project_managers' ||
     value === 'operators'

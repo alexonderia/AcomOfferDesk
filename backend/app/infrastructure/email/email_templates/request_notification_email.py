@@ -4,6 +4,11 @@ from datetime import datetime
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from shared.notification_copy import (
+    NOTIFICATION_BUTTON_LABEL,
+    REGISTRATION_BUTTON_LABEL,
+    request_created_body,
+)
 from app.infrastructure.email.email_templates.email_contact_blocks import (
     EmailContactInfo,
     build_contact_html_block,
@@ -142,13 +147,13 @@ def _build_standard_text(
 
     return (
         "AcomOfferDesk\n\n"
-        f"Новая заявка №{request_id}\n"
+        f"{request_created_body(request_id=request_id)}\n"
         f"Описание: {request_description}\n"
         f"Дедлайн: {deadline_label}\n\n"
         "Как можно оставить отклик:\n"
         "Вариант 1. Откройте веб-сервис по ссылке ниже и оставьте отклик самостоятельно.\n"
         f"{reply_block}"
-        f"Открыть заявку: {request_url}"
+        f"{NOTIFICATION_BUTTON_LABEL}: {request_url}"
         f"{warning_block}"
         f"{_reply_token_mail_footer_text(reply_token=reply_token) if reply_token else ''}\n"
     )
@@ -192,7 +197,7 @@ def _build_registration_text(
         f"Описание: {request_description}\n"
         f"Дедлайн: {deadline_label}\n\n"
         "Для доступа к заявке зарегистрируйтесь в сервисе по ссылке ниже.\n"
-        f"Перейти к регистрации: {registration_url}\n"
+        f"{REGISTRATION_BUTTON_LABEL}: {registration_url}\n"
         f"{contact_block}\n"
         f"Ссылка на регистрацию: {registration_url}\n"
         f"Срок действия ссылки: {ttl_label}.\n"
@@ -237,7 +242,7 @@ def _build_standard_html(
         else ""
     )
     reply_token_footer_html = _reply_token_mail_footer_html(reply_token=reply_token) if reply_token else ""
-    button_html = build_primary_button_html(label="Открыть заявку", url=request_url)
+    button_html = build_primary_button_html(label=NOTIFICATION_BUTTON_LABEL, url=request_url)
 
     return f"""
 <!DOCTYPE html>
@@ -345,7 +350,7 @@ def _build_registration_html(
                   <tr>
                     <td bgcolor="#0969da" style="border-radius:6px;">
                       <a href="{escaped_registration_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
-                        Перейти к регистрации
+                        {REGISTRATION_BUTTON_LABEL}
                       </a>
                     </td>
                     {legacy_tg_button_html}

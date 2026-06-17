@@ -7,6 +7,7 @@ import { ActionButton } from '@shared/components/ActionButton';
 import type { MouseEvent } from 'react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isVisibleNotification } from '../model/isVisibleNotification';
 import { useNotificationsState } from '../model/NotificationsContext';
 import { resolveNotificationLink } from '../model/resolveNotificationLink';
 import { NOTIFICATION_PAGE_SIZE } from '../model/constants';
@@ -154,9 +155,11 @@ export const NotificationBell = ({
     isLoadingMore,
   } = useNotificationsState();
 
+  const visibleItems = useMemo(() => items.filter(isVisibleNotification), [items]);
+
   const { displayNotifications, sourceIdsByDisplayId } = useMemo(
-    () => buildCenterDisplayNotifications(items, expandedGroupTypes),
-    [expandedGroupTypes, items]
+    () => buildCenterDisplayNotifications(visibleItems, expandedGroupTypes),
+    [expandedGroupTypes, visibleItems]
   );
 
   const filteredDisplayNotifications = useMemo(() => {

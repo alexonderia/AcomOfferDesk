@@ -1,10 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
+import { mapUserListItemToContractorListItem } from '@features/contractors/lib/mapUserListItemToContractorListItem';
 import type { UserListItem } from '@entities/user';
+import { listContractors } from '@shared/api/contractors/listContractors';
+import type { ContractorListItem } from '@shared/api/contractors/listContractors';
 import { registerUser } from '@shared/api/auth/registerUser';
 import { createManualContractor } from '@shared/api/users/createManualContractor';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
@@ -196,8 +199,10 @@ export const useAdminPage = () => {
     isLeadLike ? 'economists' : resolveUserTabFromParam(searchParams.get('users_tab'))
   );
   const [users, setUsers] = useState<UserListItem[]>([]);
+  const [contractors, setContractors] = useState<ContractorListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const loadUsersRequestIdRef = useRef(0);
   const [economistAndLeadManagers, setEconomistAndLeadManagers] = useState<UserListItem[]>([]);
   const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
   const [projectManagerRoleManagers, setProjectManagerRoleManagers] = useState<UserListItem[]>([]);
@@ -212,7 +217,7 @@ export const useAdminPage = () => {
 
     if (canCreateUser) {
       if (session?.roleId === ROLE.SUPERADMIN) {
-        [ROLE.ADMIN, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
+        [ROLE.ADMIN, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
       } else if (session?.roleId === ROLE.ADMIN) {
         [ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
       } else if (session?.roleId === ROLE.LEAD_ECONOMIST) {
@@ -238,10 +243,19 @@ export const useAdminPage = () => {
   }, [activeTab, baseCreateRoleIds, session?.roleId]);
 
   const canOpenCreateDialog = roleOptions.length > 0;
+  const preferredCreateRoleId = roleOptions[0]?.id ?? roleByTab[activeTab];
 
   const roleUpdateOptions = useMemo(() => {
     if (canUpdateRoleAny) {
-      return [ROLE.ADMIN, ROLE.CONTRACTOR, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR];
+      return [
+        ROLE.ADMIN,
+        ROLE.CONTRACTOR,
+        ROLE.SECURITY_OFFICER,
+        ROLE.PROJECT_MANAGER,
+        ROLE.LEAD_ECONOMIST,
+        ROLE.ECONOMIST,
+        ROLE.OPERATOR
+      ];
     }
     if (!canUpdateRoleEconomy) {
       return [];
@@ -257,9 +271,8 @@ export const useAdminPage = () => {
 
   const userTabs = useMemo(() => {
     if (isLeadLike) return tabOptions.filter((tab) => tab.value === 'economists');
-    if (session?.roleId === ROLE.SUPERADMIN) return tabOptions;
-    return tabOptions.filter((tab) => tab.value === 'contractors' || tab.value === 'economists' || tab.value === 'admins');
-  }, [isLeadLike, session?.roleId]);
+    return tabOptions;
+  }, [isLeadLike]);
 
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
   const { showErrorToast, showSuccessToast } = useSystemToasts();
@@ -267,7 +280,7 @@ export const useAdminPage = () => {
   const form = useLiveValidatedForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      role_id: roleOptions[0]?.id ?? ROLE.CONTRACTOR,
+      role_id: preferredCreateRoleId,
       login: '',
       password: '',
       confirmPassword: '',
@@ -333,19 +346,6 @@ export const useAdminPage = () => {
     }
   }, [isLeadLike, searchParams]);
 
-  useEffect(() => {
-    if (!canOpenCreateDialog) return;
-
-    if (searchParams.get('create') === '1') {
-      setIsDialogOpen(true);
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('create');
-        return next;
-      }, { replace: true });
-    }
-  }, [canOpenCreateDialog, searchParams, setSearchParams]);
-
   const loadManagers = useCallback(async () => {
     const [economistManagersResult, leadEconomistManagersResult, projectManagerRoleManagersResult] = await Promise.allSettled([
       getManagerCandidates(ROLE.ECONOMIST),
@@ -382,12 +382,33 @@ export const useAdminPage = () => {
   }, [managerOptions, requiresParent, selectedParentId, selectedRoleId, setValue]);
 
   const loadUsers = useCallback(async () => {
+    const requestId = loadUsersRequestIdRef.current + 1;
+    loadUsersRequestIdRef.current = requestId;
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      const response = await getUsers(isLeadLike ? undefined : roleByTab[activeTab]);
-      setUsers(response.items);
+      if (!isLeadLike && activeTab === 'contractors') {
+        const items = hasPermission(session, 'contractors.read')
+          ? await listContractors()
+          : (await getUsers(roleByTab.contractors)).items.map(mapUserListItemToContractorListItem);
+        if (loadUsersRequestIdRef.current !== requestId) {
+          return;
+        }
+        setContractors(items);
+        setUsers([]);
+      } else {
+        const response = await getUsers(isLeadLike ? undefined : roleByTab[activeTab]);
+        if (loadUsersRequestIdRef.current !== requestId) {
+          return;
+        }
+        setUsers(response.items);
+        setContractors([]);
+      }
+      setUsersError(null);
     } catch (error) {
+      if (loadUsersRequestIdRef.current !== requestId) {
+        return;
+      }
       setUsersError(
         error instanceof Error
           ? error.message
@@ -396,9 +417,11 @@ export const useAdminPage = () => {
             : employeePersonLabels.loadListError
       );
     } finally {
-      setIsLoadingUsers(false);
+      if (loadUsersRequestIdRef.current === requestId) {
+        setIsLoadingUsers(false);
+      }
     }
-  }, [activeTab, isLeadLike]);
+  }, [activeTab, isLeadLike, session]);
 
   useEffect(() => {
     void loadUsers();
@@ -406,7 +429,7 @@ export const useAdminPage = () => {
 
   const resetForm = useCallback(() => {
     reset({
-      role_id: roleOptions[0]?.id ?? ROLE.CONTRACTOR,
+      role_id: preferredCreateRoleId,
       login: '',
       password: '',
       confirmPassword: '',
@@ -421,7 +444,25 @@ export const useAdminPage = () => {
       address: '',
       note: ''
     });
-  }, [reset, roleOptions]);
+  }, [preferredCreateRoleId, reset]);
+
+  const openCreateDialog = useCallback(() => {
+    resetForm();
+    setIsDialogOpen(true);
+  }, [resetForm]);
+
+  useEffect(() => {
+    if (!canOpenCreateDialog) return;
+
+    if (searchParams.get('create') === '1') {
+      openCreateDialog();
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('create');
+        return next;
+      }, { replace: true });
+    }
+  }, [canOpenCreateDialog, openCreateDialog, searchParams, setSearchParams]);
 
   const handleClose = () => {
     setIsDialogOpen(false);
@@ -477,10 +518,11 @@ export const useAdminPage = () => {
     isAdmin,
     canViewRoleIds,
     isDialogOpen,
-    setIsDialogOpen,
+    openCreateDialog,
     activeTab,
     handleTabChange,
     users,
+    contractors,
     isLoadingUsers,
     usersError,
     canUpdateStatus,

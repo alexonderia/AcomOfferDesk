@@ -3,6 +3,7 @@ import { ROLE } from '@shared/constants/roles';
 export type UserTab =
   | 'contractors'
   | 'admins'
+  | 'security_officers'
   | 'economists'
   | 'lead_economists'
   | 'project_managers'
@@ -11,6 +12,7 @@ export type UserTab =
 export const roleByTab: Record<UserTab, number> = {
   contractors: ROLE.CONTRACTOR,
   admins: ROLE.ADMIN,
+  security_officers: ROLE.SECURITY_OFFICER,
   economists: ROLE.ECONOMIST,
   lead_economists: ROLE.LEAD_ECONOMIST,
   project_managers: ROLE.PROJECT_MANAGER,
@@ -20,6 +22,7 @@ export const roleByTab: Record<UserTab, number> = {
 export const tabOptions: Array<{ value: UserTab; label: string }> = [
   { value: 'contractors', label: 'Контрагенты' },
   { value: 'admins', label: 'Администраторы' },
+  { value: 'security_officers', label: 'Служба безопасности' },
   { value: 'economists', label: 'Экономисты' },
   { value: 'lead_economists', label: 'Ведущие экономисты' },
   { value: 'project_managers', label: 'Руководители проекта' },
@@ -33,7 +36,8 @@ export const roleLabelsById: Record<number, string> = {
   4: 'Руководитель проекта',
   5: 'Ведущий экономист',
   6: 'Экономист',
-  7: 'Оператор'
+  7: 'Оператор',
+  8: 'Служба безопасности'
 };
 
 export const addUserButtonSx = {

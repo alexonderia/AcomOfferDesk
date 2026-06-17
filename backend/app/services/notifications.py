@@ -15,8 +15,18 @@ from app.domain.notifications import (
 from app.models.orm_models import UserNotification
 from app.realtime.contracts import OutboundEnvelope
 from app.repositories.notifications import NotificationRepository
+from shared.normalization import as_optional_int as _as_optional_int
+from shared.notification_copy import (
+    message_created_body,
+    message_created_title,
+    offer_created_body,
+    offer_created_title,
+    request_status_changed_body,
+    request_status_changed_title,
+)
 
 logger = logging.getLogger(__name__)
+_SYSTEM_TOAST_CHANNEL = "system"
 
 
 RealtimeNotificationSender = Callable[..., Awaitable[bool]]
@@ -153,8 +163,8 @@ class NotificationService:
             user_id=recipient_user_id,
             notification_type="offer.created",
             severity="info",
-            title="Новое коммерческое предложение",
-            body=f"По заявке №{request_id} создано новое КП.",
+            title=offer_created_title(),
+            body=offer_created_body(request_id=request_id),
             entity_type="offer",
             entity_id=offer_id,
             link_url=f"/requests/{request_id}",
@@ -181,8 +191,8 @@ class NotificationService:
             user_ids=recipients,
             notification_type="message.created",
             severity="info",
-            title="Новое сообщение",
-            body=f"В чате по заявке №{request_id} появилось новое сообщение.",
+            title=message_created_title(),
+            body=message_created_body(request_id=request_id),
             entity_type="message",
             entity_id=message_id,
             link_url=f"/offers/{offer_id}/workspace",
@@ -256,10 +266,14 @@ class NotificationService:
             user_id=recipient_user_id,
             notification_type="request.status_changed",
             severity="info",
-            title="Статус заявки изменен",
-            body=f"Заявка №{request_id}: {previous_status} -> {new_status}.",
+            title=request_status_changed_title(),
+            body=request_status_changed_body(
+                request_id=request_id,
+                previous_status=previous_status,
+                new_status=new_status,
+            ),
             entity_type="request",
-            entity_id=request_id,
+            entity_id=_as_optional_int(request_id),
             link_url=f"/requests/{request_id}",
             payload={
                 "request_id": request_id,
@@ -291,6 +305,9 @@ class NotificationService:
             payload=payload,
         )
 
+    async def emit_created_event(self, notification: UserNotification) -> None:
+        await self._send_created_event_best_effort(notification)
+
     def _ensure_supported_type(self, value: str) -> None:
         if value not in NOTIFICATION_TYPES:
             raise ValueError(f"Unsupported notification type: {value}")
@@ -305,6 +322,9 @@ class NotificationService:
             if sender is None:
                 return
             payload = notification.payload if isinstance(notification.payload, dict) else {}
+            tracking_only = str(payload.get("tracking_only") or "").strip().lower()
+            if tracking_only == "true":
+                return
             process_event_id = payload.get("event_id")
             normalized_event_id = str(process_event_id).strip() if process_event_id is not None else ""
 
@@ -325,9 +345,24 @@ class NotificationService:
                     notification.user_id,
                     notification.id,
                 )
+                return
+            if self._resolve_toast_channel(payload) == _SYSTEM_TOAST_CHANNEL:
+                await sender(
+                    user_id=notification.user_id,
+                    event=OutboundEnvelope(
+                        type="system.toast",
+                        data={
+                            "title": notification.title,
+                            "message": notification.body,
+                            "severity": notification.severity,
+                            "link_url": notification.link_url,
+                            "notification_id": notification.id,
+                        },
+                    ),
+                )
         except Exception:
             logger.exception(
-                "Failed to send realtime notification.created event: user_id=%s notification_id=%s",
+                "Failed to send realtime notification event: user_id=%s notification_id=%s",
                 notification.user_id,
                 notification.id,
             )
@@ -344,6 +379,16 @@ class NotificationService:
         except Exception:
             logger.exception("Realtime runtime is unavailable for notification delivery")
             return None
+
+    @staticmethod
+    def _resolve_toast_channel(payload: dict | None) -> str | None:
+        if not isinstance(payload, dict):
+            return None
+        raw_channel = payload.get("toast_channel")
+        if raw_channel is None:
+            return None
+        normalized_channel = str(raw_channel).strip().lower()
+        return normalized_channel or None
 
 
 def notification_to_dict(notification: UserNotification) -> dict:

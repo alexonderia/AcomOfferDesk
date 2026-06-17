@@ -21,3 +21,17 @@ def test_keycloak_bootstrap_admin_app_role_does_not_gain_contractor_read_permiss
     members = manifest['app.admin']
     assert 'contractors.read' not in members
     assert 'contractors.profile.read' not in members
+
+
+def test_keycloak_bootstrap_security_officer_app_role_contains_only_expected_permissions() -> None:
+    manifest = load_app_role_members()
+
+    assert manifest["app.security_officer"] == frozenset(
+        {
+            "profile.manage_own",
+            "feedback.create",
+            "contractors.read",
+            "contractors.profile.read",
+            "contractors.profile.status.update",
+        }
+    )

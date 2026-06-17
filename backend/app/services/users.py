@@ -20,11 +20,13 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.tg_users import TgUserRepository
+from app.repositories.max_compat import max_subject_value
 from app.repositories.telegram_compat import telegram_subject_value
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
     notify_contractor_status_changed_email,
+    notify_registration_completed_email,
 )
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.keycloak_admin import KeycloakAdminService
@@ -32,9 +34,17 @@ from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
 from app.services.registration_admin_notify import (
     RegistrationNotifyContext,
     notify_new_user_registration,
+    schedule_registration_review_required_notification,
 )
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.repositories.max_users import MaxUserRepository
+from app.models.orm_models import MaxUser
+from app.services.max_notifications import (
+    notify_access_closed as notify_max_access_closed,
+    notify_access_opened as notify_max_access_opened,
+)
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
@@ -48,6 +58,7 @@ ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
 ROLE_NAME_ECONOMIST = "Экономист"
 ROLE_NAME_OPERATOR = "Оператор"
 ROLE_NAME_CONTRACTOR = "Контрагент"
+ROLE_NAME_SECURITY_OFFICER = "Служба безопасности"
 PLACEHOLDER_TEXT = "Не указано"
 SUBORDINATE_PROFILE_ROLE_IDS = {
     settings.lead_economist_role_id,
@@ -141,26 +152,12 @@ def _collect_descendant_user_ids(
     return descendant_ids
 
 
-def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -> bool:
-    if current_role_id == settings.superadmin_role_id:
-        return True
-    if current_role_id == settings.project_manager_role_id:
-        return target_role_id in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-            settings.operator_role_id,
-        }
-    if current_role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
-        return target_role_id in {settings.economist_role_id, settings.operator_role_id}
-    return False
-
-
 def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
     if has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY):
         return {
             settings.admin_role_id,
             settings.contractor_role_id,
+            settings.security_officer_role_id,
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
@@ -233,6 +230,8 @@ def _role_name_by_id(*, role_id: int) -> str:
         return ROLE_NAME_OPERATOR
     if role_id == settings.contractor_role_id:
         return ROLE_NAME_CONTRACTOR
+    if role_id == settings.security_officer_role_id:
+        return ROLE_NAME_SECURITY_OFFICER
     if role_id == settings.admin_role_id:
         return ROLE_NAME_ADMIN
     if role_id == settings.superadmin_role_id:
@@ -255,6 +254,45 @@ def _normalize_keycloak_email_value(value: str | None) -> str | None:
     if not normalized or normalized == PLACEHOLDER_TEXT:
         return None
     return normalized
+
+
+@dataclass(frozen=True, slots=True)
+class KeycloakNameParts:
+    first_name: str | None
+    last_name: str | None
+    middle_name: str | None
+    should_sync: bool
+
+
+def _split_full_name_for_keycloak(full_name: str | None) -> KeycloakNameParts:
+    normalized = (full_name or "").strip()
+    if not normalized or normalized.lower() in {PLACEHOLDER_TEXT.lower(), "none", "null"}:
+        return KeycloakNameParts(first_name=None, last_name=None, middle_name=None, should_sync=False)
+
+    tokens = [token for token in normalized.split() if token]
+    if not tokens:
+        return KeycloakNameParts(first_name=None, last_name=None, middle_name=None, should_sync=False)
+    if len(tokens) == 1:
+        return KeycloakNameParts(
+            first_name=None,
+            last_name=tokens[0],
+            middle_name=None,
+            should_sync=True,
+        )
+    if len(tokens) == 2:
+        return KeycloakNameParts(
+            first_name=tokens[1],
+            last_name=tokens[0],
+            middle_name=None,
+            should_sync=True,
+        )
+
+    return KeycloakNameParts(
+        first_name=" ".join(tokens[1:-1]),
+        last_name=tokens[0],
+        middle_name=tokens[-1],
+        should_sync=True,
+    )
 
 
 def _normalize_notification_email(value: str | None) -> str | None:
@@ -434,9 +472,14 @@ class UserRegistrationService:
                 mail=normalized_mail,
             )
         )
+        keycloak_name_parts = _split_full_name_for_keycloak(normalized_full_name)
         keycloak_user = await self._keycloak_admin.ensure_user(
             username=user_id,
             email=normalized_mail,
+            first_name=keycloak_name_parts.first_name,
+            last_name=keycloak_name_parts.last_name,
+            middle_name=keycloak_name_parts.middle_name,
+            sync_names=keycloak_name_parts.should_sync,
             email_verified=False,
         )
         await _bind_keycloak_account(
@@ -497,7 +540,8 @@ class ContractorRegistrationService:
     async def register_contractor(
         self,
         *,
-        tg_user_id: int,
+        tg_user_id: int | None = None,
+        max_user_id: str | None = None,
         login: str,
         password: str,
         full_name: str,
@@ -509,12 +553,35 @@ class ContractorRegistrationService:
         address: str,
         note: str,
     ) -> User:
-        telegram_subject = telegram_subject_value(tg_user_id)
+        if tg_user_id is not None and max_user_id is not None:
+            raise Conflict("Нельзя одновременно привязать Telegram и MAX")
+        if tg_user_id is None and max_user_id is None:
+            raise Conflict("Не указан канал регистрации")
+
         if await self._users.exists(login):
             raise Conflict("Пользователь уже существует")
-        existing_by_tg = await self._users.get_by_tg_user_id(tg_user_id)
-        if existing_by_tg is not None:
-            raise Conflict("Пользователь Telegram уже привязан")
+
+        messenger_provider: str
+        messenger_subject: str
+        registration_source: str
+        registration_notify_source: str
+
+        if max_user_id is not None:
+            messenger_provider = "max"
+            messenger_subject = max_subject_value(max_user_id)
+            registration_source = "contractor_max"
+            registration_notify_source = "contractor_max_registration"
+            existing_by_messenger = await self._users.get_by_max_user_id(max_user_id)
+            if existing_by_messenger is not None:
+                raise Conflict("Пользователь MAX уже привязан")
+        else:
+            messenger_provider = "telegram"
+            messenger_subject = telegram_subject_value(tg_user_id)  # type: ignore[arg-type]
+            registration_source = "contractor_tg"
+            registration_notify_source = "contractor_tg_registration"
+            existing_by_messenger = await self._users.get_by_tg_user_id(tg_user_id)  # type: ignore[arg-type]
+            if existing_by_messenger is not None:
+                raise Conflict("Пользователь Telegram уже привязан")
 
         user = User(
             id=login,
@@ -543,8 +610,8 @@ class ContractorRegistrationService:
         await self._user_auth_accounts.add(
             UserAuthAccount(
                 id_user=login,
-                provider="telegram",
-                external_subject_id=telegram_subject,
+                provider=messenger_provider,
+                external_subject_id=messenger_subject,
                 external_username=None,
                 external_email=None,
                 is_active=True,
@@ -553,8 +620,8 @@ class ContractorRegistrationService:
         await self._user_contact_channels.add(
             UserContactChannel(
                 id_user=login,
-                channel_type="telegram",
-                channel_value=telegram_subject,
+                channel_type=messenger_provider,
+                channel_value=messenger_subject,
                 is_verified=False,
                 verified_at=None,
                 is_primary=True,
@@ -564,7 +631,7 @@ class ContractorRegistrationService:
         contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
         await notify_new_user_registration(
             RegistrationNotifyContext(
-                source="contractor_tg",
+                source=registration_source,
                 user_id=user.id,
                 role_id=settings.contractor_role_id,
                 role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
@@ -574,20 +641,27 @@ class ContractorRegistrationService:
                 company_name=company_name,
             )
         )
-        self._schedule_process_notification_event(
-            build_process_notification_event(
-                event_type="user.review_required",
-                actor_user_id=user.id,
-                entity_type="user",
-                entity_id=user.id,
-                dedupe_key=f"user.review_required:{user.id}:contractor_tg",
-                payload={
-                    "target_user_id": user.id,
-                    "target_role": settings.contractor_role_id,
-                    "source": "contractor_tg_registration",
-                },
-            )
+        schedule_registration_review_required_notification(
+            after_commit_hook_registrar=self._after_commit_hook_registrar,
+            user_id=user.id,
+            actor_user_id=user.id,
+            role_id=settings.contractor_role_id,
+            source=registration_notify_source,
         )
+        normalized_mail = (company_mail or "").strip().lower()
+        if normalized_mail and normalized_mail != "не указано":
+            if self._after_commit_hook_registrar is None:
+                await notify_registration_completed_email(
+                    to_email=normalized_mail,
+                    recipient_user_id=user.id,
+                )
+            else:
+                self._after_commit_hook_registrar(
+                    lambda: notify_registration_completed_email(
+                        to_email=normalized_mail,
+                        recipient_user_id=user.id,
+                    )
+                )
         return user
 
 
@@ -694,6 +768,35 @@ class UserQueryService:
             target_user_id=subordinate_user_id,
         )
 
+    async def resolve_hierarchy_subordinate_user_ids(
+        self,
+        *,
+        current_user: CurrentUser,
+    ) -> set[str] | None:
+        if current_user.role_id not in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            return None
+        if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
+            return None
+        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
+            return None
+
+        rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=[
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+                settings.operator_role_id,
+            ],
+        )
+        return _collect_descendant_user_ids(
+            manager_user_id=current_user.user_id,
+            rows=rows,
+        )
+
     async def _resolve_internal_staff_scope_user_ids(
         self,
         *,
@@ -733,7 +836,7 @@ class UserQueryService:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Профиль подчиненного доступен только для разрешенных ролей")
 
-        if not _can_manage_subordinate_role(
+        if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
         ):
@@ -810,7 +913,7 @@ class UserQueryService:
                     address=company.address if company else None,
                     note=company.note if company else None,
                 )
-                for user, profile, company, tg_user in rows
+                for user, profile, company, tg_user, _max_user_id in rows
             ]
 
         rows = await self._users.list_users_with_profiles(role_id=role_id)
@@ -994,7 +1097,7 @@ class UserQueryService:
                 mail=profile.mail if profile else None,
                 company_mail=company.mail if company else None,
             )
-            for user, profile, company, _ in rows
+            for user, profile, company, _, _max_user_id in rows
             if user.status == "active"
         ]
     
@@ -1047,16 +1150,14 @@ class UserQueryService:
             unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
         )
     
-    async def get_me(self, current_user: CurrentUser) -> MeResult:
-        UserPolicy.ensure_can_manage_own_profile(current_user)
-
-        row = await self._users.get_with_profile_and_company_contacts(user_id=current_user.user_id)
+    async def _get_me_result(self, *, user_id: str) -> MeResult:
+        row = await self._users.get_with_profile_and_company_contacts(user_id=user_id)
         if row is None:
             raise NotFound("Пользователь не найден")
 
         user, profile, company_contact = row
-        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=current_user.user_id)
-        unavailable_periods = await self._user_status_periods.list_for_user(user_id=current_user.user_id)
+        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=user_id)
+        unavailable_periods = await self._user_status_periods.list_for_user(user_id=user_id)
 
         return MeResult(
             user_id=user.id,
@@ -1076,6 +1177,14 @@ class UserQueryService:
             unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
         )
 
+    async def get_me(self, current_user: CurrentUser) -> MeResult:
+        UserPolicy.ensure_can_manage_own_profile(current_user)
+        return await self._get_me_result(user_id=current_user.user_id)
+
+    async def get_me_for_review_onboarding(self, current_user: CurrentUser) -> MeResult:
+        UserPolicy.ensure_can_manage_review_onboarding(current_user)
+        return await self._get_me_result(user_id=current_user.user_id)
+
 @dataclass(frozen=True)
 class UserRoleUpdateResult:
     user_id: str
@@ -1090,7 +1199,6 @@ class UserManagerUpdateResult:
 
 @dataclass(frozen=True)
 class ManualContractorUpdateInput:
-    login: str | None = None
     password: str | None = None
     full_name: str | None = None
     phone: str | None = None
@@ -1120,6 +1228,7 @@ class ManualContractorService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         user_auth_accounts: UserAuthAccountRepository,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         *,
         keycloak_admin: KeycloakAdminService | None = None,
     ) -> None:
@@ -1127,6 +1236,7 @@ class ManualContractorService:
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_auth_accounts = user_auth_accounts
+        self._after_commit_hook_registrar = after_commit_hook_registrar
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
@@ -1302,6 +1412,13 @@ class ManualContractorService:
                 company_name=normalized_data.company_name,
             )
         )
+        schedule_registration_review_required_notification(
+            after_commit_hook_registrar=self._after_commit_hook_registrar,
+            user_id=login,
+            actor_user_id=current_user.user_id,
+            role_id=settings.contractor_role_id,
+            source="manual_contractor",
+        )
         return login
 
     def _normalize_value(self, value: str | None) -> str | None:
@@ -1333,32 +1450,10 @@ class ManualContractorService:
         profile = await self._profiles.get_by_id(user.id)
         if profile is None:
             raise NotFound("Профиль не найден")
+
         company_contact = await self._company_contacts.get_by_id(user.id)
-        if company_contact is None:
-            raise NotFound("Контакты компании не найдены")
 
-        next_login = self._normalize_value(data.login)
         next_password = self._normalize_value(data.password)
-        if next_login is not None and next_login != user.id:
-            if await self._users.exists(next_login):
-                raise Conflict("Пользователь уже существует")
-
-            cloned_user = User(
-                id=next_login,
-                id_role=user.id_role,
-                id_parent=user.id_parent,
-                status=user.status,
-                tg_user_id=user.tg_user_id,
-            )
-            await self._users.add(cloned_user)
-            await self._users.reassign_user_id(old_user_id=user.id, new_user_id=next_login)
-            await self._users.delete_by_id(user_id=user.id)
-            user = cloned_user
-            profile = await self._profiles.get_by_id(user.id)
-            company_contact = await self._company_contacts.get_by_id(user.id)
-            if profile is None or company_contact is None:
-                raise Conflict("Данные профиля контрагента неконсистентны")
-
         if next_password is not None:
             raise Forbidden("Пароль управляется провайдером аутентификации")
 
@@ -1378,23 +1473,41 @@ class ManualContractorService:
             profile.phone = phone
         if mail is not None:
             profile.mail = mail
-        if company_name is not None:
-            company_contact.company_name = company_name
-        if inn is not None:
-            company_contact.inn = inn
-        if company_phone is not None:
-            company_contact.phone = company_phone
-        if company_mail is not None:
-            company_contact.mail = company_mail
-        if address is not None:
-            company_contact.address = address
-        if note is not None:
-            company_contact.note = note
 
+        if company_contact is None:
+            company_contact = CompanyContact(
+                id=user.id,
+                company_name=company_name or PLACEHOLDER_TEXT,
+                inn=inn or PLACEHOLDER_TEXT,
+                phone=company_phone or PLACEHOLDER_TEXT,
+                mail=company_mail or PLACEHOLDER_TEXT,
+                address=address or PLACEHOLDER_TEXT,
+                note=note or PLACEHOLDER_TEXT,
+            )
+            await self._company_contacts.add(company_contact)
+        else:
+            if company_name is not None:
+                company_contact.company_name = company_name
+            if inn is not None:
+                company_contact.inn = inn
+            if company_phone is not None:
+                company_contact.phone = company_phone
+            if company_mail is not None:
+                company_contact.mail = company_mail
+            if address is not None:
+                company_contact.address = address
+            if note is not None:
+                company_contact.note = note
+
+        keycloak_name_parts = _split_full_name_for_keycloak(profile.full_name)
         keycloak_user = await self._keycloak_admin.ensure_user(
             username=user.id,
             previous_username=original_user_id,
             email=_normalize_keycloak_email_value(company_contact.mail),
+            first_name=keycloak_name_parts.first_name,
+            last_name=keycloak_name_parts.last_name,
+            middle_name=keycloak_name_parts.middle_name,
+            sync_names=keycloak_name_parts.should_sync,
             email_verified=False,
         )
         await _bind_keycloak_account(
@@ -1449,7 +1562,7 @@ class UserRoleService:
         if not has_role_update_any and has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):
             if user.id == current_user.user_id:
                 raise Forbidden("Вы можете обновлять роль только своих подчиненных")
-            if not _can_manage_subordinate_role(
+            if not UserPolicy.can_manage_subordinate_role(
                 current_role_id=current_user.role_id,
                 target_role_id=user.id_role,
             ):
@@ -1508,7 +1621,7 @@ class UserManagerService:
         if user is None:
             raise NotFound("Пользователь не найден")
 
-        if not _can_manage_subordinate_role(
+        if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=user.id_role,
         ):
@@ -1579,14 +1692,23 @@ class UserStatusService:
         users: UserRepository,
         tg_users: TgUserRepository,
         profiles: ProfileRepository,
+        user_auth_accounts: UserAuthAccountRepository | None = None,
+        max_users: MaxUserRepository | None = None,
+        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._users = users
         self._tg_users = tg_users
+        self._max_users = max_users
         self._profiles = profiles
+        self._user_auth_accounts = user_auth_accounts
+        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -1595,6 +1717,42 @@ class UserStatusService:
             lambda: self._process_event_publisher(event)
         )
         return True
+
+    async def _sync_contractor_keycloak_access_on_activation(
+        self,
+        *,
+        user: User,
+        old_status: str,
+    ) -> None:
+        if self._user_auth_accounts is None:
+            return
+        if user.id_role != settings.contractor_role_id:
+            return
+        if user.status != "active" or old_status == "active":
+            return
+
+        keycloak_account = await self._user_auth_accounts.get_by_user_provider(
+            user_id=user.id,
+            provider="keycloak",
+            include_inactive=False,
+        )
+        if keycloak_account is None:
+            return
+
+        keycloak_subject_id = (keycloak_account.external_subject_id or "").strip()
+        if not keycloak_subject_id:
+            return
+
+        await sync_keycloak_app_role_for_user(
+            self._keycloak_admin,
+            keycloak_user_id=keycloak_subject_id,
+            local_role_id=user.id_role,
+        )
+        try:
+            await self._keycloak_admin.logout_user_sessions(user_id=keycloak_subject_id)
+        except Conflict:
+            # Role sync is the source-of-truth change; token refresh can recover later if session logout fails.
+            pass
 
     async def update_statuses(
         self,
@@ -1629,7 +1787,7 @@ class UserStatusService:
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            if not _can_manage_subordinate_role(
+            if not UserPolicy.can_manage_subordinate_role(
                 current_role_id=current_user.role_id,
                 target_role_id=user.id_role,
             ):
@@ -1648,6 +1806,15 @@ class UserStatusService:
         if settings.telegram_legacy_enabled and user.tg_user_id is not None:
             tg_user = await self._tg_users.get_by_id(user.tg_user_id)
 
+        max_user: MaxUser | None = None
+        linked_max_user_id: str | None = None
+        if settings.max_bot_enabled and self._max_users is not None:
+            linked_max_user_id = await self._users.get_linked_max_user_id(user.id)
+            if linked_max_user_id is not None:
+                max_user = await self._max_users.get_by_id(linked_max_user_id)
+                if max_user is None:
+                    max_user = MaxUser(id=linked_max_user_id, status="review")
+
         if settings.telegram_legacy_enabled and tg_status is not None:
             if tg_user is None:
                 raise Conflict("У пользователя нет привязанного аккаунта Telegram")
@@ -1659,9 +1826,20 @@ class UserStatusService:
             elif user_status == "active":
                 await self._tg_users.update_status(tg_user, "approved")
 
+        if settings.max_bot_enabled and max_user is not None and self._max_users is not None and tg_status is None:
+            if user_status in {"inactive", "blacklist"}:
+                await self._max_users.update_status(max_user, "disapproved")
+            elif user_status == "active":
+                await self._max_users.update_status(max_user, "approved")
+
         old_status = user.status
         status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
+        if status_changed:
+            await self._sync_contractor_keycloak_access_on_activation(
+                user=user,
+                old_status=old_status,
+            )
 
         notify_tg_id = tg_user.id if tg_user is not None else None
 
@@ -1685,18 +1863,42 @@ class UserStatusService:
             else:
                 await notify_tg_access_closed(notify_tg_id)
 
+        if settings.max_bot_enabled and linked_max_user_id is not None and max_user is not None:
+            max_system_enabled = True
+            if self._notification_preferences is not None:
+                max_system_enabled = await self._notification_preferences.is_channel_enabled(
+                    user_id=user.id,
+                    channel_type="max",
+                    notification_type="system",
+                )
+            if max_system_enabled:
+                if user.status == "active" and max_user.status == "approved":
+                    await notify_max_access_opened(linked_max_user_id)
+                elif status_changed:
+                    await notify_max_access_closed(linked_max_user_id)
+
         if status_changed and user.id_role == settings.contractor_role_id:
             if notify_email is None:
                 contractor_email_notification_reason = "missing_email"
             else:
-                contractor_email_notification_queued = await notify_contractor_status_changed_email(
-                    to_email=notify_email,
-                    user_status=user.status,
-                    recipient_user_id=user.id,
-                    initiator_user_id=current_user.user_id,
-                )
-                if not contractor_email_notification_queued:
-                    contractor_email_notification_reason = "status_not_supported_for_email"
+                email_system_enabled = True
+                if self._notification_preferences is not None:
+                    email_system_enabled = await self._notification_preferences.is_channel_enabled(
+                        user_id=user.id,
+                        channel_type="email",
+                        notification_type="system",
+                    )
+                if not email_system_enabled:
+                    contractor_email_notification_reason = "disabled_by_user"
+                else:
+                    contractor_email_notification_queued = await notify_contractor_status_changed_email(
+                        to_email=notify_email,
+                        user_status=user.status,
+                        recipient_user_id=user.id,
+                        initiator_user_id=current_user.user_id,
+                    )
+                    if not contractor_email_notification_queued:
+                        contractor_email_notification_reason = "status_not_supported_for_email"
 
         if status_changed:
             event = build_process_notification_event(
@@ -1718,21 +1920,12 @@ class UserStatusService:
                 },
             )
             self._schedule_process_notification_event(event)
-            if user.status == "review":
-                self._schedule_process_notification_event(
-                    build_process_notification_event(
-                        event_type="user.review_required",
-                        actor_user_id=current_user.user_id,
-                        entity_type="user",
-                        entity_id=user.id,
-                        dedupe_key=f"user.review_required:{user.id}:{old_status}->review",
-                        payload={
-                            "target_user_id": user.id,
-                            "target_role": user.id_role,
-                            "source": "user_status_service",
-                        },
-                    )
-                )
+            # user.status_changed already notifies admins about the transition to
+            # "review" with full context (who changed, old→new).  Firing a second
+            # user.review_required event from this code path would produce a
+            # duplicate ping for the same admin recipients.  New-registration
+            # paths call registration_admin_notify which issues user.review_required
+            # independently and is NOT suppressed here.
 
         return result
     
@@ -1745,11 +1938,16 @@ class UserSelfService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         user_status_periods: UserStatusPeriodRepository,
+        user_auth_accounts: UserAuthAccountRepository | None = None,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_status_periods = user_status_periods
+        self._user_auth_accounts = user_auth_accounts
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     async def _ensure_accessible_subordinate(
         self,
@@ -1759,7 +1957,7 @@ class UserSelfService:
     ) -> None:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Данными подчиненного можно управлять только для разрешенных ролей подчиненных")
-        if not _can_manage_subordinate_role(
+        if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
         ):
@@ -1817,6 +2015,57 @@ class UserSelfService:
         UserPolicy.ensure_can_manage_own_profile(current_user)
         raise Forbidden("Пароль управляется провайдером аутентификации")
 
+    async def _apply_my_profile_update(
+        self,
+        *,
+        user_id: str,
+        full_name: str | None,
+        phone: str | None,
+        mail: str | None,
+    ) -> None:
+        profile = await self._profiles.get_by_id(user_id)
+        if profile is None:
+            profile = Profile(
+                id=user_id,
+                full_name=full_name or "Не указано",
+                phone=phone or "Не указано",
+                mail=mail or "Не указано",
+            )
+            await self._profiles.add(profile)
+        else:
+            if full_name is not None:
+                profile.full_name = full_name
+            if phone is not None:
+                profile.phone = phone
+            if mail is not None:
+                profile.mail = mail
+
+        await self._sync_linked_keycloak_profile(user_id=user_id, profile=profile)
+
+    async def _sync_linked_keycloak_profile(self, *, user_id: str, profile: Profile) -> None:
+        if self._user_auth_accounts is None:
+            return
+
+        account = await self._user_auth_accounts.get_by_user_provider(
+            user_id=user_id,
+            provider="keycloak",
+            include_inactive=False,
+        )
+        if account is None:
+            return
+
+        keycloak_name_parts = _split_full_name_for_keycloak(profile.full_name)
+        await self._keycloak_admin.ensure_user(
+            username=user_id,
+            previous_username=account.external_username,
+            email=_normalize_keycloak_email_value(profile.mail),
+            first_name=keycloak_name_parts.first_name,
+            last_name=keycloak_name_parts.last_name,
+            middle_name=keycloak_name_parts.middle_name,
+            sync_names=keycloak_name_parts.should_sync,
+            email_verified=False,
+        )
+
     async def update_my_profile(
         self,
         current_user: CurrentUser,
@@ -1826,30 +2075,33 @@ class UserSelfService:
         mail: str | None,
     ) -> None:
         UserPolicy.ensure_can_manage_own_profile(current_user)
+        await self._apply_my_profile_update(
+            user_id=current_user.user_id,
+            full_name=full_name,
+            phone=phone,
+            mail=mail,
+        )
 
-        profile = await self._profiles.get_by_id(current_user.user_id)
-        if profile is None:
-            await self._profiles.add(
-                Profile(
-                    id=current_user.user_id,
-                    full_name=full_name or "Не указано",
-                    phone=phone or "Не указано",
-                    mail=mail or "Не указано",
-                )
-            )
-            return
-
-        if full_name is not None:
-            profile.full_name = full_name
-        if phone is not None:
-            profile.phone = phone
-        if mail is not None:
-            profile.mail = mail
-
-    async def update_my_company_contacts(
+    async def update_my_profile_for_review_onboarding(
         self,
         current_user: CurrentUser,
         *,
+        full_name: str | None,
+        phone: str | None,
+        mail: str | None,
+    ) -> None:
+        UserPolicy.ensure_can_manage_review_onboarding(current_user)
+        await self._apply_my_profile_update(
+            user_id=current_user.user_id,
+            full_name=full_name,
+            phone=phone,
+            mail=mail,
+        )
+
+    async def _apply_my_company_contacts_update(
+        self,
+        *,
+        user_id: str,
         company_name: str | None,
         inn: str | None,
         company_phone: str | None,
@@ -1857,15 +2109,13 @@ class UserSelfService:
         address: str | None,
         note: str | None,
     ) -> None:
-        UserPolicy.ensure_can_manage_own_company_contacts(current_user)
-
-        company_contacts = await self._company_contacts.get_by_id(current_user.user_id)
+        company_contacts = await self._company_contacts.get_by_id(user_id)
         if company_contacts is None:
             if company_name is None or inn is None:
                 raise NotFound("Контакты компании не найдены")
             await self._company_contacts.add(
                 CompanyContact(
-                    id=current_user.user_id,
+                    id=user_id,
                     company_name=company_name,
                     inn=inn,
                     phone=company_phone or PLACEHOLDER_TEXT,
@@ -1888,6 +2138,50 @@ class UserSelfService:
             company_contacts.address = address
         if note is not None:
             company_contacts.note = note
+
+    async def update_my_company_contacts(
+        self,
+        current_user: CurrentUser,
+        *,
+        company_name: str | None,
+        inn: str | None,
+        company_phone: str | None,
+        company_mail: str | None,
+        address: str | None,
+        note: str | None,
+    ) -> None:
+        UserPolicy.ensure_can_manage_own_company_contacts(current_user)
+        await self._apply_my_company_contacts_update(
+            user_id=current_user.user_id,
+            company_name=company_name,
+            inn=inn,
+            company_phone=company_phone,
+            company_mail=company_mail,
+            address=address,
+            note=note,
+        )
+
+    async def update_my_company_contacts_for_review_onboarding(
+        self,
+        current_user: CurrentUser,
+        *,
+        company_name: str | None,
+        inn: str | None,
+        company_phone: str | None,
+        company_mail: str | None,
+        address: str | None,
+        note: str | None,
+    ) -> None:
+        UserPolicy.ensure_can_manage_review_onboarding(current_user)
+        await self._apply_my_company_contacts_update(
+            user_id=current_user.user_id,
+            company_name=company_name,
+            inn=inn,
+            company_phone=company_phone,
+            company_mail=company_mail,
+            address=address,
+            note=note,
+        )
 
     async def set_subordinate_unavailability_period(
         self,

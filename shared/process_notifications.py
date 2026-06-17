@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
+from shared.normalization import as_optional_int as _as_optional_int
+from shared.normalization import normalize_optional_str as _normalize_optional_str
+
 PROCESS_EVENT_TYPES = {
     "offer.created",
     "offer.updated",
@@ -25,23 +28,6 @@ PROCESS_EVENT_TYPES = {
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _normalize_optional_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
-
-
-def _as_optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
 
 def _ensure_iso_datetime(value: Any) -> str:
     raw = str(value or "").strip()

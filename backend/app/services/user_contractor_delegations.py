@@ -141,7 +141,7 @@ class UserContractorDelegationsService:
         current_user: CurrentUser,
         target_role_id: int,
     ) -> bool:
-        if current_user.role_id != settings.superadmin_role_id:
+        if current_user.role_id not in {settings.superadmin_role_id, settings.admin_role_id}:
             return False
         return target_role_id == settings.lead_economist_role_id
 

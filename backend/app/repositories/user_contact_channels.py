@@ -42,6 +42,28 @@ class UserContactChannelRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_by_user(
+        self,
+        *,
+        user_id: str,
+        channel_types: list[str] | None = None,
+        include_inactive: bool = False,
+    ) -> list[UserContactChannel]:
+        stmt = (
+            select(UserContactChannel)
+            .where(UserContactChannel.id_user == user_id)
+            .order_by(UserContactChannel.is_primary.desc(), UserContactChannel.id.asc())
+        )
+        if channel_types:
+            stmt = stmt.where(UserContactChannel.channel_type.in_(channel_types))
+        if not include_inactive:
+            stmt = stmt.where(UserContactChannel.is_active.is_(True))
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def flush(self) -> None:
+        await self._session.flush()
+
     async def upsert_channel(
         self,
         *,
@@ -72,11 +94,16 @@ class UserContactChannelRepository:
             await self.add(channel)
             return channel
 
+        value_changed = existing.channel_value != channel_value
         existing.channel_value = channel_value
         existing.is_primary = is_primary
         existing.is_active = True
         existing.updated_at = now
         if is_verified:
             existing.is_verified = True
-            existing.verified_at = now
+            if value_changed or existing.verified_at is None:
+                existing.verified_at = now
+        elif value_changed:
+            existing.is_verified = False
+            existing.verified_at = None
         return existing

@@ -76,6 +76,7 @@ class RequestItemSchema(BaseModel):
 
 
 class RequestDetailsSchema(RequestItemSchema):
+    plan_name: str | None = None
     offers: list[OfferItemSchema]
 
 

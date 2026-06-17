@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import Select, String, cast, func, select, update
+from sqlalchemy import Select, String, and_, cast, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm_models import UserNotification
@@ -11,6 +11,11 @@ from app.models.orm_models import UserNotification
 class NotificationRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    @staticmethod
+    def _payload_text(key_name: str):
+        # Use JSON text extraction (->>) so scalar values compare without JSON quotes.
+        return cast(UserNotification.payload.op("->>")(key_name), String)
 
     async def create(self, notification: UserNotification) -> UserNotification:
         self._session.add(notification)
@@ -27,7 +32,10 @@ class NotificationRepository:
     async def list_for_user(self, *, user_id: str, limit: int, offset: int) -> list[UserNotification]:
         stmt: Select[tuple[UserNotification]] = (
             select(UserNotification)
-            .where(UserNotification.user_id == user_id)
+            .where(
+                UserNotification.user_id == user_id,
+                self._visible_notification_predicate(),
+            )
             .order_by(UserNotification.created_at.desc(), UserNotification.id.desc())
             .limit(limit)
             .offset(offset)
@@ -39,6 +47,7 @@ class NotificationRepository:
         stmt = select(func.count(UserNotification.id)).where(
             UserNotification.user_id == user_id,
             UserNotification.read_at.is_(None),
+            self._visible_notification_predicate(),
         )
         result = await self._session.execute(stmt)
         return int(result.scalar_one() or 0)
@@ -83,7 +92,7 @@ class NotificationRepository:
         stmt = select(UserNotification.id).where(
             UserNotification.user_id == user_id,
             UserNotification.type == notification_type,
-            cast(UserNotification.payload["correlation_id"], String) == correlation_id,
+            NotificationRepository._payload_text("correlation_id") == correlation_id,
         ).limit(1)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
@@ -99,7 +108,68 @@ class NotificationRepository:
         stmt = select(UserNotification.id).where(
             UserNotification.user_id == user_id,
             UserNotification.type == notification_type,
-            cast(UserNotification.payload[key_name], String) == key_value,
+            NotificationRepository._payload_text(key_name) == key_value,
         ).limit(1)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def get_by_user_and_payload_key(
+        self,
+        *,
+        user_id: str,
+        key_name: str,
+        key_value: str,
+        notification_type: str | None = None,
+    ) -> UserNotification | None:
+        notifications = await self.list_by_user_and_payload_key(
+            user_id=user_id,
+            key_name=key_name,
+            key_value=key_value,
+            notification_type=notification_type,
+        )
+        if not notifications:
+            return None
+        return notifications[0]
+
+    async def list_by_user_and_payload_key(
+        self,
+        *,
+        user_id: str,
+        key_name: str,
+        key_value: str,
+        notification_type: str | None = None,
+    ) -> list[UserNotification]:
+        predicates = [
+            UserNotification.user_id == user_id,
+            NotificationRepository._payload_text(key_name) == key_value,
+        ]
+        if notification_type is not None:
+            predicates.append(UserNotification.type == notification_type)
+        stmt = (
+            select(UserNotification)
+            .where(and_(*predicates))
+            .order_by(UserNotification.id.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def delete_by_ids(self, notification_ids: Sequence[int]) -> int:
+        if not notification_ids:
+            return 0
+        stmt = delete(UserNotification).where(UserNotification.id.in_(notification_ids))
+        result = await self._session.execute(stmt)
+        return int(result.rowcount or 0)
+
+    async def save(self, notification: UserNotification) -> UserNotification:
+        await self._session.flush()
+        await self._session.refresh(notification)
+        return notification
+
+    @staticmethod
+    def _visible_notification_predicate():
+        tracking_flag = NotificationRepository._payload_text("tracking_only")
+        return or_(
+            UserNotification.payload.is_(None),
+            tracking_flag.is_(None),
+            tracking_flag != "true",
+        )

@@ -32,6 +32,10 @@ export const getDefaultPathByRole = (roleId: number, permissions: string[] = [])
     return '/admin';
   }
 
+  if (permissions.includes('contractors.read')) {
+    return '/contractors';
+  }
+
   if (roleId === ROLE.PROJECT_MANAGER || roleId === ROLE.LEAD_ECONOMIST) {
     return '/pm-dashboard';
   }

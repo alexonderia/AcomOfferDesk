@@ -40,7 +40,7 @@ def _normalize_email(email: str | None) -> str | None:
 
 
 def _normalize_full_name(claims: KeycloakAccessTokenClaims) -> str | None:
-    if claims.middle_name and (claims.family_name or claims.given_name):
+    if claims.family_name or claims.given_name or claims.middle_name:
         parts = [
             part.strip()
             for part in (claims.family_name, claims.given_name, claims.middle_name)
@@ -53,17 +53,7 @@ def _normalize_full_name(claims: KeycloakAccessTokenClaims) -> str | None:
     if explicit:
         return explicit
 
-    parts = [part.strip() for part in (claims.given_name, claims.family_name) if part and part.strip()]
-    if parts:
-        return " ".join(parts)
-
     return None
-
-
-def _is_blank_profile_value(value: str | None) -> bool:
-    normalized = (value or "").strip().lower()
-    return normalized in {"", _PROFILE_PLACEHOLDER.lower(), "none", "null"}
-
 
 class IdentitySyncService:
     def __init__(
@@ -156,10 +146,10 @@ class IdentitySyncService:
             )
             return
 
-        if normalized_full_name and _is_blank_profile_value(profile.full_name):
+        if normalized_full_name:
             profile.full_name = normalized_full_name
 
-        if normalized_email and _is_blank_profile_value(profile.mail):
+        if normalized_email:
             profile.mail = normalized_email
 
     async def _resolve_or_create_local_user(

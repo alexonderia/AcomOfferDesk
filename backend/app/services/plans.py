@@ -577,18 +577,16 @@ class PlanService:
                 current_user=current_user,
             )
             total_plan_ids = self._collect_tree_plan_ids(trees)
-            distributed_plan_ids = self._collect_tree_plan_ids(trees[0].children) if trees else []
             total_owner_ids = self._collect_tree_owner_ids(trees)
-            distributed_owner_ids = self._collect_tree_owner_ids(trees[0].children) if trees else []
             return await self._request_stats_from_trees(
                 trees=trees,
                 period_start=period_start,
                 period_end=period_end,
                 total_scope_to_tree_plan_ids=True,
                 total_plan_ids=total_plan_ids,
-                distributed_plan_ids=distributed_plan_ids,
+                distributed_plan_ids=total_plan_ids,
                 total_owner_ids=total_owner_ids,
-                distributed_owner_ids=distributed_owner_ids,
+                distributed_owner_ids=None,
             )
 
         if root_user_id is not None:

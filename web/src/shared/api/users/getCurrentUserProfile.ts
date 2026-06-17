@@ -66,6 +66,19 @@ type CurrentUserResponse = {
   data?: ProfilePayload;
 };
 
+type NotificationPreferencesPayload = {
+  mode?: string;
+  email_available?: boolean;
+  max_available?: boolean;
+  email?: string | null;
+  max_user_id?: string | null;
+  preferences?: Record<string, { email?: boolean; max?: boolean }>;
+};
+
+type NotificationPreferencesResponse = {
+  data?: NotificationPreferencesPayload;
+};
+
 export type CurrentUserProfile = {
   userId: string;
   roleId: number;
@@ -100,6 +113,19 @@ export type CurrentUserProfile = {
   actions: UserActions;
 };
 
+export type NotificationPreferencesMode = 'all' | 'email_only' | 'max_only' | 'none' | 'custom';
+
+export type NotificationPreferenceType = 'chat' | 'request' | 'offer' | 'system';
+
+export type NotificationPreferences = {
+  mode: NotificationPreferencesMode;
+  emailAvailable: boolean;
+  maxAvailable: boolean;
+  email: string | null;
+  maxUserId: string | null;
+  preferences: Record<NotificationPreferenceType, { email: boolean; max: boolean }>;
+};
+
 type UpdateCredentialsPayload = {
   current_password: string;
   new_password: string;
@@ -109,6 +135,10 @@ type UpdateProfilePayload = {
   full_name?: string;
   phone?: string;
   mail?: string;
+};
+
+type LinkMyMaxAccountPayload = {
+  code: string;
 };
 
 type SetUnavailabilityPeriodPayload = {
@@ -124,6 +154,11 @@ type UpdateCompanyContactsPayload = {
   company_mail?: string;
   address?: string;
   note?: string;
+};
+
+type UpdateNotificationPreferencesPayload = {
+  mode?: Exclude<NotificationPreferencesMode, 'custom'>;
+  preferences?: Partial<Record<NotificationPreferenceType, { email?: boolean; max?: boolean }>>;
 };
 
 const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfile => {
@@ -169,11 +204,54 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
   };
 };
 
+const mapNotificationPreferences = (response: NotificationPreferencesResponse): NotificationPreferences => {
+  const data = response.data ?? {};
+  const mode = data.mode;
+  return {
+    mode:
+      mode === 'all' || mode === 'email_only' || mode === 'max_only' || mode === 'none' || mode === 'custom'
+        ? mode
+        : 'none',
+    emailAvailable: Boolean(data.email_available),
+    maxAvailable: Boolean(data.max_available),
+    email: data.email ?? null,
+    maxUserId: data.max_user_id ?? null,
+    preferences: {
+      chat: {
+        email: Boolean(data.preferences?.chat?.email),
+        max: Boolean(data.preferences?.chat?.max)
+      },
+      request: {
+        email: Boolean(data.preferences?.request?.email),
+        max: Boolean(data.preferences?.request?.max)
+      },
+      offer: {
+        email: Boolean(data.preferences?.offer?.email),
+        max: Boolean(data.preferences?.offer?.max)
+      },
+      system: {
+        email: Boolean(data.preferences?.system?.email),
+        max: Boolean(data.preferences?.system?.max)
+      }
+    }
+  };
+};
+
 export const getCurrentUserProfile = async (): Promise<CurrentUserProfile> => {
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me',
     { method: 'GET' },
     'Ошибка загрузки профиля пользователя'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
+export const getRegistrationCurrentUserProfile = async (): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/registration-profile',
+    { method: 'GET' },
+    'РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё РґР°РЅРЅС‹С… СЂРµРіРёСЃС‚СЂР°С†РёРё'
   );
 
   return mapCurrentUserProfile(response);
@@ -199,11 +277,65 @@ export const updateMyProfile = async (payload: UpdateProfilePayload): Promise<Cu
   return mapCurrentUserProfile(response);
 };
 
+export const linkMyMaxAccount = async (payload: LinkMyMaxAccountPayload): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/max-link',
+    { method: 'POST', body: JSON.stringify(payload) },
+    'Не удалось привязать MAX'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
+export const getMyNotificationPreferences = async (): Promise<NotificationPreferences> => {
+  const response = await fetchJson<NotificationPreferencesResponse>(
+    '/api/v1/users/me/notification-preferences',
+    { method: 'GET' },
+    'Не удалось загрузить настройки уведомлений'
+  );
+
+  return mapNotificationPreferences(response);
+};
+
+export const updateMyNotificationPreferences = async (
+  payload: UpdateNotificationPreferencesPayload
+): Promise<NotificationPreferences> => {
+  const response = await fetchJson<NotificationPreferencesResponse>(
+    '/api/v1/users/me/notification-preferences',
+    { method: 'PUT', body: JSON.stringify(payload) },
+    'Не удалось сохранить настройки уведомлений'
+  );
+
+  return mapNotificationPreferences(response);
+};
+
+export const updateMyRegistrationProfile = async (payload: UpdateProfilePayload): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/registration-profile',
+    { method: 'PATCH', body: JSON.stringify(payload) },
+    'РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РґР°РЅРЅС‹С… СЂРµРіРёСЃС‚СЂР°С†РёРё'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
 export const updateMyCompanyContacts = async (payload: UpdateCompanyContactsPayload): Promise<CurrentUserProfile> => {
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me/company-contacts',
     { method: 'PATCH', body: JSON.stringify(payload) },
     'Ошибка обновления данных компании'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
+export const updateMyRegistrationCompanyContacts = async (
+  payload: UpdateCompanyContactsPayload
+): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/registration-company-contacts',
+    { method: 'PATCH', body: JSON.stringify(payload) },
+    'РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РґР°РЅРЅС‹С… РµРіРёСЃС‚СЂР°С†РёРё'
   );
 
   return mapCurrentUserProfile(response);

@@ -196,7 +196,10 @@ jobs:
               return 1
             }
 
-            for infra_svc in rabbitmq minio keycloak; do
+            # file_guard must come up before backend (backend depends_on file_guard: service_healthy);
+            # the per-service app loop below uses --no-deps and would not start it otherwise,
+            # leaving uploads failing closed (503) until file_guard is running.
+            for infra_svc in rabbitmq minio keycloak file_guard; do
               if ! compose_up_infra "$infra_svc"; then
                 echo "=== docker compose ps -a (infra: $infra_svc) ==="
                 docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true

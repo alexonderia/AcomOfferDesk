@@ -33,7 +33,23 @@ def test_normalize_full_name_uses_middle_name_for_fio_order() -> None:
     assert _normalize_full_name(claims) == "Иванов Иван Иванович"
 
 
-def test_normalize_full_name_keeps_explicit_value_without_middle_name() -> None:
-    claims = _build_claims(full_name="User Name", middle_name=None)
+def test_normalize_full_name_uses_fio_order_without_middle_name() -> None:
+    claims = _build_claims(
+        full_name="User Name",
+        given_name="Имя",
+        family_name="Фамилия",
+        middle_name=None,
+    )
+
+    assert _normalize_full_name(claims) == "Фамилия Имя"
+
+
+def test_normalize_full_name_uses_explicit_value_only_when_structured_parts_missing() -> None:
+    claims = _build_claims(
+        full_name="User Name",
+        given_name=None,
+        family_name=None,
+        middle_name=None,
+    )
 
     assert _normalize_full_name(claims) == "User Name"

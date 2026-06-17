@@ -39,10 +39,10 @@ const renderCard = (responsibleContact?: { fullName?: string | null; phone?: str
         canDeleteRequestFiles={false}
         onDownloadFile={() => undefined}
         onRemoveExistingFile={() => undefined}
-        newFile={null}
-        onClearNewFile={() => undefined}
+        newFiles={[]}
+        onRemoveNewFile={() => undefined}
         canUploadRequestFiles={false}
-        onNewFileSelected={() => undefined}
+        onNewFilesAdded={() => undefined}
         canViewRequestAmounts={false}
         deadline=""
         initialAmount=""

@@ -8,6 +8,17 @@ from urllib.parse import quote, urlparse
 from app.core.config import settings
 from app.infrastructure.notification_publisher import publish_notification
 from shared.broker import RK_TG
+from shared.notification_copy import (
+    ACCESS_CLOSED_BODY,
+    ACCESS_OPENED_BODY,
+    EXPIRED_REGISTRATION_LINK_BODY,
+    NOTIFICATION_BUTTON_LABEL,
+    REGISTRATION_COMPLETED_BODY,
+    message_created_body,
+    new_request_outbound_body,
+    offer_status_changed_body,
+    request_status_changed_body,
+)
 
 _INVALID_TELEGRAM_BUTTON_HOSTS = {
     "",
@@ -26,35 +37,35 @@ _INVALID_TELEGRAM_BUTTON_HOSTS = {
 async def notify_expired_link(tg_id: int) -> None:
     await _notify(
         tg_id=tg_id,
-        text="Срок действия ссылки истек. Пожалуйста, запросите новую через /start.",
+        text=EXPIRED_REGISTRATION_LINK_BODY,
     )
 
 
 async def notify_registration_completed(tg_id: int) -> None:
     await _notify(
         tg_id=tg_id,
-        text="Регистрация пройдена. Данные отправлены на проверку.",
+        text=REGISTRATION_COMPLETED_BODY,
     )
 
 
 async def notify_access_opened(tg_id: int) -> None:
     await _notify(
         tg_id=tg_id,
-        text="Доступ открыт. Теперь вы можете войти в веб-приложение.",
+        text=ACCESS_OPENED_BODY,
     )
 
 async def notify_access_closed(tg_id: int) -> None:
     await _notify(
         tg_id=tg_id,
-        text="⛔ Доступ к Telegram-боту закрыт.",
+        text=ACCESS_CLOSED_BODY,
     )
 
 async def notify_new_message(*, tg_id: int, request_id: str) -> None:
     link = _build_web_service_link(tg_id=tg_id)
     await _notify(
         tg_id=tg_id,
-        text=f"💬 Новое сообщение по заявке №{request_id}",
-        button_text="Открыть сервис",
+        text=message_created_body(request_id=request_id),
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=link,
     )
 
@@ -65,21 +76,19 @@ async def notify_new_request(
     description: str | None,
     deadline_at: datetime,
 ) -> None:
-    description_text = description.strip() if description else "без описания"
-    deadline_text = deadline_at.strftime("%d.%m.%Y, %H:%M")
     tasks = []
     for tg_id in tg_ids:
         link = _build_web_service_link(tg_id=tg_id)
-        text = (
-            f"📄 Новая заявка №{request_id}\n\n"
-            f"📝 Описание: {description_text}\n"
-            f"⏰ Дедлайн приёма КП: {deadline_text}"
+        text = new_request_outbound_body(
+            request_id=request_id,
+            description=description,
+            deadline_at=deadline_at,
         )
         tasks.append(
             _notify(
                 tg_id=tg_id,
                 text=text,
-                button_text="Перейти в сервис",
+                button_text=NOTIFICATION_BUTTON_LABEL,
                 button_url=link,
             )
         )
@@ -87,20 +96,30 @@ async def notify_new_request(
     if tasks:
         await asyncio.gather(*tasks)
 
-async def notify_request_status_changed(*, tg_id: int) -> None:
+async def notify_request_status_changed(
+    *,
+    tg_id: int,
+    request_id: str,
+    previous_status: str | None = None,
+    new_status: str | None = None,
+) -> None:
     await _notify(
         tg_id=tg_id,
-        text="Статус интересующей вас заявки изменён.",
-        button_text="Перейти в сервис",
+        text=request_status_changed_body(
+            request_id=request_id,
+            previous_status=previous_status,
+            new_status=new_status,
+        ),
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(tg_id=tg_id),
     )
 
 
-async def notify_offer_status_finalized(*, tg_id: int) -> None:
+async def notify_offer_status_finalized(*, tg_id: int, request_id: str) -> None:
     await _notify(
         tg_id=tg_id,
-        text="Статус вашего оффера обновлён.",
-        button_text="Перейти в сервис",
+        text=offer_status_changed_body(request_id=request_id),
+        button_text=NOTIFICATION_BUTTON_LABEL,
         button_url=_build_web_service_link(tg_id=tg_id),
     )
 

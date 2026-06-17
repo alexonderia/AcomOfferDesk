@@ -24,14 +24,21 @@ backend
   |-- PostgreSQL (external order_database)
   |-- RabbitMQ
   |-- MinIO
+  |-- file_guard  (file security scan service; fail-closed if unavailable)
   |-- Chat realtime runtime
   |-- Email / mailbox integrations
 
+file_guard
+  `-- ClamAV/clamd (optional, контролируется REQUIRE_ANTIVIRUS)
+
 notifications_worker
-  `-- RabbitMQ
+  `-- RabbitMQ (queues: notify.email, notify.max)
+
+max_bot
+  `-- backend /api/v1/max/*  (+ X-Bot-Api-Secret header)
 
 tg_bot (legacy, optional)
-  `-- backend / gateway
+  `-- backend / gateway      (+ X-Bot-Api-Secret header)
 ```
 
 ## Периметр по режимам
@@ -85,7 +92,21 @@ Frontend:
 - управление заявками, офферами, файлами и пользователями;
 - вычисление разрешенных действий для UI;
 - realtime-чат;
-- фоновые задачи, связанные с обработкой reply mailbox.
+- in-process фоновые задачи (см. ниже).
+
+#### In-process consumers и фоновые задачи backend
+
+Помимо `notifications_worker`, часть асинхронной обработки выполняется **внутри процесса backend** (`backend/app/main.py`, `lifespan`):
+
+| Компонент | Назначение | Транспорт / триггер |
+|---|---|---|
+| `EmailDeliveryConsumerRuntime` | доставка email из очереди `notify.email` | RabbitMQ |
+| `ProcessNotificationConsumerRuntime` | in-app уведомления из process events (`offer.created`, `request.status_changed` и т.д.) | RabbitMQ |
+| `DelayedNotificationConsumerRuntime` | отложенные уведомления (например, напоминание о непрочитанном чате) | RabbitMQ |
+| `_request_reply_polling_worker` | polling IMAP mailbox для reply-to заявок | периодический asyncio task (leader lock) |
+| `ChatRealtimeRuntime` / `UnifiedRealtimeRuntime` | WebSocket realtime (чат, уведомления) | in-memory pub/sub |
+
+Если consumer не стартует (например, RabbitMQ недоступен), backend продолжает работу, но соответствующий канал доставки отключается — ошибка логируется.
 
 ### `keycloak`
 
@@ -106,7 +127,7 @@ Frontend:
 
 ### `notifications_worker`
 
-Отдельный воркер, который принимает события и отправляет email-уведомления.
+Отдельный воркер, который принимает события и отправляет email-уведомления, а также опционально push в MAX (и legacy Telegram при rollback).
 
 Такой подход нужен, чтобы не держать тяжелые сетевые операции в request/response-потоке backend.
 
@@ -131,6 +152,20 @@ Backend:
 - сохраняет объект в хранилище;
 - отдает файлы через контролируемый download endpoint.
 
+### `max_bot`
+
+Активный thin-client для мессенджера MAX. Запускается вместе с основным compose и обращается только к backend API `/api/v1/max/*`.
+
+MAX-идентичность хранится в универсальных таблицах `user_auth_accounts` и `user_contact_channels` с provider/channel_type `max`.
+
+Исходящие push-уведомления доставляются через `notifications_worker/app/max_sender.py` (очередь `notify.max`).
+
+### MAX push event flow
+
+1. Backend use-case (`max_notifications.py`) публикует payload в RabbitMQ exchange `app.events` с routing key `max.send`.
+2. `notifications_worker` читает очередь `notify.max` (если `MAX_BOT_ENABLED=true`).
+3. Worker вызывает `max_sender.py` → HTTP `POST` к MAX Bot API.
+
 ### `tg_bot`
 
 Legacy-модуль. По умолчанию в основном compose выключен, но логика взаимодействия с backend сохранена.
@@ -147,6 +182,7 @@ Legacy-модуль. По умолчанию в основном compose вык�
 - Keycloak bootstrap;
 - worker;
 - документация;
+- MAX bot;
 - legacy telegram bot.
 
 ### В другом репозитории
@@ -221,6 +257,18 @@ Legacy-модуль. По умолчанию в основном compose вык�
 6. Статусы оффера обновляются по ролям и permissions.
 
 ## 5. Поток чата
+
+### WebSocket ticket flow
+
+WebSocket не использует refresh cookie напрямую. Клиент получает одноразовый ticket через HTTP:
+
+1. Аутентифицированный клиент вызывает `POST /api/v1/ws/tickets` с `{ "purpose": "realtime_ws" }`.
+2. Backend проверяет сессию (`get_current_user`), выпускает ticket с TTL `WS_TICKET_TTL_SECONDS` (30–60 с).
+3. Клиент открывает `wss://<host>/api/v1/ws/realtime?ticket=<ticket>`.
+4. Backend потребляет ticket (одноразовый), проверяет `purpose`, строит `CurrentUser` из claims ticket.
+5. Клиент получает `connection.ready`, затем может подписываться на чаты и получать `notification.created`.
+
+Допустимые `purpose`: `realtime_ws`, `notifications_ws`. Повторное использование ticket или истёкший ticket → закрытие с кодом `4401`.
 
 ### Запись сообщения
 
@@ -317,7 +365,7 @@ Frontend организован по feature-oriented схеме.
 
 ## Где искать важную информацию
 
-### Если меняется логин или регистрация
+### Если меняется аутентификация, регистрация или политика логина
 
 Смотрите:
 
@@ -326,6 +374,7 @@ Frontend организован по feature-oriented схеме.
 - `backend/app/services/identity_sync.py`
 - `web/src/app/providers/AuthProvider.tsx`
 - `docs/security/auth-and-onboarding.md`
+- `docs/security/permissions-matrix.md` (правило: `users.id` неизменяем после создания; переименование в `/admin` и `/contractors` не поддерживается)
 
 ### Если меняется заявка
 

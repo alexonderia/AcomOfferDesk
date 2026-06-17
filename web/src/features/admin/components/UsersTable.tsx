@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
-import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
@@ -32,7 +32,14 @@ import { updateManualContractor } from '@shared/api/users/updateManualContractor
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
-import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
+import {
+  buildManualContractorDraft,
+  buildManualContractorPayload,
+  type ManualContractorDraft,
+  type ManualContractorFieldErrors,
+  validateManualContractorPayload,
+} from '@shared/lib/manualContractorEditing';
+import { formatRuPhone } from '@shared/lib/phone';
 import { StatusPill as BaseStatusPill } from '@shared/ui/StatusPill';
 import { useSystemToasts } from '@shared/ui/toasts';
 import {
@@ -43,6 +50,7 @@ import {
   dialogContentSx,
   normalizeUserStatus,
   userStatusLabelByValue,
+  userStatusMemoText,
 } from './UserCardPrimitives';
 import {
   getSubordinateProfile,
@@ -591,177 +599,7 @@ const ContractorMobileCard = ({
   );
 };
 
-type ManualContractorDraft = {
-  login: string;
-  full_name: string;
-  phone: string;
-  mail: string;
-  company_name: string;
-  inn: string;
-  company_phone: string;
-  company_mail: string;
-  address: string;
-  note: string;
-};
-
-type ManualContractorField = keyof ManualContractorDraft | 'password';
-type ManualContractorFieldErrors = Partial<Record<ManualContractorField, string>>;
-
-const buildManualContractorDraft = (user: UserListItem): ManualContractorDraft => ({
-  login: user.user_id,
-  full_name: user.full_name ?? '',
-  phone: formatPhoneForView(user.phone) ?? '',
-  mail: user.mail ?? '',
-  company_name: user.company_name ?? '',
-  inn: user.inn ?? '',
-  company_phone: formatPhoneForView(user.company_phone) ?? '',
-  company_mail: user.company_mail ?? '',
-  address: user.address ?? '',
-  note: user.note ?? ''
-});
-
-const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const utf8ByteLength = (value: string) => new TextEncoder().encode(value).length;
-
-const buildManualContractorPayload = (
-  user: UserListItem,
-  draft: ManualContractorDraft,
-  password: string
-) => {
-  const trimmedDraft: ManualContractorDraft = {
-    login: draft.login.trim(),
-    full_name: draft.full_name.trim(),
-    phone: draft.phone.trim(),
-    mail: draft.mail.trim(),
-    company_name: draft.company_name.trim(),
-    inn: draft.inn.trim(),
-    company_phone: draft.company_phone.trim(),
-    company_mail: draft.company_mail.trim(),
-    address: draft.address.trim(),
-    note: draft.note.trim()
-  };
-  const trimmedPassword = password.trim();
-
-  const payload = {
-    ...(trimmedDraft.login !== user.user_id ? { login: trimmedDraft.login } : {}),
-    ...(trimmedPassword ? { password: trimmedPassword } : {}),
-    ...(trimmedDraft.full_name !== (user.full_name ?? '') ? { full_name: trimmedDraft.full_name } : {}),
-    ...(trimmedDraft.phone !== (user.phone ?? '') ? { phone: trimmedDraft.phone } : {}),
-    ...(trimmedDraft.mail !== (user.mail ?? '') ? { mail: trimmedDraft.mail } : {}),
-    ...(trimmedDraft.company_name !== (user.company_name ?? '') ? { company_name: trimmedDraft.company_name } : {}),
-    ...(trimmedDraft.inn !== (user.inn ?? '') ? { inn: trimmedDraft.inn } : {}),
-    ...(trimmedDraft.company_phone !== (user.company_phone ?? '') ? { company_phone: trimmedDraft.company_phone } : {}),
-    ...(trimmedDraft.company_mail !== (user.company_mail ?? '') ? { company_mail: trimmedDraft.company_mail } : {}),
-    ...(trimmedDraft.address !== (user.address ?? '') ? { address: trimmedDraft.address } : {}),
-    ...(trimmedDraft.note !== (user.note ?? '') ? { note: trimmedDraft.note } : {})
-  } as Parameters<typeof updateManualContractor>[1];
-
-  return { trimmedDraft, payload };
-};
-
-const validateManualContractorPayload = (
-  payload: Parameters<typeof updateManualContractor>[1]
-): { fieldErrors: ManualContractorFieldErrors; firstError: string | null } => {
-  const fieldErrors: ManualContractorFieldErrors = {};
-
-  const setFieldError = (field: ManualContractorField, message: string) => {
-    if (!fieldErrors[field]) {
-      fieldErrors[field] = message;
-    }
-  };
-
-  for (const [key, value] of Object.entries(payload)) {
-    if (typeof value === 'string' && !value.trim()) {
-      setFieldError(key as ManualContractorField, 'Поле не может быть пустым');
-    }
-  }
-
-  const loginValue = payload.login;
-  if (loginValue !== undefined && (loginValue.length < 3 || loginValue.length > 128)) {
-    setFieldError('login', 'Логин должен содержать от 3 до 128 символов');
-  }
-
-  const passwordValue = payload.password;
-  if (
-    passwordValue !== undefined
-    && (passwordValue.length < 6 || passwordValue.length > 72 || utf8ByteLength(passwordValue) > 72)
-  ) {
-    setFieldError('password', 'Пароль должен содержать от 6 до 72 символов (не более 72 байт)');
-  }
-
-  const phoneValue = payload.phone;
-  if (phoneValue !== undefined && !isValidRuPhone(phoneValue)) {
-    setFieldError('phone', 'Некорректный формат телефона контакта');
-  }
-
-  const companyPhoneValue = payload.company_phone;
-  if (companyPhoneValue !== undefined && !isValidRuPhone(companyPhoneValue)) {
-    setFieldError('company_phone', 'Некорректный формат телефона компании');
-  }
-
-  const mailValue = payload.mail;
-  if (mailValue !== undefined && !emailRegex.test(mailValue)) {
-    setFieldError('mail', 'Некорректный формат e-mail контакта');
-  }
-
-  const companyMailValue = payload.company_mail;
-  if (companyMailValue !== undefined && !emailRegex.test(companyMailValue)) {
-    setFieldError('company_mail', 'Некорректный формат e-mail компании');
-  }
-
-  const innValue = payload.inn;
-  if (innValue !== undefined && !/^\d{10}$|^\d{12}$/.test(innValue)) {
-    setFieldError('inn', 'ИНН должен содержать 10 или 12 цифр');
-  }
-
-  if (payload.full_name !== undefined && payload.full_name.length > 256) {
-    setFieldError('full_name', 'Максимальная длина ФИО — 256 символов');
-  }
-  if (phoneValue !== undefined && phoneValue.length > 64) {
-    setFieldError('phone', 'Максимальная длина телефона — 64 символа');
-  }
-  if (mailValue !== undefined && mailValue.length > 256) {
-    setFieldError('mail', 'Максимальная длина e-mail — 256 символов');
-  }
-  if (payload.company_name !== undefined && payload.company_name.length > 256) {
-    setFieldError('company_name', 'Максимальная длина наименования — 256 символов');
-  }
-  if (innValue !== undefined && innValue.length > 32) {
-    setFieldError('inn', 'Максимальная длина ИНН — 32 символа');
-  }
-  if (companyPhoneValue !== undefined && companyPhoneValue.length > 64) {
-    setFieldError('company_phone', 'Максимальная длина телефона — 64 символа');
-  }
-  if (companyMailValue !== undefined && companyMailValue.length > 256) {
-    setFieldError('company_mail', 'Максимальная длина e-mail — 256 символов');
-  }
-  if (payload.address !== undefined && payload.address.length > 256) {
-    setFieldError('address', 'Максимальная длина адреса — 256 символов');
-  }
-  if (payload.note !== undefined && payload.note.length > 1024) {
-    setFieldError('note', 'Максимальная длина примечания — 1024 символа');
-  }
-
-  const firstError = Object.values(fieldErrors)[0] ?? null;
-  return { fieldErrors, firstError };
-};
-
 const inlineStatusOptions: Array<StatusFormValues['user_status']> = ['review', 'active', 'inactive', 'blacklist'];
-
-
-const statusMemoText = `Статусы users:
-
-1) review
-   Пользователь на проверке, доступ не выдан.
-
-2) active
-   Пользователь активен, доступ разрешён.
-
-3) inactive
-   Пользователь деактивирован, доступ запрещён.
-
-4) blacklist
-   Пользователь в чёрном списке, доступ запрещён.`;
 
 const delegationGroupTitles: Record<string, string> = {
   requests: 'Заявки',
@@ -775,6 +613,28 @@ const managerRoleNameById: Record<number, string> = {
   [ROLE.PROJECT_MANAGER]: 'РП',
   [ROLE.LEAD_ECONOMIST]: 'ВЭ',
   [ROLE.ECONOMIST]: 'Экономист',
+};
+
+const PROJECT_MANAGER_STATUS_TARGET_ROLES: number[] = [
+  ROLE.PROJECT_MANAGER,
+  ROLE.LEAD_ECONOMIST,
+  ROLE.ECONOMIST,
+  ROLE.OPERATOR,
+];
+
+const LEAD_LIKE_STATUS_TARGET_ROLES: number[] = [ROLE.ECONOMIST, ROLE.OPERATOR];
+
+const canManageSubordinateRoleForStatus = (
+  viewerRoleId: number | undefined,
+  targetRoleId: number,
+): boolean => {
+  if (viewerRoleId === ROLE.PROJECT_MANAGER) {
+    return PROJECT_MANAGER_STATUS_TARGET_ROLES.includes(targetRoleId);
+  }
+  if (viewerRoleId === ROLE.LEAD_ECONOMIST || viewerRoleId === ROLE.ECONOMIST) {
+    return LEAD_LIKE_STATUS_TARGET_ROLES.includes(targetRoleId);
+  }
+  return true;
 };
 
 
@@ -795,9 +655,7 @@ export const UsersTable = ({
   const [expandedUserCardsById, setExpandedUserCardsById] = useState<Record<string, boolean>>({});
   const [expandedContractorCardsById, setExpandedContractorCardsById] = useState<Record<string, { contact: boolean; company: boolean }>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [inlineStatusError, setInlineStatusError] = useState<string | null>(null);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
-  const [inlineRoleError, setInlineRoleError] = useState<string | null>(null);
   const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
   const [subordinateError, setSubordinateError] = useState<string | null>(null);
   const [managerOptions, setManagerOptions] = useState<UserListItem[]>([]);
@@ -946,6 +804,7 @@ export const UsersTable = ({
   useEffect(() => {
     if (!selectedUser?.actions.update_manager) {
       setManagerOptions([]);
+      setManagerError(null);
       return;
     }
 
@@ -955,10 +814,12 @@ export const UsersTable = ({
       .then((result) => {
         if (!isCancelled) {
           setManagerOptions(result.items);
+          setManagerError(null);
         }
       })
       .catch((error) => {
         if (!isCancelled) {
+          setManagerOptions([]);
           setManagerError(error instanceof Error ? error.message : 'Не удалось загрузить список руководителей');
         }
       });
@@ -968,8 +829,18 @@ export const UsersTable = ({
     };
   }, [selectedUser?.actions.update_manager, selectedUser?.role_id, selectedUser?.user_id]);
 
+  const shouldLoadDepartmentDelegations = Boolean(
+    selectedUser
+    && !isContractorsTab
+    && (
+      session?.roleId === ROLE.SUPERADMIN
+      || session?.roleId === ROLE.ADMIN
+      || session?.roleId === ROLE.PROJECT_MANAGER
+    ),
+  );
+
   useEffect(() => {
-    if (!selectedUser || isContractorsTab) {
+    if (!shouldLoadDepartmentDelegations || !selectedUser) {
       setDepartmentDelegations(null);
       setDepartmentDelegationsError(null);
       setIsLoadingDepartmentDelegations(false);
@@ -1005,13 +876,32 @@ export const UsersTable = ({
     return () => {
       isCancelled = true;
     };
-  }, [isContractorsTab, selectedUser?.user_id]);
+  }, [selectedUser?.user_id, shouldLoadDepartmentDelegations]);
+
+  const availableManagerOptions = useMemo(() => {
+    if (!selectedUser) {
+      return [];
+    }
+    return managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id);
+  }, [managerOptions, selectedUser]);
+
+  const canShowManagerSection = Boolean(
+    selectedUser?.actions.update_manager
+    && !managerError
+    && (
+      availableManagerOptions.length > 0
+      || selectedUser.role_id === ROLE.PROJECT_MANAGER
+    ),
+  );
 
   const shouldLoadContractorDelegations = Boolean(
     selectedUser
     && !isContractorsTab
     && selectedUser.role_id === ROLE.LEAD_ECONOMIST
-    && session?.roleId === ROLE.SUPERADMIN
+    && (
+      session?.roleId === ROLE.SUPERADMIN
+      || session?.roleId === ROLE.ADMIN
+    ),
   );
 
   useEffect(() => {
@@ -1110,6 +1000,9 @@ export const UsersTable = ({
     if (!canUpdateStatus || !user || !user.actions.update_status) {
       return false;
     }
+    if (!canManageSubordinateRoleForStatus(session?.roleId, user.role_id)) {
+      return false;
+    }
     return true;
   };
 
@@ -1132,7 +1025,6 @@ export const UsersTable = ({
   };
 
   const handleInlineStatusChange = async (userId: string, nextStatus: StatusFormValues['user_status']) => {
-    setInlineStatusError(null);
     setUpdatingUserId(userId);
 
     try {
@@ -1145,25 +1037,54 @@ export const UsersTable = ({
       });
       await onStatusUpdated();
     } catch (error) {
-      setInlineStatusError(error instanceof Error ? error.message : 'Не удалось обновить статус');
+      const message = error instanceof Error ? error.message : 'Не удалось обновить статус';
+      showSystemToast({
+        severity: 'warning',
+        message,
+      });
     } finally {
       setUpdatingUserId(null);
     }
   };
 
   const handleInlineRoleChange = async (userId: string, nextRoleId: number) => {
-    setInlineRoleError(null);
     setUpdatingUserId(userId);
 
     try {
       await updateUserRole(userId, { role_id: nextRoleId });
       await onStatusUpdated();
     } catch (error) {
-      setInlineRoleError(error instanceof Error ? error.message : 'Не удалось обновить роль');
+      const message = error instanceof Error ? error.message : 'Не удалось обновить роль';
+      showSystemToast({
+        severity: 'warning',
+        message,
+      });
     } finally {
       setUpdatingUserId(null);
     }
   };
+
+  const resolveEditableRoleOptions = useCallback((row: UserRow): number[] => {
+    if (!canUpdateRole || allowedRoleOptions.length === 0) {
+      return [];
+    }
+
+    const user = users.find((item) => item.user_id === row.id);
+    if (!user?.actions.update_role) {
+      return [];
+    }
+
+    if (!allowedRoleOptions.includes(row.id_role)) {
+      return [];
+    }
+
+    const hasAlternativeRole = allowedRoleOptions.some((roleId) => roleId !== row.id_role);
+    if (!hasAlternativeRole) {
+      return [];
+    }
+
+    return allowedRoleOptions;
+  }, [allowedRoleOptions, canUpdateRole, users]);
 
   const handleManagerUpdate = async () => {
     const canBeWithoutManager = selectedUser?.role_id === ROLE.PROJECT_MANAGER;
@@ -1222,8 +1143,15 @@ export const UsersTable = ({
         prev
           ? {
             ...prev,
-            ...manualContractorValidation.trimmedDraft,
-            user_id: manualContractorValidation.trimmedDraft.login
+            full_name: manualContractorValidation.trimmedDraft.full_name,
+            phone: manualContractorValidation.trimmedDraft.phone,
+            mail: manualContractorValidation.trimmedDraft.mail,
+            company_name: manualContractorValidation.trimmedDraft.company_name,
+            inn: manualContractorValidation.trimmedDraft.inn,
+            company_phone: manualContractorValidation.trimmedDraft.company_phone,
+            company_mail: manualContractorValidation.trimmedDraft.company_mail,
+            address: manualContractorValidation.trimmedDraft.address,
+            note: manualContractorValidation.trimmedDraft.note,
           }
           : prev
       ));
@@ -1342,8 +1270,8 @@ export const UsersTable = ({
 
     void getSubordinateProfile(clickedUser.user_id)
       .then((profile) => setSubordinateProfile(profile))
-      .catch((error) => {
-        setSubordinateError(error instanceof Error ? error.message : 'Не удалось загрузить нерабочие статусы');
+      .catch(() => {
+        setSubordinateProfile(null);
       });
   };
 
@@ -1390,13 +1318,9 @@ export const UsersTable = ({
         getFilterValue: (row) => row.role,
         getSearchValue: (row) => row.role,
         renderCell: (row) => {
-          const canEditRoleForRow = Boolean(
-            canUpdateRole
-            && users.find((item) => item.user_id === row.id)?.actions.update_role
-            && allowedRoleOptions.length > 0
-          );
+          const editableRoleOptions = resolveEditableRoleOptions(row);
 
-          if (!canEditRoleForRow) {
+          if (editableRoleOptions.length === 0) {
             return <Typography variant="body2">{row.role}</Typography>;
           }
 
@@ -1417,7 +1341,7 @@ export const UsersTable = ({
               }}
               sx={{ minWidth: 140 }}
             >
-              {allowedRoleOptions.map((roleId) => (
+              {editableRoleOptions.map((roleId) => (
                 <MenuItem key={roleId} value={roleId}>
                   {getRoleLabel(roleId)}
                 </MenuItem>
@@ -1434,33 +1358,39 @@ export const UsersTable = ({
         filterOptions: usersStatusFilterOptions,
         getFilterValue: (row) => userStatusLabelByValue[row.status],
         getSearchValue: (row) => userStatusLabelByValue[row.status],
-        renderCell: (row) => (
-          <TextField
-            select
-            size="small"
-            value={row.status}
-            disabled={!canEditUserStatus(row.id) || updatingUserId === row.id}
-            onClick={(event) => event.stopPropagation()}
-            onChange={(event) => {
-              event.stopPropagation();
-              const nextStatus = event.target.value as StatusFormValues['user_status'];
-              if (nextStatus === row.status) {
-                return;
-              }
-              void handleInlineStatusChange(row.id, nextStatus);
-            }}
-            sx={{ minWidth: 140 }}
-          >
-            {inlineStatusOptions.map((status) => (
-              <MenuItem key={status} value={status}>
-                {userStatusLabelByValue[status]}
-              </MenuItem>
-            ))}
-          </TextField>
-        )
+        renderCell: (row) => {
+          if (!canEditUserStatus(row.id)) {
+            return <UserStatusPill value={row.status} />;
+          }
+
+          return (
+            <TextField
+              select
+              size="small"
+              value={row.status}
+              disabled={updatingUserId === row.id}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                event.stopPropagation();
+                const nextStatus = event.target.value as StatusFormValues['user_status'];
+                if (nextStatus === row.status) {
+                  return;
+                }
+                void handleInlineStatusChange(row.id, nextStatus);
+              }}
+              sx={{ minWidth: 140 }}
+            >
+              {inlineStatusOptions.map((status) => (
+                <MenuItem key={status} value={status}>
+                  {userStatusLabelByValue[status]}
+                </MenuItem>
+              ))}
+            </TextField>
+          );
+        }
       }
     ],
-    [allowedRoleOptions, canUpdateRole, canViewRoleIds, getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, updatingUserId, users, usersRoleFilterOptions, usersStatusFilterOptions]
+    [getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, canViewRoleIds, resolveEditableRoleOptions, updatingUserId, usersRoleFilterOptions, usersStatusFilterOptions]
   );
   const contractorStatusFilterOptions = useMemo(
     () => Array.from(new Set(users.map((user) => toStatusLabel(user.status)))).map((status) => ({ label: status, value: status })),
@@ -1493,8 +1423,6 @@ export const UsersTable = ({
     return (
       <>
         <Stack spacing={1.2}>
-          {inlineStatusError ? <Alert severity="error">{inlineStatusError}</Alert> : null}
-          {inlineRoleError ? <Alert severity="error">{inlineRoleError}</Alert> : null}
           <TableTemplate
             columns={usersColumns}
             rows={rows}
@@ -1674,11 +1602,9 @@ export const UsersTable = ({
                       }
                     />
                   </Stack>
-                ) : subordinateError ? (
-                  <Alert severity="info">{subordinateError}</Alert>
                 ) : null}
 
-                {selectedUser.actions.update_manager ? (
+                {canShowManagerSection && selectedUser ? (
                   <Stack
                     spacing={1.2}
                     sx={{
@@ -1692,26 +1618,13 @@ export const UsersTable = ({
                     <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                       Смена руководителя
                     </Typography>
-                    {managerError ? <Alert severity="warning">{managerError}</Alert> : null}
                     <TextField
                       select
                       size="small"
                       label="Новый руководитель"
                       value={managerUserId}
                       onChange={(event) => setManagerUserId(event.target.value)}
-                      disabled={
-                        isUpdatingManager
-                        || (
-                          managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
-                          && selectedUser.role_id !== ROLE.PROJECT_MANAGER
-                        )
-                      }
-                      helperText={
-                        managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length
-                        || selectedUser.role_id === ROLE.PROJECT_MANAGER
-                          ? ''
-                          : 'Нет доступных руководителей'
-                      }
+                      disabled={isUpdatingManager}
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           borderRadius: 1,
@@ -1724,9 +1637,7 @@ export const UsersTable = ({
                           Без руководителя
                         </MenuItem>
                       ) : null}
-                      {managerOptions
-                        .filter((manager) => manager.user_id !== selectedUser.user_id)
-                        .map((manager) => (
+                      {availableManagerOptions.map((manager) => (
                           <MenuItem key={manager.user_id} value={manager.user_id}>
                             {manager.full_name
                               ? `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
@@ -1742,10 +1653,6 @@ export const UsersTable = ({
                           (managerUserId === '' && selectedUser.role_id !== ROLE.PROJECT_MANAGER)
                           || managerUserId === (selectedUser.id_parent ?? '')
                           || isUpdatingManager
-                          || (
-                            managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
-                            && selectedUser.role_id !== ROLE.PROJECT_MANAGER
-                          )
                         }
                         sx={{ borderRadius: 1, textTransform: 'none' }}
                       >
@@ -1755,10 +1662,10 @@ export const UsersTable = ({
                   </Stack>
                 ) : null}
 
-                {isLoadingDepartmentDelegations ? (
+                {isLoadingDepartmentDelegations && shouldLoadDepartmentDelegations ? (
                   <Alert severity="info">Загрузка дополнительных доступов...</Alert>
                 ) : null}
-                {departmentDelegations ? (
+                {departmentDelegations?.canManage ? (
                   <Stack
                     spacing={1.2}
                     sx={{
@@ -1807,16 +1714,14 @@ export const UsersTable = ({
                           {isSavingDepartmentDelegations ? 'Сохранение...' : 'Сохранить доступы'}
                         </Button>
                       </Stack>
-                    ) : (
-                      <Alert severity="info">У вас нет прав на изменение этих доступов.</Alert>
-                    )}
+                    ) : null}
                   </Stack>
                 ) : null}
 
-                {isLoadingContractorDelegations ? (
+                {isLoadingContractorDelegations && shouldLoadContractorDelegations ? (
                   <Alert severity="info">Загрузка доступов к контрагентам...</Alert>
                 ) : null}
-                {contractorDelegations ? (
+                {contractorDelegations?.canManage ? (
                   <Stack
                     spacing={1.2}
                     sx={{
@@ -1830,7 +1735,7 @@ export const UsersTable = ({
                     <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                       Управление контрагентами
                     </Typography>
-                    <Stack spacing={1}>
+                    <FormGroup>
                       {contractorDelegations.accesses.map((item) => (
                         <FormControlLabel
                           key={item.code}
@@ -1841,30 +1746,21 @@ export const UsersTable = ({
                               disabled={!contractorDelegations.canManage || isSavingContractorDelegations}
                             />
                           )}
-                          label={(
-                            <Stack spacing={0.2}>
-                              <Typography variant="body2">{item.label}</Typography>
-                              <Typography variant="caption" color="text.secondary">{item.description}</Typography>
-                            </Stack>
-                          )}
+                          label={item.label}
                         />
                       ))}
-                    </Stack>
+                    </FormGroup>
                     {contractorDelegationsError ? <Alert severity="error">{contractorDelegationsError}</Alert> : null}
-                    {contractorDelegations.canManage ? (
-                      <Stack direction="row" justifyContent="flex-end">
-                        <Button
-                          variant="outlined"
-                          onClick={() => void handleSaveContractorDelegations()}
-                          disabled={isSavingContractorDelegations}
-                          sx={{ borderRadius: 1, textTransform: 'none' }}
-                        >
-                          {isSavingContractorDelegations ? 'Сохранение...' : 'Сохранить доступ'}
-                        </Button>
-                      </Stack>
-                    ) : (
-                      <Alert severity="info">У вас нет прав на изменение этого доступа.</Alert>
-                    )}
+                    <Stack direction="row" justifyContent="flex-end">
+                      <Button
+                        variant="outlined"
+                        onClick={() => void handleSaveContractorDelegations()}
+                        disabled={isSavingContractorDelegations}
+                        sx={{ borderRadius: 1, textTransform: 'none' }}
+                      >
+                        {isSavingContractorDelegations ? 'Сохранение...' : 'Сохранить доступ'}
+                      </Button>
+                    </Stack>
                   </Stack>
                 ) : null}
 
@@ -2075,11 +1971,9 @@ export const UsersTable = ({
                   >
                     <TextField
                       label="Логин"
-                      {...textFieldAutocompleteProps('login')}
-                      value={manualContractorDraft.login}
-                      onChange={(event) => updateManualContractorField('login', event.target.value)}
-                      error={Boolean(manualContractorFieldErrors.login)}
-                      helperText={manualContractorFieldErrors.login}
+                      value={selectedUser.user_id}
+                      InputProps={{ readOnly: true }}
+                      sx={{ '& .MuiInputBase-input': { cursor: 'default' } }}
                     />
                     <TextField
                       label="Новый пароль"
@@ -2187,7 +2081,8 @@ export const UsersTable = ({
                 </Stack>
               ) : null}
 
-              {selectedUser.actions.update_status ? (
+              {selectedUser.actions.update_status
+              && canManageSubordinateRoleForStatus(session?.roleId, selectedUser.role_id) ? (
                 <Stack
                   spacing={1.2}
                   sx={{
@@ -2232,7 +2127,7 @@ export const UsersTable = ({
                             lineHeight: 1.45
                           }}
                         >
-                          {statusMemoText}
+                          {userStatusMemoText}
                         </Typography>
                       }
                       slotProps={{
@@ -2282,9 +2177,7 @@ export const UsersTable = ({
                     </Button>
                   </Stack>
                 </Stack>
-              ) : (
-                <Alert severity="info">Изменение статуса недоступно: backend не вернул доступное действие.</Alert>
-              )}
+              ) : null}
             </Stack>
           ) : null}
         </DialogContent>

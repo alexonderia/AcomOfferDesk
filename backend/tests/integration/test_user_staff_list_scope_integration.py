@@ -113,7 +113,7 @@ class _ScopedUsersRepo:
 
     async def list_contractors(self, *, contractor_role_id: int):
         return [
-            (user, self._profiles.get(user.id), None, None)
+            (user, self._profiles.get(user.id), None, None, None)
             for user in self._users.values()
             if user.id_role == contractor_role_id
         ]

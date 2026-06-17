@@ -148,7 +148,8 @@ def test_request_details_contract_contains_actions_and_hides_amounts_without_per
             owner_phone="+7 900 333-44-55",
             owner_mail="owner3@example.com",
             chosen_offer_id=None,
-            id_plan=None,
+            id_plan=3,
+            plan_name="April Plan",
             count_submitted=1,
             count_deleted_alert=0,
             count_accepted_total=0,
@@ -201,6 +202,7 @@ def test_request_details_contract_contains_actions_and_hides_amounts_without_per
     assert item["final_amount"] is None
     assert item["owner_phone"] == "+7 900 333-44-55"
     assert item["owner_mail"] == "owner3@example.com"
+    assert item["plan_name"] == "April Plan"
     assert "actions" in item
     assert item["offers"]
     assert "actions" in item["offers"][0]

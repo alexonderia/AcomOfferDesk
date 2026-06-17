@@ -12,6 +12,7 @@ from app.domain.authorization import has_permission, require_any_permission, req
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
+from app.repositories.economy_plans import EconomyPlanRepository
 from app.repositories.files import FileRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
@@ -21,9 +22,15 @@ from app.infrastructure.notification_publisher import publish_process_notificati
 from app.services.email_notifications import EmailNotificationService
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
-from app.services.files import FileService
+from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
+from app.services.contractor_outbound_notifications import (
+    RequestEventKind,
+    notify_contractors_with_offers_about_request,
+)
+from app.services.max_notifications import notify_new_request as notify_max_new_request
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 PARTNER_CARD_NORMATIVE_ID = 1
@@ -67,13 +74,6 @@ def format_offer_status(status: str | None) -> str:
     if not status:
         return "не указан"
     return OFFER_STATUS_LABELS.get(status, status)
-
-
-@dataclass(frozen=True)
-class RequestFileCreateInput:
-    original_name: str
-    content_bytes: bytes
-    mime_type: str
 
 
 @dataclass(frozen=True)
@@ -192,6 +192,7 @@ class RequestDetailItem:
     count_accepted_total: int
     count_rejected_total: int
     unread_messages_count: int
+    plan_name: str | None = None
     files: list[RequestFileItem] = field(default_factory=list)
     offers: list[OfferItem] = field(default_factory=list)
 
@@ -217,9 +218,11 @@ class RequestService:
         users: UserRepository,
         offers: OfferRepository,
         user_status_periods: UserStatusPeriodRepository,
+        plans: EconomyPlanRepository | None = None,
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
         notifications: NotificationService | None = None,
+        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
@@ -228,9 +231,11 @@ class RequestService:
         self._users = users
         self._offers = offers
         self._user_status_periods = user_status_periods
+        self._plans = plans
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
         self._notifications = notifications
+        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
@@ -243,6 +248,27 @@ class RequestService:
             lambda: self._process_event_publisher(event)
         )
         return True
+
+    def _schedule_contractor_request_outbound(
+        self,
+        *,
+        request_id: str,
+        event_kind: RequestEventKind,
+        actor_user_id: str | None = None,
+        previous_status: str | None = None,
+        new_status: str | None = None,
+    ) -> None:
+        if self._after_commit_hook_registrar is None:
+            return
+        self._after_commit_hook_registrar(
+            lambda: notify_contractors_with_offers_about_request(
+                request_id=request_id,
+                event_kind=event_kind,
+                actor_user_id=actor_user_id,
+                previous_status=previous_status,
+                new_status=new_status,
+            )
+        )
 
     async def check_request_id_available(self, *, request_id: str) -> tuple[bool, str | None]:
         normalized_id = request_id.strip()
@@ -262,7 +288,7 @@ class RequestService:
         initial_amount: float | None,
         id_plan: int | None = None,
         normative_file_id: int | None = None,
-        files: list[RequestFileCreateInput],
+        files: list[PreparedUpload],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
     ) -> tuple[str, list[int]]:
@@ -306,14 +332,9 @@ class RequestService:
         )
         file_ids.append(normative_file_id_value)
         for file_item in files:
-            prepared = await self._file_service.prepare_bytes(
-                original_name=file_item.original_name,
-                content_bytes=file_item.content_bytes,
-                mime_type=file_item.mime_type,
-            )
             db_file = await self._file_service.create_request_file(
                 request_id=request.id,
-                upload=prepared,
+                upload=file_item,
             )
             await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
             file_ids.append(db_file.id)
@@ -330,6 +351,29 @@ class RequestService:
             )
             await notify_new_request(
                 tg_ids=tg_ids,
+                request_id=request.id,
+                description=description,
+                deadline_at=deadline_at,
+            )
+
+        if settings.max_bot_enabled:
+            max_recipients = await self._users.list_active_approved_contractor_max_recipients(
+                contractor_role_id=settings.contractor_role_id,
+                exclude_user_ids=normalized_hidden_contractor_ids,
+            )
+            max_user_ids: list[str] = []
+            for contractor_user_id, max_user_id in max_recipients:
+                if self._notification_preferences is not None:
+                    is_enabled = await self._notification_preferences.is_channel_enabled(
+                        user_id=contractor_user_id,
+                        channel_type="max",
+                        notification_type="request",
+                    )
+                    if not is_enabled:
+                        continue
+                max_user_ids.append(max_user_id)
+            await notify_max_new_request(
+                max_user_ids=max_user_ids,
                 request_id=request.id,
                 description=description,
                 deadline_at=deadline_at,
@@ -388,18 +432,11 @@ class RequestService:
         if self._email_notifications is None:
             raise Conflict("Email notifications are not configured")
 
-        try:
-            await self._email_notifications.notify_request_to_additional_emails(
-                request_id=request.id,
-                additional_emails=normalized_additional_emails,
-                initiator_user_id=current_user.user_id,
-            )
-        except TypeError:
-            # Backward compatibility for legacy test doubles/transports that don't yet accept initiator_user_id.
-            await self._email_notifications.notify_request_to_additional_emails(
-                request_id=request.id,
-                additional_emails=normalized_additional_emails,
-            )
+        await self._email_notifications.notify_request_to_additional_emails(
+            request_id=request.id,
+            additional_emails=normalized_additional_emails,
+            initiator_user_id=current_user.user_id,
+        )
         return RequestEmailNotificationResult(
             request_id=request.id,
             sent_to=normalized_additional_emails,
@@ -532,7 +569,20 @@ class RequestService:
                     contractor_role_id=settings.contractor_role_id,
                 )
                 for tg_id in tg_ids:
-                    await notify_request_status_changed(tg_id=tg_id)
+                    await notify_request_status_changed(
+                        tg_id=tg_id,
+                        request_id=request.id,
+                        previous_status=previous_status,
+                        new_status=data.status,
+                    )
+            if status_changed:
+                self._schedule_contractor_request_outbound(
+                    request_id=request.id,
+                    event_kind="status_changed",
+                    actor_user_id=current_user.user_id,
+                    previous_status=previous_status,
+                    new_status=data.status,
+                )
             if status_changed:
                 event = build_process_notification_event(
                     event_type="request.status_changed",
@@ -576,6 +626,11 @@ class RequestService:
                 },
             )
             self._schedule_process_notification_event(deadline_event)
+            self._schedule_contractor_request_outbound(
+                request_id=request.id,
+                event_kind="deadline_changed",
+                actor_user_id=current_user.user_id,
+            )
 
         if data.owner_user_id is not None:
             owner = await self._users.get_by_id(data.owner_user_id)
@@ -723,7 +778,7 @@ class RequestService:
         *,
         current_user: CurrentUser,
         request_id: str,
-        file_data: RequestFileCreateInput,
+        file_data: PreparedUpload,
     ) -> int:
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
@@ -735,14 +790,9 @@ class RequestService:
             upload=True,
         )
 
-        prepared = await self._file_service.prepare_bytes(
-            original_name=file_data.original_name,
-            content_bytes=file_data.content_bytes,
-            mime_type=file_data.mime_type,
-        )
         db_file = await self._file_service.create_request_file(
             request_id=request.id,
-            upload=prepared,
+            upload=file_data,
         )
         await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
         original_name = getattr(db_file, "original_name", None) or file_data.original_name
@@ -762,6 +812,11 @@ class RequestService:
                     "original_names": [original_name],
                 },
             )
+        )
+        self._schedule_contractor_request_outbound(
+            request_id=request.id,
+            event_kind="files_changed",
+            actor_user_id=current_user.user_id,
         )
         return db_file.id
 
@@ -802,6 +857,11 @@ class RequestService:
                     "changed_file_count": 1,
                 },
             )
+        )
+        self._schedule_contractor_request_outbound(
+            request_id=request.id,
+            event_kind="files_changed",
+            actor_user_id=current_user.user_id,
         )
 
     async def _attach_normative_file_copy(self, *, request_id: str, normative_file_id: int) -> int:
@@ -994,6 +1054,10 @@ class RequestService:
             current_user=current_user,
             request_owner_user_id=request.id_user,
         )
+        plan_name: str | None = None
+        if request.id_plan is not None and self._plans is not None:
+            plan = await self._plans.get_by_id(plan_id=request.id_plan)
+            plan_name = plan.name if plan is not None else None
         request_files = await self._requests.list_files(request_id=request_id)
         request_file_items = [
             RequestFileItem(id=file.id, path=file.path, name=file.name)
@@ -1059,6 +1123,7 @@ class RequestService:
             owner_mail=owner_profile.mail if owner_profile else None,
             chosen_offer_id=request.id_offer,
             id_plan=request.id_plan,
+            plan_name=plan_name,
             count_submitted=stats.count_submitted if stats else 0,
             count_deleted_alert=stats.count_deleted_alert if stats else 0,
             count_accepted_total=stats.count_accepted_total if stats else 0,

@@ -58,6 +58,7 @@ export const buildRequestDetailsSignature = (request: RequestDetails | null) => 
         final_amount: request.final_amount,
         id_offer: request.id_offer,
         id_plan: request.id_plan,
+        plan_name: request.plan_name,
         count_deleted_alert: request.count_deleted_alert,
         offers: request.offers.map((offer) => ({
             id: offer.offer_id,

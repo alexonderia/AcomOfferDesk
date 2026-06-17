@@ -46,6 +46,7 @@ def test_get_role_permissions_map_contains_expected_role_ids() -> None:
         settings.lead_economist_role_id,
         settings.economist_role_id,
         settings.operator_role_id,
+        settings.security_officer_role_id,
     }
 
 
@@ -163,3 +164,17 @@ def test_staff_roles_can_read_contractors_without_status_update_rights() -> None
         assert PermissionCodes.CONTRACTORS_READ in permissions
         assert PermissionCodes.CONTRACTORS_PROFILE_READ in permissions
         assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE not in permissions
+
+
+def test_security_officer_role_has_only_expected_permissions() -> None:
+    role_map = get_role_permissions_map()
+
+    assert role_map[settings.security_officer_role_id] == frozenset(
+        {
+            PermissionCodes.PROFILE_MANAGE_OWN,
+            PermissionCodes.FEEDBACK_CREATE,
+            PermissionCodes.CONTRACTORS_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_READ,
+            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+        }
+    )

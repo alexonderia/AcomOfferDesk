@@ -37,10 +37,15 @@ import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { DatePickerField } from '@shared/components/DatePickerField';
 import { ToggleSection } from '@shared/components/ToggleSection';
+import {
+  ALLOWED_UPLOAD_FILE_INPUT_ACCEPT,
+  ALLOWED_UPLOAD_FILE_TYPES_LABEL,
+  MAX_UPLOAD_FILE_SIZE_MB,
+  getFileKey,
+  mergeUniqueFiles,
+} from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
 
-const ALLOWED_FILE_EXTENSIONS = ['PDF', 'PNG', 'JPG', 'JPEG', 'TXT', 'MD', 'DOC', 'DOCX', 'DOCS', 'XLS', 'XLSX', 'EXL', 'CSV', 'ODS'];
-const MAX_FILE_SIZE_MB = 10;
 const normalizeAmountValue = (value: string) => value.trim().replace(',', '.');
 const isValidAmountValue = (value: string) => {
   const normalized = normalizeAmountValue(value);
@@ -69,18 +74,6 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
-
-const mergeUniqueFiles = (currentFiles: File[], addedFiles: File[]) => {
-  const fileMap = new Map<string, File>();
-
-  [...currentFiles, ...addedFiles].forEach((file) => {
-    fileMap.set(getFileKey(file), file);
-  });
-
-  return Array.from(fileMap.values());
-};
-
 const getContractorOptionLabel = (contractor: RequestContractorItem) => {
   const primaryLabel = contractor.company_name?.trim() || contractor.full_name?.trim() || contractor.user_id;
   const secondaryLabel = contractor.company_mail?.trim() || contractor.mail?.trim() || contractor.user_id;
@@ -103,6 +96,7 @@ export const CreateRequestPage = () => {
   const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
   const [actualNormativeFiles, setActualNormativeFiles] = useState<NormativeFileItem[]>([]);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [showSlowFileCheckHint, setShowSlowFileCheckHint] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requestIdStatus, setRequestIdStatus] = useState<{ available: boolean; detail: string } | null>(null);
   const [isCheckingRequestId, setIsCheckingRequestId] = useState(false);
@@ -300,6 +294,21 @@ export const CreateRequestPage = () => {
     || !hasActualNormativeFiles
     || isLoadingNormativeFiles
     || !normativeFileId;
+
+  useEffect(() => {
+    if (!isSubmittingRequest) {
+      setShowSlowFileCheckHint(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowSlowFileCheckHint(true);
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isSubmittingRequest]);
 
   const handleSubmitForm = async (values: FormValues) => {
     if (!values.normativeFileId) {
@@ -609,6 +618,7 @@ export const CreateRequestPage = () => {
                   type="file"
                   hidden
                   multiple
+                  accept={ALLOWED_UPLOAD_FILE_INPUT_ACCEPT}
                   onChange={(event) => {
                     handleFilesAdded(Array.from(event.target.files ?? []));
                     event.target.value = '';
@@ -625,7 +635,7 @@ export const CreateRequestPage = () => {
                   </Typography>
 
                   <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 410, lineHeight: 1.35 }}>
-                    Поддерживаются {ALLOWED_FILE_EXTENSIONS.join(', ')}. Размер одного файла до {MAX_FILE_SIZE_MB} МБ.
+                    Поддерживаются {ALLOWED_UPLOAD_FILE_TYPES_LABEL}. Размер одного файла до {MAX_UPLOAD_FILE_SIZE_MB} МБ.
                   </Typography>
 
                   <Button
@@ -778,6 +788,12 @@ export const CreateRequestPage = () => {
             >
               {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}
             </Button>
+
+            {isSubmittingRequest && showSlowFileCheckHint ? (
+              <Alert severity="info">
+                Проверка тяжёлых файлов может занять пару минут. Пожалуйста, не закрывайте страницу.
+              </Alert>
+            ) : null}
 
             {errorMessage ? (
               <Typography color="error" textAlign="center">

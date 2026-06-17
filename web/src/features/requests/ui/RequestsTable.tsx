@@ -1,11 +1,11 @@
 import { MouseEvent as ReactMouseEvent, useState } from 'react';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import MarkEmailUnreadRounded from '@mui/icons-material/MarkEmailUnreadRounded';
-import { Box, ButtonBase, Collapse, Divider, Paper, Select, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, ButtonBase, Collapse, Divider, Menu, MenuItem, Paper, Select, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
-import { StatusPill } from '@shared/components/StatusPill';
+import { StatusPill, type StatusPillTone } from '@shared/components/StatusPill';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
@@ -106,6 +106,125 @@ const offerStatusLabelMap: Record<string, string> = {
 const getContractorOfferStatusMeta = (status: string) => ({
     label: offerStatusLabelMap[status] ?? status
 });
+
+type ContractorOffersPreviewProps = {
+    offers: NonNullable<RequestWithOfferStats['offers']>;
+};
+
+const ContractorOffersPreview = ({ offers }: ContractorOffersPreviewProps) => {
+    const sortedOffers = offers
+        .slice()
+        // Backend may not include created_at for offers; we rely on offer.id ordering.
+        .sort((a, b) => b.id - a.id);
+
+    const latestOffer = sortedOffers[0];
+    const remainingOffers = sortedOffers.slice(1);
+
+    const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+    const isMenuOpen = Boolean(anchorEl);
+
+    const handleOpenMenu = (event: ReactMouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        setAnchorEl(event.currentTarget);
+    };
+
+    const handleCloseMenu = () => setAnchorEl(null);
+
+    if (!latestOffer) {
+        return <Typography variant="body2">-</Typography>;
+    }
+
+    const latestStatusMeta = getContractorOfferStatusMeta(latestOffer.status);
+    const latestTone = (offerStatusToneKey[latestOffer.status] ?? 'neutral') as StatusPillTone;
+    const neutralColor = 'text.secondary';
+
+    return (
+        <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{ flexWrap: 'nowrap', minHeight: 28 }}
+        >
+            <StatusPill
+                label={`КП № ${latestOffer.id} ${latestStatusMeta.label}`}
+                tone={latestTone}
+            />
+            {remainingOffers.length > 0 ? (
+                <>
+                    <ButtonBase
+                        data-testid="contractor-offers-dropdown-toggle"
+                        onClick={handleOpenMenu}
+                        disableRipple
+                        sx={{
+                            p: 0,
+                            borderRadius: '999px',
+                            verticalAlign: 'middle',
+                            '&:hover': { bgcolor: 'transparent' },
+                            '&.Mui-focusVisible': {
+                                outline: 'none',
+                                boxShadow: 'none',
+                            },
+                        }}
+                    >
+                        <Stack
+                            component="span"
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="center"
+                            sx={(theme) => ({
+                                display: 'inline-flex',
+                                px: 1.2,
+                                minHeight: 28,
+                                borderRadius: '999px',
+                                border: '1.5px solid',
+                                borderColor: theme.palette.text.secondary,
+                                bgcolor: alpha(theme.palette.text.secondary, 0.1),
+                                whiteSpace: 'nowrap',
+                                gap: 0.25,
+                            })}
+                        >
+                            <Typography
+                                component="span"
+                                sx={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: neutralColor,
+                                    lineHeight: 1.15,
+                                }}
+                            >
+                                {`Ещё: ${remainingOffers.length}`}
+                            </Typography>
+                            <ExpandMoreRounded sx={{ fontSize: 18, color: neutralColor }} />
+                        </Stack>
+                    </ButtonBase>
+                    <Menu
+                        anchorEl={anchorEl}
+                        open={isMenuOpen}
+                        onClose={handleCloseMenu}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                        PaperProps={{ sx: { p: 0.5 } }}
+                    >
+                        {remainingOffers.map((offer) => {
+                            const statusMeta = getContractorOfferStatusMeta(offer.status);
+                            const tone = (offerStatusToneKey[offer.status] ?? 'neutral') as StatusPillTone;
+                            return (
+                                <MenuItem
+                                    key={offer.id}
+                                    data-testid="contractor-offers-dropdown-item"
+                                    onClick={handleCloseMenu}
+                                    sx={{ py: 0.75, px: 1.25, alignItems: 'flex-start' }}
+                                >
+                                    <StatusPill label={`КП № ${offer.id} ${statusMeta.label}`} tone={tone} />
+                                </MenuItem>
+                            );
+                        })}
+                    </Menu>
+                </>
+            ) : null}
+        </Stack>
+    );
+};
 
 const NotificationContent = ({
     countSubmitted,
@@ -574,21 +693,7 @@ export const RequestsTable = ({
                 if (contractorOffers.length === 0) {
                     return <Typography variant="body2">-</Typography>;
                 }
-                return (
-                    <Stack spacing={0.75} alignItems="flex-start">
-                        {contractorOffers.map((offer) => {
-                            const statusMeta = getContractorOfferStatusMeta(offer.status);
-                            const statusTone = offerStatusToneKey[offer.status] ?? 'neutral';
-                            return (
-                                <StatusPill
-                                    key={offer.id}
-                                    label={`КП № ${offer.id} ${statusMeta.label}`}
-                                    tone={statusTone}
-                                />
-                            );
-                        })}
-                    </Stack>
-                );
+                return <ContractorOffersPreview offers={contractorOffers} />;
             }
         });
     }

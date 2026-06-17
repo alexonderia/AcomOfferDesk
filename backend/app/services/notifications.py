@@ -15,6 +15,15 @@ from app.domain.notifications import (
 from app.models.orm_models import UserNotification
 from app.realtime.contracts import OutboundEnvelope
 from app.repositories.notifications import NotificationRepository
+from shared.normalization import as_optional_int as _as_optional_int
+from shared.notification_copy import (
+    message_created_body,
+    message_created_title,
+    offer_created_body,
+    offer_created_title,
+    request_status_changed_body,
+    request_status_changed_title,
+)
 
 logger = logging.getLogger(__name__)
 _SYSTEM_TOAST_CHANNEL = "system"
@@ -154,8 +163,8 @@ class NotificationService:
             user_id=recipient_user_id,
             notification_type="offer.created",
             severity="info",
-            title="Новое коммерческое предложение",
-            body=f"По заявке №{request_id} создано новое КП.",
+            title=offer_created_title(),
+            body=offer_created_body(request_id=request_id),
             entity_type="offer",
             entity_id=offer_id,
             link_url=f"/requests/{request_id}",
@@ -182,8 +191,8 @@ class NotificationService:
             user_ids=recipients,
             notification_type="message.created",
             severity="info",
-            title="Новое сообщение",
-            body=f"В чате по заявке №{request_id} появилось новое сообщение.",
+            title=message_created_title(),
+            body=message_created_body(request_id=request_id),
             entity_type="message",
             entity_id=message_id,
             link_url=f"/offers/{offer_id}/workspace",
@@ -257,10 +266,14 @@ class NotificationService:
             user_id=recipient_user_id,
             notification_type="request.status_changed",
             severity="info",
-            title="Статус заявки изменен",
-            body=f"Заявка №{request_id}: {previous_status} -> {new_status}.",
+            title=request_status_changed_title(),
+            body=request_status_changed_body(
+                request_id=request_id,
+                previous_status=previous_status,
+                new_status=new_status,
+            ),
             entity_type="request",
-            entity_id=request_id,
+            entity_id=_as_optional_int(request_id),
             link_url=f"/requests/{request_id}",
             payload={
                 "request_id": request_id,

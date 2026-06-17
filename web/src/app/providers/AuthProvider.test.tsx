@@ -114,6 +114,17 @@ describe("AuthProvider", () => {
     expect(setAuthToken).toHaveBeenCalledWith(null);
   });
 
+  it("skips bootstrap refresh on login route and immediately stays anonymous", async () => {
+    renderProvider("/login?next=%2Frequests%2F333%2Fcontractor");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status")).toHaveTextContent("anonymous");
+    });
+
+    expect(refreshWebSession).not.toHaveBeenCalled();
+    expect(screen.getByTestId("is-authenticated")).toHaveTextContent("false");
+  });
+
   it("keeps business access and onboarding state from backend session payload", async () => {
     vi.mocked(refreshWebSession).mockResolvedValue({
       data: {

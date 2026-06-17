@@ -38,6 +38,7 @@ const renderRoleRoute = (path: string, element: JSX.Element) =>
         <Route path="/account" element={<div>account-page</div>} />
         <Route path="/requests" element={<div>requests-page</div>} />
         <Route path="/admin" element={path === "/admin" ? element : <div>admin-page</div>} />
+        <Route path="/contractors" element={path === "/contractors" ? element : <div>contractors-page</div>} />
         <Route path="/feedback" element={path === "/feedback" ? element : <div>feedback-page</div>} />
         <Route path="/pm-dashboard" element={path === "/pm-dashboard" ? element : <div>pm-dashboard-page</div>} />
         <Route
@@ -54,6 +55,7 @@ const renderRoleRoute = (path: string, element: JSX.Element) =>
 
 const guardedCases = [
   { path: "/admin", permission: "users.read", pageText: "admin-page" },
+  { path: "/contractors", permission: "contractors.read", pageText: "contractors-page" },
   { path: "/feedback", permission: "feedback.read", pageText: "feedback-page" },
   { path: "/pm-dashboard", permission: "dashboard.process.read", pageText: "pm-dashboard-page" },
   { path: "/pm-dashboard/savings", permission: "dashboard.savings.read", pageText: "pm-dashboard-savings-page" },

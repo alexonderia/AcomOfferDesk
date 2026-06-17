@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Body, Depends, Path
+from fastapi import APIRouter, Body, Depends, Path, Query
 
 from app.api.action_flags import ContractorActionBuilder
 from app.api.dependencies import get_current_user, get_uow
@@ -24,6 +24,7 @@ from app.schemas.contractors import (
 from app.services.contractor_invitations import ContractorInvitationService
 from app.services.contractors import ContractorService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from app.services.users import UserStatusService
 
 router = APIRouter()
@@ -43,7 +44,10 @@ def _ru_user_status(status: str) -> str:
 def _contractor_list_item(current_user: CurrentUser, item) -> ContractorListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
-    data["actions"] = ContractorActionBuilder.build_contractor_actions(current_user)
+    data["actions"] = ContractorActionBuilder.build_contractor_actions(
+        current_user,
+        is_manual=data.get("registration_source") == "manual",
+    )
     return ContractorListItemSchema(**data)
 
 
@@ -57,16 +61,37 @@ def _contractor_profile_data(current_user: CurrentUser, item) -> ContractorProfi
 @router.get("/contractors", response_model=ContractorListResponse)
 @router.get("/contractors/", response_model=ContractorListResponse, include_in_schema=False)
 async def list_contractors(
+    search: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
+    sort_order: str = Query(default="desc"),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorListResponse:
+    status_label_to_code = {value.lower(): key for key, value in USER_STATUS_RU.items()}
+    normalized_status = (status or "").strip().lower() or None
+    if normalized_status is not None:
+        normalized_status = status_label_to_code.get(normalized_status, normalized_status)
     async with uow:
         service = ContractorService(uow.users, uow.profiles)
-        items = await service.list_contractors(current_user=current_user)
+        result = await service.list_contractors(
+            current_user=current_user,
+            search=search,
+            status=normalized_status,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+        )
 
     return ContractorListResponse(
         data=ContractorListData(
-            items=[_contractor_list_item(current_user, item) for item in items],
+            items=[_contractor_list_item(current_user, item) for item in result.items],
+            total=result.total,
+            limit=result.limit,
+            offset=result.offset,
         ),
     )
 
@@ -103,6 +128,12 @@ async def update_contractor_status(
             uow.tg_users,
             uow.profiles,
             uow.user_auth_accounts,
+            uow.max_users,
+            notification_preferences=UserNotificationPreferencesService(
+                uow.user_contact_channels,
+                uow.user_notification_preferences,
+                profiles=uow.profiles,
+            ),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await contractor_service.update_contractor_status(

@@ -193,6 +193,26 @@ async def test_notify_request_status_changed_uses_info_severity():
 
 
 @pytest.mark.asyncio
+async def test_notify_request_status_changed_keeps_non_numeric_request_id_out_of_entity_id():
+    repo = _Repo()
+    sender = _RealtimeSender()
+    service = NotificationService(repo, realtime_sender=sender)
+
+    result = await service.notify_request_status_changed(
+        actor_user_id="user-2",
+        recipient_user_id="user-3",
+        request_id="REQ-55",
+        previous_status="open",
+        new_status="review",
+    )
+
+    assert result is not None
+    assert result.entity_id is None
+    assert result.link_url == "/requests/REQ-55"
+    assert result.payload["request_id"] == "REQ-55"
+
+
+@pytest.mark.asyncio
 async def test_create_for_user_keeps_flow_when_user_offline():
     repo = _Repo()
     sender = _RealtimeSender(delivered=False)

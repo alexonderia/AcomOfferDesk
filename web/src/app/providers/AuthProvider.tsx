@@ -14,7 +14,8 @@ const roleById: Record<number, string> = {
   4: 'project_manager',
   5: 'lead_economist',
   6: 'economist',
-  7: 'operator'
+  7: 'operator',
+  8: 'security_officer'
 };
 
 export type AuthSession = {
@@ -72,6 +73,8 @@ const buildLoginUrl = (nextPath: string, forcePrompt: boolean) => {
   }
   return `/api/v1/auth/oidc/login?${query.toString()}`;
 };
+
+const isLoginRoute = (pathname: string) => pathname === '/login' || pathname === '/auth/login';
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -212,12 +215,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     bootstrapStartedRef.current = true;
+    if (isLoginRoute(location.pathname)) {
+      applySession(null, 'anonymous');
+      return;
+    }
     void refresh('bootstrap').then((restored: boolean) => {
       if (!restored) {
         applySession(null, 'anonymous');
       }
     });
-  }, [applySession, refresh]);
+  }, [applySession, location.pathname, refresh]);
 
   useEffect(() => {
     if (status !== 'authenticated' || !session?.token || !session.tokenExpiresAt) {

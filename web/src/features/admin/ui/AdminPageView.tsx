@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import { UsersTable } from '@features/admin/components/UsersTable';
+import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
 import { ROLE } from '@shared/constants/roles';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
@@ -64,13 +65,13 @@ const sectionTitleSx = {
 export const AdminPageView = () => {
   const {
     isLeadLike,
-    isAdmin,
     canViewRoleIds,
     isDialogOpen,
-    setIsDialogOpen,
+    openCreateDialog,
     activeTab,
     handleTabChange,
     users,
+    contractors,
     isLoadingUsers,
     usersError,
     canUpdateStatus,
@@ -133,7 +134,7 @@ export const AdminPageView = () => {
 
   return (
     <Stack spacing={2}>
-      {!isLeadLike && !isAdmin ? (
+      {!isLeadLike ? (
         <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap" sx={{ width: '100%' }}>
           <Select
             size="small"
@@ -150,19 +151,29 @@ export const AdminPageView = () => {
 
       {usersError ? <Alert severity="error">{usersError}</Alert> : null}
 
-      <UsersTable
-        users={users}
-        isLoading={isLoadingUsers}
-        emptyMessage={isEmployeesTab ? employeePersonLabels.emptyList : 'Список пользователей пока пуст.'}
-        getRoleLabel={getRoleLabel}
-        isContractorsTab={activeTab === 'contractors'}
-        canViewRoleIds={canViewRoleIds}
-        canUpdateStatus={canUpdateStatus}
-        canUpdateRole={canUpdateRole}
-        allowedRoleOptions={roleUpdateOptions}
-        onStatusUpdated={loadUsers}
-        onAddClick={canOpenCreateDialog ? () => setIsDialogOpen(true) : undefined}
-      />
+      {activeTab === 'contractors' ? (
+        <ContractorsListView
+          contractors={contractors}
+          isLoading={isLoadingUsers}
+          emptyMessage="Список пользователей пока пуст."
+          onStatusUpdated={loadUsers}
+          onAddClick={canOpenCreateDialog ? openCreateDialog : undefined}
+        />
+      ) : (
+        <UsersTable
+          users={users}
+          isLoading={isLoadingUsers}
+          emptyMessage={isEmployeesTab ? employeePersonLabels.emptyList : 'Список пользователей пока пуст.'}
+          getRoleLabel={getRoleLabel}
+          isContractorsTab={false}
+          canViewRoleIds={canViewRoleIds}
+          canUpdateStatus={canUpdateStatus}
+          canUpdateRole={canUpdateRole}
+          allowedRoleOptions={roleUpdateOptions}
+          onStatusUpdated={loadUsers}
+          onAddClick={canOpenCreateDialog ? openCreateDialog : undefined}
+        />
+      )}
 
       <Dialog
         open={isDialogOpen}

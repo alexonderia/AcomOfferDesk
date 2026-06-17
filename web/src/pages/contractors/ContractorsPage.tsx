@@ -7,34 +7,16 @@ import { useAuth } from '@app/providers/AuthProvider';
 import { ContractorCreateDialog } from '@features/contractors/components/ContractorCreateDialog';
 import { ContractorInviteDialog } from '@features/contractors/components/ContractorInviteDialog';
 import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
-import type { UserListItem } from '@entities/user';
 import { listContractors } from '@shared/api/contractors/listContractors';
 import { hasPermission } from '@shared/auth/permissions';
 import { ActionButton } from '@shared/components/ActionButton';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 
-const mapContractorToUserListItem = (item: Awaited<ReturnType<typeof listContractors>>[number]): UserListItem => ({
-  user_id: item.userId,
-  role_id: item.roleId,
-  id_parent: null,
-  status: item.status,
-  full_name: item.fullName,
-  phone: item.phone,
-  mail: item.mail,
-  company_name: item.companyName,
-  inn: item.inn,
-  company_phone: item.companyPhone,
-  company_mail: item.companyMail,
-  address: item.address,
-  note: item.note,
-  actions: item.actions,
-});
-
 export const ContractorsPage = () => {
   const { session } = useAuth();
   const theme = useTheme();
   const isMobileViewport = useIsMobileViewport();
-  const [users, setUsers] = useState<UserListItem[]>([]);
+  const [contractors, setContractors] = useState<Awaited<ReturnType<typeof listContractors>>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -87,9 +69,9 @@ export const ContractorsPage = () => {
     setError(null);
     try {
       const items = await listContractors();
-      setUsers(items.map(mapContractorToUserListItem));
+      setContractors(items);
     } catch (loadError) {
-      setUsers([]);
+      setContractors([]);
       setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить контрагентов');
     } finally {
       setIsLoading(false);
@@ -104,12 +86,11 @@ export const ContractorsPage = () => {
     <Stack spacing={2}>
       {error ? <Alert severity="error">{error}</Alert> : null}
       <ContractorsListView
-        users={users}
+        contractors={contractors}
         isLoading={isLoading}
         emptyMessage="Контрагенты не найдены"
         onStatusUpdated={loadContractors}
         onAddClick={canManageContractors ? () => setIsCreateDialogOpen(true) : undefined}
-        useContractorsStatusApi
       />
       <ContractorCreateDialog
         open={isCreateDialogOpen}

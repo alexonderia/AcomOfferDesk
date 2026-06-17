@@ -58,4 +58,14 @@ describe('getScopedCreateRoleIds', () => {
 
     expect(roleIds).toEqual([ROLE.ECONOMIST, ROLE.OPERATOR]);
   });
+
+  it('moves security officer first on the dedicated tab for superadmin', () => {
+    const roleIds = getScopedCreateRoleIds({
+      activeTab: 'security_officers',
+      availableRoleIds: [ROLE.ADMIN, ROLE.SECURITY_OFFICER, ROLE.ECONOMIST],
+      sessionRoleId: ROLE.SUPERADMIN
+    });
+
+    expect(roleIds).toEqual([ROLE.SECURITY_OFFICER, ROLE.ADMIN, ROLE.ECONOMIST]);
+  });
 });

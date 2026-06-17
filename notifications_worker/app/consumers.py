@@ -8,31 +8,23 @@ from aio_pika.abc import AbstractIncomingMessage
 
 from .email_sender import send_email
 from .result_publisher import publish_email_delivery_result
+from .max_sender import send_max
 from .tg_sender import send_tg
-from shared.broker import RK_EMAIL, RK_EMAIL_DELIVERY_FAILED, RK_EMAIL_DELIVERY_SUCCEEDED, RK_TG
+from shared.broker import RK_EMAIL, RK_EMAIL_DELIVERY_FAILED, RK_EMAIL_DELIVERY_SUCCEEDED, RK_MAX, RK_TG
 from shared.email_delivery import EmailDeliveryResultEvent, generate_correlation_id, utc_now_iso
+from shared.normalization import as_optional_int as _as_optional_int
+from shared.normalization import is_truthy_env_flag
+from shared.normalization import normalize_optional_str as _normalize_optional_str
 
 logger = logging.getLogger(__name__)
 
 
 def _is_telegram_legacy_enabled() -> bool:
-    return os.getenv("LEGACY_TELEGRAM_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    return is_truthy_env_flag(os.getenv("LEGACY_TELEGRAM_ENABLED", "false"))
 
 
-def _as_optional_int(value) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _normalize_optional_str(value) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
+def _is_max_bot_enabled() -> bool:
+    return is_truthy_env_flag(os.getenv("MAX_BOT_ENABLED", "false"))
 
 
 async def handle_message(message: AbstractIncomingMessage) -> None:
@@ -78,6 +70,12 @@ async def handle_message(message: AbstractIncomingMessage) -> None:
                     logger.info("Skip legacy Telegram notification: feature is disabled")
                     return
                 await send_tg(payload)
+                return
+            if message.routing_key == RK_MAX:
+                if not _is_max_bot_enabled():
+                    logger.info("Skip MAX notification: feature is disabled")
+                    return
+                await send_max(payload)
                 return
             logger.info("Skip notification payload: unsupported routing key %s", message.routing_key)
         except Exception:

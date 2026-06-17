@@ -55,6 +55,7 @@
 | `docker-compose.prod-like.yml` | Локальная production-like проверка |
 | `docker-compose.prod.yml` | Override для production-периметра в `test/prod` |
 | `docker-compose.test.yml` | Test helper: loopback-публикация `gateway` на том же VPS |
+| `docker-compose.maintenance.yml` | Override для ручного maintenance mode: переводит `gateway` в режим полной заглушки без пересборки `backend/web` |
 | `docker-compose.init.yml` | One-shot init: `keycloak_db_prepare`, `keycloak_bootstrap`, `keycloak_user_role_sync` |
 
 Внешний reverse proxy пример: `infra/reverse-proxy/nginx.prod.example.conf`.
@@ -87,7 +88,7 @@ Prod-like + `ngrok` (только для внешней проверки callbac
 - в `.env.prod-like` задан `NGROK_AUTHTOKEN=<ваш_токен>`.
 
 ```bash
-docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok up -d --build keycloak backend web gateway rabbitmq minio notifications_worker ngrok
+docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok up -d --build keycloak file_guard backend web gateway rabbitmq minio notifications_worker ngrok max_bot
 ```
 
 ### Test (VPS)
@@ -109,6 +110,134 @@ docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose
 docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok config
 docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml config
 docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml config
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml config
+docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml -f docker-compose.maintenance.yml config
+```
+
+## Maintenance mode
+
+### Автоматический fallback
+
+- Базовый `gateway` всегда поднимается вместе с внутренним сервисом `maintenance`.
+- Если недоступен `web`, запросы на `/` и SPA-маршруты получают maintenance page вместо стандартного nginx `502`.
+- Если недоступен `backend`, запросы на `/api/*` получают контролируемый `503` JSON:
+
+```json
+{"detail":"Система временно недоступна. Ведутся технические работы."}
+```
+
+- `/iam/*` продолжает проксироваться в `keycloak`, пока сам Keycloak доступен.
+- `maintenance` не публикуется наружу отдельным портом и остается доступным только внутри `project_net`.
+
+### Ручной maintenance mode
+
+Ручной режим включается дополнительным compose-override `docker-compose.maintenance.yml`. В этом режиме:
+
+- `/` и `/iam/*` отдают maintenance page;
+- `/api/*` отдает `503` JSON;
+- `/health` отвечает из maintenance-контура, чтобы сам `gateway` оставался доступным.
+
+Включить `dev`:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `dev`:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d gateway maintenance
+```
+
+Включить `prod-like`:
+
+```bash
+docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `prod-like`:
+
+```bash
+docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml up -d gateway maintenance
+```
+
+Включить `test`:
+
+```bash
+docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `test`:
+
+```bash
+docker compose --env-file .env.test -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.test.yml up -d gateway maintenance
+```
+
+Включить `prod`:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+```
+
+Выключить `prod`:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d gateway maintenance
+```
+
+### Локальная проверка
+
+1. Проверить итоговый compose:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml config
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml config
+```
+
+2. Поднять `dev`-стенд:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+3. Проверить обычный режим:
+
+```bash
+curl -i http://localhost:8080/
+curl -i http://localhost:8080/api/health
+curl -i "http://localhost:8080/api/v1/auth/oidc/login?next_path=%2F"
+curl -i http://localhost:8080/iam/
+```
+
+4. Проверить автоматический fallback frontend:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml stop web
+curl -i http://localhost:8080/
+```
+
+5. Проверить автоматический fallback API:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml stop backend
+curl -i "http://localhost:8080/api/v1/auth/oidc/login?next_path=%2F"
+curl -i http://localhost:8080/api/health
+curl -i http://localhost:8080/health
+```
+
+6. Проверить ручной maintenance mode:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.maintenance.yml up -d gateway maintenance
+curl -i http://localhost:8080/
+curl -i http://localhost:8080/api/health
+curl -i http://localhost:8080/iam/
+```
+
+7. Вернуть обычный режим:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d gateway maintenance web backend
 ```
 
 Примечание по env-файлам в репозитории:
@@ -139,12 +268,89 @@ Public ingress только через HTTPS reverse proxy.
 | Откуда | Куда | Порт |
 |---|---|---|
 | `gateway` | `web` | `80` |
+| `gateway` | `maintenance` | `80` |
 | `gateway` | `backend` | `8000` |
 | `gateway` | `keycloak` | `8080` |
 | `backend` | PostgreSQL (`order_database`) | `5432` |
 | `backend` / `notifications_worker` | `rabbitmq` | `5672` |
+| `backend` | `file_guard` | `8080` |
 | `backend` | `minio` | `9000` |
 | `backend` / `notifications_worker` / `keycloak` | SMTP/IMAP | provider ports |
+
+## File Guard upload scanning
+
+- `file_guard` — внутренний FastAPI-сервис проверки загружаемых файлов перед сохранением в MinIO и перед записью связей в БД.
+- Сервис не публикуется наружу через `ports`, не подключается к `gateway` и доступен только по service name `http://file_guard:8080` внутри `project_net`.
+- Backend работает в fail-closed режиме: если `file_guard` недоступен или вернул ошибку, пользовательский файл не должен попадать в MinIO и БД.
+- Результат проверки не сохраняется в отдельную бизнес-таблицу БД; это только gate перед текущей логикой хранения.
+- MVP allowlist: `.pdf`, `.docx`, `.xlsx`, `.jpg`, `.jpeg`, `.png`.
+- Базовые env-переменные backend/runtime:
+  - `FILE_GUARD_ENABLED=true`
+  - `FILE_GUARD_URL=http://file_guard:8080`
+  - `FILE_GUARD_TIMEOUT_SECONDS=10`
+  - `FILE_GUARD_MAX_FILE_SIZE_BYTES=5242880`
+- Локальная проверка runtime-контура:
+  - `docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml config`
+  - `docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build file_guard backend web gateway`
+- Проверка должна завершаться до постоянного хранения файла. Разрешённый файл продолжает текущий flow, заблокированный — возвращает безопасную ошибку frontend.
+- Если ручной smoke включает backend upload с реальным сохранением (например, `POST /api/v1/normative-files`), cleanup обязателен: после подтверждения happy-path нужно удалить созданную запись и storage object, чтобы не оставлять тестовые артефакты в БД и MinIO.
+- Для cleanup сохраняйте `normative_id` из ответа upload и проверяйте ожидаемое имя файла перед удалением. Пример для удаления тестового normative file через runtime backend container:
+
+```bash
+docker exec backend sh -lc "cd /app && python - <<'PY'
+import asyncio
+from sqlalchemy import text
+from app.core.uow import UnitOfWork
+from app.services.files import FileService
+
+TARGET_NORMATIVE_ID = 8
+TARGET_FILE_NAME = 'ok.png'
+
+async def main():
+    async with UnitOfWork() as uow:
+        row = await uow.files.get_normative_file_row(normative_id=TARGET_NORMATIVE_ID)
+        if row is None:
+            print('already_absent')
+            return
+        if row.original_name != TARGET_FILE_NAME:
+            raise RuntimeError(f'unexpected normative file: {row}')
+        await uow.session.execute(
+            text('DELETE FROM normative_files WHERE id = :id'),
+            {'id': TARGET_NORMATIVE_ID},
+        )
+        await uow.session.flush()
+        await FileService(uow.files).delete_file(file_id=row.file_id)
+        print(
+            {
+                'deleted_normative_id': TARGET_NORMATIVE_ID,
+                'deleted_file_id': row.file_id,
+                'original_name': row.original_name,
+            }
+        )
+
+asyncio.run(main())
+PY"
+```
+
+- Минимальная post-cleanup проверка:
+
+```bash
+docker exec backend sh -lc "cd /app && python - <<'PY'
+import asyncio
+from app.core.uow import UnitOfWork
+
+TARGET_NORMATIVE_ID = 8
+TARGET_FILE_ID = 64
+
+async def main():
+    async with UnitOfWork() as uow:
+        row = await uow.files.get_normative_file_row(normative_id=TARGET_NORMATIVE_ID)
+        db_file = await uow.files.get_by_id(TARGET_FILE_ID)
+        print({'normative_exists': row is not None, 'file_exists': db_file is not None})
+
+asyncio.run(main())
+PY"
+```
 
 ## Admin-only flow
 

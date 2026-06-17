@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.domain.contractor_validation import (
     validate_inn,
     validate_optional_email,
+    validate_optional_inn,
+    validate_optional_phone,
     validate_password_bcrypt_bytes,
     validate_ru_phone,
 )
@@ -256,6 +258,28 @@ class UpdateMyCompanyContactsRequest(BaseModel):
     note: str | None = None
 
 
+class LinkMyMaxAccountRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=4096)
+
+
+class NotificationPreferencesData(BaseModel):
+    mode: str
+    email_available: bool
+    max_available: bool
+    email: str | None = None
+    max_user_id: str | None = None
+    preferences: dict[str, dict[str, bool]]
+
+
+class NotificationPreferencesResponse(BaseModel):
+    data: NotificationPreferencesData
+
+
+class UpdateNotificationPreferencesRequest(BaseModel):
+    mode: str | None = Field(default=None, min_length=1, max_length=32)
+    preferences: dict[str, dict[str, bool | None]] | None = None
+
+
 class SetMyUnavailabilityPeriodRequest(BaseModel):
     status: str
     started_at: datetime
@@ -317,7 +341,6 @@ class ManualContractorCreateResponse(BaseModel):
 
 
 class ManualContractorUpdateRequest(BaseModel):
-    login: str | None = Field(default=None, min_length=3, max_length=128)
     password: str | None = Field(default=None, min_length=6, max_length=72)
     full_name: str | None = Field(default=None, max_length=256)
     phone: str | None = Field(default=None, max_length=64)
@@ -330,7 +353,6 @@ class ManualContractorUpdateRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1024)
 
     @field_validator(
-        "login",
         "password",
         "full_name",
         "phone",
@@ -366,7 +388,7 @@ class ManualContractorUpdateRequest(BaseModel):
     def _validate_phone(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_ru_phone(value)
+        return validate_optional_phone(value, allow_placeholder=True)
 
     @field_validator("mail", "company_mail")
     @classmethod
@@ -380,7 +402,7 @@ class ManualContractorUpdateRequest(BaseModel):
     def _validate_inn(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_inn(value)
+        return validate_optional_inn(value, allow_placeholder=True)
 
 
 class ManualContractorUpdateData(BaseModel):

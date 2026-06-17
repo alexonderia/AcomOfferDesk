@@ -12,7 +12,8 @@ from app.domain.exceptions import Conflict
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.repositories.profiles import ActiveContractorEmailRecipient
-from app.services.requests import RequestFileCreateInput, RequestService
+from app.services.files import PreparedUpload
+from app.services.requests import RequestService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
 from app.services import send_request_notification_email as send_request_notification_email_module
 from app.services.email_delivery_events import BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
@@ -86,6 +87,15 @@ class _FakeUsersRepo:
         _ = (contractor_role_id, exclude_user_ids)
         return []
 
+    async def list_active_approved_contractor_max_recipients(
+        self,
+        *,
+        contractor_role_id: int,
+        exclude_user_ids: list[str],
+    ):
+        _ = (contractor_role_id, exclude_user_ids)
+        return []
+
     async def list_active_user_parent_pairs(self):
         return []
 
@@ -149,6 +159,18 @@ class _FakeEmailNotificationService:
                 "initiator_user_id": initiator_user_id,
             }
         )
+
+
+class _TypeErrorEmailNotificationService:
+    async def notify_request_to_additional_emails(
+        self,
+        *,
+        request_id: str,
+        additional_emails: list[str],
+        initiator_user_id: str | None = None,
+    ) -> None:
+        _ = (request_id, additional_emails, initiator_user_id)
+        raise TypeError("transport bug")
 
 
 class _FakeRequestRepoForSendUseCase:
@@ -232,10 +254,11 @@ async def test_create_request_triggers_email_notification_event(make_current_use
         id_plan=None,
         normative_file_id=1,
         files=[
-            RequestFileCreateInput(
+            PreparedUpload(
                 original_name="spec.pdf",
                 content_bytes=b"file-bytes",
                 mime_type="application/pdf",
+                content_sha256="sha-1",
             )
         ],
         additional_emails=[" INVITE@example.com ", "invite@example.com", ""],
@@ -279,6 +302,36 @@ async def test_manual_request_email_notification_rejects_invalid_email(make_curr
             current_user=user,
             request_id=10,
             additional_emails=["not-an-email"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_manual_request_email_notification_does_not_swallow_internal_type_error(make_current_user):
+    request_row = SimpleNamespace(id=10, id_user="owner-10", status="open")
+    requests_repo = _FakeRequestRepoForCreate()
+    requests_repo.created_requests.append(request_row)
+    service = RequestService(
+        requests=requests_repo,
+        files=_FakeFilesRepo(),
+        users=_FakeUsersRepo(),
+        offers=_FakeOffersRepo(),
+        user_status_periods=_FakeUserStatusPeriodsRepo(),
+        email_notifications=_TypeErrorEmailNotificationService(),
+    )
+    user = make_current_user(
+        user_id="owner-10",
+        role_id=settings.economist_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
+            PermissionCodes.REQUESTS_UPDATE,
+        },
+    )
+
+    with pytest.raises(TypeError, match="transport bug"):
+        await service.send_request_email_notification(
+            current_user=user,
+            request_id=10,
+            additional_emails=["user@example.com"],
         )
 
 
@@ -334,7 +387,7 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
 
     assert verified_item["reply_token"]
     assert "/requests/33/contractor" in verified_item["text_content"]
-    assert "Открыть заявку:" in verified_item["text_content"]
+    assert "Перейти в систему:" in verified_item["text_content"]
     assert verified_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert verified_item["operation_expected_total"] == 2
     assert invite_item["reply_token"] is None
@@ -476,7 +529,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
     assert "Вы приглашены к работе в системе AcomOfferDesk." in event["text_content"]
     assert "Инструкция по получению доступа приложена к письму в виде презентации." in event["text_content"]
     assert "Поступила новая заявка №50." in event["text_content"]
-    assert "Перейти к системе:" in event["text_content"]
+    assert "Перейти в систему:" in event["text_content"]
     assert "/api/v1/auth/oidc/register" not in event["text_content"]
     assert event["attachments"][0].filename == "onboarding.pptx"
 

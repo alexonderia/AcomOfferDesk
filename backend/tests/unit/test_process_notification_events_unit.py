@@ -471,6 +471,54 @@ async def test_handler_request_deadline_changed_notifies_responsible(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_handler_request_created_keeps_non_numeric_request_id_out_of_entity_id(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(
+        module,
+        "UnitOfWork",
+        lambda: _FakeUow(repo, owner_id="owner-9", visible_contractors_by_request={"REQ-77": ["contractor-1"]}),
+    )
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="request.created",
+        actor_user_id="manager-1",
+        request_id="REQ-77",
+        dedupe_key="request.created:REQ-77",
+        payload={"responsible_user_id": "owner-9"},
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert sorted(item.user_id for item in repo.created) == ["contractor-1", "owner-9"]
+    assert all(item.entity_id is None for item in repo.created)
+    assert all(item.link_url == "/requests/REQ-77" for item in repo.created)
+
+
+@pytest.mark.asyncio
+async def test_handler_request_deadline_changed_keeps_non_numeric_request_id_out_of_entity_id(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo))
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="request.deadline_changed",
+        actor_user_id="manager-1",
+        request_id="REQ-88",
+        dedupe_key="request.deadline_changed:REQ-88",
+        payload={
+            "responsible_user_id": "owner-9",
+            "old_deadline": "2026-05-20T10:00:00Z",
+            "new_deadline": "2026-05-21T10:00:00Z",
+        },
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert len(repo.created) == 1
+    assert repo.created[0].entity_id is None
+    assert repo.created[0].link_url == "/requests/REQ-88"
+
+
+@pytest.mark.asyncio
 async def test_handler_request_files_changed_notifies_responsible_and_submitted_accepted(monkeypatch):
     repo = _FakeNotificationsRepo()
     offers = {

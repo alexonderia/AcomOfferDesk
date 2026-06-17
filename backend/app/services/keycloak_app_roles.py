@@ -13,6 +13,7 @@ def role_mapping_by_local_role_id() -> dict[int, str]:
         settings.lead_economist_role_id: "app.lead_economist",
         settings.economist_role_id: "app.economist",
         settings.operator_role_id: "app.operator",
+        settings.security_officer_role_id: "app.security_officer",
         settings.contractor_role_id: "app.contractor",
     }
 

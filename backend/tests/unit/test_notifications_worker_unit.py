@@ -250,3 +250,22 @@ async def test_email_sender_spam_rejection_activates_recipient_cooldown(monkeypa
     await worker_email_sender.send_email(payload)
 
     assert len(attempts) == 1
+
+
+def test_format_recipient_log_uses_recipient_user_id_when_context_missing() -> None:
+    formatted = worker_email_sender._format_recipient_log(
+        {
+            "to_email": "user@example.com",
+            "recipient_user_id": "contractor-1",
+        }
+    )
+
+    assert "зарегистрированный пользователь" in formatted
+    assert "login=contractor-1" in formatted
+    assert "не зарегистрирован" not in formatted
+
+
+def test_format_recipient_log_marks_unknown_recipient_as_external() -> None:
+    formatted = worker_email_sender._format_recipient_log({"to_email": "guest@example.com"})
+
+    assert "внешний получатель" in formatted

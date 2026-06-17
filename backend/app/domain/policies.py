@@ -3,6 +3,7 @@
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.authorization import has_permission, require_any_permission, require_permission
+from app.domain.contractor_delegations import user_has_contractor_status_delegation
 from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 
@@ -181,15 +182,26 @@ class UserPolicy:
 
     @staticmethod
     def can_update_contractor_profile_status(current_user: CurrentUser) -> bool:
-        return has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE)
+        # security_officer app role, delegation expansion, or explicit delegation role in token
+        if has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE):
+            return True
+        if user_has_contractor_status_delegation(current_user.delegation_roles):
+            return True
+        # admin/superadmin manage contractor status via users.status.update
+        return (
+            has_permission(current_user, PermissionCodes.USERS_STATUS_UPDATE)
+            and current_user.role_id
+            in {
+                settings.superadmin_role_id,
+                settings.admin_role_id,
+            }
+        )
 
     @staticmethod
     def ensure_can_update_contractor_profile_status(current_user: CurrentUser) -> None:
-        require_permission(
-            current_user,
-            PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
-            message="Недостаточно прав для изменения статуса профиля контрагента",
-        )
+        if UserPolicy.can_update_contractor_profile_status(current_user):
+            return
+        raise Forbidden("Недостаточно прав для изменения статуса профиля контрагента")
 
     @staticmethod
     def can_update_user_role(current_user: CurrentUser) -> bool:
@@ -215,6 +227,21 @@ class UserPolicy:
             PermissionCodes.USERS_MANAGER_UPDATE,
             message="Только руководитель проекта, ведущий экономист и экономист могут обновлять руководителя пользователя",
         )
+
+    @staticmethod
+    def can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -> bool:
+        if current_role_id == settings.superadmin_role_id:
+            return True
+        if current_role_id == settings.project_manager_role_id:
+            return target_role_id in {
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+                settings.operator_role_id,
+            }
+        if current_role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
+            return target_role_id in {settings.economist_role_id, settings.operator_role_id}
+        return False
 
     @staticmethod
     def can_manage_manual_contractors(current_user: CurrentUser) -> bool:

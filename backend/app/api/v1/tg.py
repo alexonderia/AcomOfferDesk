@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 
-from app.api.dependencies import get_uow
+from app.api.dependencies import get_uow, require_bot_api_secret
 from app.core.config import settings
 from app.core.tg_links import decode_token
 from app.core.tg_shortcodes import TgShortcodeCodec
@@ -28,6 +28,7 @@ from app.schemas.tg_users import (
     TgUserStartResponse,
     TgUserStartData,
 )
+from app.services.contractor_email_notifications import notify_registration_completed_email
 from app.services.tg_notifications import notify_expired_link, notify_registration_completed
 from app.services.tg_registration_links import (
     TgRegistrationLinkExpiredError,
@@ -64,6 +65,7 @@ def _build_registration_link_status_url(reason: str) -> str:
 async def create_register_link(
     payload: TgLinkRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> TgLinkResponse:
     if not settings.tg_link_secret:
         raise Forbidden("TG links are not configured")
@@ -85,6 +87,7 @@ async def create_register_link(
 async def register_tg_user(
     payload: TgUserStartRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> TgUserStartResponse:
     async with uow:
         service = TgUserRegistrationService(uow.tg_users)
@@ -100,6 +103,7 @@ async def register_tg_user(
 async def handle_tg_start(
     payload: TgStartRequest,
     uow: UnitOfWork = Depends(get_uow),
+    _: None = Depends(require_bot_api_secret),
 ) -> TgStartResponse:
     async with uow:
         service = TgStartService(uow.tg_users, uow.users, uow.requests)
@@ -208,6 +212,11 @@ async def complete_tg_registration(
             pass
 
     await notify_registration_completed(tg_id)
+    if normalized_mail:
+        await notify_registration_completed_email(
+            to_email=normalized_mail,
+            recipient_user_id=user.id,
+        )
 
     return ContractorRegistrationResponse(
         data=ContractorRegistrationData(

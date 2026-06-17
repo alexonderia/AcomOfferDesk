@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     backend_base_url: str
     public_backend_base_url: str | None = None
     request_timeout_seconds: float = 5.0
+    bot_api_shared_secret: str | None = None
 
 
 settings = Settings()

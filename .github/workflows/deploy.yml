@@ -172,6 +172,17 @@ jobs:
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
+            ensure_runtime_flag() {
+              local key="$1" value="$2"
+              if grep -q "^${key}=" "$APP_ENV_FILE" 2>/dev/null; then
+                sed -i "s/^${key}=.*/${key}=${value}/" "$APP_ENV_FILE"
+              else
+                echo "${key}=${value}" >>"$APP_ENV_FILE"
+              fi
+            }
+            ensure_runtime_flag MAX_BOT_ENABLED false
+            ensure_runtime_flag FILE_GUARD_ENABLED true
+
             # Infra: no --force-recreate — Docker can return "No such container" mid-recreate
             # when the old container ID is torn down while Compose still tracks it (#26146730081).
             # App images: --force-recreate --no-deps per service + retries (no parallel infra churn).
@@ -199,7 +210,7 @@ jobs:
             # file_guard must come up before backend (backend depends_on file_guard: service_healthy);
             # the per-service app loop below uses --no-deps and would not start it otherwise,
             # leaving uploads failing closed (503) until file_guard is running.
-            for infra_svc in rabbitmq minio keycloak file_guard; do
+            for infra_svc in rabbitmq minio keycloak file_guard maintenance; do
               if ! compose_up_infra "$infra_svc"; then
                 echo "=== docker compose ps -a (infra: $infra_svc) ==="
                 docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
@@ -218,12 +229,13 @@ jobs:
               fi
             done
 
-            if ! docker compose --env-file "$COMPOSE_ENV_FILE" exec -T gateway nginx -s reload; then
-              if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --no-deps --force-recreate gateway; then
-                echo "=== gateway logs (tail) ==="
-                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 gateway || true
-                exit 1
-              fi
+            # gateway depends_on maintenance; compose_up_infra starts deps and waits for health.
+            if ! compose_up_infra gateway; then
+              echo "=== docker compose ps -a (gateway) ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+              echo "=== gateway logs (tail) ==="
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 gateway || true
+              exit 1
             fi
 
             # Keycloak: skip 20–30 min bootstrap when model OK + bootstrap.sh unchanged; repair on verify fail.

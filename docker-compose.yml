@@ -245,7 +245,12 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'app.main' >/dev/null 2>&1 || exit 1"]
+      # python:3.12-slim has no pgrep; inspect PID 1 cmdline instead.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import pathlib; c=pathlib.Path('/proc/1/cmdline').read_bytes().replace(b'\\x00', b' ').decode(); raise SystemExit(0 if 'app.main' in c else 1)"
       interval: 30s
       timeout: 5s
       retries: 5

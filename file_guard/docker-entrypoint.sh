@@ -47,7 +47,7 @@ if [ "${FILE_GUARD_ANTIVIRUS_ENABLED:-true}" = "true" ]; then
   fi
 
   echo "[file_guard] Запускаем локальный процесс clamd"
-  clamd --foreground=true --config-file=/etc/clamav/clamd.conf &
+  clamd --foreground --config-file=/etc/clamav/clamd.conf &
   CLAMD_PID="$!"
 else
   echo "[file_guard] Антивирусная проверка отключена настройкой FILE_GUARD_ANTIVIRUS_ENABLED=false"

@@ -12,6 +12,7 @@ import {
   DialogContent,
   Divider,
   IconButton,
+  Link,
   Stack,
   Switch,
   Tooltip,
@@ -43,6 +44,7 @@ import { z } from 'zod';
 
 const fallbackText = 'Не указано';
 const defaultDbPlaceholder = 'не указано';
+const MAX_BOT_LINK = 'https://max.ru/id162611077185_1_bot';
 
 const dialogPaperSx = (theme: Theme) => ({
   borderRadius: 2,
@@ -989,6 +991,9 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
             <Typography variant="body2" color="text.secondary">
               По команде /start в MAX-боте можно узнать свой MAX ID и по нему привязать аккаунт для уведомлений.
             </Typography>
+            <Link href={MAX_BOT_LINK} target="_blank" rel="noreferrer" sx={{ alignSelf: 'flex-start', wordBreak: 'break-all' }}>
+              {MAX_BOT_LINK}
+            </Link>
             <ValidatedTextField
               label="MAX ID"
               fieldName="code"

@@ -229,6 +229,54 @@ class UserPolicy:
         )
 
     @staticmethod
+    def can_read_units(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_READ)
+
+    @staticmethod
+    def ensure_can_read_units(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_READ,
+            message="Недостаточно прав для просмотра иерархии подразделений",
+        )
+
+    @staticmethod
+    def can_create_units(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_CREATE)
+
+    @staticmethod
+    def ensure_can_create_units(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_CREATE,
+            message="Недостаточно прав для создания подразделения",
+        )
+
+    @staticmethod
+    def can_update_units(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_UPDATE)
+
+    @staticmethod
+    def ensure_can_update_units(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_UPDATE,
+            message="Недостаточно прав для изменения подразделения",
+        )
+
+    @staticmethod
+    def can_manage_unit_members(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_MEMBERS_MANAGE)
+
+    @staticmethod
+    def ensure_can_manage_unit_members(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_MEMBERS_MANAGE,
+            message="Недостаточно прав для управления участниками подразделения",
+        )
+
+    @staticmethod
     def can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -> bool:
         if current_role_id == settings.superadmin_role_id:
             return True

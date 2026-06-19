@@ -23,6 +23,10 @@ Legend: `SA`=superadmin, `AD`=admin, `SO`=security_officer, `PM`=project_manager
 | `users.login.update` | Y¹ | Y¹ | N | N | N | N | N | N |
 | `users.password.update` | Y² | Y² | N | N | N | N | N | N |
 | `users.manager.update` | Y | N | N | Y | Y | Y | N | N |
+| `units.read` | Y | Y | N | N | N | N | N | N |
+| `units.create` | Y | Y | N | N | N | N | N | N |
+| `units.update` | Y | Y | N | N | N | N | N | N |
+| `units.members.manage` | Y | Y | N | N | N | N | N | N |
 | `profile.manage_own` | Y | Y | Y | Y | Y | Y | Y | Y |
 | `profile.manage_any` | Y | Y | N | N | Y | N | N | N |
 | `company_contacts.manage_own` | Y | N | N | N | N | N | N | Y |

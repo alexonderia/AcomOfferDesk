@@ -22,6 +22,7 @@ export const useHeaderConfig = () => {
   const canLoadOpenRequests = hasPermission(session, 'requests.open.read');
   const canLoadOfferedRequests = hasPermission(session, 'requests.offered.read');
   const canOpenUsersPage = hasPermission(session, 'users.read');
+  const canOpenHierarchyPage = hasPermission(session, 'units.read');
   const canOpenContractorsPage = hasPermission(session, 'contractors.read');
   const canRegisterUser = hasPermission(session, 'users.create');
   const canManageNormativeFiles = hasPermission(session, 'normative_files.manage');
@@ -52,6 +53,9 @@ export const useHeaderConfig = () => {
       return [{ key: 'users', label: isEmployeesPage ? 'Сотрудники' : 'Пользователи' }];
     }
 
+    if (location.pathname === '/admin/hierarchy') {
+      return [{ key: 'hierarchy', label: '\u0418\u0435\u0440\u0430\u0440\u0445\u0438\u044f' }];
+    }
     if (location.pathname === '/contractors') {
       return [{ key: 'contractors', label: 'Контрагенты' }];
     }
@@ -133,6 +137,7 @@ export const useHeaderConfig = () => {
         canLoadOpenRequests,
         canLoadOfferedRequests,
         canOpenUsersPage,
+        canOpenHierarchyPage,
         canOpenContractorsPage,
         canManageNormativeFiles,
         canViewFeedback,
@@ -147,6 +152,7 @@ export const useHeaderConfig = () => {
         onNavigateToRequests: () => navigate('/requests'),
         onNavigateToRequestCreate: () => navigate('/requests/create', { state: { backgroundLocation: location } }),
         onNavigateToAdmin: () => navigate('/admin'),
+        onNavigateToHierarchy: () => navigate('/admin/hierarchy'),
         onNavigateToContractors: () => navigate('/contractors'),
         onNavigateToNormativeFiles: () => navigate('/normative-files'),
         onNavigateToAdminCreate: () => {
@@ -175,6 +181,7 @@ export const useHeaderConfig = () => {
       canCreateRequest,
       canLoadOfferedRequests,
       canLoadOpenRequests,
+      canOpenHierarchyPage,
       canOpenUsersPage,
       canOpenContractorsPage,
       canManageNormativeFiles,

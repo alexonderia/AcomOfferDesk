@@ -39,6 +39,7 @@ class DummyUow:
         self.user_contact_channels = None
         self.notifications = None
         self.economy_plans = None
+        self.units = None
 
     async def __aenter__(self) -> "DummyUow":
         return self

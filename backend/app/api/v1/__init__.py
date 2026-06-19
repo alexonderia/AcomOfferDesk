@@ -12,11 +12,13 @@ from app.api.v1.notifications import router as notifications_router
 from app.api.v1.plans import router as plans_router
 from app.api.v1.max import router as max_router
 from app.api.v1.tg import router as tg_router
+from app.api.v1.units import router as units_router
 from app.api.v1.ws import router as ws_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(auth_router, tags=["auth"])
 router.include_router(users_router, tags=["users"])
+router.include_router(units_router, tags=["units"])
 router.include_router(contractors_router, tags=["contractors"])
 router.include_router(requests_router, tags=["requests"])
 router.include_router(offers_router, tags=["offers"])

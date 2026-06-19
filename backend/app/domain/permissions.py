@@ -14,6 +14,10 @@ class PermissionCodes:
     USERS_LOGIN_UPDATE = "users.login.update"
     USERS_PASSWORD_UPDATE = "users.password.update"
     USERS_MANAGER_UPDATE = "users.manager.update"
+    UNITS_READ = "units.read"
+    UNITS_CREATE = "units.create"
+    UNITS_UPDATE = "units.update"
+    UNITS_MEMBERS_MANAGE = "units.members.manage"
     PROFILE_MANAGE_OWN = "profile.manage_own"
     PROFILE_MANAGE_ANY = "profile.manage_any"
     COMPANY_CONTACTS_MANAGE_OWN = "company_contacts.manage_own"
@@ -173,6 +177,10 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_ROLE_UPDATE_ANY,
                 PermissionCodes.USERS_LOGIN_UPDATE,
                 PermissionCodes.USERS_PASSWORD_UPDATE,
+                PermissionCodes.UNITS_READ,
+                PermissionCodes.UNITS_CREATE,
+                PermissionCodes.UNITS_UPDATE,
+                PermissionCodes.UNITS_MEMBERS_MANAGE,
                 PermissionCodes.PROFILE_MANAGE_ANY,
                 PermissionCodes.COMPANY_CONTACTS_MANAGE_ANY,
                 PermissionCodes.CONTRACTORS_MANUAL_CREATE,

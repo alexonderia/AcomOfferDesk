@@ -280,6 +280,10 @@ users.role.update_economy
 users.login.update
 users.password.update
 users.manager.update
+units.read
+units.create
+units.update
+units.members.manage
 profile.manage_own
 profile.manage_any
 company_contacts.manage_own
@@ -411,6 +415,10 @@ users.status.update
 users.role.update_any
 users.login.update
 users.password.update
+units.read
+units.create
+units.update
+units.members.manage
 profile.manage_any
 company_contacts.manage_any
 contractors.manual.create

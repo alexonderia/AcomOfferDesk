@@ -58,6 +58,10 @@ users.role.update_economy
 users.login.update
 users.password.update
 users.manager.update
+units.read
+units.create
+units.update
+units.members.manage
 profile.manage_own
 profile.manage_any
 company_contacts.manage_own

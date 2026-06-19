@@ -117,6 +117,7 @@ if (-not $AdminUsername -or -not $AdminPassword) {
 
 $RoleNames = @(
   "users.read","users.create","users.status.update","users.role.update_any","users.role.update_economy","users.login.update","users.password.update","users.manager.update",
+  "units.read","units.create","units.update","units.members.manage",
   "profile.manage_own","profile.manage_any","company_contacts.manage_own","company_contacts.manage_any",
   "requests.read","requests.amounts.read","requests.create","requests.update","requests.pricing.update","requests.deadline.update","requests.status.update","requests.owner.change",
   "requests.files.upload","requests.files.delete","requests.open.read","requests.offered.read","requests.contractor_view.read","requests.email_notifications.send","requests.deleted_alerts.mark_viewed",

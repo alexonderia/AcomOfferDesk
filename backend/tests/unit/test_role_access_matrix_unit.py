@@ -178,3 +178,26 @@ def test_security_officer_role_has_only_expected_permissions() -> None:
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
         }
     )
+
+
+def test_units_permissions_are_granted_only_to_superadmin_and_admin() -> None:
+    role_map = get_role_permissions_map()
+    unit_permissions = {
+        PermissionCodes.UNITS_READ,
+        PermissionCodes.UNITS_CREATE,
+        PermissionCodes.UNITS_UPDATE,
+        PermissionCodes.UNITS_MEMBERS_MANAGE,
+    }
+
+    assert unit_permissions.issubset(role_map[settings.superadmin_role_id])
+    assert unit_permissions.issubset(role_map[settings.admin_role_id])
+
+    for role_id in (
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+        settings.economist_role_id,
+        settings.operator_role_id,
+        settings.contractor_role_id,
+        settings.security_officer_role_id,
+    ):
+        assert unit_permissions.isdisjoint(role_map[role_id])

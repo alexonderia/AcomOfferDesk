@@ -70,6 +70,7 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Keep the recommendation chart visually separate from the editable units tree so users do not confuse guidance with the source-of-truth structure.
 - Prefer a horizontally scrollable chart container over wrapping children to the next line, because wrapped branches break connector readability on dense hierarchies.
 - Keep editing actions out of the recommendation chart cards; CRUD stays attached only to the real units tree.
+- When the chart follows a visual reference similar to a corporate org diagram, prefer a neutral light canvas, white node cards, and thin blue connectors over saturated gradients or oversized chips.
 
 ---
 

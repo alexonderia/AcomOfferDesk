@@ -64,7 +64,10 @@ const getMemberAccentColor = (roleName: string) => {
   return '#475569';
 };
 
-const RecommendationNodeCard = ({
+const hierarchyConnectorColor = alpha('#0284c7', 0.72);
+const recommendedCardWidth = 248;
+
+const RecommendedNodeCard = ({
   node,
   depth,
 }: {
@@ -72,74 +75,211 @@ const RecommendationNodeCard = ({
   depth: number;
 }) => {
   const accent = getMemberAccentColor(node.role_name);
+  const subordinateCount = node.children.length;
 
   return (
-    <Box sx={{ position: 'relative', pl: depth === 0 ? 0 : { xs: 2, md: 3 } }}>
-      {depth > 0 ? (
-        <Box
-          sx={{
-            position: 'absolute',
-            left: { xs: 8, md: 12 },
-            top: 0,
-            bottom: 0,
-            width: 1,
-            bgcolor: 'divider',
-          }}
-        />
-      ) : null}
-      <Card
-        variant="outlined"
-        sx={{
-          borderRadius: 3,
-          borderColor: alpha(accent, 0.18),
-          background: `linear-gradient(180deg, ${alpha(accent, 0.08)} 0%, rgba(255,255,255,0.98) 100%)`,
-          boxShadow: `0 12px 28px ${alpha('#0f172a', 0.04)}`,
-        }}
-      >
-        <CardContent sx={{ p: { xs: 1.25, md: 1.5 }, '&:last-child': { pb: { xs: 1.25, md: 1.5 } } }}>
-          <Stack spacing={1}>
-            <Stack direction="row" spacing={1.1} alignItems="center" minWidth={0}>
-              <Box
-                sx={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 2,
-                  display: 'grid',
-                  placeItems: 'center',
-                  bgcolor: alpha(accent, 0.12),
-                  color: accent,
-                  flexShrink: 0,
-                }}
-              >
-                <PersonOutlineOutlinedIcon fontSize="small" />
-              </Box>
-              <Box minWidth={0}>
-                <Typography fontWeight={700} sx={{ lineHeight: 1.15, overflowWrap: 'anywhere' }}>
-                  {node.full_name ?? node.user_id}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {node.role_name}
-                </Typography>
-              </Box>
-            </Stack>
-            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-              <Chip size="small" variant="outlined" label={statusLabelByCode[node.status] ?? node.status} />
-              <Chip size="small" label={node.user_id} sx={{ bgcolor: alpha(accent, 0.12), color: accent }} />
-            </Stack>
+    <Card
+      variant="outlined"
+      sx={{
+        width: recommendedCardWidth,
+        minHeight: depth === 0 ? 168 : 150,
+        borderRadius: 3,
+        borderColor: alpha(accent, depth === 0 ? 0.26 : 0.18),
+        background: `linear-gradient(180deg, ${alpha('#ffffff', 0.98)} 0%, ${alpha(accent, 0.06)} 100%)`,
+        boxShadow: `0 12px 28px ${alpha('#0f172a', depth === 0 ? 0.09 : 0.05)}`,
+        transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
+        '&:hover': {
+          borderColor: alpha(accent, 0.34),
+          boxShadow: `0 18px 36px ${alpha('#0f172a', 0.1)}`,
+          transform: 'translateY(-1px)',
+        },
+      }}
+    >
+      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+        <Stack spacing={1.25} sx={{ height: '100%' }}>
+          <Stack direction="row" spacing={1.1} alignItems="flex-start" minWidth={0}>
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: 2,
+                display: 'grid',
+                placeItems: 'center',
+                bgcolor: alpha(accent, 0.12),
+                color: accent,
+                flexShrink: 0,
+              }}
+            >
+              <PersonOutlineOutlinedIcon fontSize="small" />
+            </Box>
+            <Box minWidth={0} textAlign="left">
+              <Typography fontWeight={700} sx={{ lineHeight: 1.2, overflowWrap: 'anywhere' }}>
+                {node.full_name ?? node.user_id}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.4, color: alpha('#0f172a', 0.78) }}>
+                {node.role_name}
+              </Typography>
+            </Box>
           </Stack>
-        </CardContent>
-      </Card>
 
-      {node.children.length > 0 ? (
-        <Stack spacing={1.5} sx={{ mt: 1.5 }}>
-          {node.children.map((child) => (
-            <RecommendationNodeCard key={child.user_id} node={child} depth={depth + 1} />
-          ))}
+          <Box
+            sx={{
+              mt: 'auto',
+              pt: 1.1,
+              borderTop: `1px solid ${alpha('#cbd5e1', 0.85)}`,
+            }}
+          >
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap justifyContent="space-between">
+              <Chip
+                size="small"
+                variant="outlined"
+                label={statusLabelByCode[node.status] ?? node.status}
+                sx={{ borderColor: alpha(accent, 0.2) }}
+              />
+              <Chip
+                size="small"
+                label={subordinateCount > 0 ? `Подчинённых: ${subordinateCount}` : 'Без подчинённых'}
+                sx={{ bgcolor: alpha(accent, 0.12), color: accent }}
+              />
+            </Stack>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mt: 0.9, textAlign: 'left', overflowWrap: 'anywhere' }}
+            >
+              {node.user_id}
+            </Typography>
+          </Box>
         </Stack>
-      ) : null}
+      </CardContent>
+    </Card>
+  );
+};
+
+const RecommendedHierarchyChartItem = ({
+  node,
+  depth,
+  isFirstChild,
+  isLastChild,
+  isOnlyChild,
+}: {
+  node: RecommendedHierarchyNode;
+  depth: number;
+  isFirstChild: boolean;
+  isLastChild: boolean;
+  isOnlyChild: boolean;
+}) => {
+  const connectorHeight = 24;
+
+  const beforeConnector = {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    right: '50%',
+    width: '50%',
+    height: connectorHeight,
+    borderTop: `1px solid ${hierarchyConnectorColor}`,
+  } as const;
+
+  const afterConnector = {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: '50%',
+    width: '50%',
+    height: connectorHeight,
+    borderTop: `1px solid ${hierarchyConnectorColor}`,
+    borderLeft: `1px solid ${hierarchyConnectorColor}`,
+  } as const;
+
+  return (
+    <Box
+      component="li"
+      sx={[
+        {
+          position: 'relative',
+          listStyle: 'none',
+          px: { xs: 1, md: 1.5 },
+          pt: depth === 0 ? 0 : 3,
+          textAlign: 'center',
+        },
+        !isOnlyChild && {
+          '&::before': beforeConnector,
+          '&::after': afterConnector,
+        },
+        !isOnlyChild && isFirstChild && {
+          '&::before': {
+            display: 'none',
+          },
+          '&::after': {
+            ...afterConnector,
+            borderRadius: '12px 0 0 0',
+          },
+        },
+        !isOnlyChild && isLastChild && {
+          '&::after': {
+            display: 'none',
+          },
+          '&::before': {
+            ...beforeConnector,
+            borderRight: `1px solid ${hierarchyConnectorColor}`,
+            borderRadius: '0 12px 0 0',
+          },
+        },
+      ]}
+    >
+      <RecommendedNodeCard node={node} depth={depth} />
+      {node.children.length > 0 ? <RecommendedHierarchyChartList nodes={node.children} depth={depth + 1} /> : null}
     </Box>
   );
 };
+
+const RecommendedHierarchyChartList = ({
+  nodes,
+  depth = 0,
+}: {
+  nodes: RecommendedHierarchyNode[];
+  depth?: number;
+}) => (
+  <Box
+    component="ul"
+    sx={{
+      position: 'relative',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+      width: 'max-content',
+      minWidth: '100%',
+      m: 0,
+      p: 0,
+      pt: depth === 0 ? 0 : 3,
+      listStyle: 'none',
+      '&::before': depth === 0
+        ? undefined
+        : {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: '50%',
+            width: 2,
+            height: 24,
+            bgcolor: hierarchyConnectorColor,
+            transform: 'translateX(-50%)',
+          },
+    }}
+  >
+    {nodes.map((node, index) => (
+      <RecommendedHierarchyChartItem
+        key={node.user_id}
+        node={node}
+        depth={depth}
+        isFirstChild={index === 0}
+        isLastChild={index === nodes.length - 1}
+        isOnlyChild={nodes.length === 1}
+      />
+    ))}
+  </Box>
+);
 
 const MemberCard = ({
   unit,
@@ -458,11 +598,21 @@ export const UnitHierarchyPageView = () => {
             {recommendedTree.length === 0 && !recommendedError ? (
               <Alert severity="info">Для рекомендации пока не найдено активной иерархии пользователей.</Alert>
             ) : (
-              <Stack spacing={1.5}>
-                {recommendedTree.map((node) => (
-                  <RecommendationNodeCard key={node.user_id} node={node} depth={0} />
-                ))}
-              </Stack>
+              <Box
+                sx={{
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  borderRadius: 3,
+                  px: { xs: 0.5, md: 1 },
+                  py: 1.5,
+                  bgcolor: alpha('#dbeafe', 0.28),
+                  border: `1px solid ${alpha('#7dd3fc', 0.24)}`,
+                }}
+              >
+                <Box sx={{ width: 'max-content', minWidth: '100%', mx: 'auto' }}>
+                  <RecommendedHierarchyChartList nodes={recommendedTree} />
+                </Box>
+              </Box>
             )}
           </Stack>
         </CardContent>

@@ -64,6 +64,13 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - If the active tab has no available create roles after scoping, hide the add action instead of opening a dialog with unrelated options.
 - Superadmin is the exception to tab scoping: keep the full role list available, but move the current tab's role to the first position when it is present.
 
+### Convention: Recommended Hierarchy Uses Org Chart Layout
+
+- When a read-only recommendation tree is derived from current user hierarchy, render it as an org chart with explicit parent-child connectors instead of a plain indented card list.
+- Keep the recommendation chart visually separate from the editable units tree so users do not confuse guidance with the source-of-truth structure.
+- Prefer a horizontally scrollable chart container over wrapping children to the next line, because wrapped branches break connector readability on dense hierarchies.
+- Keep editing actions out of the recommendation chart cards; CRUD stays attached only to the real units tree.
+
 ---
 
 ## Forbidden Patterns

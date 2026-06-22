@@ -72,6 +72,7 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Keep editing actions out of the recommendation chart cards; CRUD stays attached only to the real units tree.
 - When the chart follows a visual reference similar to a corporate org diagram, prefer a neutral light canvas, white node cards, and thin blue connectors over saturated gradients or oversized chips.
 - When recommendation data has multiple roots, render each root as its own centered subtree instead of merging all roots into one shared top row with a single connector band.
+- Do not show unlabeled numeric legends inside recommendation cards; if hierarchy metadata is useful, present it with explicit captions such as `Подчинённые` or `Логин`.
 
 ---
 

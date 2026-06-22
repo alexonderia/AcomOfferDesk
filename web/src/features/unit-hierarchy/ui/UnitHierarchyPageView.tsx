@@ -103,7 +103,6 @@ const RecommendedNodeCard = ({
   const cardWidth = depth === 0 ? recommendedRootCardWidth : recommendedCardWidth;
   const isPlaceholder = isRecommendationPlaceholder(node);
   const borderColor = isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.55) : hierarchyPageColors.cardBorder;
-  const statusAccent = node.status === 'active' ? hierarchyPageColors.softPink : hierarchyPageColors.textSecondary;
 
   return (
     <Card
@@ -123,7 +122,7 @@ const RecommendedNodeCard = ({
       }}
     >
       <CardContent sx={{ p: 1.15, '&:last-child': { pb: 1.15 } }}>
-        <Stack spacing={0.7} sx={{ height: '100%' }}>
+        <Stack spacing={0.8} sx={{ height: '100%' }}>
           <Box minWidth={0} textAlign="left">
             <Typography
               fontWeight={600}
@@ -162,64 +161,100 @@ const RecommendedNodeCard = ({
             ) : null}
           </Box>
 
-          <Box
-            sx={{
-              mt: 'auto',
-              pt: depth === 0 ? 0.5 : 0.25,
-            }}
-          >
-            <Stack direction="row" justifyContent="center" spacing={1.15} alignItems="center">
-              <Stack direction="row" spacing={0.35} alignItems="center">
-                <Typography variant="caption" sx={{ color: hierarchyPageColors.softBlue, fontWeight: 700, fontSize: 10.8 }}>
-                  {subordinateCount}
-                </Typography>
-                <Box
-                  sx={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    bgcolor: hierarchyPageColors.softBlue,
-                  }}
-                />
-              </Stack>
-              <Stack direction="row" spacing={0.35} alignItems="center">
-                <Typography variant="caption" sx={{ color: statusAccent, fontWeight: 700, fontSize: 10.8 }}>
-                  1
-                </Typography>
-                <Box
-                  sx={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    bgcolor: statusAccent,
-                  }}
-                />
-              </Stack>
-              <Stack direction="row" spacing={0.35} alignItems="center">
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: alpha('#7c3aed', 0.78),
-                    fontWeight: 700,
-                    fontSize: 10.8,
-                  }}
-                >
-                  {depth + 1}
-                </Typography>
-                <Box
-                  sx={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    bgcolor: alpha('#7c3aed', 0.78),
-                  }}
-                />
-              </Stack>
-            </Stack>
+          <Box sx={{ mt: 'auto', pt: depth === 0 ? 0.45 : 0.2 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                display: 'block',
+                color: hierarchyPageColors.textSecondary,
+                fontSize: 10.2,
+                lineHeight: 1.25,
+                textAlign: 'left',
+                overflowWrap: 'anywhere',
+              }}
+            >
+              Логин: {node.user_id}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{
+                display: 'block',
+                mt: 0.35,
+                color: hierarchyPageColors.softBlue,
+                fontSize: 10.2,
+                lineHeight: 1.25,
+                textAlign: 'left',
+              }}
+            >
+              {subordinateCount > 0 ? `Подчинённые: ${subordinateCount}` : 'Подчинённых нет'}
+            </Typography>
           </Box>
         </Stack>
       </CardContent>
     </Card>
+  );
+};
+
+const connectorLineSx = {
+  backgroundColor: hierarchyConnectorColor,
+  borderRadius: 999,
+} as const;
+
+const RecommendedHierarchyTreeNode = ({
+  node,
+  depth,
+}: {
+  node: RecommendedHierarchyNode;
+  depth: number;
+}) => {
+  const hasChildren = node.children.length > 0;
+  const hasMultipleChildren = node.children.length > 1;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
+      <RecommendedNodeCard node={node} depth={depth} />
+
+      {hasChildren ? (
+        <Box sx={{ mt: 0.9, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+          <Box sx={{ ...connectorLineSx, width: 1, height: 20 }} />
+
+          {hasMultipleChildren ? (
+            <Box sx={{ position: 'relative', pt: 2.5 }}>
+              <Box
+                sx={{
+                  ...connectorLineSx,
+                  position: 'absolute',
+                  top: 0,
+                  left: `calc(${50 / node.children.length}% )`,
+                  right: `calc(${50 / node.children.length}% )`,
+                  height: 1,
+                }}
+              />
+              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                {node.children.map((child) => (
+                  <Box key={child.user_id} sx={{ position: 'relative', pt: 2.5 }}>
+                    <Box
+                      sx={{
+                        ...connectorLineSx,
+                        position: 'absolute',
+                        top: 0,
+                        left: '50%',
+                        width: 1,
+                        height: 16,
+                        transform: 'translateX(-50%)',
+                      }}
+                    />
+                    <RecommendedHierarchyTreeNode node={child} depth={depth + 1} />
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
+          ) : (
+            <RecommendedHierarchyTreeNode node={node.children[0]!} depth={depth + 1} />
+          )}
+        </Box>
+      ) : null}
+    </Box>
   );
 };
 
@@ -231,135 +266,10 @@ const RecommendedHierarchyForest = ({
   <Stack spacing={5} alignItems="center">
     {nodes.map((node) => (
       <Box key={node.user_id} sx={{ width: 'max-content', minWidth: '100%' }}>
-        <RecommendedHierarchyChartList nodes={[node]} />
+        <RecommendedHierarchyTreeNode node={node} depth={0} />
       </Box>
     ))}
   </Stack>
-);
-
-const RecommendedHierarchyChartItem = ({
-  node,
-  depth,
-  isFirstChild,
-  isLastChild,
-  isOnlyChild,
-}: {
-  node: RecommendedHierarchyNode;
-  depth: number;
-  isFirstChild: boolean;
-  isLastChild: boolean;
-  isOnlyChild: boolean;
-}) => {
-  const connectorHeight = 26;
-
-  const beforeConnector = {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    right: '50%',
-    width: '50%',
-    height: connectorHeight,
-    borderTop: `1px solid ${hierarchyConnectorColor}`,
-  } as const;
-
-  const afterConnector = {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: '50%',
-    width: '50%',
-    height: connectorHeight,
-    borderTop: `1px solid ${hierarchyConnectorColor}`,
-    borderLeft: `1px solid ${hierarchyConnectorColor}`,
-  } as const;
-
-  return (
-    <Box
-      component="li"
-      sx={[
-        {
-          position: 'relative',
-          listStyle: 'none',
-          px: { xs: 1, md: 1.35 },
-          pt: depth === 0 ? 0 : 3.25,
-          textAlign: 'center',
-        },
-        !isOnlyChild && {
-          '&::before': beforeConnector,
-          '&::after': afterConnector,
-        },
-        !isOnlyChild && isFirstChild && {
-          '&::before': {
-            display: 'none',
-          },
-          '&::after': {
-            ...afterConnector,
-            borderRadius: '12px 0 0 0',
-          },
-        },
-        !isOnlyChild && isLastChild && {
-          '&::after': {
-            display: 'none',
-          },
-          '&::before': {
-            ...beforeConnector,
-            borderRight: `1px solid ${hierarchyConnectorColor}`,
-            borderRadius: '0 12px 0 0',
-          },
-        },
-      ]}
-    >
-      <RecommendedNodeCard node={node} depth={depth} />
-      {node.children.length > 0 ? <RecommendedHierarchyChartList nodes={node.children} depth={depth + 1} /> : null}
-    </Box>
-  );
-};
-
-const RecommendedHierarchyChartList = ({
-  nodes,
-  depth = 0,
-}: {
-  nodes: RecommendedHierarchyNode[];
-  depth?: number;
-}) => (
-  <Box
-    component="ul"
-    sx={{
-      position: 'relative',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'flex-start',
-      width: 'max-content',
-      minWidth: '100%',
-      m: 0,
-      p: 0,
-      pt: depth === 0 ? 0 : 3.25,
-      listStyle: 'none',
-      '&::before': depth === 0
-        ? undefined
-        : {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: '50%',
-            width: 1,
-            height: 26,
-            bgcolor: hierarchyConnectorColor,
-            transform: 'translateX(-50%)',
-          },
-    }}
-  >
-    {nodes.map((node, index) => (
-      <RecommendedHierarchyChartItem
-        key={node.user_id}
-        node={node}
-        depth={depth}
-        isFirstChild={index === 0}
-        isLastChild={index === nodes.length - 1}
-        isOnlyChild={nodes.length === 1}
-      />
-    ))}
-  </Box>
 );
 
 const MemberCard = ({

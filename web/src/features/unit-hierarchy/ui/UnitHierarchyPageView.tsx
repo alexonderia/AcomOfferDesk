@@ -77,14 +77,19 @@ const hierarchyPageColors = {
 };
 
 const hierarchyConnectorColor = hierarchyPageColors.connector;
-const recommendedCardWidth = 196;
-const recommendedRootCardWidth = 206;
+const recommendedCardWidth = 162;
+const recommendedRootCardWidth = 176;
 
 const sectionCardSx = {
   borderRadius: 4,
   borderColor: hierarchyPageColors.canvasBorder,
   background: alpha('#ffffff', 0.72),
   boxShadow: '0 1px 0 rgba(255, 255, 255, 0.7) inset',
+};
+
+const isRecommendationPlaceholder = (node: RecommendedHierarchyNode) => {
+  const fullName = (node.full_name ?? '').trim().toLowerCase();
+  return fullName.includes('вакан') || fullName.includes('не указано');
 };
 
 const RecommendedNodeCard = ({
@@ -96,6 +101,8 @@ const RecommendedNodeCard = ({
 }) => {
   const subordinateCount = node.children.length;
   const cardWidth = depth === 0 ? recommendedRootCardWidth : recommendedCardWidth;
+  const isPlaceholder = isRecommendationPlaceholder(node);
+  const borderColor = isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.55) : hierarchyPageColors.cardBorder;
   const statusAccent = node.status === 'active' ? hierarchyPageColors.softPink : hierarchyPageColors.textSecondary;
 
   return (
@@ -103,27 +110,27 @@ const RecommendedNodeCard = ({
       variant="outlined"
       sx={{
         width: cardWidth,
-        minHeight: depth === 0 ? 136 : 116,
-        borderRadius: 2,
-        borderColor: hierarchyPageColors.cardBorder,
+        minHeight: depth === 0 ? 134 : 96,
+        borderRadius: 1.8,
+        borderColor,
         backgroundColor: '#ffffff',
-        boxShadow: hierarchyPageColors.shadow,
+        boxShadow: '0 3px 10px rgba(27, 39, 57, 0.06)',
         transition: 'border-color 160ms ease, box-shadow 160ms ease',
         '&:hover': {
-          borderColor: alpha(hierarchyPageColors.connector, 0.4),
-          boxShadow: '0 6px 16px rgba(27, 39, 57, 0.11)',
+          borderColor: isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.72) : alpha(hierarchyPageColors.connector, 0.42),
+          boxShadow: '0 5px 14px rgba(27, 39, 57, 0.09)',
         },
       }}
     >
-      <CardContent sx={{ p: 1.35, '&:last-child': { pb: 1.35 } }}>
-        <Stack spacing={1.25} sx={{ height: '100%' }}>
+      <CardContent sx={{ p: 1.15, '&:last-child': { pb: 1.15 } }}>
+        <Stack spacing={0.7} sx={{ height: '100%' }}>
           <Box minWidth={0} textAlign="left">
             <Typography
               fontWeight={600}
               sx={{
-                color: hierarchyPageColors.textPrimary,
-                fontSize: 14,
-                lineHeight: 1.25,
+                color: isPlaceholder ? hierarchyPageColors.softPink : hierarchyPageColors.textPrimary,
+                fontSize: 11.6,
+                lineHeight: 1.22,
                 overflowWrap: 'anywhere',
               }}
             >
@@ -132,71 +139,81 @@ const RecommendedNodeCard = ({
             <Typography
               variant="body2"
               sx={{
-                mt: 0.45,
+                mt: 0.32,
                 color: hierarchyPageColors.textPrimary,
-                fontSize: 12.5,
-                lineHeight: 1.25,
+                fontSize: 10.7,
+                lineHeight: 1.2,
               }}
             >
               {node.role_name}
             </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                display: 'block',
-                mt: 1.1,
-                color: hierarchyPageColors.textSecondary,
-                fontSize: 11.5,
-              }}
-            >
-              {depth === 0 ? 'Корневой узел' : `Уровень ${depth + 1}`}
-            </Typography>
+            {depth === 0 ? (
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  mt: 1,
+                  color: alpha(hierarchyPageColors.textSecondary, 0.82),
+                  fontSize: 10.2,
+                }}
+              >
+                Рекомендуемый корень
+              </Typography>
+            ) : null}
           </Box>
 
           <Box
             sx={{
               mt: 'auto',
-              pt: 0.85,
+              pt: depth === 0 ? 0.5 : 0.25,
             }}
           >
-            <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
-              <Typography
-                variant="caption"
-                sx={{
-                  color: hierarchyPageColors.textSecondary,
-                  fontSize: 11.5,
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {node.user_id}
-              </Typography>
-              <Stack direction="row" spacing={1.1} alignItems="center">
-                <Stack direction="row" spacing={0.4} alignItems="center">
-                  <Typography variant="caption" sx={{ color: hierarchyPageColors.softBlue, fontWeight: 700 }}>
-                    {subordinateCount}
-                  </Typography>
-                  <Box
-                    sx={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: '50%',
-                      bgcolor: hierarchyPageColors.softBlue,
-                    }}
-                  />
-                </Stack>
-                <Stack direction="row" spacing={0.4} alignItems="center">
-                  <Typography variant="caption" sx={{ color: statusAccent, fontWeight: 700 }}>
-                    1
-                  </Typography>
-                  <Box
-                    sx={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: '50%',
-                      bgcolor: statusAccent,
-                    }}
-                  />
-                </Stack>
+            <Stack direction="row" justifyContent="center" spacing={1.15} alignItems="center">
+              <Stack direction="row" spacing={0.35} alignItems="center">
+                <Typography variant="caption" sx={{ color: hierarchyPageColors.softBlue, fontWeight: 700, fontSize: 10.8 }}>
+                  {subordinateCount}
+                </Typography>
+                <Box
+                  sx={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    bgcolor: hierarchyPageColors.softBlue,
+                  }}
+                />
+              </Stack>
+              <Stack direction="row" spacing={0.35} alignItems="center">
+                <Typography variant="caption" sx={{ color: statusAccent, fontWeight: 700, fontSize: 10.8 }}>
+                  1
+                </Typography>
+                <Box
+                  sx={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    bgcolor: statusAccent,
+                  }}
+                />
+              </Stack>
+              <Stack direction="row" spacing={0.35} alignItems="center">
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: alpha('#7c3aed', 0.78),
+                    fontWeight: 700,
+                    fontSize: 10.8,
+                  }}
+                >
+                  {depth + 1}
+                </Typography>
+                <Box
+                  sx={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    bgcolor: alpha('#7c3aed', 0.78),
+                  }}
+                />
               </Stack>
             </Stack>
           </Box>
@@ -205,6 +222,20 @@ const RecommendedNodeCard = ({
     </Card>
   );
 };
+
+const RecommendedHierarchyForest = ({
+  nodes,
+}: {
+  nodes: RecommendedHierarchyNode[];
+}) => (
+  <Stack spacing={5} alignItems="center">
+    {nodes.map((node) => (
+      <Box key={node.user_id} sx={{ width: 'max-content', minWidth: '100%' }}>
+        <RecommendedHierarchyChartList nodes={[node]} />
+      </Box>
+    ))}
+  </Stack>
+);
 
 const RecommendedHierarchyChartItem = ({
   node,
@@ -716,15 +747,15 @@ export const UnitHierarchyPageView = () => {
                   sx={{
                     overflowX: 'auto',
                     overflowY: 'hidden',
-                    borderRadius: 3.5,
-                    px: { xs: 1.25, md: 2 },
-                    py: { xs: 2, md: 2.5 },
+                    borderRadius: 3,
+                    px: { xs: 1, md: 1.5 },
+                    py: { xs: 1.5, md: 2 },
                     bgcolor: hierarchyPageColors.canvas,
                     border: `1px solid ${alpha(hierarchyPageColors.canvasBorder, 0.95)}`,
                   }}
                 >
                   <Box sx={{ width: 'max-content', minWidth: '100%', mx: 'auto' }}>
-                    <RecommendedHierarchyChartList nodes={recommendedTree} />
+                    <RecommendedHierarchyForest nodes={recommendedTree} />
                   </Box>
                 </Box>
               )}

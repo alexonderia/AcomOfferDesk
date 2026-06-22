@@ -95,8 +95,7 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.getByText('Рекомендуемая структура')).toBeInTheDocument();
     expect(screen.getByText('Ахметшин Ренат Габдельфатович')).toBeInTheDocument();
     expect(screen.getByText('Рахматуллин Асхат Ирекович')).toBeInTheDocument();
-    expect(screen.getByText('Корневой узел')).toBeInTheDocument();
-    expect(screen.getByText('chief-1')).toBeInTheDocument();
+    expect(screen.getByText('Рекомендуемый корень')).toBeInTheDocument();
     expect(screen.getByText('Финансовый блок')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Создать подразделение' })).toBeInTheDocument();
   });

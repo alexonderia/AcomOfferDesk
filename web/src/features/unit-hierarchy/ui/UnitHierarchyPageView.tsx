@@ -4,6 +4,9 @@ import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined';
+import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import PersonRemoveAlt1OutlinedIcon from '@mui/icons-material/PersonRemoveAlt1Outlined';
 import {
   Alert,
@@ -92,6 +95,9 @@ const isRecommendationPlaceholder = (node: RecommendedHierarchyNode) => {
   return fullName.includes('вакан') || fullName.includes('не указано');
 };
 
+const getRecommendedDescendantCount = (node: RecommendedHierarchyNode): number =>
+  node.children.reduce((total, child) => total + 1 + getRecommendedDescendantCount(child), 0);
+
 const RecommendedNodeCard = ({
   node,
   depth,
@@ -100,35 +106,37 @@ const RecommendedNodeCard = ({
   depth: number;
 }) => {
   const subordinateCount = node.children.length;
+  const descendantCount = getRecommendedDescendantCount(node);
   const cardWidth = depth === 0 ? recommendedRootCardWidth : recommendedCardWidth;
   const isPlaceholder = isRecommendationPlaceholder(node);
   const borderColor = isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.55) : hierarchyPageColors.cardBorder;
+  const helperLabel = depth === 0 ? 'Модуль 2' : null;
 
   return (
     <Card
       variant="outlined"
       sx={{
         width: cardWidth,
-        minHeight: depth === 0 ? 134 : 96,
+        minHeight: depth === 0 ? 136 : 100,
         borderRadius: 1.8,
         borderColor,
         backgroundColor: '#ffffff',
-        boxShadow: '0 3px 10px rgba(27, 39, 57, 0.06)',
+        boxShadow: '0 2px 8px rgba(27, 39, 57, 0.08)',
         transition: 'border-color 160ms ease, box-shadow 160ms ease',
         '&:hover': {
           borderColor: isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.72) : alpha(hierarchyPageColors.connector, 0.42),
-          boxShadow: '0 5px 14px rgba(27, 39, 57, 0.09)',
+          boxShadow: '0 4px 12px rgba(27, 39, 57, 0.1)',
         },
       }}
     >
-      <CardContent sx={{ p: 1.15, '&:last-child': { pb: 1.15 } }}>
+      <CardContent sx={{ p: 1.05, '&:last-child': { pb: 1.05 } }}>
         <Stack spacing={0.8} sx={{ height: '100%' }}>
           <Box minWidth={0} textAlign="left">
             <Typography
               fontWeight={600}
               sx={{
                 color: isPlaceholder ? hierarchyPageColors.softPink : hierarchyPageColors.textPrimary,
-                fontSize: 11.6,
+                fontSize: 11.3,
                 lineHeight: 1.22,
                 overflowWrap: 'anywhere',
               }}
@@ -138,56 +146,56 @@ const RecommendedNodeCard = ({
             <Typography
               variant="body2"
               sx={{
-                mt: 0.32,
+                mt: 0.25,
                 color: hierarchyPageColors.textPrimary,
-                fontSize: 10.7,
+                fontSize: 10.35,
                 lineHeight: 1.2,
               }}
             >
               {node.role_name}
             </Typography>
-            {depth === 0 ? (
+            {helperLabel ? (
               <Typography
                 variant="caption"
                 sx={{
                   display: 'block',
-                  mt: 1,
+                  mt: 0.9,
                   color: alpha(hierarchyPageColors.textSecondary, 0.82),
-                  fontSize: 10.2,
+                  fontSize: 9.9,
                 }}
               >
-                Рекомендуемый корень
+                {helperLabel}
               </Typography>
             ) : null}
           </Box>
 
-          <Box sx={{ mt: 'auto', pt: depth === 0 ? 0.45 : 0.2 }}>
-            <Typography
-              variant="caption"
-              sx={{
-                display: 'block',
-                color: hierarchyPageColors.textSecondary,
-                fontSize: 10.2,
-                lineHeight: 1.25,
-                textAlign: 'left',
-                overflowWrap: 'anywhere',
-              }}
-            >
-              Логин: {node.user_id}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                display: 'block',
-                mt: 0.35,
-                color: hierarchyPageColors.softBlue,
-                fontSize: 10.2,
-                lineHeight: 1.25,
-                textAlign: 'left',
-              }}
-            >
-              {subordinateCount > 0 ? `Подчинённые: ${subordinateCount}` : 'Подчинённых нет'}
-            </Typography>
+          <Box sx={{ mt: 'auto', pt: depth === 0 ? 0.7 : 0.45 }}>
+            <Stack direction="row" spacing={0.75} justifyContent="flex-end" alignItems="center">
+              <Tooltip title={`Всего подчинённых: ${descendantCount}`}>
+                <Stack direction="row" spacing={0.15} alignItems="center" sx={{ color: hierarchyPageColors.softBlue }}>
+                  <Typography variant="caption" sx={{ fontSize: 10.4, fontWeight: 700 }}>
+                    {descendantCount}
+                  </Typography>
+                  <Groups2OutlinedIcon sx={{ fontSize: 11.5 }} />
+                </Stack>
+              </Tooltip>
+              <Tooltip title={`Прямых подчинённых: ${subordinateCount}`}>
+                <Stack direction="row" spacing={0.15} alignItems="center" sx={{ color: hierarchyPageColors.softPink }}>
+                  <Typography variant="caption" sx={{ fontSize: 10.4, fontWeight: 700 }}>
+                    {subordinateCount}
+                  </Typography>
+                  <PersonOutlineOutlinedIcon sx={{ fontSize: 11.5 }} />
+                </Stack>
+              </Tooltip>
+              <Tooltip title={`Уровень в дереве: ${depth + 1}`}>
+                <Stack direction="row" spacing={0.15} alignItems="center" sx={{ color: alpha('#7c3aed', 0.8) }}>
+                  <Typography variant="caption" sx={{ fontSize: 10.4, fontWeight: 700 }}>
+                    {depth + 1}
+                  </Typography>
+                  <HubOutlinedIcon sx={{ fontSize: 11.5 }} />
+                </Stack>
+              </Tooltip>
+            </Stack>
           </Box>
         </Stack>
       </CardContent>
@@ -216,10 +224,10 @@ const RecommendedHierarchyTreeNode = ({
 
       {hasChildren ? (
         <Box sx={{ mt: 0.9, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-          <Box sx={{ ...connectorLineSx, width: 1, height: 20 }} />
+          <Box sx={{ ...connectorLineSx, width: '1px', height: '18px' }} />
 
           {hasMultipleChildren ? (
-            <Box sx={{ position: 'relative', pt: 2.5 }}>
+            <Box sx={{ position: 'relative', pt: 2.1 }}>
               <Box
                 sx={{
                   ...connectorLineSx,
@@ -227,20 +235,20 @@ const RecommendedHierarchyTreeNode = ({
                   top: 0,
                   left: `calc(${50 / node.children.length}% )`,
                   right: `calc(${50 / node.children.length}% )`,
-                  height: 1,
+                  height: '1px',
                 }}
               />
-              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+              <Stack direction="row" spacing={1.2} alignItems="flex-start">
                 {node.children.map((child) => (
-                  <Box key={child.user_id} sx={{ position: 'relative', pt: 2.5 }}>
+                  <Box key={child.user_id} sx={{ position: 'relative', pt: 2.1 }}>
                     <Box
                       sx={{
                         ...connectorLineSx,
                         position: 'absolute',
                         top: 0,
                         left: '50%',
-                        width: 1,
-                        height: 16,
+                        width: '1px',
+                        height: '14px',
                         transform: 'translateX(-50%)',
                       }}
                     />
@@ -358,7 +366,7 @@ const UnitNodeCard = ({
             left: { xs: 8, md: 12 },
             top: 0,
             bottom: 0,
-            width: 1,
+            width: '1px',
             bgcolor: alpha(hierarchyPageColors.connector, 0.55),
           }}
         />

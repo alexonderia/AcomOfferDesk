@@ -73,6 +73,7 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - When the chart follows a visual reference similar to a corporate org diagram, prefer a neutral light canvas, white node cards, and thin blue connectors over saturated gradients or oversized chips.
 - When recommendation data has multiple roots, render each root as its own centered subtree instead of merging all roots into one shared top row with a single connector band.
 - Do not show unlabeled numeric legends inside recommendation cards; if hierarchy metadata is useful, present it with explicit captions such as `Подчинённые` or `Логин`.
+- For MUI connector boxes, never use numeric `width: 1` or `height: 1` when you mean a 1px line: sizing props treat `1` as percentage-based sizing, so use string pixel values such as `width: '1px'` and `height: '1px'`.
 
 ---
 

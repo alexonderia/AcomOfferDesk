@@ -513,10 +513,22 @@ class UnitService:
         self,
         *,
         current_user: CurrentUser,
-        unit_id: int,
+        unit_id: int | None = None,
         search: str | None = None,
     ) -> list[AvailableUnitUserState]:
         UserPolicy.ensure_can_manage_unit_members(current_user)
+        if unit_id is None:
+            if not self._is_superadmin(current_user):
+                if current_user.role_id != settings.admin_role_id:
+                    raise Forbidden("Недостаточно прав для подбора участников")
+                manageable_root_ids = await self._list_manageable_root_ids(current_user=current_user)
+                if not manageable_root_ids:
+                    raise Forbidden("Недостаточно прав для подбора участников")
+            rows = await self._units.list_available_users_for_unit(unit_id=None, search=search)
+            return [
+                self._build_available_user_state(user=user, profile=profile, role=role)
+                for user, profile, role in rows
+            ]
         unit = await self._units.get_by_id(unit_id)
         if unit is None:
             raise NotFound("Подразделение не найдено")

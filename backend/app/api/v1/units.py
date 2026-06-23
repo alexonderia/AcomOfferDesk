@@ -190,7 +190,7 @@ async def remove_unit_member(
 @router.get("/units/available-users", response_model=AvailableUnitUsersResponse)
 @router.get("/units/available-users/", response_model=AvailableUnitUsersResponse, include_in_schema=False)
 async def list_available_users_for_unit(
-    unit_id: int = Query(..., ge=1),
+    unit_id: int | None = Query(default=None, ge=1),
     search: str | None = Query(default=None, min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),

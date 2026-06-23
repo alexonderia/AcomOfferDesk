@@ -89,9 +89,20 @@ class _UnitsRepo:
                 root_ids.append(unit_id)
         return root_ids
 
-    async def list_available_users_for_unit(self, *, unit_id: int, search: str | None = None):
-        _ = (unit_id, search)
-        return []
+    async def list_available_users_for_unit(self, *, unit_id: int | None = None, search: str | None = None):
+        normalized_search = (search or "").strip().lower()
+        rows = []
+        for user in self._users.values():
+            if user.status != "active":
+                continue
+            if unit_id is not None and (unit_id, user.id) in self._members and self._members[(unit_id, user.id)].is_active:
+                continue
+            profile = self._profiles.get(user.id)
+            searchable = " ".join(filter(None, [user.id, getattr(profile, "full_name", None)])).lower()
+            if normalized_search and normalized_search not in searchable:
+                continue
+            rows.append((user, profile, self._roles[user.id_role]))
+        return rows
 
     def bind_directory(self, users, profiles, roles) -> None:
         self._users = users
@@ -205,3 +216,24 @@ def test_superadmin_can_load_recommended_units_tree(test_client, set_uow, set_cu
     items = response.json()["data"]["items"]
     assert [item["user_id"] for item in items] == ["admin-1", "pm-1"]
     assert items[1]["children"][0]["user_id"] == "lead-1"
+
+
+def test_admin_can_load_global_available_users_for_unit_creation(test_client, set_uow, set_current_user, make_current_user):
+    set_uow(_UnitsUow())
+    set_current_user(
+        make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={
+                PermissionCodes.UNITS_READ,
+                PermissionCodes.UNITS_CREATE,
+                PermissionCodes.UNITS_UPDATE,
+                PermissionCodes.UNITS_MEMBERS_MANAGE,
+            },
+        )
+    )
+
+    response = test_client.get("/api/v1/units/available-users", params={"search": "econ"})
+
+    assert response.status_code == 200
+    assert [item["user_id"] for item in response.json()["data"]["items"]] == ["econ-1"]

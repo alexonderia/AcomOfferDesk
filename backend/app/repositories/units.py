@@ -134,26 +134,25 @@ class UnitRepository:
     async def list_available_users_for_unit(
         self,
         *,
-        unit_id: int,
+        unit_id: int | None = None,
         search: str | None = None,
     ) -> list[tuple[User, Profile | None, Role]]:
-        active_member_subquery = (
-            select(UnitMember.id_user)
-            .where(
-                UnitMember.id_unit == unit_id,
-                UnitMember.is_active.is_(True),
-            )
-        )
         stmt = (
             select(User, Profile, Role)
             .join(Role, Role.id == User.id_role)
             .outerjoin(Profile, Profile.id == User.id)
-            .where(
-                User.status == "active",
-                not_(User.id.in_(active_member_subquery)),
-            )
+            .where(User.status == "active")
             .order_by(Role.id.asc(), Profile.full_name.asc().nullslast(), User.id.asc())
         )
+        if unit_id is not None:
+            active_member_subquery = (
+                select(UnitMember.id_user)
+                .where(
+                    UnitMember.id_unit == unit_id,
+                    UnitMember.is_active.is_(True),
+                )
+            )
+            stmt = stmt.where(not_(User.id.in_(active_member_subquery)))
         normalized_search = (search or "").strip().lower()
         if normalized_search:
             like_value = f"%{normalized_search}%"

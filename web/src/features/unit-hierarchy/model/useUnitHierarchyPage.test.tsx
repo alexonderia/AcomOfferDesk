@@ -88,7 +88,20 @@ describe('useUnitHierarchyPage', () => {
       { user_id: 'u-2', full_name: 'Test User', role_name: 'Admin' },
     ]);
     addUnitMemberMock.mockResolvedValue(undefined);
-    createUnitMock.mockResolvedValue(undefined);
+    createUnitMock.mockResolvedValue({
+      unit_id: 2,
+      name: 'New Unit',
+      id_parent: 1,
+      is_active: true,
+      members: [],
+      children: [],
+      actions: {
+        canCreateChild: true,
+        canUpdate: true,
+        canDeactivate: true,
+        canManageMembers: true,
+      },
+    });
     removeUnitMemberMock.mockResolvedValue(undefined);
     updateUnitMock.mockResolvedValue(undefined);
   });
@@ -103,6 +116,18 @@ describe('useUnitHierarchyPage', () => {
     expect(result.current.tree).toEqual(treeResponse);
     expect(result.current.recommendedTree).toHaveLength(1);
     expect(result.current.canCreateRootUnit).toBe(true);
+    expect(result.current.unitOptions).toEqual([{ unitId: 1, label: 'Head Office' }]);
+    expect(result.current.memberUnitByUserId).toEqual({});
+    expect(result.current.unassignedRecommendedMembers).toEqual([
+      {
+        user_id: 'pm-1',
+        full_name: 'Manager',
+        role_id: ROLE.PROJECT_MANAGER,
+        role_name: 'Project Manager',
+        status: 'active',
+        parentDisplayName: null,
+      },
+    ]);
   });
 
   it('adds a member to the selected unit and reloads the tree', async () => {
@@ -127,5 +152,44 @@ describe('useUnitHierarchyPage', () => {
     expect(addUnitMemberMock).toHaveBeenCalledWith(1, 'u-2');
     expect(showSuccessToastMock).toHaveBeenCalledTimes(1);
     expect(getUnitsTreeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('assigns a recommended member to a concrete unit and reloads the tree', async () => {
+    const { result } = renderHook(() => useUnitHierarchyPage());
+
+    await waitFor(() => expect(result.current.tree).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.assignRecommendedMemberToUnit('pm-1', 1);
+    });
+
+    expect(addUnitMemberMock).toHaveBeenCalledWith(1, 'pm-1');
+    expect(showSuccessToastMock).toHaveBeenCalledWith('Участник закреплен за выбранным узлом');
+    expect(getUnitsTreeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates a child unit and can immediately assign an employee from the global list', async () => {
+    const { result } = renderHook(() => useUnitHierarchyPage());
+
+    await waitFor(() => expect(result.current.tree).toHaveLength(1));
+
+    act(() => {
+      result.current.openCreateChildDialog(result.current.tree[0]!);
+    });
+
+    await waitFor(() => expect(getAvailableUsersForUnitMock).toHaveBeenCalledWith(undefined, ''));
+
+    act(() => {
+      result.current.setUnitName('Module 1');
+      result.current.setSelectedCreateUserId('u-2');
+    });
+
+    await act(async () => {
+      await result.current.submitUnit();
+    });
+
+    expect(createUnitMock).toHaveBeenCalledWith({ name: 'Module 1', id_parent: 1 });
+    expect(addUnitMemberMock).toHaveBeenCalledWith(2, 'u-2');
+    expect(showSuccessToastMock).toHaveBeenCalledWith('Узел создан, сотрудник добавлен');
   });
 });

@@ -160,14 +160,14 @@ class _FakeUnitsRepo:
     async def list_available_users_for_unit(
         self,
         *,
-        unit_id: int,
+        unit_id: int | None = None,
         search: str | None = None,
     ) -> list[tuple[User, Profile | None, Role]]:
         normalized_search = (search or "").strip().lower()
         assigned_user_ids = {
             user_id
             for (member_unit_id, user_id), member in self.members.items()
-            if member_unit_id == unit_id and member.is_active
+            if unit_id is not None and member_unit_id == unit_id and member.is_active
         }
         rows = []
         for user in self._users_repo.users.values():
@@ -262,6 +262,21 @@ async def test_add_member_and_prevent_duplicate_membership(service_context, make
             unit_id=1,
             user_id="econ-2",
         )
+
+
+@pytest.mark.asyncio
+async def test_admin_can_list_available_users_without_target_unit(service_context, make_current_user) -> None:
+    rows = await service_context.service.list_available_users_for_unit(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+        ),
+        unit_id=None,
+        search="econ",
+    )
+
+    assert [row.user_id for row in rows] == ["econ-1", "econ-2"]
 
 
 @pytest.mark.asyncio

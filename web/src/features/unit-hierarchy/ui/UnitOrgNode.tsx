@@ -19,6 +19,7 @@ import {
   connectorLineSx,
   getUnitLevelLabel,
   hierarchyPageColors,
+  hierarchySurfaceBackground,
 } from './unitHierarchyStyles';
 
 type UnitOrgNodeProps = {
@@ -81,18 +82,27 @@ export const UnitOrgNode = ({
             maxWidth: 'min(332px, calc(100vw - 40px))',
             borderRadius: 3,
             border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.98)}`,
-            backgroundColor: alpha('#ffffff', 0.94),
-            boxShadow: '0 10px 30px rgba(15, 23, 42, 0.08)',
+            backgroundImage: hierarchySurfaceBackground,
+            backgroundColor: alpha('#ffffff', 0.96),
+            boxShadow: hierarchyPageColors.shadow,
             px: 1.4,
             py: 1.3,
             position: 'relative',
+            overflow: 'hidden',
             zIndex: 1,
             cursor: canOpenUnitDetails ? 'pointer' : 'default',
             transition: 'border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              inset: '0 0 auto 0',
+              height: 4,
+              background: `linear-gradient(90deg, ${alpha(hierarchyPageColors.softBlue, 0.88)} 0%, ${alpha(hierarchyPageColors.softTeal, 0.82)} 100%)`,
+            },
             '&:hover': canOpenUnitDetails ? {
-              borderColor: alpha(hierarchyPageColors.softBlue, 0.35),
-              boxShadow: '0 12px 26px rgba(15, 23, 42, 0.11)',
-              transform: 'translateY(-1px)',
+              borderColor: alpha(hierarchyPageColors.softBlue, 0.4),
+              boxShadow: '0 20px 36px rgba(15, 23, 42, 0.12)',
+              transform: 'translateY(-2px)',
             } : undefined,
           }}
         >

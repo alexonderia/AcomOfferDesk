@@ -6,6 +6,7 @@ import {
   getMemberAccentColor,
   getMemberDisplayName,
   hierarchyPageColors,
+  hierarchySurfaceBackground,
   isPlaceholderPersonName,
   statusLabelByCode,
 } from './unitHierarchyStyles';
@@ -32,18 +33,30 @@ export const OrgUserCard = ({
       sx={{
         width: 172,
         minHeight: 104,
-        borderRadius: 1.8,
+        borderRadius: 2.2,
         border: `1px solid ${
           isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.55) : alpha(hierarchyPageColors.cardBorder, 0.95)
         }`,
+        backgroundImage: hierarchySurfaceBackground,
         backgroundColor: '#ffffff',
-        boxShadow: '0 2px 8px rgba(27, 39, 57, 0.08)',
+        boxShadow: '0 10px 20px rgba(15, 23, 42, 0.07)',
         px: 1.1,
         py: 1,
+        position: 'relative',
+        overflow: 'hidden',
         transition: 'border-color 160ms ease, box-shadow 160ms ease',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          inset: '0 0 auto 0',
+          height: 3,
+          background: isPlaceholder
+            ? alpha(hierarchyPageColors.softPink, 0.78)
+            : alpha(accentColor, 0.78),
+        },
         '&:hover': {
           borderColor: isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.72) : alpha(hierarchyPageColors.connector, 0.42),
-          boxShadow: '0 4px 12px rgba(27, 39, 57, 0.12)',
+          boxShadow: '0 14px 24px rgba(15, 23, 42, 0.11)',
         },
       }}
     >

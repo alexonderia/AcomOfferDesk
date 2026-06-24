@@ -1,24 +1,36 @@
+import { alpha } from '@mui/material/styles';
 import type { UnitMember } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
 
 export const hierarchyPageColors = {
-  canvas: '#f8fafc',
-  canvasBorder: '#e2e8f0',
-  cardBorder: '#cfd6e3',
-  connector: '#3a9cc7',
-  shadow: '0 4px 12px rgba(27, 39, 57, 0.08)',
-  textPrimary: '#172033',
-  textSecondary: '#7a8699',
-  softBlue: '#3f83f8',
-  softPink: '#d36b97',
-  softTeal: '#50a4a2',
+  canvas: '#f4f8fc',
+  canvasBorder: '#d9e4ef',
+  cardBorder: '#cfdae7',
+  connector: '#5d95c6',
+  shadow: '0 18px 36px rgba(15, 23, 42, 0.08)',
+  textPrimary: '#17263d',
+  textSecondary: '#6d8094',
+  softBlue: '#2f78d8',
+  softPink: '#cc6d90',
+  softTeal: '#309d91',
 } as const;
 
+export const hierarchyCanvasBackground = `
+  radial-gradient(circle at top left, ${alpha(hierarchyPageColors.softBlue, 0.14)} 0, transparent 28%),
+  radial-gradient(circle at top right, ${alpha(hierarchyPageColors.softTeal, 0.12)} 0, transparent 24%),
+  linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(244, 248, 252, 0.98) 100%)
+`;
+
+export const hierarchySurfaceBackground = `
+  linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.96) 100%)
+`;
+
 export const sectionCardSx = {
-  borderRadius: 2,
-  borderColor: 'divider',
-  backgroundColor: 'background.paper',
-  boxShadow: 'none',
+  borderRadius: 3,
+  borderColor: alpha(hierarchyPageColors.canvasBorder, 0.9),
+  backgroundImage: hierarchySurfaceBackground,
+  backgroundColor: '#ffffff',
+  boxShadow: '0 12px 30px rgba(15, 23, 42, 0.05)',
 } as const;
 
 export const connectorLineSx = {

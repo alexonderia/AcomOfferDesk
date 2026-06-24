@@ -177,15 +177,8 @@ describe('useUnitHierarchyPage', () => {
       result.current.openCreateChildDialog(result.current.tree[0]!);
     });
 
-    await waitFor(() => expect(getAvailableUsersForUnitMock).toHaveBeenCalledWith(undefined, ''));
-
-    act(() => {
-      result.current.setUnitName('Module 1');
-      result.current.setSelectedCreateUserId('u-2');
-    });
-
     await act(async () => {
-      await result.current.submitUnit();
+      await result.current.submitUnit('Module 1', 'u-2');
     });
 
     expect(createUnitMock).toHaveBeenCalledWith({ name: 'Module 1', id_parent: 1 });

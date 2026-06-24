@@ -1,5 +1,6 @@
 import { Box } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { memo } from 'react';
 import type { UnitNode } from '@shared/api/units';
 import { UnitOrgNode } from './UnitOrgNode';
 import { hierarchyCanvasBackground, hierarchyPageColors } from './unitHierarchyStyles';
@@ -15,7 +16,7 @@ type UnitOrgChartProps = {
   tree: UnitNode[];
 };
 
-export const UnitOrgChart = ({
+export const UnitOrgChart = memo(({
   onCreateChild,
   onDeactivate,
   onOpenMemberDialog,
@@ -79,4 +80,6 @@ export const UnitOrgChart = ({
       </Box>
     </Box>
   </Box>
-);
+));
+
+UnitOrgChart.displayName = 'UnitOrgChart';

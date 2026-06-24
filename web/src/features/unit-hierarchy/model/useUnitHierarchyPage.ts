@@ -127,19 +127,14 @@ export const useUnitHierarchyPage = () => {
   const [recommendedError, setRecommendedError] = useState<string | null>(null);
   const [unitDialogMode, setUnitDialogMode] = useState<UnitDialogMode>(null);
   const [activeUnit, setActiveUnit] = useState<UnitNode | null>(null);
-  const [unitName, setUnitName] = useState('');
   const [isSavingUnit, setIsSavingUnit] = useState(false);
   const [isMemberDialogOpen, setIsMemberDialogOpen] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const deferredMemberSearch = useDeferredValue(memberSearch);
   const [availableUsers, setAvailableUsers] = useState<AvailableUnitUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [createAssigneeSearch, setCreateAssigneeSearch] = useState('');
-  const deferredCreateAssigneeSearch = useDeferredValue(createAssigneeSearch);
-  const [createAvailableUsers, setCreateAvailableUsers] = useState<AvailableUnitUser[]>([]);
-  const [selectedCreateUserId, setSelectedCreateUserId] = useState('');
+  const [initialCreateUserId, setInitialCreateUserId] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [isLoadingCreateUsers, setIsLoadingCreateUsers] = useState(false);
   const [isSavingMember, setIsSavingMember] = useState(false);
   const [isAssigningRecommendedUserId, setIsAssigningRecommendedUserId] = useState<string | null>(null);
   const [isDetachingRecommendedAssignmentKey, setIsDetachingRecommendedAssignmentKey] = useState<string | null>(null);
@@ -156,8 +151,6 @@ export const useUnitHierarchyPage = () => {
     () => collectRecommendedAssignmentCandidates(recommendedTree, assignedUserIds),
     [assignedUserIds, recommendedTree]
   );
-  const isCreateDialogOpen = unitDialogMode === 'create-root' || unitDialogMode === 'create-child';
-
   const loadTree = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -204,15 +197,12 @@ export const useUnitHierarchyPage = () => {
   }, [showErrorToast]);
 
   const loadCreateAvailableUsers = useCallback(async (searchValue?: string) => {
-    setIsLoadingCreateUsers(true);
     try {
-      setCreateAvailableUsers(await getAvailableUsersForUnit(undefined, searchValue));
+      return await getAvailableUsersForUnit(undefined, searchValue);
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїРёСЃРѕРє СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ';
       showErrorToast(message);
-      setCreateAvailableUsers([]);
-    } finally {
-      setIsLoadingCreateUsers(false);
+      return [];
     }
   }, [showErrorToast]);
 
@@ -223,48 +213,31 @@ export const useUnitHierarchyPage = () => {
     void loadAvailableUsers(activeUnit.unit_id, deferredMemberSearch);
   }, [activeUnit, deferredMemberSearch, isMemberDialogOpen, loadAvailableUsers]);
 
-  useEffect(() => {
-    if (!isCreateDialogOpen) {
-      return;
-    }
-    void loadCreateAvailableUsers(deferredCreateAssigneeSearch);
-  }, [deferredCreateAssigneeSearch, isCreateDialogOpen, loadCreateAvailableUsers]);
-
-  const resetCreateDialogState = useCallback(() => {
-    setUnitName('');
-    setCreateAssigneeSearch('');
-    setCreateAvailableUsers([]);
-    setSelectedCreateUserId('');
-  }, []);
-
   const closeUnitDialog = useCallback(() => {
     setUnitDialogMode(null);
     setActiveUnit(null);
-    resetCreateDialogState();
-  }, [resetCreateDialogState]);
+    setInitialCreateUserId('');
+  }, []);
 
   const openCreateRootDialog = useCallback((initialUserId?: string) => {
     setUnitDialogMode('create-root');
     setActiveUnit(null);
-    resetCreateDialogState();
-    setSelectedCreateUserId(initialUserId ?? '');
-  }, [resetCreateDialogState]);
+    setInitialCreateUserId(initialUserId ?? '');
+  }, []);
 
   const openCreateChildDialog = useCallback((unit: UnitNode, initialUserId?: string) => {
     setUnitDialogMode('create-child');
     setActiveUnit(unit);
-    resetCreateDialogState();
-    setSelectedCreateUserId(initialUserId ?? '');
-  }, [resetCreateDialogState]);
+    setInitialCreateUserId(initialUserId ?? '');
+  }, []);
 
   const openRenameDialog = useCallback((unit: UnitNode) => {
     setUnitDialogMode('rename');
     setActiveUnit(unit);
-    resetCreateDialogState();
-    setUnitName(unit.name);
-  }, [resetCreateDialogState]);
+    setInitialCreateUserId('');
+  }, []);
 
-  const submitUnit = useCallback(async () => {
+  const submitUnit = useCallback(async (unitName: string, selectedCreateUserId?: string) => {
     const normalizedName = unitName.trim();
     if (!normalizedName) {
       showErrorToast('Название обязательно');
@@ -311,11 +284,9 @@ export const useUnitHierarchyPage = () => {
     activeUnit,
     closeUnitDialog,
     loadTree,
-    selectedCreateUserId,
     showErrorToast,
     showSuccessToast,
     unitDialogMode,
-    unitName,
   ]);
 
   const deactivateUnit = useCallback(async (unit: UnitNode) => {
@@ -420,15 +391,8 @@ export const useUnitHierarchyPage = () => {
     unassignedRecommendedMembers,
     unitDialogMode,
     activeUnit,
-    unitName,
-    setUnitName,
+    initialCreateUserId,
     isSavingUnit,
-    createAssigneeSearch,
-    setCreateAssigneeSearch,
-    createAvailableUsers,
-    selectedCreateUserId,
-    setSelectedCreateUserId,
-    isLoadingCreateUsers,
     isMemberDialogOpen,
     availableUsers,
     selectedUserId,
@@ -440,6 +404,7 @@ export const useUnitHierarchyPage = () => {
     isAssigningRecommendedUserId,
     isDetachingRecommendedAssignmentKey,
     loadTree,
+    loadCreateAvailableUsers,
     openCreateRootDialog,
     openCreateChildDialog,
     openRenameDialog,

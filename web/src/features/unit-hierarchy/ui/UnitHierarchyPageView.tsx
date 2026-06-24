@@ -24,9 +24,10 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  createFilterOptions,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useLayoutEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
 import type { AvailableUnitUser, RecommendedHierarchyNode, UnitNode } from '@shared/api/units';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
 import { UnitOrgChart } from './UnitOrgChart';
@@ -54,6 +55,7 @@ const recommendedFramePadBottom = 12;
 const UNASSIGNED_DEPT_ID = -1;
 const EMPTY_SLOT_LABEL = '\u0421\u0432\u043e\u0431\u043e\u0434\u043d\u044b\u0439 \u0441\u043b\u043e\u0442';
 const UNASSIGNED_DEPT_NAME = 'Не определено';
+const createUnitNameAutocompleteFilter = createFilterOptions<string>({ limit: 20 });
 
 type HierarchyViewMode = 'combined' | 'units';
 type DepartmentFilterOption = DepartmentOption | { unitId: 'all'; name: 'Все подразделения' };
@@ -138,6 +140,14 @@ type CombinedConnectorLine = {
   x2: number;
   y1: number;
   y2: number;
+};
+
+type RecommendedHierarchyForestProps = {
+  assignmentsByUserId: Record<string, AssignedUnitInfo[]>;
+  departmentByUnitId: Map<number, DepartmentOption>;
+  nodes: RecommendedHierarchyNode[];
+  onAssignToUnit: (node: RecommendedHierarchyNode) => void;
+  recommendedDepartmentByUserId: Record<string, number | null>;
 };
 
 const isRecommendationPlaceholder = (node: RecommendedHierarchyNode) => {
@@ -684,19 +694,13 @@ const RecommendedEmployeeDuplicateCard = ({
   );
 };
 
-const RecommendedHierarchyForest = ({
+const RecommendedHierarchyForestComponent = ({
   assignmentsByUserId,
   departmentByUnitId,
   nodes,
   onAssignToUnit,
   recommendedDepartmentByUserId,
-}: {
-  assignmentsByUserId: Record<string, AssignedUnitInfo[]>;
-  departmentByUnitId: Map<number, DepartmentOption>;
-  nodes: RecommendedHierarchyNode[];
-  onAssignToUnit: (node: RecommendedHierarchyNode) => void;
-  recommendedDepartmentByUserId: Record<string, number | null>;
-}) => {
+}: RecommendedHierarchyForestProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   const [connectorLines, setConnectorLines] = useState<CombinedConnectorLine[]>([]);
@@ -1023,6 +1027,9 @@ const RecommendedHierarchyForest = ({
   );
 };
 
+const RecommendedHierarchyForest = memo(RecommendedHierarchyForestComponent);
+RecommendedHierarchyForest.displayName = 'RecommendedHierarchyForest';
+
 const findUnitDepth = (nodes: UnitNode[], unitId: number, depth = 0): number | null => {
   for (const node of nodes) {
     if (node.unit_id === unitId) {
@@ -1198,6 +1205,159 @@ const getCreateDialogTitle = () => 'Добавить юнит';
 
 const getUnitNameFieldLabel = () => 'Название юнита';
 
+type UnitDialogMode = 'create-root' | 'create-child' | 'rename' | null;
+
+type UnitDialogProps = {
+  activeUnit: UnitNode | null;
+  initialCreateUserId: string;
+  isSaving: boolean;
+  loadCreateAvailableUsers: (searchValue?: string) => Promise<AvailableUnitUser[]>;
+  mode: UnitDialogMode;
+  onClose: () => void;
+  onSubmit: (unitName: string, selectedCreateUserId?: string) => Promise<void>;
+  tree: UnitNode[];
+};
+
+const UnitDialog = memo(({
+  activeUnit,
+  initialCreateUserId,
+  isSaving,
+  loadCreateAvailableUsers,
+  mode,
+  onClose,
+  onSubmit,
+  tree,
+}: UnitDialogProps) => {
+  const [unitName, setUnitName] = useState('');
+  const [createAssigneeSearch, setCreateAssigneeSearch] = useState('');
+  const [createAvailableUsers, setCreateAvailableUsers] = useState<AvailableUnitUser[]>([]);
+  const [selectedCreateUserId, setSelectedCreateUserId] = useState('');
+  const [isLoadingCreateUsers, setIsLoadingCreateUsers] = useState(false);
+
+  useEffect(() => {
+    if (mode === null) {
+      return;
+    }
+
+    setUnitName(mode === 'rename' ? (activeUnit?.name ?? '') : '');
+    setCreateAssigneeSearch('');
+    setCreateAvailableUsers([]);
+    setSelectedCreateUserId(initialCreateUserId);
+  }, [activeUnit, initialCreateUserId, mode]);
+
+  useEffect(() => {
+    if (mode === null || mode === 'rename') {
+      return;
+    }
+
+    let isActive = true;
+    setIsLoadingCreateUsers(true);
+
+    void loadCreateAvailableUsers()
+      .then((users) => {
+        if (isActive) {
+          setCreateAvailableUsers(users);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoadingCreateUsers(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [loadCreateAvailableUsers, mode]);
+
+  const selectedCreateUser = useMemo(
+    () => createAvailableUsers.find((user) => user.user_id === selectedCreateUserId) ?? null,
+    [createAvailableUsers, selectedCreateUserId]
+  );
+  const activeUnitDepth = useMemo(
+    () => (activeUnit ? findUnitDepth(tree, activeUnit.unit_id) : null),
+    [activeUnit, tree]
+  );
+  const createDialogDepth = useMemo(() => {
+    if (mode === 'create-child') {
+      return Math.min(2, (activeUnitDepth ?? 0) + 1);
+    }
+    return 0;
+  }, [activeUnitDepth, mode]);
+  const createUnitNameSuggestions = useMemo(
+    () => Array.from(new Set(collectUnitNamesByDepth(tree, createDialogDepth))),
+    [createDialogDepth, tree]
+  );
+  const selectedCreateUnitNameSuggestion = useMemo(
+    () => createUnitNameSuggestions.find((option) => option === unitName) ?? null,
+    [createUnitNameSuggestions, unitName]
+  );
+  const title = mode === 'rename' ? 'Переименовать юнит' : getCreateDialogTitle();
+
+  return (
+    <Dialog open={mode !== null} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>{title}</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={1.25}>
+          <Autocomplete
+            freeSolo
+            fullWidth
+            filterOptions={createUnitNameAutocompleteFilter}
+            options={createUnitNameSuggestions}
+            value={selectedCreateUnitNameSuggestion}
+            inputValue={unitName}
+            onChange={(_event, value) => setUnitName(typeof value === 'string' ? value : value ?? '')}
+            onInputChange={(_event, value, reason) => {
+              if (reason === 'input' || reason === 'clear') {
+                setUnitName(value);
+              }
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                autoFocus
+                label={mode === 'rename' ? 'Название' : getUnitNameFieldLabel()}
+              />
+            )}
+          />
+          {mode !== 'rename' ? (
+            <Autocomplete
+              options={createAvailableUsers}
+              loading={isLoadingCreateUsers}
+              value={selectedCreateUser}
+              onChange={(_event, value) => setSelectedCreateUserId(value?.user_id ?? '')}
+              inputValue={createAssigneeSearch}
+              onInputChange={(_event, value) => setCreateAssigneeSearch(value)}
+              getOptionLabel={(option) => (option.full_name ? `${option.full_name} (${option.user_id})` : option.user_id)}
+              isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Сотрудник"
+                  placeholder="Начните вводить имя или логин"
+                />
+              )}
+              renderOption={renderUserOption}
+            />
+          ) : null}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Отмена</Button>
+        <Button
+          onClick={() => void onSubmit(unitName, selectedCreateUserId || undefined)}
+          variant="contained"
+          disabled={isSaving}
+        >
+          {isSaving ? 'Сохранение...' : 'Сохранить'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+});
+
+UnitDialog.displayName = 'UnitDialog';
+
 const renderUserOption = (props: HTMLAttributes<HTMLLIElement>, option: AvailableUnitUser) => (
   <Box component="li" {...props}>
     <Stack spacing={0.25}>
@@ -1247,15 +1407,8 @@ export const UnitHierarchyPageView = () => {
     memberUnitByUserId,
     unitDialogMode,
     activeUnit,
-    unitName,
-    setUnitName,
+    initialCreateUserId,
     isSavingUnit,
-    createAssigneeSearch,
-    setCreateAssigneeSearch,
-    createAvailableUsers,
-    selectedCreateUserId,
-    setSelectedCreateUserId,
-    isLoadingCreateUsers,
     isMemberDialogOpen,
     availableUsers,
     selectedUserId,
@@ -1266,6 +1419,7 @@ export const UnitHierarchyPageView = () => {
     isSavingMember,
     isAssigningRecommendedUserId,
     isDetachingRecommendedAssignmentKey,
+    loadCreateAvailableUsers,
     openCreateRootDialog,
     openCreateChildDialog,
     openRenameDialog,
@@ -1283,10 +1437,6 @@ export const UnitHierarchyPageView = () => {
   const selectedUser = useMemo(
     () => availableUsers.find((user) => user.user_id === selectedUserId) ?? null,
     [availableUsers, selectedUserId]
-  );
-  const selectedCreateUser = useMemo(
-    () => createAvailableUsers.find((user) => user.user_id === selectedCreateUserId) ?? null,
-    [createAvailableUsers, selectedCreateUserId]
   );
   const unitsById = useMemo(
     () => new Map(flattenUnits(tree).map((unit) => [unit.unit_id, unit])),
@@ -1326,23 +1476,6 @@ export const UnitHierarchyPageView = () => {
     [departmentFilterOptions, selectedDepartmentId]
   );
   const selectedAssignmentUnitId = activeRecommendedNode ? (assignmentUnitByUserId[activeRecommendedNode.user_id] ?? 0) : 0;
-  const activeUnitDepth = useMemo(
-    () => (activeUnit ? findUnitDepth(tree, activeUnit.unit_id) : null),
-    [activeUnit, tree]
-  );
-  const createDialogDepth = useMemo(() => {
-    if (unitDialogMode === 'create-child') {
-      return Math.min(2, (activeUnitDepth ?? 0) + 1);
-    }
-    return 0;
-  }, [activeUnitDepth, unitDialogMode]);
-  const createUnitNameSuggestions = useMemo(
-    () => Array.from(new Set(collectUnitNamesByDepth(tree, createDialogDepth))),
-    [createDialogDepth, tree]
-  );
-  const unitDialogTitle = unitDialogMode === 'rename'
-    ? 'Переименовать юнит'
-    : getCreateDialogTitle();
   const activeRecommendedAssignments = useMemo(
     () => (activeRecommendedNode
       ? memberUnitByUserId[activeRecommendedNode.user_id] ?? []
@@ -1367,6 +1500,12 @@ export const UnitHierarchyPageView = () => {
     return unitOptions.filter((option) => !assignedUnitIds.has(option.unitId));
   }, [activeRecommendedAssignments, activeRecommendedNode, unitOptions]);
   const selectedAssignmentUnit = assignableUnitOptions.find((option) => option.unitId === selectedAssignmentUnitId) ?? null;
+  const handleAssignRecommendedNode = useCallback((node: RecommendedHierarchyNode) => {
+    setActiveRecommendedNode(node);
+  }, []);
+  const handleOpenUnitDetails = useCallback((unit: UnitNode) => {
+    setActiveUnitDetailsId(unit.unit_id);
+  }, []);
   const activeRecommendedAssignableParents = activeRecommendedAssignments
     .map((assignment) => {
       const unit = unitsById.get(assignment.unitId);
@@ -1521,7 +1660,7 @@ export const UnitHierarchyPageView = () => {
                         assignmentsByUserId={filteredCombinedAssignmentsByUserId}
                         departmentByUnitId={departmentByUnitId}
                         nodes={filteredRecommendedTree}
-                        onAssignToUnit={(node) => setActiveRecommendedNode(node)}
+                        onAssignToUnit={handleAssignRecommendedNode}
                         recommendedDepartmentByUserId={recommendedDepartmentByUserId}
                       />
                     </Box>
@@ -1542,7 +1681,7 @@ export const UnitHierarchyPageView = () => {
                     onCreateChild={openCreateChildDialog}
                     onDeactivate={deactivateUnit}
                     onOpenMemberDialog={openMemberDialog}
-                    onOpenUnitDetails={(unit) => setActiveUnitDetailsId(unit.unit_id)}
+                    onOpenUnitDetails={handleOpenUnitDetails}
                     onRename={openRenameDialog}
                     showPrimaryActions={false}
                     tree={filteredTree}
@@ -1709,57 +1848,16 @@ export const UnitHierarchyPageView = () => {
           </CardContent>
         </Card>
 
-        <Dialog open={unitDialogMode !== null} onClose={closeUnitDialog} maxWidth="xs" fullWidth>
-          <DialogTitle>{unitDialogTitle}</DialogTitle>
-          <DialogContent dividers>
-            <Stack spacing={1.25}>
-              <Autocomplete
-                freeSolo
-                fullWidth
-                options={createUnitNameSuggestions}
-                value={unitName}
-                inputValue={unitName}
-                onChange={(_event, value) => setUnitName(typeof value === 'string' ? value : value ?? '')}
-                onInputChange={(_event, value) => setUnitName(value)}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    autoFocus
-                    label={unitDialogMode === 'rename' ? 'Название' : getUnitNameFieldLabel()}
-                  />
-                )}
-              />
-              {unitDialogMode !== 'rename' ? (
-                <>
-                  <Autocomplete
-                    options={createAvailableUsers}
-                    loading={isLoadingCreateUsers}
-                    value={selectedCreateUser}
-                    onChange={(_event, value) => setSelectedCreateUserId(value?.user_id ?? '')}
-                    inputValue={createAssigneeSearch}
-                    onInputChange={(_event, value) => setCreateAssigneeSearch(value)}
-                    getOptionLabel={(option) => (option.full_name ? `${option.full_name} (${option.user_id})` : option.user_id)}
-                    isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Сотрудник"
-                        placeholder="Начните вводить имя или логин"
-                      />
-                    )}
-                    renderOption={renderUserOption}
-                  />
-                </>
-              ) : null}
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={closeUnitDialog}>Отмена</Button>
-            <Button onClick={submitUnit} variant="contained" disabled={isSavingUnit}>
-              {isSavingUnit ? 'Сохранение...' : 'Сохранить'}
-            </Button>
-          </DialogActions>
-        </Dialog>
+        <UnitDialog
+          activeUnit={activeUnit}
+          initialCreateUserId={initialCreateUserId}
+          isSaving={isSavingUnit}
+          loadCreateAvailableUsers={loadCreateAvailableUsers}
+          mode={unitDialogMode}
+          onClose={closeUnitDialog}
+          onSubmit={submitUnit}
+          tree={tree}
+        />
 
         <Dialog open={activeRecommendedNode !== null} onClose={() => setActiveRecommendedNode(null)} maxWidth="sm" fullWidth>
           <DialogTitle>
@@ -2207,3 +2305,4 @@ export const UnitHierarchyPageView = () => {
     </Box>
   );
 };
+

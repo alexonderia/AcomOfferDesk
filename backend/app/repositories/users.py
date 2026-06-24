@@ -17,6 +17,8 @@ from app.models.orm_models import (
     Role,
     TgUser,
     EconomyPlan,
+    Unit,
+    UnitMember,
     User,
     UserStatusPeriod,
 )
@@ -503,6 +505,25 @@ class UserRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.all())
+
+    async def list_active_units(self) -> list[tuple[int, int | None]]:
+        """Active units as (unit_id, parent_unit_id) pairs for org-scope resolution."""
+        stmt = select(Unit.id, Unit.id_parent).where(Unit.is_active.is_(True))
+        result = await self._session.execute(stmt)
+        return [
+            (int(unit_id), int(parent_id) if parent_id is not None else None)
+            for unit_id, parent_id in result.all()
+        ]
+
+    async def list_active_unit_memberships(self) -> list[tuple[str, int]]:
+        """Active unit memberships (in active units) as (user_id, unit_id) pairs."""
+        stmt = (
+            select(UnitMember.id_user, UnitMember.id_unit)
+            .join(Unit, Unit.id == UnitMember.id_unit)
+            .where(UnitMember.is_active.is_(True), Unit.is_active.is_(True))
+        )
+        result = await self._session.execute(stmt)
+        return [(str(user_id), int(unit_id)) for user_id, unit_id in result.all()]
 
     async def list_staff_with_profiles_and_roles_for_dashboard(
         self,

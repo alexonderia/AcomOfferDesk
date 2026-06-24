@@ -1139,24 +1139,71 @@ class RequestService:
         if current_user.role_id == settings.operator_role_id:
             # Operator sees only own requests that are still unassigned (owner role is operator).
             return [current_user.user_id]
+
+        # Project manager: the whole root-unit department (подразделение) they belong to,
+        # combined with their hierarchy department subtree as a base (which deliberately stops
+        # at any nested project manager, who owns a separate subdivision).
+        if current_user.role_id == settings.project_manager_role_id:
+            owners: set[str] = {current_user.user_id}
+            owners.update(
+                await self._department_scope.resolve_department_owner_ids_for_current_user(
+                    current_user=current_user,
+                )
+            )
+            owners.update(
+                await self._department_scope.resolve_subtree_owner_ids(
+                    root_user_id=current_user.user_id,
+                )
+            )
+            return list(owners)
+
         if current_user.role_id in {
-            settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            department_owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
-                current_user=current_user,
+            has_units = await self._department_scope.user_has_active_unit_membership(
+                user_id=current_user.user_id,
             )
-            if department_owner_ids:
-                return department_owner_ids
+            if not has_units:
+                # Rollout fallback: keep current hierarchy-department behavior.
+                department_owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
+                    current_user=current_user,
+                )
+                if department_owner_ids:
+                    return department_owner_ids
+                # Fallback for broken or incomplete hierarchy links.
+                if current_user.role_id == settings.lead_economist_role_id:
+                    return await self._resolve_visible_owner_ids_for_hierarchy_root(
+                        root_user_id=current_user.user_id,
+                    )
+                lead_root_user_id = await self._resolve_lead_economist_scope_root_user_id(
+                    current_user_id=current_user.user_id,
+                )
+                return await self._resolve_visible_owner_ids_for_hierarchy_root(
+                    root_user_id=lead_root_user_id,
+                )
 
-            # Fallback for broken or incomplete hierarchy links.
-            if current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}:
-                return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=current_user.user_id)
-            lead_root_user_id = await self._resolve_lead_economist_scope_root_user_id(
-                current_user_id=current_user.user_id,
+            # Lead/economist with unit membership: only their own unit subtree plus their
+            # hierarchy subordinates. A department.requests.read delegation widens this to the
+            # whole root-unit department.
+            owners = {current_user.user_id}
+            owners.update(
+                await self._resolve_visible_owner_ids_for_hierarchy_root(
+                    root_user_id=current_user.user_id,
+                )
             )
-            return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=lead_root_user_id)
+            owners.update(
+                await self._department_scope.resolve_unit_scope_owner_ids_for_user(
+                    user_id=current_user.user_id,
+                )
+            )
+            if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ):
+                owners.update(
+                    await self._department_scope.resolve_department_owner_ids_for_current_user(
+                        current_user=current_user,
+                    )
+                )
+            return list(owners)
         # Non-hierarchy roles must not receive implicit global request visibility.
         return []
 

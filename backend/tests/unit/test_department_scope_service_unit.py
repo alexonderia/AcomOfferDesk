@@ -69,3 +69,100 @@ async def test_department_scope_membership_check_is_strict_to_current_department
         current_user=current_user,
         target_user_id="lead-2",
     )
+
+
+class _UnitAwareUsersRepo(_UsersRepo):
+    """Users repo that also exposes active unit graph data.
+
+    Units:
+      1 "Департамент A" (root)
+        2 "Отдел X"  -> 4 "Группа X1"
+        3 "Отдел Y"
+      10 "Департамент B" (separate root)
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._units = [
+            (1, None),
+            (2, 1),
+            (3, 1),
+            (4, 2),
+            (10, None),
+        ]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("eco-1", 4),
+            ("lead-2", 3),
+            ("pm-2", 10),
+        ]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
+
+
+@pytest.mark.asyncio
+async def test_department_scope_is_root_unit_subtree_when_user_has_units():
+    service = DepartmentScopeService(_UnitAwareUsersRepo())
+
+    pm_department = await service.resolve_department_owner_ids_for_current_user(
+        current_user=_current_user(user_id="pm-1", role_id=settings.project_manager_role_id),
+    )
+    lead_department = await service.resolve_department_owner_ids_for_current_user(
+        current_user=_current_user(user_id="lead-1", role_id=settings.lead_economist_role_id),
+    )
+
+    # Whole root unit (1) subtree: units {1,2,3,4}; unit 10 is a separate root.
+    assert set(pm_department) == {"pm-1", "lead-1", "eco-1", "lead-2"}
+    assert set(lead_department) == {"pm-1", "lead-1", "eco-1", "lead-2"}
+
+
+@pytest.mark.asyncio
+async def test_unit_scope_for_lead_is_only_their_own_unit_subtree():
+    service = DepartmentScopeService(_UnitAwareUsersRepo())
+
+    lead_unit_scope = await service.resolve_unit_scope_owner_ids_for_user(user_id="lead-1")
+
+    # Subtree of lead's own unit (2): units {2,4}; excludes sibling unit 3 (lead-2).
+    assert set(lead_unit_scope) == {"lead-1", "eco-1"}
+
+
+@pytest.mark.asyncio
+async def test_department_membership_spans_root_unit_but_not_other_root():
+    service = DepartmentScopeService(_UnitAwareUsersRepo())
+
+    current_user = _current_user(user_id="lead-1", role_id=settings.lead_economist_role_id)
+    assert await service.is_user_in_current_user_department(
+        current_user=current_user,
+        target_user_id="lead-2",
+    )
+    assert not await service.is_user_in_current_user_department(
+        current_user=current_user,
+        target_user_id="pm-2",
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_has_active_unit_membership_reflects_graph():
+    service = DepartmentScopeService(_UnitAwareUsersRepo())
+
+    assert await service.user_has_active_unit_membership(user_id="lead-1")
+    assert not await service.user_has_active_unit_membership(user_id="ghost")
+
+
+@pytest.mark.asyncio
+async def test_department_scope_falls_back_to_hierarchy_without_unit_membership():
+    repo = _UnitAwareUsersRepo()
+    # Drop all memberships -> no unit data -> hierarchy fallback.
+    repo._memberships = []
+    service = DepartmentScopeService(repo)
+
+    department = await service.resolve_department_owner_ids_for_current_user(
+        current_user=_current_user(user_id="eco-1", role_id=settings.economist_role_id),
+    )
+
+    assert set(department) == {"pm-1", "lead-1", "eco-1", "eco-2"}

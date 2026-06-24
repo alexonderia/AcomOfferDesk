@@ -143,6 +143,7 @@ type CombinedConnectorLine = {
 };
 
 type RecommendedHierarchyForestProps = {
+  allAssignmentsByUserId: Record<string, AssignedUnitInfo[]>;
   assignmentsByUserId: Record<string, AssignedUnitInfo[]>;
   departmentByUnitId: Map<number, DepartmentOption>;
   nodes: RecommendedHierarchyNode[];
@@ -515,13 +516,15 @@ const buildCombinedConnectorPairs = (groups: CombinedDepartmentGroup[]): Combine
 
 const RecommendedEmployeeDuplicateCard = ({
   assignment,
-  badgeLabel,
+  badgeLabels,
+  activeLabel,
   canAssignToUnit,
   node,
   onAssignToUnit,
 }: {
   assignment?: AssignedUnitInfo | undefined;
-  badgeLabel: string;
+  badgeLabels: string[];
+  activeLabel?: string | undefined;
   canAssignToUnit: boolean;
   node: RecommendedHierarchyNode;
   onAssignToUnit?: (() => void) | undefined;
@@ -546,36 +549,49 @@ const RecommendedEmployeeDuplicateCard = ({
       }}
     >
       <Stack spacing={0.72} sx={{ height: '100%' }}>
-        <Box
-          sx={{
-            alignSelf: 'flex-start',
-            maxWidth: '100%',
-            px: 0.95,
-            py: 0.42,
-            borderRadius: 999,
-            border: '1px solid',
-            borderColor: assignment
-              ? alpha(hierarchyPageColors.softBlue, 0.22)
-              : alpha(hierarchyPageColors.canvasBorder, 0.88),
-            backgroundColor: assignment
-              ? alpha(hierarchyPageColors.softBlue, 0.06)
-              : alpha(hierarchyPageColors.canvas, 0.75),
-          }}
+        <Stack
+          direction="row"
+          spacing={0.45}
+          useFlexGap
+          flexWrap="wrap"
+          sx={{ alignSelf: 'flex-start', maxWidth: '100%' }}
         >
-          <Typography
-            variant="caption"
-            sx={{
-              display: 'block',
-              color: assignment ? hierarchyPageColors.softBlue : hierarchyPageColors.textSecondary,
-              fontSize: 9.9,
-              fontWeight: 700,
-              lineHeight: 1.15,
-              overflowWrap: 'anywhere',
-            }}
-          >
-            {badgeLabel}
-          </Typography>
-        </Box>
+          {badgeLabels.map((label) => {
+            const isActiveBadge = activeLabel !== undefined && label === activeLabel;
+            return (
+              <Box
+                key={label}
+                sx={{
+                  maxWidth: '100%',
+                  px: 0.95,
+                  py: 0.42,
+                  borderRadius: 999,
+                  border: '1px solid',
+                  borderColor: assignment
+                    ? alpha(hierarchyPageColors.softBlue, isActiveBadge ? 0.42 : 0.22)
+                    : alpha(hierarchyPageColors.canvasBorder, 0.88),
+                  backgroundColor: assignment
+                    ? alpha(hierarchyPageColors.softBlue, isActiveBadge ? 0.14 : 0.06)
+                    : alpha(hierarchyPageColors.canvas, 0.75),
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: 'block',
+                    color: assignment ? hierarchyPageColors.softBlue : hierarchyPageColors.textSecondary,
+                    fontSize: 9.9,
+                    fontWeight: 700,
+                    lineHeight: 1.15,
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {label}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Stack>
 
         <Stack direction="row" spacing={0.6} justifyContent="space-between" alignItems="flex-start">
           <Box sx={{ minWidth: 0 }}>
@@ -695,6 +711,7 @@ const RecommendedEmployeeDuplicateCard = ({
 };
 
 const RecommendedHierarchyForestComponent = ({
+  allAssignmentsByUserId,
   assignmentsByUserId,
   departmentByUnitId,
   nodes,
@@ -810,21 +827,29 @@ const RecommendedHierarchyForestComponent = ({
     }
   };
 
-  const renderEntry = (entry: CombinedCardEntry) => (
-    <Box
-      key={entry.key}
-      ref={registerCardRef(entry.key)}
-      sx={{ position: 'relative', zIndex: 1, width: recommendedMemberCardWidth }}
-    >
-      <RecommendedEmployeeDuplicateCard
-        assignment={entry.assignment}
-        badgeLabel={entry.badgeLabel}
-        canAssignToUnit={entry.canAssignToUnit}
-        node={entry.node}
-        onAssignToUnit={entry.canAssignToUnit ? () => onAssignToUnit(entry.node) : undefined}
-      />
-    </Box>
-  );
+  const renderEntry = (entry: CombinedCardEntry) => {
+    const memberships = allAssignmentsByUserId[entry.node.user_id] ?? [];
+    const badgeLabels = entry.assignment && memberships.length > 0
+      ? Array.from(new Set(memberships.map((membership) => membership.label)))
+      : [entry.badgeLabel];
+
+    return (
+      <Box
+        key={entry.key}
+        ref={registerCardRef(entry.key)}
+        sx={{ position: 'relative', zIndex: 1, width: recommendedMemberCardWidth }}
+      >
+        <RecommendedEmployeeDuplicateCard
+          assignment={entry.assignment}
+          badgeLabels={badgeLabels}
+          activeLabel={entry.assignment?.label}
+          canAssignToUnit={entry.canAssignToUnit}
+          node={entry.node}
+          onAssignToUnit={entry.canAssignToUnit ? () => onAssignToUnit(entry.node) : undefined}
+        />
+      </Box>
+    );
+  };
 
   const renderModuleConnectors = (node: PositionedModuleNode): JSX.Element[] => {
     if (node.children.length === 0) {
@@ -1068,6 +1093,56 @@ const buildDepartmentByUnitId = (nodes: UnitNode[]) => {
   return departmentByUnitId;
 };
 
+const buildUnitParentById = (
+  nodes: UnitNode[],
+  parentUnitId: number | null = null,
+  accumulator: Map<number, number | null> = new Map()
+): Map<number, number | null> => {
+  nodes.forEach((node) => {
+    accumulator.set(node.unit_id, parentUnitId);
+    buildUnitParentById(node.children, node.unit_id, accumulator);
+  });
+  return accumulator;
+};
+
+const isAncestorUnit = (
+  parentByUnitId: Map<number, number | null>,
+  ancestorUnitId: number,
+  descendantUnitId: number
+): boolean => {
+  let cursor = parentByUnitId.get(descendantUnitId) ?? null;
+  const visited = new Set<number>();
+  while (cursor !== null && !visited.has(cursor)) {
+    if (cursor === ancestorUnitId) {
+      return true;
+    }
+    visited.add(cursor);
+    cursor = parentByUnitId.get(cursor) ?? null;
+  }
+  return false;
+};
+
+// On the combined chart a separate card for a parent unit is redundant when the same
+// person is already shown in one of its child units, so drop the ancestor assignment.
+const pruneRedundantAncestorAssignments = (
+  assignmentsByUserId: Record<string, AssignedUnitInfo[]>,
+  parentByUnitId: Map<number, number | null>
+): Record<string, AssignedUnitInfo[]> =>
+  Object.fromEntries(
+    Object.entries(assignmentsByUserId).map(([userId, assignments]) => {
+      if (assignments.length <= 1) {
+        return [userId, assignments];
+      }
+      const pruned = assignments.filter(
+        (assignment) => !assignments.some(
+          (other) => other.unitId !== assignment.unitId
+            && isAncestorUnit(parentByUnitId, assignment.unitId, other.unitId)
+        )
+      );
+      return [userId, pruned.length > 0 ? pruned : assignments];
+    })
+  );
+
 const buildRecommendedParentByUserId = (
   nodes: RecommendedHierarchyNode[],
   accumulator: Record<string, string | null> = {}
@@ -1201,10 +1276,6 @@ const filterRecommendedNodesForDepartment = (
     }];
   });
 
-const getCreateDialogTitle = () => 'Добавить юнит';
-
-const getUnitNameFieldLabel = () => 'Название юнита';
-
 type UnitDialogMode = 'create-root' | 'create-child' | 'rename' | null;
 
 type UnitDialogProps = {
@@ -1292,7 +1363,9 @@ const UnitDialog = memo(({
     () => createUnitNameSuggestions.find((option) => option === unitName) ?? null,
     [createUnitNameSuggestions, unitName]
   );
-  const title = mode === 'rename' ? 'Переименовать юнит' : getCreateDialogTitle();
+  const isRootLevel = mode === 'rename' ? activeUnitDepth === 0 : createDialogDepth === 0;
+  const entityWord = isRootLevel ? 'подразделение' : 'объединение';
+  const title = mode === 'rename' ? `Переименовать ${entityWord}` : `Добавить ${entityWord}`;
 
   return (
     <Dialog open={mode !== null} onClose={onClose} maxWidth="xs" fullWidth>
@@ -1316,7 +1389,7 @@ const UnitDialog = memo(({
               <TextField
                 {...params}
                 autoFocus
-                label={mode === 'rename' ? 'Название' : getUnitNameFieldLabel()}
+                label={mode === 'rename' ? 'Название' : `Название ${isRootLevel ? 'подразделения' : 'объединения'}`}
               />
             )}
           />
@@ -1450,6 +1523,10 @@ export const UnitHierarchyPageView = () => {
     () => buildDepartmentByUnitId(tree),
     [tree]
   );
+  const parentByUnitId = useMemo(
+    () => buildUnitParentById(tree),
+    [tree]
+  );
   const departmentFilterOptions = useMemo<DepartmentFilterOption[]>(
     () => [{ unitId: 'all', name: 'Все подразделения' }, ...departmentOptions],
     [departmentOptions]
@@ -1513,8 +1590,11 @@ export const UnitHierarchyPageView = () => {
     })
     .filter((entry): entry is { assignment: AssignedUnitInfo; unit: UnitNode } => entry !== null);
   const filteredCombinedAssignmentsByUserId = useMemo(
-    () => filterAssignmentsByDepartment(memberUnitByUserId, departmentByUnitId, selectedDepartmentId),
-    [departmentByUnitId, memberUnitByUserId, selectedDepartmentId]
+    () => pruneRedundantAncestorAssignments(
+      filterAssignmentsByDepartment(memberUnitByUserId, departmentByUnitId, selectedDepartmentId),
+      parentByUnitId
+    ),
+    [departmentByUnitId, memberUnitByUserId, parentByUnitId, selectedDepartmentId]
   );
   const filteredRecommendedTree = useMemo(
     () => (selectedDepartmentId === 'all'
@@ -1579,7 +1659,7 @@ export const UnitHierarchyPageView = () => {
                     <ApartmentOutlinedIcon fontSize="small" />
                   </Box>
                   <Typography variant="h6" sx={{ color: 'text.primary' }}>
-                    {viewMode === 'combined' ? 'Объединенная иерархия' : 'Иерархия юнитов'}
+                    {viewMode === 'combined' ? 'Объединенная иерархия' : 'Иерархия объединений'}
                   </Typography>
                 </Stack>
 
@@ -1595,7 +1675,7 @@ export const UnitHierarchyPageView = () => {
                     }}
                   >
                     <ToggleButton value="combined">Объединенная схема</ToggleButton>
-                    <ToggleButton value="units">Иерархия юнитов</ToggleButton>
+                    <ToggleButton value="units">Иерархия объединений</ToggleButton>
                   </ToggleButtonGroup>
 
                   {departmentFilterOptions.length > 0 ? (
@@ -1624,7 +1704,7 @@ export const UnitHierarchyPageView = () => {
                       onClick={() => openCreateRootDialog()}
                       sx={{ boxShadow: 'none' }}
                     >
-                      Добавить юнит
+                      Добавить подразделение
                     </Button>
                   ) : null}
                 </Stack>
@@ -1657,6 +1737,7 @@ export const UnitHierarchyPageView = () => {
                   >
                     <Box sx={{ width: 'max-content', minWidth: '100%', mx: 'auto' }}>
                       <RecommendedHierarchyForest
+                        allAssignmentsByUserId={memberUnitByUserId}
                         assignmentsByUserId={filteredCombinedAssignmentsByUserId}
                         departmentByUnitId={departmentByUnitId}
                         nodes={filteredRecommendedTree}
@@ -1667,7 +1748,7 @@ export const UnitHierarchyPageView = () => {
                   </Box>
                 )
               ) : filteredTree.length === 0 ? (
-                <Alert severity="info">Пока не создано ни одного юнита.</Alert>
+                <Alert severity="info">Пока не создано ни одного объединения.</Alert>
               ) : (
                 <Box
                   sx={{
@@ -1690,7 +1771,7 @@ export const UnitHierarchyPageView = () => {
                   <Card
                     variant="outlined"
                     role="complementary"
-                    aria-label="Состав юнита"
+                    aria-label="Состав объединения"
                     sx={{
                       borderRadius: 3,
                       boxShadow: 'none',
@@ -1701,7 +1782,7 @@ export const UnitHierarchyPageView = () => {
                     <CardContent sx={{ p: 1.5 }}>
                       <Stack spacing={1.5}>
                         <Typography sx={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
-                          Состав юнита
+                          Состав объединения
                         </Typography>
 
                         {activeUnitDetails ? (
@@ -1737,7 +1818,7 @@ export const UnitHierarchyPageView = () => {
                                   lineHeight: 1.2,
                                 }}
                               >
-                                Вложенные юниты: {activeUnitDetails.children.length}
+                                Вложенные объединения: {activeUnitDetails.children.length}
                               </Box>
                             </Stack>
 
@@ -1834,7 +1915,7 @@ export const UnitHierarchyPageView = () => {
                           >
                             <Stack spacing={0.8}>
                               <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.25 }}>
-                                Выберите юнит
+                                Выберите объединение
                               </Typography>
                             </Stack>
                           </Box>
@@ -2006,7 +2087,7 @@ export const UnitHierarchyPageView = () => {
                         </Box>
                         <Box>
                           <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>
-                            Закрепить в юнит
+                            Закрепить в объединение
                           </Typography>
                         </Box>
                       </Stack>
@@ -2028,8 +2109,8 @@ export const UnitHierarchyPageView = () => {
                         renderInput={(params) => (
                           <TextField
                             {...params}
-                            label="Выберите юнит"
-                            placeholder="Начните вводить название юнита"
+                            label="Выберите объединение"
+                            placeholder="Начните вводить название объединения"
                           />
                         )}
                       />
@@ -2058,7 +2139,7 @@ export const UnitHierarchyPageView = () => {
                         </Box>
                         <Box>
                           <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>
-                            Создать дочерний юнит
+                            Создать дочернее объединение
                           </Typography>
                         </Box>
                       </Stack>
@@ -2129,7 +2210,7 @@ export const UnitHierarchyPageView = () => {
         </Dialog>
 
         <Dialog open={false} onClose={() => setActiveUnitDetailsId(null)} maxWidth="md" fullWidth>
-          <DialogTitle>Состав юнита</DialogTitle>
+          <DialogTitle>Состав объединения</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={1.5}>
               {activeUnitDetails ? (
@@ -2166,14 +2247,14 @@ export const UnitHierarchyPageView = () => {
                       lineHeight: 1.2,
                     }}
                   >
-                    Вложенные юниты: {activeUnitDetails.children.length}
+                    Вложенные объединения: {activeUnitDetails.children.length}
                   </Box>
                 </Stack>
               ) : null}
 
               <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                 <Typography variant="body2" color="text.secondary">
-                  Участники юнита
+                  Участники объединения
                 </Typography>
                 {activeUnitDetails?.actions.canManageMembers ? (
                   <Button
@@ -2258,7 +2339,7 @@ export const UnitHierarchyPageView = () => {
                 >
                   <Stack spacing={0.8}>
                     <Typography variant="body2" color="text.secondary">
-                      В этом юните пока нет участников.
+                      В этом объединении пока нет участников.
                     </Typography>
                   </Stack>
                 </Box>

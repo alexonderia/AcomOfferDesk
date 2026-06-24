@@ -328,3 +328,96 @@ async def test_get_recommended_tree_returns_current_user_hierarchy(service_conte
     assert tree[1].user_id == "pm-1"
     assert tree[1].children[0].user_id == "lead-1"
     assert [child.user_id for child in tree[1].children[0].children] == ["econ-1", "econ-2"]
+
+
+def _flatten_recommended_ids(nodes) -> list[str]:
+    flattened: list[str] = []
+    for node in nodes:
+        flattened.append(node.user_id)
+        flattened.extend(_flatten_recommended_ids(node.children))
+    return flattened
+
+
+@pytest.mark.asyncio
+async def test_get_recommended_tree_scopes_admin_to_responsibility_zone(service_context, make_current_user) -> None:
+    # A user without a unit, sitting below an in-zone member, stays in the admin's scope.
+    service_context.users.users["econ-3"] = User(
+        id="econ-3",
+        id_role=settings.economist_role_id,
+        id_parent="econ-1",
+        status="active",
+    )
+    service_context.units.profiles["econ-3"] = Profile(id="econ-3", full_name="Экономист 3", phone=None, mail=None)
+
+    tree = await service_context.service.get_recommended_tree(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.read"},
+        ),
+    )
+
+    visible_ids = _flatten_recommended_ids(tree)
+    # admin-1 (root unit member) and econ-1 (sub-unit member) plus econ-1's unit-less descendant.
+    assert sorted(visible_ids) == ["admin-1", "econ-1", "econ-3"]
+    # Managers above the zone and out-of-zone economists must not leak in.
+    assert "pm-1" not in visible_ids
+    assert "lead-1" not in visible_ids
+    assert "econ-2" not in visible_ids
+
+    econ_one = next(node for node in tree if node.user_id == "econ-1")
+    assert [child.user_id for child in econ_one.children] == ["econ-3"]
+
+
+@pytest.mark.asyncio
+async def test_assign_to_module_inherits_manager_root_unit(service_context, make_current_user) -> None:
+    # Subordinate of admin-1 (who is a member of the root department "Департамент").
+    service_context.users.users["sub-1"] = User(
+        id="sub-1",
+        id_role=settings.economist_role_id,
+        id_parent="admin-1",
+        status="active",
+    )
+    service_context.units.profiles["sub-1"] = Profile(id="sub-1", full_name="Подчиненный", phone=None, mail=None)
+
+    await service_context.service.add_member(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+        ),
+        unit_id=2,  # "Проект" — a sub-unit whose root is "Департамент" (id=1)
+        user_id="sub-1",
+    )
+
+    # Joined the requested module ...
+    assert service_context.units.members[(2, "sub-1")].is_active is True
+    # ... and inherited the manager's root department.
+    assert (1, "sub-1") in service_context.units.members
+    assert service_context.units.members[(1, "sub-1")].is_active is True
+
+
+@pytest.mark.asyncio
+async def test_assign_to_module_skips_inheritance_without_manager_unit(service_context, make_current_user) -> None:
+    # Subordinate of lead-1, who is not a member of any unit.
+    service_context.users.users["sub-2"] = User(
+        id="sub-2",
+        id_role=settings.economist_role_id,
+        id_parent="lead-1",
+        status="active",
+    )
+    service_context.units.profiles["sub-2"] = Profile(id="sub-2", full_name="Подчиненный 2", phone=None, mail=None)
+
+    await service_context.service.add_member(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+        ),
+        unit_id=2,
+        user_id="sub-2",
+    )
+
+    assert service_context.units.members[(2, "sub-2")].is_active is True
+    # Manager has no unit, so no root-department inheritance happens.
+    assert (1, "sub-2") not in service_context.units.members

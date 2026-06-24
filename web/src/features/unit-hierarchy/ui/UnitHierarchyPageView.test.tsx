@@ -218,32 +218,32 @@ describe('UnitHierarchyPageView', () => {
   it('renders the units hierarchy from db unit compositions and opens the unit details side panel', () => {
     renderView();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Иерархия юнитов' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Иерархия объединений' }));
 
-    expect(screen.getByRole('heading', { name: 'Иерархия юнитов' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Иерархия объединений' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Структура' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Все участники' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав юнита Финансовый блок' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав объединения Финансовый блок' }));
 
-    const panel = within(screen.getByRole('complementary', { name: 'Состав юнита' }));
-    expect(panel.getByText('Состав юнита')).toBeInTheDocument();
+    const panel = within(screen.getByRole('complementary', { name: 'Состав объединения' }));
+    expect(panel.getByText('Состав объединения')).toBeInTheDocument();
     expect(panel.getByText('Шамина Анжелина Алексеевна')).toBeInTheDocument();
     expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
     expect(panel.getByRole('button', { name: 'Удалить участника Шамина Анжелина Алексеевна' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Состав юнита' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Состав объединения' })).not.toBeInTheDocument();
   });
 
   it('shows empty participant state inside the unit details side panel', () => {
     renderView();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Иерархия юнитов' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав юнита Административный блок' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Иерархия объединений' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав объединения Административный блок' }));
 
-    const panel = within(screen.getByRole('complementary', { name: 'Состав юнита' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Состав объединения' }));
     expect(panel.getByText('Участников нет.')).toBeInTheDocument();
     expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
-    expect(screen.getAllByText('Место для нового юнита').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Место для нового объединения').length).toBeGreaterThan(0);
   });
 
   it('shows manager info and all current assignments inside the employee dialog', () => {
@@ -261,13 +261,16 @@ describe('UnitHierarchyPageView', () => {
     expect(dialog.getByRole('button', { name: 'Открепить от Модуль А' })).toBeInTheDocument();
   });
 
-  it('duplicates an employee for each assignment on the combined hierarchy', () => {
+  it('shows an employee once per leaf unit and lists all memberships on each duplicate card', () => {
     renderView();
 
-    expect(screen.getAllByText('Рахматуллин Асхат Ирекович')).toHaveLength(4);
-    expect(screen.getAllByText('Ведущий специалист')).toHaveLength(4);
-    expect(screen.getByText('Финансовый блок / Модуль 2')).toBeInTheDocument();
-    expect(screen.getByText('Административный блок / Модуль А')).toBeInTheDocument();
+    // lead-1 has two leaf placements (Модуль 2 and Модуль А) → two cards, no
+    // redundant parent-department cards.
+    expect(screen.getAllByText('Рахматуллин Асхат Ирекович')).toHaveLength(2);
+    expect(screen.getAllByText('Ведущий специалист')).toHaveLength(2);
+    // Each duplicate card lists every unit where the employee is a member.
+    expect(screen.getAllByText('Финансовый блок / Модуль 2')).toHaveLength(2);
+    expect(screen.getAllByText('Административный блок / Модуль А')).toHaveLength(2);
   });
 
   it('keeps a hierarchy member without a unit inside the manager chain', () => {

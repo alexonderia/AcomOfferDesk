@@ -33,7 +33,7 @@ type UnitOrgNodeProps = {
   unit: UnitNode;
 };
 
-const getCreateChildActionLabel = () => 'Добавить дочерний юнит';
+const getCreateChildActionLabel = () => 'Добавить дочернее объединение';
 
 export const UnitOrgNode = ({
   depth,
@@ -65,7 +65,7 @@ export const UnitOrgNode = ({
       <Stack spacing={1.25} alignItems="center" sx={{ width: 'max-content' }}>
         <Box
           role={canOpenUnitDetails ? 'button' : undefined}
-          aria-label={canOpenUnitDetails ? `Открыть состав юнита ${unit.name}` : undefined}
+          aria-label={canOpenUnitDetails ? `Открыть состав объединения ${unit.name}` : undefined}
           tabIndex={canOpenUnitDetails ? 0 : undefined}
           onClick={canOpenUnitDetails ? openUnitDetails : undefined}
           onKeyDown={canOpenUnitDetails
@@ -150,7 +150,7 @@ export const UnitOrgNode = ({
                         }}
                       >
                         <EditOutlinedIcon sx={{ mr: 1, fontSize: 18 }} />
-                        Переименовать юнит
+                        Переименовать объединение
                       </MenuItem>
                     ) : null}
                     {unit.actions.canDeactivate ? (
@@ -162,7 +162,7 @@ export const UnitOrgNode = ({
                         sx={{ color: 'error.main' }}
                       >
                         <DeleteOutlineRoundedIcon sx={{ mr: 1, fontSize: 18 }} />
-                        Деактивировать юнит
+                        Деактивировать объединение
                       </MenuItem>
                     ) : null}
                   </Menu>
@@ -197,7 +197,7 @@ export const UnitOrgNode = ({
                   lineHeight: 1.2,
                 }}
               >
-                Вложенные юниты: {unit.children.length}
+                Вложенные объединения: {unit.children.length}
               </Box>
             </Stack>
 
@@ -278,7 +278,7 @@ export const UnitOrgNode = ({
                 <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
                   <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ color: hierarchyPageColors.textPrimary, fontSize: 13, fontWeight: 700 }}>
-                      Место для нового юнита
+                      Место для нового объединения
                     </Typography>
                   </Box>
                   {canCreateChild ? (

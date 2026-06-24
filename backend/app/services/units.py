@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.policies import UserPolicy
-from app.models.orm_models import Unit, UnitMember
+from app.models.orm_models import Unit, UnitMember, User
 from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
 
@@ -183,6 +183,32 @@ class UnitService:
             children=children,
         )
 
+    def _collect_visible_unit_ids(
+        self,
+        *,
+        units: list[Unit],
+        visible_root_ids: set[int],
+    ) -> set[int]:
+        by_parent: dict[int | None, list[Unit]] = {}
+        by_id = {int(unit.id): unit for unit in units}
+        for unit in units:
+            parent_id = int(unit.id_parent) if unit.id_parent is not None else None
+            by_parent.setdefault(parent_id, []).append(unit)
+
+        visible_ids: set[int] = set()
+
+        def _collect(unit_id: int) -> None:
+            if unit_id in visible_ids:
+                return
+            visible_ids.add(unit_id)
+            for child in by_parent.get(unit_id, []):
+                _collect(int(child.id))
+
+        for root_id in sorted(visible_root_ids):
+            if root_id in by_id:
+                _collect(root_id)
+        return visible_ids
+
     async def _build_single_unit_state(
         self,
         *,
@@ -227,18 +253,7 @@ class UnitService:
         else:
             visible_root_ids = readable_root_ids
 
-        visible_ids: set[int] = set()
-
-        def _collect_visible(unit_id: int) -> None:
-            if unit_id in visible_ids:
-                return
-            visible_ids.add(unit_id)
-            for child in by_parent.get(unit_id, []):
-                _collect_visible(int(child.id))
-
-        for root_id in sorted(visible_root_ids):
-            if root_id in by_id:
-                _collect_visible(root_id)
+        visible_ids = self._collect_visible_unit_ids(units=units, visible_root_ids=visible_root_ids)
 
         visible_units = [unit for unit in units if int(unit.id) in visible_ids]
         members_by_unit: dict[int, list[UnitMemberState]] = {int(unit.id): [] for unit in visible_units}
@@ -295,8 +310,51 @@ class UnitService:
         root_units = [by_id[root_id] for root_id in sorted(visible_root_ids) if root_id in by_id]
         return [await _build_node(unit) for unit in root_units]
 
+    async def _scope_recommended_rows_to_responsibility(
+        self,
+        *,
+        readable_root_ids: set[int],
+        active_rows: list[tuple],
+    ) -> list[tuple]:
+        """Limit the recommended user hierarchy to the admin's zone of responsibility.
+
+        In scope are users that belong to a unit inside the admin's zone (their root
+        unit and below) plus users without any unit who sit below an in-scope user in
+        the user hierarchy. Users assigned to foreign units stay out of scope.
+        """
+        units = await self._units.list_units(active_only=True)
+        visible_ids = self._collect_visible_unit_ids(units=units, visible_root_ids=readable_root_ids)
+        all_unit_ids = [int(unit.id) for unit in units]
+
+        users_with_any_unit: set[str] = set()
+        anchored_user_ids: set[str] = set()
+        for member, _user, _profile, _role in await self._units.list_members_for_units(unit_ids=all_unit_ids):
+            users_with_any_unit.add(member.id_user)
+            if int(member.id_unit) in visible_ids:
+                anchored_user_ids.add(member.id_user)
+
+        by_id = {row[0].id: row for row in active_rows}
+        anchored_user_ids &= set(by_id.keys())
+
+        children_by_parent: dict[str, list[str]] = {}
+        for user, _profile, _role in active_rows:
+            if user.id_parent in by_id:
+                children_by_parent.setdefault(user.id_parent, []).append(user.id)
+
+        in_scope: set[str] = set(anchored_user_ids)
+        queue: list[str] = list(anchored_user_ids)
+        while queue:
+            parent_id = queue.pop()
+            for child_id in children_by_parent.get(parent_id, []):
+                if child_id in in_scope or child_id in users_with_any_unit:
+                    continue
+                in_scope.add(child_id)
+                queue.append(child_id)
+
+        return [row for row in active_rows if row[0].id in in_scope]
+
     async def get_recommended_tree(self, *, current_user: CurrentUser) -> list[RecommendedHierarchyNodeState]:
-        await self._ensure_read_access(current_user=current_user)
+        readable_root_ids = await self._ensure_read_access(current_user=current_user)
         role_ids = [
             settings.admin_role_id,
             settings.security_officer_role_id,
@@ -309,6 +367,14 @@ class UnitService:
         active_rows = [row for row in rows if row[0].status == "active"]
         if not active_rows:
             return []
+
+        if not self._is_superadmin(current_user):
+            active_rows = await self._scope_recommended_rows_to_responsibility(
+                readable_root_ids=readable_root_ids,
+                active_rows=active_rows,
+            )
+            if not active_rows:
+                return []
 
         by_id = {user.id: (user, profile, role) for user, profile, role in active_rows}
         children_by_parent: dict[str | None, list[str]] = {}
@@ -428,6 +494,59 @@ class UnitService:
         unit.updated_at = _utcnow_naive()
         return await self._build_single_unit_state(unit=unit, can_manage=bool(unit.is_active))
 
+    async def _ensure_active_membership(
+        self,
+        *,
+        unit_id: int,
+        user_id: str,
+        assigned_by_user_id: str,
+    ) -> None:
+        membership = await self._units.get_member(unit_id=unit_id, user_id=user_id)
+        if membership is not None and membership.is_active:
+            return
+        if membership is None:
+            membership = UnitMember(
+                id_unit=unit_id,
+                id_user=user_id,
+                id_assigned_by_user=assigned_by_user_id,
+                is_active=True,
+            )
+            await self._units.add_member(membership)
+        else:
+            membership.is_active = True
+            membership.id_assigned_by_user = assigned_by_user_id
+            membership.updated_at = _utcnow_naive()
+
+    async def _resolve_user_root_unit_ids(self, *, user_id: str) -> set[int]:
+        root_ids: set[int] = set()
+        for _member, unit in await self._units.list_user_units(user_id=user_id, active_only=True):
+            root_ids.add(await self._resolve_root_unit_id(unit=unit))
+        return root_ids
+
+    async def _inherit_manager_root_unit_if_needed(
+        self,
+        *,
+        current_user: CurrentUser,
+        unit: Unit,
+        user: User,
+    ) -> None:
+        """When a subordinate is pinned into a module under their manager, ensure they
+        also belong to the manager's root department (the module's root unit)."""
+        if unit.id_parent is None:
+            return
+        manager_id = user.id_parent
+        if not manager_id:
+            return
+        module_root_id = await self._resolve_root_unit_id(unit=unit)
+        manager_root_ids = await self._resolve_user_root_unit_ids(user_id=manager_id)
+        if module_root_id not in manager_root_ids:
+            return
+        await self._ensure_active_membership(
+            unit_id=module_root_id,
+            user_id=user.id,
+            assigned_by_user_id=current_user.user_id,
+        )
+
     async def add_member(
         self,
         *,
@@ -463,6 +582,12 @@ class UnitService:
             membership.is_active = True
             membership.id_assigned_by_user = current_user.user_id
             membership.updated_at = _utcnow_naive()
+
+        await self._inherit_manager_root_unit_if_needed(
+            current_user=current_user,
+            unit=unit,
+            user=user,
+        )
 
         await self._units.flush()
 

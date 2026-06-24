@@ -6,7 +6,6 @@ import {
   getMemberAccentColor,
   getMemberDisplayName,
   hierarchyPageColors,
-  hierarchySurfaceBackground,
   isPlaceholderPersonName,
   statusLabelByCode,
 } from './unitHierarchyStyles';
@@ -37,9 +36,8 @@ export const OrgUserCard = ({
         border: `1px solid ${
           isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.55) : alpha(hierarchyPageColors.cardBorder, 0.95)
         }`,
-        backgroundImage: hierarchySurfaceBackground,
         backgroundColor: '#ffffff',
-        boxShadow: '0 10px 20px rgba(15, 23, 42, 0.07)',
+        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
         px: 1.1,
         py: 1,
       }}

@@ -19,7 +19,6 @@ import {
   connectorLineSx,
   getUnitLevelLabel,
   hierarchyPageColors,
-  hierarchySurfaceBackground,
 } from './unitHierarchyStyles';
 
 type UnitOrgNodeProps = {
@@ -80,15 +79,20 @@ export const UnitOrgNode = ({
           sx={{
             width: 332,
             maxWidth: 'min(332px, calc(100vw - 40px))',
-            borderRadius: 3,
+            borderRadius: 2.5,
             border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.98)}`,
-            backgroundImage: hierarchySurfaceBackground,
-            backgroundColor: alpha('#ffffff', 0.96),
+            backgroundImage: 'none',
+            backgroundColor: '#ffffff',
             boxShadow: hierarchyPageColors.shadow,
             px: 1.4,
             py: 1.3,
             zIndex: 1,
             cursor: canOpenUnitDetails ? 'pointer' : 'default',
+            transition: canOpenUnitDetails ? 'border-color 0.16s ease, box-shadow 0.16s ease' : undefined,
+            '&:hover': canOpenUnitDetails ? {
+              borderColor: alpha(hierarchyPageColors.connector, 0.38),
+              boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)',
+            } : undefined,
           }}
         >
           <Stack spacing={1.15}>

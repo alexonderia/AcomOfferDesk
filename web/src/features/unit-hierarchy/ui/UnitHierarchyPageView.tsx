@@ -37,7 +37,6 @@ import {
   groupMembersForOrgChart,
   hierarchyCanvasBackground,
   hierarchyPageColors,
-  hierarchySurfaceBackground,
   sectionCardSx,
   statusLabelByCode,
 } from './unitHierarchyStyles';
@@ -527,15 +526,14 @@ const RecommendedEmployeeDuplicateCard = ({
       sx={{
         width: recommendedMemberCardWidth,
         minHeight: recommendedEmployeeCardHeight,
-        borderRadius: 2.4,
+        borderRadius: 2,
         border: `1px solid ${
           isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.5) : alpha(hierarchyPageColors.cardBorder, 0.92)
         }`,
-        backgroundImage: hierarchySurfaceBackground,
         backgroundColor: '#ffffff',
         px: 1,
         py: 0.95,
-        boxShadow: '0 12px 24px rgba(15, 23, 42, 0.07)',
+        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
       }}
     >
       <Stack spacing={0.72} sx={{ height: '100%' }}>
@@ -551,9 +549,8 @@ const RecommendedEmployeeDuplicateCard = ({
               ? alpha(hierarchyPageColors.softBlue, 0.22)
               : alpha(hierarchyPageColors.canvasBorder, 0.88),
             backgroundColor: assignment
-              ? alpha(hierarchyPageColors.softBlue, 0.08)
-              : alpha('#ffffff', 0.82),
-            boxShadow: '0 4px 10px rgba(15, 23, 42, 0.04)',
+              ? alpha(hierarchyPageColors.softBlue, 0.06)
+              : alpha(hierarchyPageColors.canvas, 0.75),
           }}
         >
           <Typography
@@ -605,8 +602,7 @@ const RecommendedEmployeeDuplicateCard = ({
                   flexShrink: 0,
                   color: hierarchyPageColors.softBlue,
                   border: `1px solid ${alpha(hierarchyPageColors.softBlue, 0.16)}`,
-                  backgroundColor: alpha('#ffffff', 0.96),
-                  boxShadow: '0 6px 12px rgba(15, 23, 42, 0.08)',
+                  backgroundColor: '#ffffff',
                 }}
               >
                 <EditOutlinedIcon sx={{ fontSize: 12.5 }} />
@@ -657,7 +653,7 @@ const RecommendedEmployeeDuplicateCard = ({
                 px: 0.55,
                 py: 0.2,
                 borderRadius: 999,
-                backgroundColor: alpha(hierarchyPageColors.softBlue, 0.08),
+                backgroundColor: alpha(hierarchyPageColors.softBlue, 0.06),
               }}
             >
               <Typography variant="caption" sx={{ fontSize: 10.1, fontWeight: 700 }}>
@@ -674,7 +670,7 @@ const RecommendedEmployeeDuplicateCard = ({
                 px: 0.55,
                 py: 0.2,
                 borderRadius: 999,
-                backgroundColor: alpha(hierarchyPageColors.softPink, 0.08),
+                backgroundColor: alpha(hierarchyPageColors.softPink, 0.06),
               }}
             >
               <Typography variant="caption" sx={{ fontSize: 10.1, fontWeight: 700 }}>
@@ -894,10 +890,9 @@ const RecommendedHierarchyForest = ({
               top: frame.top,
               width: frame.width,
               height: frame.height,
-              borderRadius: 2.5,
-              border: `1.5px dashed ${alpha(frame.color, 0.45)}`,
-              backgroundImage: `linear-gradient(180deg, ${alpha(frame.color, 0.085)} 0%, ${alpha(frame.color, 0.03)} 100%)`,
-              boxShadow: `inset 0 0 0 1px ${alpha('#ffffff', 0.45)}`,
+              borderRadius: 2,
+              border: `1px dashed ${alpha(frame.color, 0.32)}`,
+              backgroundColor: alpha(frame.color, 0.025),
               zIndex: 0,
               pointerEvents: 'none',
             }}
@@ -907,17 +902,16 @@ const RecommendedHierarchyForest = ({
                 position: 'absolute',
                 top: -12,
                 left: 12,
-                px: 0.95,
+                px: 0.8,
                 py: 0.25,
                 borderRadius: 999,
-                border: `1px solid ${alpha(frame.color, 0.16)}`,
-                backgroundColor: alpha('#ffffff', 0.78),
+                border: `1px solid ${alpha(frame.color, 0.14)}`,
+                backgroundColor: '#ffffff',
                 color: frame.color,
                 fontSize: 11,
                 fontWeight: 700,
                 lineHeight: 1.2,
                 whiteSpace: 'nowrap',
-                boxShadow: '0 6px 14px rgba(15, 23, 42, 0.06)',
               }}
             >
               {frame.label}
@@ -980,8 +974,8 @@ const RecommendedHierarchyForest = ({
               d={`M ${line.x1} ${line.y1} L ${line.x1} ${midY} L ${line.x2} ${midY} L ${line.x2} ${line.y2}`}
               fill="none"
               stroke={hierarchyPageColors.connector}
-              strokeWidth={1.7}
-              strokeOpacity={0.72}
+              strokeWidth={1.5}
+              strokeOpacity={0.62}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
@@ -995,38 +989,29 @@ const RecommendedHierarchyForest = ({
           sx={{
             position: 'relative',
             zIndex: 1,
-            borderRadius: 3.2,
+            borderRadius: 2.5,
             border: `1px solid ${alpha(group.deptUnitId === UNASSIGNED_DEPT_ID ? hierarchyPageColors.canvasBorder : hierarchyPageColors.softBlue, 0.4)}`,
-            backgroundImage: `linear-gradient(180deg, ${alpha('#ffffff', 0.85)} 0%, ${alpha(group.deptUnitId === UNASSIGNED_DEPT_ID ? hierarchyPageColors.canvas : hierarchyPageColors.softBlue, 0.05)} 100%)`,
-            boxShadow: '0 16px 34px rgba(15, 23, 42, 0.07)',
+            backgroundColor: '#ffffff',
+            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)',
             p: 1.55,
             display: 'flex',
             flexDirection: 'column',
             gap: 1.25,
             alignSelf: 'stretch',
-            overflow: 'hidden',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              inset: '0 0 auto 0',
-              height: 4,
-              background: `linear-gradient(90deg, ${alpha(group.deptUnitId === UNASSIGNED_DEPT_ID ? hierarchyPageColors.textSecondary : hierarchyPageColors.softBlue, 0.9)} 0%, ${alpha(hierarchyPageColors.softTeal, 0.72)} 100%)`,
-            },
           }}
         >
           <Box
             sx={{
               alignSelf: 'flex-start',
-              px: 1.05,
-              py: 0.4,
+              px: 0.9,
+              py: 0.3,
               borderRadius: 999,
               border: `1px solid ${alpha(group.deptUnitId === UNASSIGNED_DEPT_ID ? hierarchyPageColors.canvasBorder : hierarchyPageColors.softBlue, 0.18)}`,
-              backgroundColor: alpha('#ffffff', 0.8),
+              backgroundColor: alpha(group.deptUnitId === UNASSIGNED_DEPT_ID ? hierarchyPageColors.canvas : hierarchyPageColors.softBlue, 0.06),
               color: group.deptUnitId === UNASSIGNED_DEPT_ID ? hierarchyPageColors.textSecondary : hierarchyPageColors.softBlue,
-              fontSize: 12,
+              fontSize: 11.5,
               fontWeight: 700,
               lineHeight: 1.2,
-              boxShadow: '0 8px 16px rgba(15, 23, 42, 0.06)',
             }}
           >
             {group.name}
@@ -1680,14 +1665,13 @@ export const UnitHierarchyPageView = () => {
                     sx={{
                       overflowX: 'auto',
                       overflowY: 'hidden',
-                      borderRadius: 3.2,
+                      borderRadius: 2.5,
                       px: { xs: 1, md: 1.5 },
                       py: { xs: 1.5, md: 2 },
                       bgcolor: hierarchyPageColors.canvas,
                       backgroundImage: hierarchyCanvasBackground,
                       border: '1px solid',
                       borderColor: alpha(hierarchyPageColors.canvasBorder, 0.95),
-                      boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.72)',
                     }}
                   >
                     <Box sx={{ width: 'max-content', minWidth: '100%', mx: 'auto' }}>

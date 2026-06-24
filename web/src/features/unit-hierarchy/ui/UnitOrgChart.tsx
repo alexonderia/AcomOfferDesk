@@ -29,11 +29,10 @@ export const UnitOrgChart = ({
     sx={{
       overflowX: 'auto',
       overflowY: 'hidden',
-      borderRadius: 3.5,
+      borderRadius: 2.5,
       bgcolor: hierarchyPageColors.canvas,
       backgroundImage: hierarchyCanvasBackground,
       border: `1px solid ${alpha(hierarchyPageColors.canvasBorder, 0.95)}`,
-      boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.75)',
       px: { xs: 1, md: 1.75 },
       py: { xs: 1.5, md: 2.1 },
     }}

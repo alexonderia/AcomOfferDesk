@@ -247,10 +247,7 @@ export const UnitOrgNode = ({
                 <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
                   <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ color: hierarchyPageColors.textPrimary, fontSize: 13.5, fontWeight: 700 }}>
-                      {showMembers ? 'Состав юнита' : 'Участники юнита'}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary }}>
-                      Нажмите на карточку, чтобы открыть список участников
+                      {showMembers ? 'Состав' : 'Участники'}
                     </Typography>
                   </Box>
                   <Button
@@ -282,9 +279,6 @@ export const UnitOrgNode = ({
                   <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ color: hierarchyPageColors.textPrimary, fontSize: 13, fontWeight: 700 }}>
                       Место для нового юнита
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary }}>
-                      В эту ветку можно добавить дочерний юнит
                     </Typography>
                   </Box>
                   {canCreateChild ? (

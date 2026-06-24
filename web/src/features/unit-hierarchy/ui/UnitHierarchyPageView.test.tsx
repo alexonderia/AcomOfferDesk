@@ -247,7 +247,7 @@ describe('UnitHierarchyPageView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Открыть состав юнита Административный блок' }));
 
     const panel = within(screen.getByRole('complementary', { name: 'Состав юнита' }));
-    expect(panel.getByText('В этом юните пока нет участников.')).toBeInTheDocument();
+    expect(panel.getByText('Участников нет.')).toBeInTheDocument();
     expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
     expect(screen.getAllByText('Место для нового юнита').length).toBeGreaterThan(0);
   });
@@ -258,7 +258,7 @@ describe('UnitHierarchyPageView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Изменить привязки Рахматуллин Асхат Ирекович / Модуль 2' }));
     const dialog = within(screen.getByRole('dialog'));
 
-    expect(dialog.getByText('Руководитель сотрудника')).toBeInTheDocument();
+    expect(dialog.getByText('Руководитель')).toBeInTheDocument();
     expect(dialog.getByText('Ахметшин Ренат Габдельфатович')).toBeInTheDocument();
     expect(dialog.getByText('Главный специалист')).toBeInTheDocument();
     expect(dialog.getAllByText('Финансовый блок / Модуль 2').length).toBeGreaterThan(0);

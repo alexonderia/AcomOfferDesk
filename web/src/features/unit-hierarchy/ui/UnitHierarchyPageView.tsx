@@ -1410,11 +1410,6 @@ export const UnitHierarchyPageView = () => {
     const { contractors, leaders, team } = groupMembersForOrgChart(activeUnitDetails.members);
     return [...leaders, ...team, ...contractors];
   }, [activeUnitDetails]);
-  const activeUnitDetailsDepth = useMemo(
-    () => (activeUnitDetails ? findUnitDepth(tree, activeUnitDetails.unit_id) ?? 0 : null),
-    [activeUnitDetails, tree]
-  );
-
   return (
     <Box>
       <Stack spacing={2}>
@@ -1566,21 +1561,14 @@ export const UnitHierarchyPageView = () => {
                   >
                     <CardContent sx={{ p: 1.5 }}>
                       <Stack spacing={1.5}>
-                        <Box>
-                          <Typography sx={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
-                            Состав юнита
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4 }}>
-                            {activeUnitDetails
-                              ? 'Участники выбранного юнита и быстрые действия по составу.'
-                              : 'Выберите карточку юнита на схеме, и список участников откроется здесь.'}
-                          </Typography>
-                        </Box>
+                        <Typography sx={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
+                          Состав юнита
+                        </Typography>
 
                         {activeUnitDetails ? (
                           <>
                             <Alert severity="info" variant="outlined">
-                              {getUnitLevelLabel(activeUnitDetailsDepth ?? 0)}: «{activeUnitDetails.name}»
+                              «{activeUnitDetails.name}»
                             </Alert>
 
                             <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
@@ -1614,10 +1602,7 @@ export const UnitHierarchyPageView = () => {
                               </Box>
                             </Stack>
 
-                            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                              <Typography variant="body2" color="text.secondary">
-                                Участники юнита
-                              </Typography>
+                            <Stack direction="row" justifyContent="flex-end" alignItems="center" spacing={1}>
                               {activeUnitDetails.actions.canManageMembers ? (
                                 <Button
                                   size="small"
@@ -1692,7 +1677,7 @@ export const UnitHierarchyPageView = () => {
                                 }}
                               >
                                 <Typography variant="body2" color="text.secondary">
-                                  В этом юните пока нет участников.
+                                  Участников нет.
                                 </Typography>
                               </Box>
                             )}
@@ -1710,10 +1695,7 @@ export const UnitHierarchyPageView = () => {
                           >
                             <Stack spacing={0.8}>
                               <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.25 }}>
-                                Ничего не выбрано
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                Нажмите на любой юнит слева, чтобы увидеть участников, добавить новых или убрать лишних.
+                                Выберите юнит
                               </Typography>
                             </Stack>
                           </Box>
@@ -1731,11 +1713,6 @@ export const UnitHierarchyPageView = () => {
           <DialogTitle>{unitDialogTitle}</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={1.25}>
-              {activeUnit && unitDialogMode === 'create-child' ? (
-                <Alert severity="info">
-                  Новый юнит будет создан внутри «{activeUnit.name}».
-                </Alert>
-              ) : null}
               <Autocomplete
                 freeSolo
                 fullWidth
@@ -1749,9 +1726,6 @@ export const UnitHierarchyPageView = () => {
                     {...params}
                     autoFocus
                     label={unitDialogMode === 'rename' ? 'Название' : getUnitNameFieldLabel()}
-                    helperText={unitDialogMode === 'rename'
-                      ? undefined
-                      : 'Можно ввести новое название или выбрать уже используемое на этом уровне'}
                   />
                 )}
               />
@@ -1775,9 +1749,6 @@ export const UnitHierarchyPageView = () => {
                     )}
                     renderOption={renderUserOption}
                   />
-                  <Typography variant="caption" color="text.secondary">
-                    Сотрудника можно выбрать из любого подразделения. Поле необязательное.
-                  </Typography>
                 </>
               ) : null}
             </Stack>
@@ -1791,20 +1762,18 @@ export const UnitHierarchyPageView = () => {
         </Dialog>
 
         <Dialog open={activeRecommendedNode !== null} onClose={() => setActiveRecommendedNode(null)} maxWidth="sm" fullWidth>
-          <DialogTitle>Настроить привязки сотрудника</DialogTitle>
+          <DialogTitle>
+            {activeRecommendedNode
+              ? (activeRecommendedNode.full_name ?? activeRecommendedNode.user_id)
+              : 'Настроить привязки'}
+          </DialogTitle>
           <DialogContent dividers>
             <Stack spacing={1.5}>
-              {activeRecommendedNode ? (
-                <Alert severity="info" variant="outlined">
-                  {activeRecommendedNode.full_name ?? activeRecommendedNode.user_id} • {activeRecommendedNode.role_name}
-                </Alert>
-              ) : null}
-
               <Card variant="outlined" sx={{ boxShadow: 'none' }}>
                 <CardContent sx={{ p: 1.4, '&:last-child': { pb: 1.4 } }}>
                   <Stack spacing={0.85}>
                     <Typography variant="body2" color="text.secondary">
-                      Руководитель сотрудника
+                      Руководитель
                     </Typography>
                     {activeRecommendedManager ? (
                       <>
@@ -1838,13 +1807,13 @@ export const UnitHierarchyPageView = () => {
                           </Stack>
                         ) : (
                           <Typography variant="caption" color="text.secondary">
-                            Привязки руководителя не указаны.
+                            Привязок нет
                           </Typography>
                         )}
                       </>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        Руководитель не указан.
+                        Не указан
                       </Typography>
                     )}
                   </Stack>
@@ -1854,7 +1823,7 @@ export const UnitHierarchyPageView = () => {
               {activeRecommendedAssignments.length > 0 ? (
                 <Stack spacing={0.75}>
                   <Typography variant="body2" color="text.secondary">
-                    Текущие привязки
+                    Привязки
                   </Typography>
                   <Stack spacing={0.75}>
                     {activeRecommendedAssignments.map((assignment) => (
@@ -1914,15 +1883,11 @@ export const UnitHierarchyPageView = () => {
                 </Stack>
               ) : (
                 <Typography variant="body2" color="text.secondary">
-                  У сотрудника пока нет привязок.
+                  Привязок нет.
                 </Typography>
               )}
 
               <Stack spacing={1}>
-                <Typography variant="body2" color="text.secondary">
-                  Что сделать
-                </Typography>
-
                 <Card variant="outlined" sx={{ boxShadow: 'none' }}>
                   <CardContent sx={{ p: 1.3, '&:last-child': { pb: 1.3 } }}>
                     <Stack spacing={1}>
@@ -1943,10 +1908,7 @@ export const UnitHierarchyPageView = () => {
                         </Box>
                         <Box>
                           <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>
-                            Закрепить в существующий юнит
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Найдите нужный юнит и сразу добавьте сотрудника в него
+                            Закрепить в юнит
                           </Typography>
                         </Box>
                       </Stack>
@@ -1995,16 +1957,13 @@ export const UnitHierarchyPageView = () => {
                             }}
                           >
                             <AddOutlinedIcon fontSize="small" />
-                          </Box>
-                          <Box>
-                            <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>
-                              Создать дочерний юнит
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Выберите, внутри какого текущего юнита нужно создать новую ветку
-                            </Typography>
-                          </Box>
-                        </Stack>
+                        </Box>
+                        <Box>
+                          <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>
+                            Создать дочерний юнит
+                          </Typography>
+                        </Box>
+                      </Stack>
                         <Stack spacing={0.75}>
                           {activeRecommendedAssignableParents.map(({ assignment, unit }) => (
                             <Card key={`${unit.unit_id}-${activeRecommendedNode?.user_id ?? 'user'}`} variant="outlined" sx={{ boxShadow: 'none' }}>
@@ -2022,9 +1981,6 @@ export const UnitHierarchyPageView = () => {
                                   <Typography sx={{ fontSize: 13.2, fontWeight: 600, lineHeight: 1.2 }}>
                                     {assignment.unitName}
                                   </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    Новый юнит появится внутри этой ветки
-                                  </Typography>
                                 </Box>
                                 <Button
                                   size="small"
@@ -2038,7 +1994,7 @@ export const UnitHierarchyPageView = () => {
                                     openCreateChildDialog(unit, currentUserId);
                                   }}
                                 >
-                                  Создать внутри
+                                  Создать
                                 </Button>
                               </CardContent>
                             </Card>
@@ -2220,7 +2176,6 @@ export const UnitHierarchyPageView = () => {
           <DialogTitle>Добавить участника</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={1.25}>
-              {activeUnit ? <Alert severity="info">Юнит: «{activeUnit.name}»</Alert> : null}
               <Autocomplete
                 options={availableUsers}
                 loading={isLoadingUsers}
@@ -2239,9 +2194,6 @@ export const UnitHierarchyPageView = () => {
                 )}
                 renderOption={renderUserOption}
               />
-              <Typography variant="caption" color="text.secondary">
-                Можно выбрать сотрудника из любого подразделения.
-              </Typography>
             </Stack>
           </DialogContent>
           <DialogActions>

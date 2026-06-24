@@ -1,14 +1,14 @@
 import { Box } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import type { UnitMember, UnitNode } from '@shared/api/units';
+import type { UnitNode } from '@shared/api/units';
 import { UnitOrgNode } from './UnitOrgNode';
 import { hierarchyPageColors } from './unitHierarchyStyles';
 
 type UnitOrgChartProps = {
   onCreateChild?: ((unit: UnitNode) => void) | undefined;
   onDeactivate: (unit: UnitNode) => void;
-  onDeleteMember: (unit: UnitNode, member: UnitMember) => void;
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
+  onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
   onRename: (unit: UnitNode) => void;
   showMembers?: boolean;
   showPrimaryActions?: boolean;
@@ -18,8 +18,8 @@ type UnitOrgChartProps = {
 export const UnitOrgChart = ({
   onCreateChild,
   onDeactivate,
-  onDeleteMember,
   onOpenMemberDialog,
+  onOpenUnitDetails,
   onRename,
   showMembers = true,
   showPrimaryActions = true,
@@ -47,7 +47,7 @@ export const UnitOrgChart = ({
       <Box
         sx={{
           display: 'flex',
-          gap: { xs: 2, md: 2.5 },
+          gap: { xs: 2.25, md: 3.25 },
           alignItems: 'flex-start',
           width: 'max-content',
         }}
@@ -66,8 +66,8 @@ export const UnitOrgChart = ({
             depth={0}
             onCreateChild={onCreateChild}
             onDeactivate={onDeactivate}
-            onDeleteMember={onDeleteMember}
             onOpenMemberDialog={onOpenMemberDialog}
+            onOpenUnitDetails={onOpenUnitDetails}
             onRename={onRename}
             showMembers={showMembers}
             showPrimaryActions={showPrimaryActions}

@@ -75,6 +75,20 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Do not show unlabeled numeric legends inside recommendation cards; if hierarchy metadata is useful, present it with explicit captions such as `Подчинённые` or `Логин`.
 - For MUI connector boxes, never use numeric `width: 1` or `height: 1` when you mean a 1px line: sizing props treat `1` as percentage-based sizing, so use string pixel values such as `width: '1px'` and `height: '1px'`.
 
+### Convention: Combined Hierarchy Shows Per-Assignment Cards
+
+- In the combined hierarchy, show unit affiliation directly on each duplicated employee mini-card instead of wrapping several cards into one shared unit container.
+- Within one role level, place duplicated cards in module-oriented clusters so each copy stays visually near the relevant unit area.
+- Highlight module-oriented clusters with subtle dashed module frames behind the cards so cross-department duplicates still read as hanging from the target module area.
+- If one employee belongs to multiple units, duplicate the employee mini-card for each assignment while keeping the employee at the same role level in the reporting tree.
+- Empty combined-hierarchy slots should stay interactive: use a visible placeholder card that opens the existing assignment flow instead of introducing a new ad hoc edit path.
+
+### Convention: Unit Hierarchy Uses Expandable Block Cards
+
+- In the units hierarchy, render each unit as a block card with summary metadata, not as a thin label floating above member cards.
+- Open the participant list in a dedicated details panel on the same page when the user clicks the unit card, and keep add/remove member actions inside that side panel instead of a modal dialog.
+- Empty member lists and leaf-unit child areas should use interactive placeholders that lead into the existing "add employee" and "create child unit" flows.
+
 ---
 
 ## Forbidden Patterns

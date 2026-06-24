@@ -3,14 +3,21 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined';
 import MoreHorizOutlinedIcon from '@mui/icons-material/MoreHorizOutlined';
-import { Box, Button, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  IconButton,
+  Menu,
+  MenuItem,
+  Stack,
+  Typography,
+} from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useState } from 'react';
-import type { UnitMember, UnitNode } from '@shared/api/units';
-import { OrgUserCard } from './OrgUserCard';
+import type { UnitNode } from '@shared/api/units';
 import {
   connectorLineSx,
-  groupMembersForOrgChart,
+  getUnitLevelLabel,
   hierarchyPageColors,
 } from './unitHierarchyStyles';
 
@@ -18,201 +25,295 @@ type UnitOrgNodeProps = {
   depth: number;
   onCreateChild?: ((unit: UnitNode) => void) | undefined;
   onDeactivate: (unit: UnitNode) => void;
-  onDeleteMember: (unit: UnitNode, member: UnitMember) => void;
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
+  onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
   onRename: (unit: UnitNode) => void;
   showMembers?: boolean;
   showPrimaryActions?: boolean;
   unit: UnitNode;
 };
 
-const renderMemberRow = (
-  members: UnitMember[],
-  unit: UnitNode,
-  canManageMembers: boolean,
-  onDeleteMember: (unit: UnitNode, member: UnitMember) => void
-) => (
-  <Box sx={{ display: 'flex', gap: 1.4, justifyContent: 'center', width: 'max-content' }}>
-    {members.map((member) => (
-      <OrgUserCard
-        key={`${unit.unit_id}-${member.user_id}`}
-        canManageMembers={canManageMembers}
-        member={member}
-        onDelete={canManageMembers ? () => onDeleteMember(unit, member) : undefined}
-        unitLabel={unit.name}
-      />
-    ))}
-  </Box>
-);
-
-const getCreateChildActionLabel = () => 'Добавить дочерний узел';
+const getCreateChildActionLabel = () => 'Добавить дочерний юнит';
 
 export const UnitOrgNode = ({
   depth,
   onCreateChild,
   onDeactivate,
-  onDeleteMember,
   onOpenMemberDialog,
+  onOpenUnitDetails,
   onRename,
   showMembers = true,
   showPrimaryActions = true,
   unit,
 }: UnitOrgNodeProps) => {
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
-  const canManageMembers = unit.actions.canManageMembers;
-  const { contractors, leaders, team } = groupMembersForOrgChart(unit.members);
   const hasMenuActions = unit.actions.canUpdate || unit.actions.canDeactivate;
   const hasVisiblePrimaryActions = showPrimaryActions && (
     (unit.actions.canCreateChild && Boolean(onCreateChild))
     || (unit.actions.canManageMembers && Boolean(onOpenMemberDialog))
   );
+  const canCreateChild = unit.actions.canCreateChild && Boolean(onCreateChild);
+  const canOpenMemberDialog = unit.actions.canManageMembers && Boolean(onOpenMemberDialog);
+  const canOpenUnitDetails = Boolean(onOpenUnitDetails);
+
+  const openUnitDetails = () => {
+    onOpenUnitDetails?.(unit);
+  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
-      <Stack spacing={showMembers ? 1.2 : 0} alignItems="center" sx={{ width: 'max-content' }}>
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
+      <Stack spacing={1.25} alignItems="center" sx={{ width: 'max-content' }}>
+        <Box
+          role={canOpenUnitDetails ? 'button' : undefined}
+          aria-label={canOpenUnitDetails ? `Открыть состав юнита ${unit.name}` : undefined}
+          tabIndex={canOpenUnitDetails ? 0 : undefined}
+          onClick={canOpenUnitDetails ? openUnitDetails : undefined}
+          onKeyDown={canOpenUnitDetails
+            ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openUnitDetails();
+              }
+            }
+            : undefined}
           sx={{
-            minHeight: 34,
-            borderRadius: 999,
-            border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.95)}`,
-            backgroundColor: alpha('#ffffff', 0.88),
-            px: 1.15,
-            py: 0.55,
-            boxShadow: '0 2px 8px rgba(27, 39, 57, 0.05)',
+            width: 332,
+            maxWidth: 'min(332px, calc(100vw - 40px))',
+            borderRadius: 3,
+            border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.98)}`,
+            backgroundColor: alpha('#ffffff', 0.94),
+            boxShadow: '0 10px 30px rgba(15, 23, 42, 0.08)',
+            px: 1.4,
+            py: 1.3,
+            position: 'relative',
+            zIndex: 1,
+            cursor: canOpenUnitDetails ? 'pointer' : 'default',
+            transition: 'border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease',
+            '&:hover': canOpenUnitDetails ? {
+              borderColor: alpha(hierarchyPageColors.softBlue, 0.35),
+              boxShadow: '0 12px 26px rgba(15, 23, 42, 0.11)',
+              transform: 'translateY(-1px)',
+            } : undefined,
           }}
         >
-          <Typography
-            sx={{
-              color: hierarchyPageColors.textPrimary,
-              fontSize: 13.2,
-              fontWeight: 600,
-              lineHeight: 1.2,
-              maxWidth: 320,
-              overflowWrap: 'anywhere',
-            }}
-          >
-            {unit.name}
-          </Typography>
-          {hasMenuActions ? (
-            <>
-              <IconButton
-                size="small"
-                onClick={(event) => setMenuAnchorEl(event.currentTarget)}
-                sx={{
-                  ml: 0.25,
-                  width: 24,
-                  height: 24,
-                  color: alpha(hierarchyPageColors.textSecondary, 0.9),
-                }}
-              >
-                <MoreHorizOutlinedIcon sx={{ fontSize: 17 }} />
-              </IconButton>
-              <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={() => setMenuAnchorEl(null)}>
-                {unit.actions.canUpdate ? (
-                  <MenuItem
-                    onClick={() => {
-                      setMenuAnchorEl(null);
-                      onRename(unit);
-                    }}
-                  >
-                    <EditOutlinedIcon sx={{ mr: 1, fontSize: 18 }} />
-                    Переименовать узел
-                  </MenuItem>
-                ) : null}
-                {unit.actions.canDeactivate ? (
-                  <MenuItem
-                    onClick={() => {
-                      setMenuAnchorEl(null);
-                      onDeactivate(unit);
-                    }}
-                    sx={{ color: 'error.main' }}
-                  >
-                    <DeleteOutlineRoundedIcon sx={{ mr: 1, fontSize: 18 }} />
-                    Деактивировать узел
-                  </MenuItem>
-                ) : null}
-              </Menu>
-            </>
-          ) : null}
-        </Stack>
-
-        {hasVisiblePrimaryActions ? (
-          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" justifyContent="center" sx={{ maxWidth: 360 }}>
-            {unit.actions.canCreateChild && onCreateChild ? (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
-                onClick={() => onCreateChild(unit)}
-                sx={{ minHeight: 28, px: 1.15, py: 0.25, borderRadius: 1.25, textTransform: 'none' }}
-              >
-                {getCreateChildActionLabel()}
-              </Button>
-            ) : null}
-            {unit.actions.canManageMembers && onOpenMemberDialog ? (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<GroupAddOutlinedIcon sx={{ fontSize: 16 }} />}
-                onClick={() => onOpenMemberDialog(unit)}
-                sx={{ minHeight: 28, px: 1.15, py: 0.25, borderRadius: 1.25, textTransform: 'none' }}
-              >
-                Добавить сотрудника
-              </Button>
-            ) : null}
-          </Stack>
-        ) : null}
-
-        {showMembers ? (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-            }}
-          >
-            {leaders.length > 0 || team.length > 0 || contractors.length > 0 ? (
-              <Stack spacing={1.2} alignItems="center" sx={{ width: 'max-content' }}>
-                {leaders.length > 0 ? renderMemberRow(leaders, unit, canManageMembers, onDeleteMember) : null}
-                {team.length > 0 ? renderMemberRow(team, unit, canManageMembers, onDeleteMember) : null}
-                {contractors.length > 0 ? renderMemberRow(contractors, unit, canManageMembers, onDeleteMember) : null}
-              </Stack>
-            ) : (
-              <Box
-                sx={{
-                  minWidth: 172,
-                  borderRadius: 1.8,
-                  border: `1px dashed ${alpha(hierarchyPageColors.canvasBorder, 0.95)}`,
-                  backgroundColor: alpha('#ffffff', 0.76),
-                  px: 1.25,
-                  py: 1,
-                }}
-              >
+          <Stack spacing={1.15}>
+            <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="flex-start">
+              <Box sx={{ minWidth: 0 }}>
                 <Typography
-                  variant="body2"
+                  variant="caption"
                   sx={{
-                    color: hierarchyPageColors.textSecondary,
-                    fontSize: 11.2,
-                    textAlign: 'center',
+                    display: 'block',
+                    color: alpha(hierarchyPageColors.textSecondary, 0.9),
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    letterSpacing: 0.35,
+                    textTransform: 'uppercase',
                   }}
                 >
-                  В этом узле пока нет участников.
+                  {getUnitLevelLabel(depth)}
+                </Typography>
+                <Typography
+                  sx={{
+                    mt: 0.35,
+                    color: hierarchyPageColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    lineHeight: 1.24,
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {unit.name}
                 </Typography>
               </Box>
-            )}
-          </Box>
-        ) : null}
+
+              {hasMenuActions ? (
+                <>
+                  <IconButton
+                    size="small"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuAnchorEl(event.currentTarget);
+                    }}
+                    sx={{
+                      mt: -0.2,
+                      mr: -0.35,
+                      color: alpha(hierarchyPageColors.textSecondary, 0.92),
+                    }}
+                  >
+                    <MoreHorizOutlinedIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                  <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={() => setMenuAnchorEl(null)}>
+                    {unit.actions.canUpdate ? (
+                      <MenuItem
+                        onClick={() => {
+                          setMenuAnchorEl(null);
+                          onRename(unit);
+                        }}
+                      >
+                        <EditOutlinedIcon sx={{ mr: 1, fontSize: 18 }} />
+                        Переименовать юнит
+                      </MenuItem>
+                    ) : null}
+                    {unit.actions.canDeactivate ? (
+                      <MenuItem
+                        onClick={() => {
+                          setMenuAnchorEl(null);
+                          onDeactivate(unit);
+                        }}
+                        sx={{ color: 'error.main' }}
+                      >
+                        <DeleteOutlineRoundedIcon sx={{ mr: 1, fontSize: 18 }} />
+                        Деактивировать юнит
+                      </MenuItem>
+                    ) : null}
+                  </Menu>
+                </>
+              ) : null}
+            </Stack>
+
+            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+              <Box
+                sx={{
+                  borderRadius: 999,
+                  px: 1,
+                  py: 0.38,
+                  backgroundColor: alpha(hierarchyPageColors.softBlue, 0.08),
+                  color: hierarchyPageColors.softBlue,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                }}
+              >
+                Участники: {unit.members.length}
+              </Box>
+              <Box
+                sx={{
+                  borderRadius: 999,
+                  px: 1,
+                  py: 0.38,
+                  backgroundColor: alpha(hierarchyPageColors.softTeal, 0.08),
+                  color: hierarchyPageColors.softTeal,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                }}
+              >
+                Вложенные юниты: {unit.children.length}
+              </Box>
+            </Stack>
+
+            {hasVisiblePrimaryActions ? (
+              <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+                {canCreateChild ? (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onCreateChild?.(unit);
+                    }}
+                    sx={{ minHeight: 30, px: 1.15, py: 0.25, borderRadius: 1.4, textTransform: 'none' }}
+                  >
+                    {getCreateChildActionLabel()}
+                  </Button>
+                ) : null}
+                {canOpenMemberDialog ? (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<GroupAddOutlinedIcon sx={{ fontSize: 16 }} />}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenMemberDialog?.(unit);
+                    }}
+                    sx={{ minHeight: 30, px: 1.15, py: 0.25, borderRadius: 1.4, textTransform: 'none' }}
+                  >
+                    Добавить сотрудника
+                  </Button>
+                ) : null}
+              </Stack>
+            ) : null}
+
+            {canOpenUnitDetails ? (
+              <Box
+                sx={{
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: alpha(hierarchyPageColors.canvasBorder, 0.95),
+                  backgroundColor: alpha(hierarchyPageColors.canvas, 0.72),
+                  p: 1,
+                }}
+              >
+                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ color: hierarchyPageColors.textPrimary, fontSize: 13.5, fontWeight: 700 }}>
+                      {showMembers ? 'Состав юнита' : 'Участники юнита'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary }}>
+                      Нажмите на карточку, чтобы открыть список участников
+                    </Typography>
+                  </Box>
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openUnitDetails();
+                    }}
+                    sx={{ flexShrink: 0, textTransform: 'none' }}
+                  >
+                    Открыть
+                  </Button>
+                </Stack>
+              </Box>
+            ) : null}
+
+            {unit.children.length === 0 ? (
+              <Box
+                sx={{
+                  borderRadius: 2,
+                  border: `1px dashed ${alpha(hierarchyPageColors.softTeal, 0.34)}`,
+                  backgroundColor: alpha(hierarchyPageColors.softTeal, 0.04),
+                  px: 1.1,
+                  py: 0.95,
+                }}
+              >
+                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ color: hierarchyPageColors.textPrimary, fontSize: 13, fontWeight: 700 }}>
+                      Место для нового юнита
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary }}>
+                      В эту ветку можно добавить дочерний юнит
+                    </Typography>
+                  </Box>
+                  {canCreateChild ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCreateChild?.(unit);
+                      }}
+                      sx={{ flexShrink: 0, textTransform: 'none' }}
+                    >
+                      Создать
+                    </Button>
+                  ) : null}
+                </Stack>
+              </Box>
+            ) : null}
+          </Stack>
+        </Box>
       </Stack>
 
       {unit.children.length > 0 ? (
         <Box sx={{ mt: 2.2, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-          <Box sx={{ ...connectorLineSx, width: '1px', height: '18px' }} />
+          <Box sx={{ ...connectorLineSx, width: '1px', height: '20px' }} />
 
-          <Box sx={{ display: 'flex', gap: 1.8, alignItems: 'flex-start', justifyContent: 'center', width: 'max-content' }}>
+          <Box sx={{ display: 'flex', gap: 2.2, alignItems: 'flex-start', justifyContent: 'center', width: 'max-content' }}>
             {unit.children.map((child, index) => {
               const isFirst = index === 0;
               const isLast = index === unit.children.length - 1;
@@ -221,7 +322,7 @@ export const UnitOrgNode = ({
               return (
                 <Box key={child.unit_id} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
                   {hasManyChildren ? (
-                    <Box sx={{ position: 'relative', width: '100%', height: '20px', minWidth: 172 }}>
+                    <Box sx={{ position: 'relative', width: '100%', height: '20px', minWidth: 220 }}>
                       {!isFirst ? (
                         <Box
                           sx={{
@@ -266,8 +367,8 @@ export const UnitOrgNode = ({
                     depth={depth + 1}
                     onCreateChild={onCreateChild}
                     onDeactivate={onDeactivate}
-                    onDeleteMember={onDeleteMember}
                     onOpenMemberDialog={onOpenMemberDialog}
+                    onOpenUnitDetails={onOpenUnitDetails}
                     onRename={onRename}
                     showMembers={showMembers}
                     showPrimaryActions={showPrimaryActions}

@@ -217,32 +217,49 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.getByText('Объединенная иерархия')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Объединенная схема' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByText('Финансовый блок').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Рахматуллин Асхат Ирекович')).toHaveLength(1);
+    expect(screen.getAllByText('Рахматуллин Асхат Ирекович').length).toBeGreaterThan(1);
     expect(screen.getByLabelText('Подразделения')).toBeInTheDocument();
   });
 
-  it('can switch the units hierarchy into all participants mode', () => {
+  it('can switch the units hierarchy into all participants mode and open the unit details side panel', () => {
     renderView();
 
     fireEvent.click(screen.getByRole('button', { name: 'Иерархия юнитов' }));
 
     expect(screen.getByRole('heading', { name: 'Иерархия юнитов' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Структура' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByText('Шамина Анжелина Алексеевна')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Все участники' }));
 
-    expect(screen.getByText('Шамина Анжелина Алексеевна')).toBeInTheDocument();
-    expect(screen.getByText('Щербакова Виктория Валерьевна')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Все участники' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав юнита Финансовый блок' }));
+
+    const panel = within(screen.getByRole('complementary', { name: 'Состав юнита' }));
+    expect(panel.getByText('Состав юнита')).toBeInTheDocument();
+    expect(panel.getByText('Шамина Анжелина Алексеевна')).toBeInTheDocument();
+    expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
+    expect(panel.getByRole('button', { name: 'Удалить участника Шамина Анжелина Алексеевна' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Состав юнита' })).not.toBeInTheDocument();
+  });
+
+  it('shows empty participant state inside the unit details side panel', () => {
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Иерархия юнитов' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Все участники' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав юнита Административный блок' }));
+
+    const panel = within(screen.getByRole('complementary', { name: 'Состав юнита' }));
+    expect(panel.getByText('В этом юните пока нет участников.')).toBeInTheDocument();
+    expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
+    expect(screen.getAllByText('Место для нового юнита').length).toBeGreaterThan(0);
   });
 
   it('shows manager info and all current assignments inside the employee dialog', () => {
     renderView();
 
-    const employeeCard = screen.getByText('Рахматуллин Асхат Ирекович').closest('[class*="MuiPaper-root"]');
-    expect(employeeCard).not.toBeNull();
-
-    fireEvent.click(within(employeeCard as HTMLElement).getByRole('button', { name: 'Изменить привязки' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить привязки Рахматуллин Асхат Ирекович / Модуль 2' }));
     const dialog = within(screen.getByRole('dialog'));
 
     expect(dialog.getByText('Руководитель сотрудника')).toBeInTheDocument();
@@ -254,16 +271,12 @@ describe('UnitHierarchyPageView', () => {
     expect(dialog.getByRole('button', { name: 'Открепить от Модуль А' })).toBeInTheDocument();
   });
 
-  it('shows all employee bindings on the combined hierarchy card', () => {
+  it('duplicates an employee for each assignment on the combined hierarchy', () => {
     renderView();
 
-    const employeeCard = screen.getByText('Рахматуллин Асхат Ирекович').closest('[class*="MuiPaper-root"]');
-    expect(employeeCard).not.toBeNull();
-
-    const card = within(employeeCard as HTMLElement);
-    expect(card.getByText('Финансовый блок')).toBeInTheDocument();
-    expect(card.getByText('Модуль 2')).toBeInTheDocument();
-    expect(card.getByText('Административный блок')).toBeInTheDocument();
-    expect(card.getByText('Модуль А')).toBeInTheDocument();
+    expect(screen.getAllByText('Рахматуллин Асхат Ирекович')).toHaveLength(4);
+    expect(screen.getAllByText('Ведущий специалист')).toHaveLength(4);
+    expect(screen.getByText('Финансовый блок / Модуль 2')).toBeInTheDocument();
+    expect(screen.getByText('Административный блок / Модуль А')).toBeInTheDocument();
   });
 });

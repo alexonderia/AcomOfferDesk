@@ -279,4 +279,52 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.getByText('Финансовый блок / Модуль 2')).toBeInTheDocument();
     expect(screen.getByText('Административный блок / Модуль А')).toBeInTheDocument();
   });
+
+  it('keeps a hierarchy member without a unit inside the manager chain', () => {
+    const viewState = buildViewState();
+    const unitlessNode = {
+      user_id: 'economist-2',
+      full_name: 'Сидоров Алексей',
+      role_id: 6,
+      role_name: 'Экономист',
+      status: 'active',
+      id_parent_user: 'lead-1',
+      children: [],
+    };
+    viewState.memberUnitByUserId = {
+      'chief-1': [
+        {
+          unitId: 11,
+          unitName: 'Финансовый блок',
+          label: 'Финансовый блок',
+          depth: 0,
+        },
+      ],
+      'lead-1': [
+        {
+          unitId: 11,
+          unitName: 'Финансовый блок',
+          label: 'Финансовый блок',
+          depth: 0,
+        },
+      ],
+    };
+    viewState.recommendedTree = [
+      {
+        ...viewState.recommendedTree[0]!,
+        children: [
+          {
+            ...viewState.recommendedTree[0]!.children[0]!,
+            children: [unitlessNode] as unknown as typeof viewState.recommendedTree[0]['children'][0]['children'],
+          },
+        ],
+      },
+    ] as typeof viewState.recommendedTree;
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    expect(screen.getByText('Сидоров Алексей')).toBeInTheDocument();
+    expect(screen.getAllByText('Без юнита')).toHaveLength(1);
+  });
 });

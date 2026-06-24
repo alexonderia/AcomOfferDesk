@@ -51,6 +51,7 @@ const recommendedFramePadX = 10;
 const recommendedFramePadTop = 24;
 const recommendedFramePadBottom = 12;
 const UNASSIGNED_DEPT_ID = -1;
+const EMPTY_SLOT_LABEL = '\u0421\u0432\u043e\u0431\u043e\u0434\u043d\u044b\u0439 \u0441\u043b\u043e\u0442';
 const UNASSIGNED_DEPT_NAME = 'Без юнита';
 
 type HierarchyViewMode = 'combined' | 'units';
@@ -71,6 +72,7 @@ type AssignedUnitInfo = {
 
 type CombinedCardEntry = {
   assignment: AssignedUnitInfo | undefined;
+  badgeLabel: string;
   canAssignToUnit: boolean;
   key: string;
   node: RecommendedHierarchyNode;
@@ -149,7 +151,8 @@ const getRecommendedDescendantCount = (node: RecommendedHierarchyNode): number =
 const buildCombinedDepartmentGroups = (
   nodes: RecommendedHierarchyNode[],
   assignmentsByUserId: Record<string, AssignedUnitInfo[]>,
-  departmentByUnitId: Map<number, DepartmentOption>
+  departmentByUnitId: Map<number, DepartmentOption>,
+  recommendedDepartmentByUserId: Record<string, number | null>
 ): CombinedDepartmentGroup[] => {
   const orderIndexByUserId = new Map<string, number>();
   const orgDepthByUserId = new Map<string, number>();
@@ -191,6 +194,16 @@ const buildCombinedDepartmentGroups = (
   );
 
   const unassignedEntries: CombinedCardEntry[] = [];
+  const buildUnassignedEntry = (node: RecommendedHierarchyNode, userId: string): CombinedCardEntry => ({
+    assignment: undefined,
+    badgeLabel: isRecommendationPlaceholder(node) ? EMPTY_SLOT_LABEL : UNASSIGNED_DEPT_NAME,
+    canAssignToUnit: !isRecommendationPlaceholder(node),
+    key: `${userId}:unassigned`,
+    node,
+    orderIndex: orderIndexByUserId.get(userId) ?? 0,
+    orgDepth: orgDepthByUserId.get(userId) ?? 0,
+    parentUserId: parentByUserId.get(userId) ?? null,
+  });
 
   orderedUserIds.forEach((userId) => {
     const node = nodeByUserId.get(userId);
@@ -201,15 +214,17 @@ const buildCombinedDepartmentGroups = (
     const assignments = assignmentsByUserId[userId] ?? [];
 
     if (assignments.length === 0) {
-      unassignedEntries.push({
-        assignment: undefined,
-        canAssignToUnit: !isRecommendationPlaceholder(node),
-        key: `${userId}:unassigned`,
-        node,
-        orderIndex: orderIndexByUserId.get(userId) ?? 0,
-        orgDepth: orgDepthByUserId.get(userId) ?? 0,
-        parentUserId: parentByUserId.get(userId) ?? null,
-      });
+      const entry = buildUnassignedEntry(node, userId);
+      const recommendedDepartmentId = recommendedDepartmentByUserId[userId] ?? null;
+      const recommendedDepartment = recommendedDepartmentId !== null
+        ? (departmentByUnitId.get(recommendedDepartmentId) ?? null)
+        : null;
+
+      if (recommendedDepartment) {
+        ensureDepartment(recommendedDepartment.unitId, recommendedDepartment.name).leadEntries.push(entry);
+      } else {
+        unassignedEntries.push(entry);
+      }
       return;
     }
 
@@ -220,6 +235,7 @@ const buildCombinedDepartmentGroups = (
       const group = ensureDepartment(deptUnitId, deptName);
       const entry: CombinedCardEntry = {
         assignment,
+        badgeLabel: assignment.label,
         canAssignToUnit: !isRecommendationPlaceholder(node),
         key: `${userId}:${assignment.unitId}:${index}`,
         node,
@@ -489,11 +505,13 @@ const buildCombinedConnectorPairs = (groups: CombinedDepartmentGroup[]): Combine
 
 const RecommendedEmployeeDuplicateCard = ({
   assignment,
+  badgeLabel,
   canAssignToUnit,
   node,
   onAssignToUnit,
 }: {
   assignment?: AssignedUnitInfo | undefined;
+  badgeLabel: string;
   canAssignToUnit: boolean;
   node: RecommendedHierarchyNode;
   onAssignToUnit?: (() => void) | undefined;
@@ -545,7 +563,7 @@ const RecommendedEmployeeDuplicateCard = ({
               overflowWrap: 'anywhere',
             }}
           >
-            {assignment?.label ?? '\u0421\u0432\u043e\u0431\u043e\u0434\u043d\u044b\u0439 \u0441\u043b\u043e\u0442'}
+            {badgeLabel}
           </Typography>
         </Box>
 
@@ -642,11 +660,13 @@ const RecommendedHierarchyForest = ({
   departmentByUnitId,
   nodes,
   onAssignToUnit,
+  recommendedDepartmentByUserId,
 }: {
   assignmentsByUserId: Record<string, AssignedUnitInfo[]>;
   departmentByUnitId: Map<number, DepartmentOption>;
   nodes: RecommendedHierarchyNode[];
   onAssignToUnit: (node: RecommendedHierarchyNode) => void;
+  recommendedDepartmentByUserId: Record<string, number | null>;
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -654,8 +674,13 @@ const RecommendedHierarchyForest = ({
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
 
   const groups = useMemo(
-    () => buildCombinedDepartmentGroups(nodes, assignmentsByUserId, departmentByUnitId),
-    [assignmentsByUserId, departmentByUnitId, nodes]
+    () => buildCombinedDepartmentGroups(
+      nodes,
+      assignmentsByUserId,
+      departmentByUnitId,
+      recommendedDepartmentByUserId
+    ),
+    [assignmentsByUserId, departmentByUnitId, nodes, recommendedDepartmentByUserId]
   );
   const connectorPairs = useMemo(() => buildCombinedConnectorPairs(groups), [groups]);
   const departmentLayoutByKey = useMemo(() => {
@@ -760,6 +785,7 @@ const RecommendedHierarchyForest = ({
     >
       <RecommendedEmployeeDuplicateCard
         assignment={entry.assignment}
+        badgeLabel={entry.badgeLabel}
         canAssignToUnit={entry.canAssignToUnit}
         node={entry.node}
         onAssignToUnit={entry.canAssignToUnit ? () => onAssignToUnit(entry.node) : undefined}
@@ -1027,23 +1053,43 @@ const buildRecommendedNodeByUserId = (
   return accumulator;
 };
 
-const buildHomeDepartmentByUserId = (
+const buildRecommendedDepartmentByUserId = (
+  nodes: RecommendedHierarchyNode[],
   assignmentsByUserId: Record<string, AssignedUnitInfo[]>,
   parentByUserId: Record<string, string | null>,
   departmentByUnitId: Map<number, DepartmentOption>
 ) => {
+  const childUserIdsByUserId: Record<string, string[]> = {};
+
+  const visit = (list: RecommendedHierarchyNode[]) => {
+    list.forEach((node) => {
+      childUserIdsByUserId[node.user_id] = node.children.map((child) => child.user_id);
+      visit(node.children);
+    });
+  };
+
+  visit(nodes);
+
   const cache = new Map<string, number | null>();
+  const resolvingUserIds = new Set<string>();
 
   const resolveDepartment = (userId: string): number | null => {
     if (cache.has(userId)) {
       return cache.get(userId) ?? null;
     }
 
+    if (resolvingUserIds.has(userId)) {
+      return null;
+    }
+
+    resolvingUserIds.add(userId);
+
     const assignments = assignmentsByUserId[userId] ?? [];
     const rootAssignment = assignments.find((assignment) => assignment.depth === 0);
     if (rootAssignment) {
       const departmentId = departmentByUnitId.get(rootAssignment.unitId)?.unitId ?? null;
       cache.set(userId, departmentId);
+      resolvingUserIds.delete(userId);
       return departmentId;
     }
 
@@ -1052,6 +1098,7 @@ const buildHomeDepartmentByUserId = (
       const parentDepartmentId = resolveDepartment(parentUserId);
       if (parentDepartmentId !== null) {
         cache.set(userId, parentDepartmentId);
+        resolvingUserIds.delete(userId);
         return parentDepartmentId;
       }
     }
@@ -1059,12 +1106,28 @@ const buildHomeDepartmentByUserId = (
     const fallbackDepartmentId = assignments[0]
       ? (departmentByUnitId.get(assignments[0].unitId)?.unitId ?? null)
       : null;
+    if (fallbackDepartmentId !== null) {
+      cache.set(userId, fallbackDepartmentId);
+      resolvingUserIds.delete(userId);
+      return fallbackDepartmentId;
+    }
+
+    const childDepartmentId = (childUserIdsByUserId[userId] ?? [])
+      .map((childUserId) => resolveDepartment(childUserId))
+      .find((departmentId): departmentId is number => departmentId !== null);
+    if (childDepartmentId !== undefined) {
+      cache.set(userId, childDepartmentId);
+      resolvingUserIds.delete(userId);
+      return childDepartmentId;
+    }
+
     cache.set(userId, fallbackDepartmentId);
+    resolvingUserIds.delete(userId);
     return fallbackDepartmentId;
   };
 
   return Object.fromEntries(
-    Object.keys(assignmentsByUserId).map((userId) => [userId, resolveDepartment(userId)])
+    Object.keys(parentByUserId).map((userId) => [userId, resolveDepartment(userId)])
   );
 };
 
@@ -1120,20 +1183,24 @@ const filterRecommendedNodesForDepartment = (
   nodes: RecommendedHierarchyNode[],
   departmentId: number,
   assignmentsByUserId: Record<string, AssignedUnitInfo[]>,
-  departmentByUnitId: Map<number, DepartmentOption>
+  departmentByUnitId: Map<number, DepartmentOption>,
+  recommendedDepartmentByUserId: Record<string, number | null>
 ): RecommendedHierarchyNode[] =>
   nodes.flatMap((node) => {
     const hasAssignmentInDepartment = (assignmentsByUserId[node.user_id] ?? []).some(
       (assignment) => departmentByUnitId.get(assignment.unitId)?.unitId === departmentId
     );
+    const hasAnyAssignment = (assignmentsByUserId[node.user_id] ?? []).length > 0;
+    const inheritsDepartment = !hasAnyAssignment && recommendedDepartmentByUserId[node.user_id] === departmentId;
     const filteredChildren = filterRecommendedNodesForDepartment(
       node.children,
       departmentId,
       assignmentsByUserId,
-      departmentByUnitId
+      departmentByUnitId,
+      recommendedDepartmentByUserId
     );
 
-    if (!hasAssignmentInDepartment) {
+    if (!hasAssignmentInDepartment && !inheritsDepartment) {
       return filteredChildren;
     }
 
@@ -1330,19 +1397,24 @@ export const UnitHierarchyPageView = () => {
     () => buildRecommendedNodeByUserId(recommendedTree),
     [recommendedTree]
   );
-  const homeDepartmentByUserId = useMemo(
-    () => buildHomeDepartmentByUserId(memberUnitByUserId, recommendedParentByUserId, departmentByUnitId),
-    [departmentByUnitId, memberUnitByUserId, recommendedParentByUserId]
+  const recommendedDepartmentByUserId = useMemo(
+    () => buildRecommendedDepartmentByUserId(
+      recommendedTree,
+      memberUnitByUserId,
+      recommendedParentByUserId,
+      departmentByUnitId
+    ),
+    [departmentByUnitId, memberUnitByUserId, recommendedParentByUserId, recommendedTree]
   );
   const displayMemberUnitByUserId = useMemo(
     () => buildDisplayAssignmentsByUserId(
       memberUnitByUserId,
       recommendedParentByUserId,
-      homeDepartmentByUserId,
+      recommendedDepartmentByUserId,
       departmentByUnitId,
       unitOptionsById
     ),
-    [departmentByUnitId, homeDepartmentByUserId, memberUnitByUserId, recommendedParentByUserId, unitOptionsById]
+    [departmentByUnitId, memberUnitByUserId, recommendedDepartmentByUserId, recommendedParentByUserId, unitOptionsById]
   );
   const selectedDepartmentOption = useMemo<DepartmentFilterOption>(
     () => departmentFilterOptions.find((option) => option.unitId === selectedDepartmentId) ?? departmentFilterOptions[0]!,
@@ -1407,9 +1479,10 @@ export const UnitHierarchyPageView = () => {
         recommendedTree,
         selectedDepartmentId,
         filteredCombinedAssignmentsByUserId,
-        departmentByUnitId
+        departmentByUnitId,
+        recommendedDepartmentByUserId
       )),
-    [departmentByUnitId, filteredCombinedAssignmentsByUserId, recommendedTree, selectedDepartmentId]
+    [departmentByUnitId, filteredCombinedAssignmentsByUserId, recommendedDepartmentByUserId, recommendedTree, selectedDepartmentId]
   );
   const filteredDisplayMemberUnitByUserId = useMemo(
     () => filterAssignmentsByDepartment(displayMemberUnitByUserId, departmentByUnitId, selectedDepartmentId),
@@ -1573,6 +1646,7 @@ export const UnitHierarchyPageView = () => {
                         departmentByUnitId={departmentByUnitId}
                         nodes={filteredRecommendedTree}
                         onAssignToUnit={(node) => setActiveRecommendedNode(node)}
+                        recommendedDepartmentByUserId={recommendedDepartmentByUserId}
                       />
                     </Box>
                   </Box>

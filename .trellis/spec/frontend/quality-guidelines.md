@@ -82,7 +82,7 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Highlight module-oriented clusters with subtle dashed module frames behind the cards so cross-department duplicates still read as hanging from the target module area.
 - If one employee belongs to multiple units, duplicate the employee mini-card for each assignment while keeping the employee at the same role level in the reporting tree.
 - If a recommended-hierarchy member has no unit assignment but still belongs to a reporting chain, keep that card inside the nearest department chain inferred from the hierarchy instead of moving it into a separate fallback column.
-- Cards without a real unit assignment should stay outside module frames and show an explicit no-unit badge such as `Без юнита`; placeholder vacancies may keep the empty-slot label.
+- Cards without a real unit assignment should stay outside module frames and show an explicit no-unit badge such as `Не определено`; placeholder vacancies may keep the empty-slot label.
 - Empty combined-hierarchy slots should stay interactive: use a visible placeholder card that opens the existing assignment flow instead of introducing a new ad hoc edit path.
 
 ### Convention: Unit Hierarchy Uses Expandable Block Cards

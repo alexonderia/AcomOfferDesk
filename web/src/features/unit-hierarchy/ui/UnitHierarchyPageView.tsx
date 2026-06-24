@@ -52,7 +52,7 @@ const recommendedFramePadTop = 24;
 const recommendedFramePadBottom = 12;
 const UNASSIGNED_DEPT_ID = -1;
 const EMPTY_SLOT_LABEL = '\u0421\u0432\u043e\u0431\u043e\u0434\u043d\u044b\u0439 \u0441\u043b\u043e\u0442';
-const UNASSIGNED_DEPT_NAME = 'Без юнита';
+const UNASSIGNED_DEPT_NAME = 'Не определено';
 
 type HierarchyViewMode = 'combined' | 'units';
 type UnitsViewContentMode = 'structure' | 'members';

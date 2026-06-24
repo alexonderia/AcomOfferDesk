@@ -325,6 +325,6 @@ describe('UnitHierarchyPageView', () => {
     renderView();
 
     expect(screen.getByText('Сидоров Алексей')).toBeInTheDocument();
-    expect(screen.getAllByText('Без юнита')).toHaveLength(1);
+    expect(screen.getAllByText('Не определено')).toHaveLength(1);
   });
 });

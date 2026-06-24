@@ -27,7 +27,7 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useLayoutEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
-import type { AvailableUnitUser, RecommendedHierarchyNode, UnitMember, UnitNode } from '@shared/api/units';
+import type { AvailableUnitUser, RecommendedHierarchyNode, UnitNode } from '@shared/api/units';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
 import { UnitOrgChart } from './UnitOrgChart';
 import {
@@ -56,7 +56,6 @@ const EMPTY_SLOT_LABEL = '\u0421\u0432\u043e\u0431\u043e\u0434\u043d\u044b\u0439
 const UNASSIGNED_DEPT_NAME = 'Не определено';
 
 type HierarchyViewMode = 'combined' | 'units';
-type UnitsViewContentMode = 'structure' | 'members';
 type DepartmentFilterOption = DepartmentOption | { unitId: 'all'; name: 'Все подразделения' };
 
 type DepartmentOption = {
@@ -1164,54 +1163,6 @@ const buildRecommendedDepartmentByUserId = (
   );
 };
 
-const buildDisplayAssignmentsByUserId = (
-  assignmentsByUserId: Record<string, AssignedUnitInfo[]>,
-  parentByUserId: Record<string, string | null>,
-  homeDepartmentByUserId: Record<string, number | null>,
-  departmentByUnitId: Map<number, DepartmentOption>,
-  unitOptionsById: Map<number, { label: string; unitId: number }>
-) =>
-  Object.fromEntries(
-    Object.entries(assignmentsByUserId).map(([userId, assignments]) => {
-      const parentUserId = parentByUserId[userId];
-      const parentAssignments = parentUserId ? (assignmentsByUserId[parentUserId] ?? []) : [];
-      const homeDepartmentId = homeDepartmentByUserId[userId] ?? null;
-      const effectiveAssignments = assignments
-        .map((assignment) => {
-          const departmentId = departmentByUnitId.get(assignment.unitId)?.unitId ?? null;
-          const parentHasSameUnit = parentAssignments.some((parentAssignment) => parentAssignment.unitId === assignment.unitId);
-          const isHomeDepartment = departmentId !== null && homeDepartmentId !== null && departmentId === homeDepartmentId;
-
-          if (assignment.depth === 0 && departmentId !== null && homeDepartmentId !== null && departmentId !== homeDepartmentId) {
-            return null;
-          }
-
-          if (assignment.depth > 0 && parentHasSameUnit && isHomeDepartment && departmentId !== null) {
-            const rootOption = unitOptionsById.get(departmentId);
-            if (!rootOption) {
-              return assignment;
-            }
-
-            return {
-              depth: 0,
-              label: rootOption.label,
-              unitId: rootOption.unitId,
-              unitName: departmentByUnitId.get(departmentId)?.name ?? assignment.unitName,
-            };
-          }
-
-          return assignment;
-        })
-        .filter((assignment): assignment is AssignedUnitInfo => assignment !== null)
-        .filter((assignment, index, collection) =>
-          collection.findIndex((candidate) => candidate.unitId === assignment.unitId) === index
-        )
-        .sort((left, right) => left.depth - right.depth || left.unitName.localeCompare(right.unitName, 'ru'));
-
-      return [userId, effectiveAssignments];
-    })
-  );
-
 const filterRecommendedNodesForDepartment = (
   nodes: RecommendedHierarchyNode[],
   departmentId: number,
@@ -1242,70 +1193,6 @@ const filterRecommendedNodesForDepartment = (
       children: filteredChildren,
     }];
   });
-
-const buildDisplayTreeWithMembers = (
-  tree: UnitNode[],
-  assignmentsByUserId: Record<string, AssignedUnitInfo[]>
-): UnitNode[] => {
-  const memberByUserId = new Map<string, UnitMember>();
-  const rawAssignmentsByUserId = new Map<string, AssignedUnitInfo[]>();
-
-  const collectMembers = (nodes: UnitNode[], path: string[] = [], depth = 0) => {
-    nodes.forEach((node) => {
-      const nextPath = [...path, node.name];
-      node.members.forEach((member) => {
-        if (!memberByUserId.has(member.user_id)) {
-          memberByUserId.set(member.user_id, member);
-        }
-        const currentAssignments = rawAssignmentsByUserId.get(member.user_id) ?? [];
-        rawAssignmentsByUserId.set(member.user_id, [
-          ...currentAssignments,
-          {
-            depth,
-            label: nextPath.join(' / '),
-            unitId: node.unit_id,
-            unitName: node.name,
-          },
-        ]);
-      });
-      collectMembers(node.children, nextPath, depth + 1);
-    });
-  };
-
-  collectMembers(tree);
-
-  const cloneNode = (node: UnitNode): UnitNode => ({
-    ...node,
-    members: [],
-    children: node.children.map(cloneNode),
-  });
-
-  const clonedTree = tree.map(cloneNode);
-  const unitMap = new Map<number, UnitNode>();
-  const registerUnits = (nodes: UnitNode[]) => {
-    nodes.forEach((node) => {
-      unitMap.set(node.unit_id, node);
-      registerUnits(node.children);
-    });
-  };
-
-  registerUnits(clonedTree);
-
-  memberByUserId.forEach((member, userId) => {
-    const assignments = assignmentsByUserId[userId] ?? rawAssignmentsByUserId.get(userId) ?? [];
-    assignments.forEach((assignment) => {
-      const targetUnit = unitMap.get(assignment.unitId);
-      if (!targetUnit) {
-        return;
-      }
-      if (!targetUnit.members.some((existingMember) => existingMember.user_id === member.user_id)) {
-        targetUnit.members.push(member);
-      }
-    });
-  });
-
-  return clonedTree;
-};
 
 const getCreateDialogTitle = () => 'Добавить юнит';
 
@@ -1345,7 +1232,6 @@ const filterAssignmentsByDepartment = (
 
 export const UnitHierarchyPageView = () => {
   const [viewMode, setViewMode] = useState<HierarchyViewMode>('combined');
-  const [unitsViewContentMode, setUnitsViewContentMode] = useState<UnitsViewContentMode>('structure');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | 'all'>('all');
   const [activeRecommendedNode, setActiveRecommendedNode] = useState<RecommendedHierarchyNode | null>(null);
   const [activeUnitDetailsId, setActiveUnitDetailsId] = useState<number | null>(null);
@@ -1418,10 +1304,6 @@ export const UnitHierarchyPageView = () => {
     () => [{ unitId: 'all', name: 'Все подразделения' }, ...departmentOptions],
     [departmentOptions]
   );
-  const unitOptionsById = useMemo(
-    () => new Map(unitOptions.map((option) => [option.unitId, option])),
-    [unitOptions]
-  );
   const recommendedParentByUserId = useMemo(
     () => buildRecommendedParentByUserId(recommendedTree),
     [recommendedTree]
@@ -1438,16 +1320,6 @@ export const UnitHierarchyPageView = () => {
       departmentByUnitId
     ),
     [departmentByUnitId, memberUnitByUserId, recommendedParentByUserId, recommendedTree]
-  );
-  const displayMemberUnitByUserId = useMemo(
-    () => buildDisplayAssignmentsByUserId(
-      memberUnitByUserId,
-      recommendedParentByUserId,
-      recommendedDepartmentByUserId,
-      departmentByUnitId,
-      unitOptionsById
-    ),
-    [departmentByUnitId, memberUnitByUserId, recommendedDepartmentByUserId, recommendedParentByUserId, unitOptionsById]
   );
   const selectedDepartmentOption = useMemo<DepartmentFilterOption>(
     () => departmentFilterOptions.find((option) => option.unitId === selectedDepartmentId) ?? departmentFilterOptions[0]!,
@@ -1517,23 +1389,15 @@ export const UnitHierarchyPageView = () => {
       )),
     [departmentByUnitId, filteredCombinedAssignmentsByUserId, recommendedDepartmentByUserId, recommendedTree, selectedDepartmentId]
   );
-  const filteredDisplayMemberUnitByUserId = useMemo(
-    () => filterAssignmentsByDepartment(displayMemberUnitByUserId, departmentByUnitId, selectedDepartmentId),
-    [departmentByUnitId, displayMemberUnitByUserId, selectedDepartmentId]
-  );
   const filteredTree = useMemo(
     () => (selectedDepartmentId === 'all'
       ? tree
       : tree.filter((unit) => unit.unit_id === selectedDepartmentId)),
     [selectedDepartmentId, tree]
   );
-  const displayTreeWithMembers = useMemo(
-    () => buildDisplayTreeWithMembers(filteredTree, filteredDisplayMemberUnitByUserId),
-    [filteredDisplayMemberUnitByUserId, filteredTree]
-  );
   const displayedUnitsById = useMemo(
-    () => new Map(flattenUnits(unitsViewContentMode === 'members' ? displayTreeWithMembers : filteredTree).map((unit) => [unit.unit_id, unit])),
-    [displayTreeWithMembers, filteredTree, unitsViewContentMode]
+    () => new Map(flattenUnits(filteredTree).map((unit) => [unit.unit_id, unit])),
+    [filteredTree]
   );
   const activeUnitDetails = activeUnitDetailsId !== null
     ? (displayedUnitsById.get(activeUnitDetailsId) ?? unitsById.get(activeUnitDetailsId) ?? null)
@@ -1634,23 +1498,6 @@ export const UnitHierarchyPageView = () => {
 
               {viewMode === 'combined' && recommendedError ? <Alert severity="warning">{recommendedError}</Alert> : null}
 
-              {viewMode === 'units' && filteredTree.length > 0 ? (
-                <ToggleButtonGroup
-                  exclusive
-                  size="small"
-                  value={unitsViewContentMode}
-                  onChange={(_event, nextMode: UnitsViewContentMode | null) => {
-                    if (nextMode) {
-                      setUnitsViewContentMode(nextMode);
-                    }
-                  }}
-                  sx={{ alignSelf: 'flex-start' }}
-                >
-                  <ToggleButton value="structure">Структура</ToggleButton>
-                  <ToggleButton value="members">Все участники</ToggleButton>
-                </ToggleButtonGroup>
-              ) : null}
-
               {isLoading ? (
                 <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 260 }}>
                   <CircularProgress />
@@ -1702,9 +1549,8 @@ export const UnitHierarchyPageView = () => {
                     onOpenMemberDialog={openMemberDialog}
                     onOpenUnitDetails={(unit) => setActiveUnitDetailsId(unit.unit_id)}
                     onRename={openRenameDialog}
-                    showMembers={unitsViewContentMode === 'members'}
                     showPrimaryActions={false}
-                    tree={unitsViewContentMode === 'members' ? displayTreeWithMembers : filteredTree}
+                    tree={filteredTree}
                   />
 
                   <Card

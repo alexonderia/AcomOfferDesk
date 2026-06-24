@@ -221,17 +221,14 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.getByLabelText('Подразделения')).toBeInTheDocument();
   });
 
-  it('can switch the units hierarchy into all participants mode and open the unit details side panel', () => {
+  it('renders the units hierarchy from db unit compositions and opens the unit details side panel', () => {
     renderView();
 
     fireEvent.click(screen.getByRole('button', { name: 'Иерархия юнитов' }));
 
     expect(screen.getByRole('heading', { name: 'Иерархия юнитов' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Структура' })).toHaveAttribute('aria-pressed', 'true');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Все участники' }));
-
-    expect(screen.getByRole('button', { name: 'Все участники' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Структура' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Все участники' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Открыть состав юнита Финансовый блок' }));
 
@@ -247,7 +244,6 @@ describe('UnitHierarchyPageView', () => {
     renderView();
 
     fireEvent.click(screen.getByRole('button', { name: 'Иерархия юнитов' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Все участники' }));
     fireEvent.click(screen.getByRole('button', { name: 'Открыть состав юнита Административный блок' }));
 
     const panel = within(screen.getByRole('complementary', { name: 'Состав юнита' }));

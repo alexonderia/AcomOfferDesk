@@ -42,22 +42,6 @@ export const OrgUserCard = ({
         boxShadow: '0 10px 20px rgba(15, 23, 42, 0.07)',
         px: 1.1,
         py: 1,
-        position: 'relative',
-        overflow: 'hidden',
-        transition: 'border-color 160ms ease, box-shadow 160ms ease',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          inset: '0 0 auto 0',
-          height: 3,
-          background: isPlaceholder
-            ? alpha(hierarchyPageColors.softPink, 0.78)
-            : alpha(accentColor, 0.78),
-        },
-        '&:hover': {
-          borderColor: isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.72) : alpha(hierarchyPageColors.connector, 0.42),
-          boxShadow: '0 14px 24px rgba(15, 23, 42, 0.11)',
-        },
       }}
     >
       <Stack spacing={0.75} sx={{ height: '100%' }}>

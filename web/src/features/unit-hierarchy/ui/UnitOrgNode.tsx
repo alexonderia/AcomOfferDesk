@@ -87,23 +87,8 @@ export const UnitOrgNode = ({
             boxShadow: hierarchyPageColors.shadow,
             px: 1.4,
             py: 1.3,
-            position: 'relative',
-            overflow: 'hidden',
             zIndex: 1,
             cursor: canOpenUnitDetails ? 'pointer' : 'default',
-            transition: 'border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              inset: '0 0 auto 0',
-              height: 4,
-              background: `linear-gradient(90deg, ${alpha(hierarchyPageColors.softBlue, 0.88)} 0%, ${alpha(hierarchyPageColors.softTeal, 0.82)} 100%)`,
-            },
-            '&:hover': canOpenUnitDetails ? {
-              borderColor: alpha(hierarchyPageColors.softBlue, 0.4),
-              boxShadow: '0 20px 36px rgba(15, 23, 42, 0.12)',
-              transform: 'translateY(-2px)',
-            } : undefined,
           }}
         >
           <Stack spacing={1.15}>

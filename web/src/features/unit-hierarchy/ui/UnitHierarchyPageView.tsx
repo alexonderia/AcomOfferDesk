@@ -521,11 +521,6 @@ const RecommendedEmployeeDuplicateCard = ({
   const isPlaceholder = isRecommendationPlaceholder(node);
   const subordinateCount = node.children.length;
   const descendantCount = getRecommendedDescendantCount(node);
-  const accentColor = isPlaceholder
-    ? hierarchyPageColors.softPink
-    : assignment
-      ? hierarchyPageColors.softBlue
-      : hierarchyPageColors.softTeal;
 
   return (
     <Box
@@ -536,28 +531,11 @@ const RecommendedEmployeeDuplicateCard = ({
         border: `1px solid ${
           isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.5) : alpha(hierarchyPageColors.cardBorder, 0.92)
         }`,
-        backgroundImage: assignment
-          ? `linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, ${alpha(hierarchyPageColors.softBlue, 0.045)} 100%)`
-          : hierarchySurfaceBackground,
+        backgroundImage: hierarchySurfaceBackground,
         backgroundColor: '#ffffff',
         px: 1,
         py: 0.95,
-        position: 'relative',
-        overflow: 'hidden',
         boxShadow: '0 12px 24px rgba(15, 23, 42, 0.07)',
-        transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          inset: '0 0 auto 0',
-          height: 4,
-          background: `linear-gradient(90deg, ${alpha(accentColor, 0.9)} 0%, ${alpha(accentColor, 0.45)} 100%)`,
-        },
-        '&:hover': {
-          borderColor: isPlaceholder ? alpha(hierarchyPageColors.softPink, 0.68) : alpha(accentColor, 0.36),
-          boxShadow: '0 18px 30px rgba(15, 23, 42, 0.1)',
-          transform: 'translateY(-2px)',
-        },
       }}
     >
       <Stack spacing={0.72} sx={{ height: '100%' }}>

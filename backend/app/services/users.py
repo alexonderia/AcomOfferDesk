@@ -23,6 +23,7 @@ from app.repositories.tg_users import TgUserRepository
 from app.repositories.max_compat import max_subject_value
 from app.repositories.telegram_compat import telegram_subject_value
 from app.repositories.user_status_periods import UserStatusPeriodRepository
+from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
     notify_contractor_status_changed_email,
@@ -37,6 +38,7 @@ from app.services.registration_admin_notify import (
     schedule_registration_review_required_notification,
 )
 from app.services.department_scope import DepartmentScopeService
+from app.services.contractor_units import ContractorUnitService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.repositories.max_users import MaxUserRepository
 from app.models.orm_models import MaxUser
@@ -1228,6 +1230,7 @@ class ManualContractorService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         user_auth_accounts: UserAuthAccountRepository,
+        units: UnitRepository | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         *,
         keycloak_admin: KeycloakAdminService | None = None,
@@ -1236,8 +1239,14 @@ class ManualContractorService:
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_auth_accounts = user_auth_accounts
+        self._units = units
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
+
+    def _contractor_unit_service(self) -> ContractorUnitService:
+        if self._units is None:
+            raise RuntimeError("Manual contractor service requires unit repository")
+        return ContractorUnitService(users=self._users, units=self._units)
 
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
         normalized = (value or "").strip()
@@ -1342,6 +1351,45 @@ class ManualContractorService:
     def _build_manual_password(self) -> str:
         return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
 
+    async def _find_existing_manual_contractor_user_id(
+        self,
+        *,
+        data: ManualContractorCreateInput,
+    ) -> str | None:
+        matched_user_ids = await self._users.find_matching_contractor_user_ids(
+            contractor_role_id=settings.contractor_role_id,
+            email=data.company_mail,
+            inn=data.inn,
+            company_name=data.company_name,
+        )
+        if not matched_user_ids:
+            return None
+        if len(matched_user_ids) > 1:
+            raise Conflict("Найдено несколько похожих контрагентов. Уточните данные и повторите попытку.")
+        return matched_user_ids[0]
+
+    async def _resolve_creator_root_unit_ids(self, *, current_user: CurrentUser) -> set[int]:
+        if self._units is None:
+            return set()
+        return await self._contractor_unit_service().list_direct_root_unit_ids_for_user(user_id=current_user.user_id)
+
+    async def _bind_to_creator_root_units_if_needed(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_user_id: str,
+    ) -> None:
+        if self._units is None or current_user.role_id == settings.contractor_role_id:
+            return
+        creator_root_unit_ids = await self._resolve_creator_root_unit_ids(current_user=current_user)
+        if not creator_root_unit_ids:
+            return
+        await self._contractor_unit_service().bind_user_to_root_units(
+            user_id=contractor_user_id,
+            root_unit_ids=creator_root_unit_ids,
+            assigned_by_user_id=current_user.user_id,
+        )
+
     async def _create_manual_contractor(self, *, data: ManualContractorCreateInput) -> str:
         login = await self._build_manual_login(company_name=data.company_name)
         await self._users.add(
@@ -1398,7 +1446,21 @@ class ManualContractorService:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
+        existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(
+            data=normalized_data,
+        )
+        if existing_contractor_user_id is not None:
+            await self._bind_to_creator_root_units_if_needed(
+                current_user=current_user,
+                contractor_user_id=existing_contractor_user_id,
+            )
+            return existing_contractor_user_id
+
         login = await self._create_manual_contractor(data=normalized_data)
+        await self._bind_to_creator_root_units_if_needed(
+            current_user=current_user,
+            contractor_user_id=login,
+        )
         contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
         await notify_new_user_registration(
             RegistrationNotifyContext(

@@ -26,6 +26,7 @@ const buildUser = (overrides: Partial<UserListItem> = {}): UserListItem => ({
   actions: {
     view_profile: true,
     update_status: true,
+    manage_contractor_unit_bindings: false,
     update_role: false,
     update_manager: false,
     manage_own_profile: false,

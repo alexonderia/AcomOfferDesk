@@ -208,6 +208,10 @@ Rules:
    - `contractors.profile.status.update` (including permissions expanded from `delegation.contractors.profile.status.update`);
    - `delegation.contractors.profile.status.update` in token delegation roles;
    - `users.status.update` for `admin` / `superadmin` only.
+7. Contractor root-unit bindings (`GET/PUT /api/v1/contractors/{id}/root-units`) are manageable by `superadmin`, `admin`, and users who can update contractor status through `contractors.profile.status.update` / `delegation.contractors.profile.status.update`.
+8. Contractor request visibility and outbound notifications are limited to the root units the contractor is bound to. Scope includes the selected root unit and its full subtree.
+9. When a staff user creates a manual contractor, duplicate detection must reuse an existing contractor with the same full name, INN, company name, or email. If the contractor already exists in another root unit, the system adds the creator's current root unit binding instead of creating a duplicate record.
+10. A newly created manual contractor is automatically bound to the creator's current root unit.
 
 ## Business Scope Rules (2026-05)
 

@@ -20,6 +20,7 @@ from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.email_notifications import EmailNotificationService
+from app.services.contractor_units import ContractorUnitService
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.files import FileService, PreparedUpload
@@ -241,6 +242,9 @@ class RequestService:
         self._department_scope = DepartmentScopeService(users)
         self._staff_scope = StaffAccessScopeService(users)
 
+    def _contractor_unit_service(self) -> ContractorUnitService:
+        return ContractorUnitService(users=self._users)
+
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
             return False
@@ -344,11 +348,24 @@ class RequestService:
             contractor_user_ids=normalized_hidden_contractor_ids,
         )
 
+        visible_contractor_user_ids = await self._contractor_unit_service().filter_contractor_user_ids_for_request_owner(
+            contractor_user_ids=await self._requests.list_active_keycloak_visible_contractor_user_ids(
+                request_id=request.id,
+                contractor_role_id=settings.contractor_role_id,
+            ),
+            request_owner_user_id=request.id_user,
+        )
+
         if settings.telegram_legacy_enabled:
-            tg_ids = await self._users.list_active_approved_contractor_tg_ids(
+            tg_recipients = await self._users.list_active_approved_contractor_tg_recipients(
                 contractor_role_id=settings.contractor_role_id,
                 exclude_user_ids=normalized_hidden_contractor_ids,
             )
+            tg_ids = [
+                tg_id
+                for contractor_user_id, tg_id in tg_recipients
+                if contractor_user_id in set(visible_contractor_user_ids)
+            ]
             await notify_new_request(
                 tg_ids=tg_ids,
                 request_id=request.id,
@@ -363,6 +380,8 @@ class RequestService:
             )
             max_user_ids: list[str] = []
             for contractor_user_id, max_user_id in max_recipients:
+                if contractor_user_id not in set(visible_contractor_user_ids):
+                    continue
                 if self._notification_preferences is not None:
                     is_enabled = await self._notification_preferences.is_channel_enabled(
                         user_id=contractor_user_id,
@@ -929,7 +948,11 @@ class RequestService:
 
     async def list_open_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.ensure_can_view_open_requests(current_user)
-        rows = await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id)
+        rows = await self._contractor_unit_service().filter_rows_by_request_owner_scope(
+            contractor_user_id=current_user.user_id,
+            rows=await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id),
+            owner_user_id_getter=lambda row: row[0].id_user,
+        )
         latest_offers_by_request_id = {
             offer.id_request: offer
             for offer in await self._offers.list_latest_contractor_offers_by_request_ids(
@@ -962,7 +985,11 @@ class RequestService:
 
     async def list_offered_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.ensure_can_view_offered_requests(current_user)
-        rows = await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id)
+        rows = await self._contractor_unit_service().filter_rows_by_request_owner_scope(
+            contractor_user_id=current_user.user_id,
+            rows=await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id),
+            owner_user_id_getter=lambda row: row[0].id_user,
+        )
 
         grouped: dict[str, OpenRequestListItem] = {}
         request_offer_ids: dict[str, set[int]] = {}

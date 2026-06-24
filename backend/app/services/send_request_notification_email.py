@@ -19,6 +19,8 @@ from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
 from app.infrastructure.email_service import SMTPEmailService
 from app.repositories.profiles import ActiveContractorEmailRecipient, ProfileRepository
 from app.repositories.requests import RequestRepository
+from app.repositories.users import UserRepository
+from app.services.contractor_units import ContractorUnitService
 from app.services.email_delivery_events import (
     BATCH_OPERATION_KIND_REQUEST_ADDITIONAL,
     record_email_batch_operation_state,
@@ -55,6 +57,7 @@ class SendRequestNotificationEmailUseCase:
         *,
         request_repository: RequestRepository,
         profile_repository: ProfileRepository,
+        users: UserRepository,
         email_service: SMTPEmailService,
         app_url: str,
         file_service: FileService | None = None,
@@ -64,6 +67,7 @@ class SendRequestNotificationEmailUseCase:
     ) -> None:
         self._request_repository = request_repository
         self._profile_repository = profile_repository
+        self._users = users
         self._email_service = email_service
         self._app_url = app_url.rstrip("/")
         self._file_service = file_service or FileService()
@@ -94,6 +98,7 @@ class SendRequestNotificationEmailUseCase:
             contractor_role_id=contractor_role_id,
         )
         recipients = await self._build_recipients(
+            request_owner_user_id=request.id_user,
             active_contractors=active_contractors,
             additional_emails=additional_emails or [],
             hidden_contractor_ids=hidden_contractor_ids or [],
@@ -241,6 +246,7 @@ class SendRequestNotificationEmailUseCase:
     async def _build_recipients(
         self,
         *,
+        request_owner_user_id: str,
         active_contractors: list[ActiveContractorEmailRecipient],
         additional_emails: list[str],
         hidden_contractor_ids: list[str],
@@ -252,10 +258,38 @@ class SendRequestNotificationEmailUseCase:
         recipient_emails: set[str] = set()
         hidden_contractor_id_set = set(hidden_contractor_ids)
         hidden_emails: set[str] = set()
+        normalized_additional_emails = [
+            email.strip().lower()
+            for email in additional_emails
+            if email.strip()
+        ]
+        additional_email_to_user_id: dict[str, str | None] = {}
+        for email in normalized_additional_emails:
+            if email in additional_email_to_user_id:
+                continue
+            additional_email_to_user_id[email] = await self._profile_repository.find_contractor_user_id_by_notification_email(
+                email=email,
+                contractor_role_id=contractor_role_id,
+            )
+        visible_contractor_user_ids = set(
+            await ContractorUnitService(users=self._users).filter_contractor_user_ids_for_request_owner(
+                contractor_user_ids=list({
+                    contractor.user_id for contractor in active_contractors
+                } | {
+                    contractor_user_id
+                    for contractor_user_id in additional_email_to_user_id.values()
+                    if contractor_user_id is not None
+                }),
+                request_owner_user_id=request_owner_user_id,
+            )
+        )
 
         for contractor in active_contractors:
             normalized_email = contractor.email.strip().lower()
             if contractor.user_id in hidden_contractor_id_set:
+                hidden_emails.add(normalized_email)
+                continue
+            if contractor.user_id not in visible_contractor_user_ids:
                 hidden_emails.add(normalized_email)
                 continue
             if self._notification_preferences is not None:
@@ -280,9 +314,8 @@ class SendRequestNotificationEmailUseCase:
                 recipients.append(recipient)
                 recipient_emails.add(email)
 
-        for email in additional_emails:
-            normalized_email = email.strip().lower()
-            if not normalized_email or normalized_email in hidden_emails:
+        for normalized_email in normalized_additional_emails:
+            if normalized_email in hidden_emails:
                 continue
             if normalized_email in recipient_emails:
                 continue
@@ -292,11 +325,9 @@ class SendRequestNotificationEmailUseCase:
                     recipients.append(matched_verified_recipient)
                     recipient_emails.add(matched_verified_recipient.email)
                 continue
-
-            contractor_user_id = await self._profile_repository.find_contractor_user_id_by_notification_email(
-                email=normalized_email,
-                contractor_role_id=contractor_role_id,
-            )
+            contractor_user_id = additional_email_to_user_id.get(normalized_email)
+            if contractor_user_id is not None and contractor_user_id not in visible_contractor_user_ids:
+                continue
             recipients.append(
                 NotificationRecipient(
                     email=normalized_email,

@@ -7,7 +7,10 @@ import { ContractorsListView } from './ContractorsListView';
 
 const updateManualContractorMock = vi.fn();
 const updateContractorStatusMock = vi.fn();
+const getContractorRootUnitsMock = vi.fn();
+const updateContractorRootUnitsMock = vi.fn();
 const showSystemToastMock = vi.fn();
+const showErrorToastMock = vi.fn();
 
 let mockSession: { roleId: number } = {
   roleId: ROLE.ADMIN,
@@ -27,9 +30,18 @@ vi.mock('@shared/api/contractors/updateContractorStatus', () => ({
   updateContractorStatus: (...args: unknown[]) => updateContractorStatusMock(...args),
 }));
 
+vi.mock('@shared/api/contractors/getContractorRootUnits', () => ({
+  getContractorRootUnits: (...args: unknown[]) => getContractorRootUnitsMock(...args),
+}));
+
+vi.mock('@shared/api/contractors/updateContractorRootUnits', () => ({
+  updateContractorRootUnits: (...args: unknown[]) => updateContractorRootUnitsMock(...args),
+}));
+
 vi.mock('@shared/ui/toasts', () => ({
   useSystemToasts: () => ({
     showSystemToast: showSystemToastMock,
+    showErrorToast: showErrorToastMock,
   }),
 }));
 
@@ -53,6 +65,7 @@ const buildContractor = () => ({
   actions: {
     view_profile: true,
     update_status: true,
+    manage_contractor_unit_bindings: true,
     update_role: false,
     update_manager: false,
     manage_own_profile: false,
@@ -78,7 +91,7 @@ const renderView = (props: { contractors?: ReturnType<typeof buildContractor>[] 
       emptyMessage="Контрагенты не найдены"
       onStatusUpdated={async () => {}}
     />
-  </ThemeProvider>
+  </ThemeProvider>,
 );
 
 describe('ContractorsListView editing', () => {
@@ -88,9 +101,29 @@ describe('ContractorsListView editing', () => {
     };
     updateManualContractorMock.mockReset();
     updateContractorStatusMock.mockReset();
+    getContractorRootUnitsMock.mockReset();
+    updateContractorRootUnitsMock.mockReset();
     showSystemToastMock.mockReset();
+    showErrorToastMock.mockReset();
+
     updateManualContractorMock.mockResolvedValue({ userId: 'contractor-1' });
     updateContractorStatusMock.mockResolvedValue({ userId: 'contractor-1', userStatus: 'active' });
+    getContractorRootUnitsMock.mockResolvedValue({
+      contractorUserId: 'contractor-1',
+      canManage: true,
+      items: [
+        { unitId: 101, unitName: 'Финансы', isBound: true, canManage: true },
+        { unitId: 102, unitName: 'Логистика', isBound: false, canManage: true },
+      ],
+    });
+    updateContractorRootUnitsMock.mockResolvedValue({
+      contractorUserId: 'contractor-1',
+      canManage: true,
+      items: [
+        { unitId: 101, unitName: 'Финансы', isBound: true, canManage: true },
+        { unitId: 102, unitName: 'Логистика', isBound: true, canManage: true },
+      ],
+    });
   });
 
   it('shows read-only cells by default', async () => {
@@ -211,6 +244,7 @@ describe('ContractorsListView editing', () => {
         ...buildContractor(),
         actions: {
           ...buildContractor().actions,
+          manage_contractor_unit_bindings: true,
           manage_manual_contractor: false,
           update_status: true,
         },
@@ -231,6 +265,7 @@ describe('ContractorsListView editing', () => {
         ...buildContractor(),
         actions: {
           ...buildContractor().actions,
+          manage_contractor_unit_bindings: true,
           manage_manual_contractor: false,
           update_status: true,
         },
@@ -250,5 +285,26 @@ describe('ContractorsListView editing', () => {
 
     await screen.findByText('max-42');
     expect(screen.getAllByLabelText('Поле недоступно для редактирования').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('loads and saves contractor root unit bindings', async () => {
+    renderView();
+
+    fireEvent.click(await screen.findByText('Иван Петров'));
+
+    expect(await screen.findByLabelText('Финансы')).toBeChecked();
+    const logisticsCheckbox = await screen.findByLabelText('Логистика');
+    expect(logisticsCheckbox).not.toBeChecked();
+
+    fireEvent.click(logisticsCheckbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить привязки' }));
+
+    await waitFor(() => {
+      expect(updateContractorRootUnitsMock).toHaveBeenCalledWith('contractor-1', [101, 102]);
+    });
+    expect(showSystemToastMock).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Привязки к подразделениям сохранены.',
+    });
   });
 });

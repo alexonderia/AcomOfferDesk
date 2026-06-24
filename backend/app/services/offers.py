@@ -23,10 +23,12 @@ from app.repositories.offers import OfferRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
+from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.files import FileService, PreparedUpload
 from app.services.department_scope import DepartmentScopeService
+from app.services.contractor_units import ContractorUnitService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
@@ -256,6 +258,7 @@ class OfferService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         users: UserRepository,
+        units: UnitRepository | None = None,
         user_auth_accounts: UserAuthAccountRepository | None = None,
         file_service: FileService | None = None,
         keycloak_admin: KeycloakAdminService | None = None,
@@ -272,6 +275,7 @@ class OfferService:
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._users = users
+        self._units = units
         self._user_auth_accounts = user_auth_accounts
         self._file_service = file_service or FileService(files)
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
@@ -281,6 +285,11 @@ class OfferService:
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
         self._staff_scope = StaffAccessScopeService(users)
+
+    def _contractor_unit_service(self) -> ContractorUnitService:
+        if self._units is None:
+            raise RuntimeError("Offer service requires unit repository")
+        return ContractorUnitService(users=self._users, units=self._units)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -353,11 +362,19 @@ class OfferService:
     async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: str) -> None:
         if current_user.role_id != settings.contractor_role_id:
             return
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
         is_hidden = await self._requests.is_hidden_for_contractor(
             request_id=request_id,
             contractor_user_id=current_user.user_id,
         )
         if is_hidden:
+            raise NotFound("Request not found")
+        if not await self._contractor_unit_service().can_contractor_access_request_owner(
+            contractor_user_id=current_user.user_id,
+            request_owner_user_id=request.id_user,
+        ):
             raise NotFound("Request not found")
 
     async def _load_offer_and_request(self, *, offer_id: int, current_user: CurrentUser | None = None):
@@ -548,11 +565,58 @@ class OfferService:
     def _build_manual_password(self) -> str:
         return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
 
-    async def _create_manual_contractor(
+    async def _find_existing_manual_contractor_user_id(
         self,
         *,
         contractor_data: ManualContractorCreateInput,
-    ) -> str:
+    ) -> str | None:
+        matched_user_ids = await self._users.find_matching_contractor_user_ids(
+            contractor_role_id=settings.contractor_role_id,
+            email=contractor_data.company_mail,
+            inn=contractor_data.inn,
+            company_name=contractor_data.company_name,
+        )
+        if not matched_user_ids:
+            return None
+        if len(matched_user_ids) > 1:
+            raise Conflict("Найдено несколько похожих контрагентов. Уточните данные и повторите попытку.")
+        return matched_user_ids[0]
+
+    async def _bind_to_creator_root_units_if_needed(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_user_id: str,
+    ) -> None:
+        if self._units is None or current_user.role_id == settings.contractor_role_id:
+            return
+        creator_root_unit_ids = await self._contractor_unit_service().list_direct_root_unit_ids_for_user(
+            user_id=current_user.user_id,
+        )
+        if not creator_root_unit_ids:
+            return
+        await self._contractor_unit_service().bind_user_to_root_units(
+            user_id=contractor_user_id,
+            root_unit_ids=creator_root_unit_ids,
+            assigned_by_user_id=current_user.user_id,
+        )
+
+    async def _create_manual_contractor(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_data: ManualContractorCreateInput,
+    ) -> tuple[str, bool]:
+        existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(
+            contractor_data=contractor_data,
+        )
+        if existing_contractor_user_id is not None:
+            await self._bind_to_creator_root_units_if_needed(
+                current_user=current_user,
+                contractor_user_id=existing_contractor_user_id,
+            )
+            return existing_contractor_user_id, False
+
         login = await self._build_manual_login(company_name=contractor_data.company_name)
         await self._users.add(
             User(
@@ -598,7 +662,11 @@ class OfferService:
                 keycloak_user_id=keycloak_user.id,
                 local_role_id=settings.contractor_role_id,
             )
-        return login
+        await self._bind_to_creator_root_units_if_needed(
+            current_user=current_user,
+            contractor_user_id=login,
+        )
+        return login, True
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: str) -> ContractorRequestView:
         require_permission(
@@ -612,6 +680,11 @@ class OfferService:
             contractor_user_id=current_user.user_id,
         )
         if request is None:
+            raise NotFound("Request not found")
+        if not await self._contractor_unit_service().can_contractor_access_request_owner(
+            contractor_user_id=current_user.user_id,
+            request_owner_user_id=request.id_user,
+        ):
             raise NotFound("Request not found")
 
         owner_profile = await self._profiles.get_by_id(request.id_user)
@@ -659,6 +732,11 @@ class OfferService:
             contractor_user_id=current_user.user_id,
         )
         if request is None:
+            raise NotFound("Open request not found")
+        if not await self._contractor_unit_service().can_contractor_access_request_owner(
+            contractor_user_id=current_user.user_id,
+            request_owner_user_id=request.id_user,
+        ):
             raise NotFound("Open request not found")
 
         existing_offer = await self._offers.get_contractor_offer_for_request(
@@ -729,10 +807,10 @@ class OfferService:
             normalized_contractor_data = self._validate_manual_contractor_create_data(
                 contractor_data=contractor_data,
             )
-            resolved_contractor_user_id = await self._create_manual_contractor(
+            resolved_contractor_user_id, contractor_created = await self._create_manual_contractor(
+                current_user=current_user,
                 contractor_data=normalized_contractor_data
             )
-            contractor_created = True
         else:
             assert normalized_contractor_user_id is not None
             contractor_user = await self._users.get_by_id(normalized_contractor_user_id)

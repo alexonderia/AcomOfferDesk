@@ -55,6 +55,27 @@ class ContractorProfileResponse(BaseModel):
     data: ContractorProfileData
 
 
+class ContractorRootUnitBindingItemSchema(BaseModel):
+    unit_id: int
+    unit_name: str
+    is_bound: bool
+    can_manage: bool = False
+
+
+class ContractorRootUnitBindingsData(BaseModel):
+    contractor_user_id: str
+    can_manage: bool = False
+    items: list[ContractorRootUnitBindingItemSchema] = Field(default_factory=list)
+
+
+class ContractorRootUnitBindingsResponse(BaseModel):
+    data: ContractorRootUnitBindingsData
+
+
+class ContractorRootUnitBindingsUpdateRequest(BaseModel):
+    root_unit_ids: list[int] = Field(default_factory=list)
+
+
 class ContractorStatusUpdateRequest(BaseModel):
     user_status: str
 

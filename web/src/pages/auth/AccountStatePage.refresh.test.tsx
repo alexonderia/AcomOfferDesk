@@ -70,6 +70,7 @@ const profileResponse = {
   actions: {
     view_profile: false,
     update_status: false,
+    manage_contractor_unit_bindings: false,
     update_role: false,
     update_manager: false,
     manage_manual_contractor: false,

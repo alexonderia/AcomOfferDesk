@@ -37,6 +37,7 @@ type BackendChatActionFlags = {
 type BackendUserActionFlags = {
   can_view_profile?: boolean;
   can_update_status?: boolean;
+  can_manage_contractor_unit_bindings?: boolean;
   can_update_role?: boolean;
   can_update_manager?: boolean;
   can_manage_own_profile?: boolean;
@@ -83,6 +84,7 @@ export type ChatActions = {
 export type UserActions = {
   view_profile: boolean;
   update_status: boolean;
+  manage_contractor_unit_bindings: boolean;
   update_role: boolean;
   update_manager: boolean;
   manage_own_profile: boolean;
@@ -129,6 +131,7 @@ export const normalizeChatActions = (actions?: BackendChatActionFlags): ChatActi
 export const normalizeUserActions = (actions?: BackendUserActionFlags): UserActions => ({
   view_profile: Boolean(actions?.can_view_profile),
   update_status: Boolean(actions?.can_update_status),
+  manage_contractor_unit_bindings: Boolean(actions?.can_manage_contractor_unit_bindings),
   update_role: Boolean(actions?.can_update_role),
   update_manager: Boolean(actions?.can_update_manager),
   manage_own_profile: Boolean(actions?.can_manage_own_profile),

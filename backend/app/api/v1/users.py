@@ -816,6 +816,7 @@ async def create_manual_contractor(
             uow.profiles,
             uow.company_contacts,
             uow.user_auth_accounts,
+            uow.units,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         created_user_id = await service.create_manual_contractor(
@@ -843,7 +844,7 @@ async def update_manual_contractor(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ManualContractorUpdateResponse:
     async with uow:
-        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts, uow.user_auth_accounts)
+        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts, uow.user_auth_accounts, uow.units)
         updated_user_id = await service.update_manual_contractor(
             current_user=current_user,
             user_id=user_id,

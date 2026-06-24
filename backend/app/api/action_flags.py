@@ -357,6 +357,10 @@ class UserActionBuilder:
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
+            can_manage_contractor_unit_bindings=(
+                UserPolicy.can_manage_contractor_unit_bindings(current_user)
+                and target_role_id == settings.contractor_role_id
+            ),
             can_update_role=can_update_role,
             can_update_manager=can_update_manager,
             can_manage_manual_contractor=(
@@ -426,6 +430,7 @@ class ContractorActionBuilder:
         return UserActionsSchema(
             can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
             can_update_status=can_update_status,
+            can_manage_contractor_unit_bindings=UserPolicy.can_manage_contractor_unit_bindings(current_user),
             can_manage_manual_contractor=can_manage_manual_contractor,
         )
 

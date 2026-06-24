@@ -37,6 +37,7 @@ class ChatActionsSchema(BaseModel):
 class UserActionsSchema(BaseModel):
     can_view_profile: bool = False
     can_update_status: bool = False
+    can_manage_contractor_unit_bindings: bool = False
     can_update_role: bool = False
     can_update_manager: bool = False
     can_manage_own_profile: bool = False

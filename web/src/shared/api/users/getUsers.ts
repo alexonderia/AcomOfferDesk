@@ -23,6 +23,7 @@ type UsersRow = {
   actions?: {
     can_view_profile?: boolean;
     can_update_status?: boolean;
+    can_manage_contractor_unit_bindings?: boolean;
     can_update_role?: boolean;
     can_update_manager?: boolean;
     can_manage_subordinate_unavailability?: boolean;

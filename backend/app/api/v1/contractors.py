@@ -17,6 +17,10 @@ from app.schemas.contractors import (
     ContractorListResponse,
     ContractorProfileData,
     ContractorProfileResponse,
+    ContractorRootUnitBindingItemSchema,
+    ContractorRootUnitBindingsData,
+    ContractorRootUnitBindingsResponse,
+    ContractorRootUnitBindingsUpdateRequest,
     ContractorStatusUpdateData,
     ContractorStatusUpdateRequest,
     ContractorStatusUpdateResponse,
@@ -58,6 +62,22 @@ def _contractor_profile_data(current_user: CurrentUser, item) -> ContractorProfi
     return ContractorProfileData(**data)
 
 
+def _contractor_root_unit_bindings_data(item) -> ContractorRootUnitBindingsData:
+    return ContractorRootUnitBindingsData(
+        contractor_user_id=item.contractor_user_id,
+        can_manage=item.can_manage,
+        items=[
+            ContractorRootUnitBindingItemSchema(
+                unit_id=binding.unit_id,
+                unit_name=binding.unit_name,
+                is_bound=binding.is_bound,
+                can_manage=binding.can_manage,
+            )
+            for binding in item.items
+        ],
+    )
+
+
 @router.get("/contractors", response_model=ContractorListResponse)
 @router.get("/contractors/", response_model=ContractorListResponse, include_in_schema=False)
 async def list_contractors(
@@ -75,7 +95,7 @@ async def list_contractors(
     if normalized_status is not None:
         normalized_status = status_label_to_code.get(normalized_status, normalized_status)
     async with uow:
-        service = ContractorService(uow.users, uow.profiles)
+        service = ContractorService(uow.users, uow.profiles, uow.units)
         result = await service.list_contractors(
             current_user=current_user,
             search=search,
@@ -103,7 +123,7 @@ async def get_contractor(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorProfileResponse:
     async with uow:
-        service = ContractorService(uow.users, uow.profiles)
+        service = ContractorService(uow.users, uow.profiles, uow.units)
         profile = await service.get_contractor(
             current_user=current_user,
             contractor_id=contractor_id,
@@ -122,7 +142,7 @@ async def update_contractor_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorStatusUpdateResponse:
     async with uow:
-        contractor_service = ContractorService(uow.users, uow.profiles)
+        contractor_service = ContractorService(uow.users, uow.profiles, uow.units)
         status_service = UserStatusService(
             uow.users,
             uow.tg_users,
@@ -148,6 +168,44 @@ async def update_contractor_status(
             user_id=result.user_id,
             user_status=_ru_user_status(result.user_status),
         ),
+    )
+
+
+@router.get("/contractors/{contractor_id}/root-units", response_model=ContractorRootUnitBindingsResponse)
+async def get_contractor_root_units(
+    contractor_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ContractorRootUnitBindingsResponse:
+    async with uow:
+        service = ContractorService(uow.users, uow.profiles, uow.units)
+        result = await service.get_contractor_root_unit_bindings(
+            current_user=current_user,
+            contractor_id=contractor_id,
+        )
+
+    return ContractorRootUnitBindingsResponse(
+        data=_contractor_root_unit_bindings_data(result),
+    )
+
+
+@router.put("/contractors/{contractor_id}/root-units", response_model=ContractorRootUnitBindingsResponse)
+async def update_contractor_root_units(
+    payload: ContractorRootUnitBindingsUpdateRequest,
+    contractor_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ContractorRootUnitBindingsResponse:
+    async with uow:
+        service = ContractorService(uow.users, uow.profiles, uow.units)
+        result = await service.update_contractor_root_unit_bindings(
+            current_user=current_user,
+            contractor_id=contractor_id,
+            root_unit_ids={int(unit_id) for unit_id in payload.root_unit_ids},
+        )
+
+    return ContractorRootUnitBindingsResponse(
+        data=_contractor_root_unit_bindings_data(result),
     )
 
 

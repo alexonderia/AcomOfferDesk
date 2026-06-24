@@ -256,6 +256,20 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_open_request_identity_by_request_file_id(self, *, file_id: int) -> tuple[str, str] | None:
+        stmt = (
+            select(Request.id, Request.id_user)
+            .join(RequestFile, RequestFile.id_request == Request.id)
+            .where(RequestFile.id == file_id, Request.status == "open")
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        row = result.one_or_none()
+        if row is None:
+            return None
+        request_id, owner_user_id = row
+        return str(request_id), str(owner_user_id)
+
     async def list_open(self) -> list[Request]:
         stmt = select(Request).where(Request.status == "open").order_by(Request.created_at.desc(), Request.id.desc())
         result = await self._session.execute(stmt)

@@ -43,6 +43,7 @@ from app.schemas.requests import (
 )
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService, PreparedUpload
+from app.services.contractor_units import ContractorUnitService
 from app.services.notifications import NotificationService
 from app.services.department_scope import DepartmentScopeService
 from app.services.requests import RequestEditInput, RequestService
@@ -717,6 +718,7 @@ async def create_request(
             email_notifications = EmailNotificationService(
                 uow.profiles,
                 uow.requests,
+                uow.users,
                 uow.files,
                 notification_preferences=_build_notification_preferences_service(uow),
             )
@@ -786,6 +788,7 @@ async def send_request_email_notifications(
         email_notifications = EmailNotificationService(
             uow.profiles,
             uow.requests,
+            uow.users,
             uow.files,
             notification_preferences=_build_notification_preferences_service(uow),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
@@ -906,10 +909,18 @@ async def download_file(
         if is_normative_file:
             UserPolicy.ensure_can_view_normative_files(current_user)
         elif current_user.role_id == settings.contractor_role_id:
-            linked_to_open_request = await uow.requests.is_file_linked_to_visible_open_request(
-                contractor_user_id=current_user.user_id,
-                file_id=file_id,
-            )
+            linked_to_open_request = False
+            open_request_identity = await uow.requests.get_open_request_identity_by_request_file_id(file_id=file_id)
+            if open_request_identity is not None:
+                request_id, request_owner_user_id = open_request_identity
+                if not await uow.requests.is_hidden_for_contractor(
+                    request_id=request_id,
+                    contractor_user_id=current_user.user_id,
+                ):
+                    linked_to_open_request = await ContractorUnitService(users=uow.users).can_contractor_access_request_owner(
+                        contractor_user_id=current_user.user_id,
+                        request_owner_user_id=request_owner_user_id,
+                    )
             linked_to_own_offer = await uow.offers.is_file_linked_to_contractor(
                 contractor_user_id=current_user.user_id,
                 file_id=file_id,

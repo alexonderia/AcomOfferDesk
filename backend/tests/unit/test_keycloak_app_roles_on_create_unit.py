@@ -68,6 +68,7 @@ async def test_create_manual_contractor_notify_does_not_use_missing_full_name(mo
     users_repo = AsyncMock()
     users_repo.exists = AsyncMock(return_value=False)
     users_repo.get_role_by_id = AsyncMock(return_value=SimpleNamespace(role="Контрагент"))
+    users_repo.find_matching_contractor_user_ids = AsyncMock(return_value=[])
 
     service = ManualContractorService(
         users=users_repo,

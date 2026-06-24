@@ -204,6 +204,16 @@ class UserPolicy:
         raise Forbidden("Недостаточно прав для изменения статуса профиля контрагента")
 
     @staticmethod
+    def can_manage_contractor_unit_bindings(current_user: CurrentUser) -> bool:
+        return UserPolicy.can_update_contractor_profile_status(current_user)
+
+    @staticmethod
+    def ensure_can_manage_contractor_unit_bindings(current_user: CurrentUser) -> None:
+        if UserPolicy.can_manage_contractor_unit_bindings(current_user):
+            return
+        raise Forbidden("Недостаточно прав для изменения привязок контрагента к подразделениям")
+
+    @staticmethod
     def can_update_user_role(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY) or has_permission(
             current_user,

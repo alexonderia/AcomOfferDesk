@@ -7,6 +7,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.repositories.notifications import NotificationRepository
+from app.services.contractor_units import ContractorUnitService
 from app.services.notifications import NotificationService
 from shared.normalization import as_optional_int as _as_optional_int
 from shared.normalization import normalize_optional_str as _normalize_optional_str
@@ -1092,11 +1093,18 @@ class ProcessNotificationEventHandler:
         uow: UnitOfWork,
         request_id: str,
     ) -> list[str]:
-        if uow.requests is None:
+        if uow.requests is None or uow.users is None:
             return []
-        return await uow.requests.list_active_keycloak_visible_contractor_user_ids(
+        request = await uow.requests.get_by_id(request_id=request_id)
+        if request is None:
+            return []
+        visible_contractor_user_ids = await uow.requests.list_active_keycloak_visible_contractor_user_ids(
             request_id=request_id,
             contractor_role_id=settings.contractor_role_id,
+        )
+        return await ContractorUnitService(users=uow.users).filter_contractor_user_ids_for_request_owner(
+            contractor_user_ids=visible_contractor_user_ids,
+            request_owner_user_id=request.id_user,
         )
 
     async def _filter_center_recipients(

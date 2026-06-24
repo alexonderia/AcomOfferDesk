@@ -64,6 +64,15 @@ class _FakeRequestRepoForCreate:
                 return item
         return None
 
+    async def list_active_keycloak_visible_contractor_user_ids(
+        self,
+        *,
+        request_id: str,
+        contractor_role_id: int,
+    ) -> list[str]:
+        _ = (request_id, contractor_role_id)
+        return []
+
 
 class _FakeFilesRepo:
     async def get_normative_file_status(self, *, normative_id: int):
@@ -98,6 +107,23 @@ class _FakeUsersRepo:
 
     async def list_active_user_parent_pairs(self):
         return []
+
+    async def list_active_units(self):
+        return [
+            (1, None),
+        ]
+
+    async def list_active_unit_memberships(self):
+        return [
+            ("owner-33", 1),
+            ("owner-44", 1),
+            ("owner-45", 1),
+            ("owner-50", 1),
+            ("contractor-1", 1),
+            ("contractor-2", 1),
+            ("contractor-3", 1),
+            ("vendor_login", 1),
+        ]
 
 
 class _FakeOffersRepo:
@@ -226,6 +252,10 @@ class _FakeOutboxEmailService:
         self.outbox.append(kwargs)
 
 
+class _FakeUsersRepoForSendUseCase(_FakeUsersRepo):
+    pass
+
+
 
 @pytest.mark.asyncio
 async def test_create_request_triggers_email_notification_event(make_current_user, monkeypatch):
@@ -345,6 +375,7 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
 
     request_row = SimpleNamespace(
         id=33,
+        id_user="owner-33",
         description="Поставка металла",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -359,6 +390,7 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
                 )
             ]
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=_FakeOutboxEmailService(),
         app_url="https://web.acom.example",
     )
@@ -414,6 +446,7 @@ async def test_send_use_case_skips_when_no_safe_recipients(monkeypatch):
     monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
     request_row = SimpleNamespace(
         id=44,
+        id_user="owner-44",
         description="Тест",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -429,6 +462,7 @@ async def test_send_use_case_skips_when_no_safe_recipients(monkeypatch):
                 )
             ]
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=outbox,
         app_url="https://web.acom.example",
     )
@@ -450,6 +484,7 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
     monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
     request_row = SimpleNamespace(
         id=45,
+        id_user="owner-45",
         description="Тест",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -466,6 +501,7 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
                 )
             ]
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=outbox,
         app_url="https://web.acom.example",
         file_service=_FakeFileServiceForSendUseCase(payload_by_file_name={"oversized.pdf": b"x" * (2 * 1024 * 1024)}),
@@ -500,6 +536,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
     monkeypatch.setattr(settings, "email_verification_secret", "verify-secret")
     request_row = SimpleNamespace(
         id=50,
+        id_user="owner-50",
         description="Поставка",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -510,6 +547,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
             recipients=[],
             economist_email_to_user_id={"vendor@example.com": "vendor_login"},
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=outbox,
         app_url="https://web.acom.example",
         presentation_attachment_service=_FakePresentationAttachmentService(),

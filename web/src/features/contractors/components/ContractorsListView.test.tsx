@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROLE } from '@shared/constants/roles';
 import { appTheme } from '@shared/theme/appTheme';
+import type { ContractorListItem } from '@shared/api/contractors/listContractors';
 import { ContractorsListView } from './ContractorsListView';
 
 const updateManualContractorMock = vi.fn();
@@ -45,7 +46,7 @@ vi.mock('@shared/ui/toasts', () => ({
   }),
 }));
 
-const buildContractor = () => ({
+const buildContractor = (): ContractorListItem => ({
   userId: 'contractor-1',
   maxUserId: 'max-42',
   roleId: 3,
@@ -75,6 +76,7 @@ const buildContractor = () => ({
     manage_subordinate_unavailability: false,
     manage_manual_contractor: true,
   },
+  rootUnits: null,
 });
 
 const buildContractorsPage = (count: number) => Array.from({ length: count }, (_, index) => ({
@@ -285,6 +287,52 @@ describe('ContractorsListView editing', () => {
 
     await screen.findByText('max-42');
     expect(screen.getAllByLabelText('Поле недоступно для редактирования').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('binds contractor root units directly from the table column', async () => {
+    renderView();
+
+    fireEvent.click(await screen.findByLabelText('root-units-contractor-1'));
+
+    expect(await screen.findByLabelText('Финансы')).toBeChecked();
+    const logisticsCheckbox = await screen.findByLabelText('Логистика');
+    expect(logisticsCheckbox).not.toBeChecked();
+
+    fireEvent.click(logisticsCheckbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+
+    await waitFor(() => {
+      expect(updateContractorRootUnitsMock).toHaveBeenCalledWith('contractor-1', [101, 102]);
+    });
+    expect(showSystemToastMock).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Привязки к подразделениям сохранены.',
+    });
+    expect(screen.queryByText('Карточка контрагента')).not.toBeInTheDocument();
+    expect(updateContractorStatusMock).not.toHaveBeenCalled();
+  });
+
+  it('uses preloaded bindings from the list without an extra fetch', async () => {
+    renderView({
+      contractors: [{
+        ...buildContractor(),
+        rootUnits: {
+          contractorUserId: 'contractor-1',
+          canManage: true,
+          items: [
+            { unitId: 101, unitName: 'Финансы', isBound: true, canManage: true },
+            { unitId: 102, unitName: 'Логистика', isBound: false, canManage: true },
+          ],
+        },
+      }],
+    });
+
+    expect(await screen.findByLabelText('root-units-contractor-1')).toHaveTextContent('Привязок: 1');
+
+    fireEvent.click(screen.getByLabelText('root-units-contractor-1'));
+
+    expect(await screen.findByLabelText('Финансы')).toBeChecked();
+    expect(getContractorRootUnitsMock).not.toHaveBeenCalled();
   });
 
   it('loads and saves contractor root unit bindings', async () => {

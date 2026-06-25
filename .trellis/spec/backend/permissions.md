@@ -111,6 +111,7 @@ The backend permission codes are grouped by domain:
 ### 4. Validation & Error Matrix
 - Caller lacks contractor-management rights -> root-unit binding endpoints stay forbidden.
 - Caller is `admin` / `superadmin` -> binding endpoints allowed even without explicit contractor delegation token role.
+- Reading bindings (`GET /root-units`) is allowed for callers who can read the contractor profile (`contractors.profile.read`) OR manage bindings (`can_manage_contractor_unit_bindings`); admins manage status without `contractors.profile.read`, so the read gate must not require profile-read alone.
 - Contractor is not bound to the request owner's root-unit subtree -> request list entry, request details, file access, email/TG/MAX fanout, and status-event notifications must exclude that contractor.
 - Additional email maps to an existing contractor account outside visible root-unit scope -> skip recipient.
 - Additional email maps to an existing contractor account inside visible root-unit scope -> allow invited-contractor email content.

@@ -44,6 +44,7 @@ import { updateContractorRootUnits } from '@shared/api/contractors/updateContrac
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { ContractorMobileCard } from './ContractorMobileCard';
+import { ContractorUnitsCell } from './ContractorUnitsCell';
 import { ContractorEditableFieldFrame, ContractorReadOnlyFieldFrame } from './contractorFieldValidation';
 import {
   ContractorStatusPill,
@@ -61,6 +62,7 @@ type StatusFormValues = z.infer<typeof statusSchema>;
 
 const VIEW_COLUMN_IDS = [
   'status',
+  'units',
   'login',
   'full_name',
   'phone',
@@ -336,6 +338,13 @@ export const ContractorsListView = ({
         ),
       },
       {
+        id: 'units',
+        header: 'Подразделения',
+        minWidth: 190,
+        sortable: false,
+        renderCell: (row) => <ContractorUnitsCell contractor={row} onSaved={onStatusUpdated} />,
+      },
+      {
         id: 'login',
         header: 'Логин',
         field: 'userId',
@@ -438,7 +447,7 @@ export const ContractorsListView = ({
         renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions, isEditMode, renderEditableField, renderLockedCell],
+    [contractorStatusFilterOptions, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell],
   );
 
   const openContractorDetails = (row: ContractorListItem) => {

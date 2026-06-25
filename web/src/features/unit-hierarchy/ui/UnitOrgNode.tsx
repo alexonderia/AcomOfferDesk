@@ -18,6 +18,7 @@ import type { UnitNode } from '@shared/api/units';
 import {
   connectorLineSx,
   getUnitLevelLabel,
+  groupMembersForOrgChart,
   hierarchyPageColors,
 } from './unitHierarchyStyles';
 
@@ -55,6 +56,8 @@ export const UnitOrgNode = ({
   const canCreateChild = unit.actions.canCreateChild && Boolean(onCreateChild);
   const canOpenMemberDialog = unit.actions.canManageMembers && Boolean(onOpenMemberDialog);
   const canOpenUnitDetails = Boolean(onOpenUnitDetails);
+  const contractorCount = groupMembersForOrgChart(unit.members).contractors.length;
+  const staffCount = unit.members.length - contractorCount;
 
   const openUnitDetails = () => {
     onOpenUnitDetails?.(unit);
@@ -183,8 +186,24 @@ export const UnitOrgNode = ({
                   lineHeight: 1.2,
                 }}
               >
-                Участники: {unit.members.length}
+                Сотрудники: {staffCount}
               </Box>
+              {contractorCount > 0 ? (
+                <Box
+                  sx={{
+                    borderRadius: 999,
+                    px: 1,
+                    py: 0.38,
+                    backgroundColor: alpha(hierarchyPageColors.softPink, 0.08),
+                    color: hierarchyPageColors.softPink,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  Контрагенты: {contractorCount}
+                </Box>
+              ) : null}
               <Box
                 sx={{
                   borderRadius: 999,

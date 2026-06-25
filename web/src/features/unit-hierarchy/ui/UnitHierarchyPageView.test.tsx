@@ -25,6 +25,13 @@ const buildViewState = () => ({
           role_name: 'Ведущий экономист',
           status: 'active',
         },
+        {
+          user_id: 'contractor-9',
+          full_name: 'ООО «Ромашка»',
+          role_id: 3,
+          role_name: 'Контрагент',
+          status: 'active',
+        },
       ],
       children: [
         {
@@ -232,6 +239,20 @@ describe('UnitHierarchyPageView', () => {
     expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
     expect(panel.getByRole('button', { name: 'Удалить участника Шамина Анжелина Алексеевна' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Состав объединения' })).not.toBeInTheDocument();
+  });
+
+  it('separates contractors from staff inside the unit details side panel', () => {
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Иерархия объединений' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав объединения Финансовый блок' }));
+
+    const panel = within(screen.getByRole('complementary', { name: 'Состав объединения' }));
+    expect(panel.getByText('Сотрудники')).toBeInTheDocument();
+    expect(panel.getByText('Контрагенты')).toBeInTheDocument();
+    expect(panel.getByText('Шамина Анжелина Алексеевна')).toBeInTheDocument();
+    expect(panel.getByText('ООО «Ромашка»')).toBeInTheDocument();
+    expect(panel.getByRole('button', { name: 'Удалить участника ООО «Ромашка»' })).toBeInTheDocument();
   });
 
   it('shows empty participant state inside the unit details side panel', () => {

@@ -3,6 +3,19 @@ from pydantic import BaseModel, Field
 from app.schemas.actions import UserActionsSchema
 
 
+class ContractorRootUnitBindingItemSchema(BaseModel):
+    unit_id: int
+    unit_name: str
+    is_bound: bool
+    can_manage: bool = False
+
+
+class ContractorRootUnitBindingsData(BaseModel):
+    contractor_user_id: str
+    can_manage: bool = False
+    items: list[ContractorRootUnitBindingItemSchema] = Field(default_factory=list)
+
+
 class ContractorListItemSchema(BaseModel):
     user_id: str
     max_user_id: str | None = None
@@ -21,6 +34,7 @@ class ContractorListItemSchema(BaseModel):
     updated_at: str | None = None
     registration_source: str | None = None
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
+    root_unit_bindings: ContractorRootUnitBindingsData | None = None
 
 
 class ContractorListData(BaseModel):
@@ -53,19 +67,6 @@ class ContractorProfileData(BaseModel):
 
 class ContractorProfileResponse(BaseModel):
     data: ContractorProfileData
-
-
-class ContractorRootUnitBindingItemSchema(BaseModel):
-    unit_id: int
-    unit_name: str
-    is_bound: bool
-    can_manage: bool = False
-
-
-class ContractorRootUnitBindingsData(BaseModel):
-    contractor_user_id: str
-    can_manage: bool = False
-    items: list[ContractorRootUnitBindingItemSchema] = Field(default_factory=list)
 
 
 class ContractorRootUnitBindingsResponse(BaseModel):

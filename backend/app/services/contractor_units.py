@@ -171,7 +171,11 @@ class ContractorUnitService:
         current_user: CurrentUser,
         contractor_user_id: str,
     ) -> ContractorRootUnitBindingsState:
-        UserPolicy.ensure_can_read_contractor_profile(current_user)
+        if not (
+            UserPolicy.can_read_contractor_profile(current_user)
+            or self.can_manage_bindings(current_user)
+        ):
+            raise Forbidden("Недостаточно прав для просмотра привязок контрагента к подразделениям")
         await self._ensure_contractor_exists(contractor_user_id=contractor_user_id)
 
         direct_root_ids = await self.list_direct_root_unit_ids_for_user(user_id=contractor_user_id)
@@ -191,6 +195,49 @@ class ContractorUnitService:
             can_manage=can_manage and bool(manageable_root_ids),
             items=items,
         )
+
+    async def list_bindings_for_users(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_user_ids: list[str],
+    ) -> dict[str, ContractorRootUnitBindingsState]:
+        """Batch variant of ``list_bindings`` for list endpoints.
+
+        Reuses a single cached membership load so the contractor list endpoint
+        stays at O(1) queries regardless of page size, avoiding a per-row fetch.
+        """
+        if not (
+            UserPolicy.can_read_contractor_profile(current_user)
+            or self.can_manage_bindings(current_user)
+        ):
+            return {}
+        if not contractor_user_ids:
+            return {}
+
+        active_root_units = await self._list_active_root_units()
+        manageable_root_ids = await self.list_manageable_root_unit_ids(current_user=current_user)
+        can_manage = self.can_manage_bindings(current_user)
+        memberships = await self._load_root_memberships()
+
+        result: dict[str, ContractorRootUnitBindingsState] = {}
+        for contractor_user_id in contractor_user_ids:
+            bound_root_ids = memberships.get(contractor_user_id, set())
+            items = [
+                ContractorRootUnitBindingState(
+                    unit_id=int(unit.id),
+                    unit_name=unit.name,
+                    is_bound=int(unit.id) in bound_root_ids,
+                    can_manage=can_manage and int(unit.id) in manageable_root_ids,
+                )
+                for unit in active_root_units
+            ]
+            result[contractor_user_id] = ContractorRootUnitBindingsState(
+                contractor_user_id=contractor_user_id,
+                can_manage=can_manage and bool(manageable_root_ids),
+                items=items,
+            )
+        return result
 
     async def bind_user_to_root_units(
         self,

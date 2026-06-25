@@ -19,4 +19,5 @@ export const mapUserListItemToContractorListItem = (user: UserListItem): Contrac
   updatedAt: null,
   registrationSource: null,
   actions: user.actions,
+  rootUnits: null,
 });

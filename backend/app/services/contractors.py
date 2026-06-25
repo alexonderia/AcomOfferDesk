@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
@@ -31,6 +31,7 @@ class ContractorListItemResult:
     created_at: str | None
     updated_at: str | None
     registration_source: str
+    root_unit_bindings: ContractorRootUnitBindingsState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +112,16 @@ class ContractorService:
             )
             for user, profile, company, tg_user, max_user_id in rows
         ]
+        if self._units is not None and items:
+            bindings_by_user = await self._contractor_unit_service().list_bindings_for_users(
+                current_user=current_user,
+                contractor_user_ids=[item.user_id for item in items],
+            )
+            if bindings_by_user:
+                items = [
+                    replace(item, root_unit_bindings=bindings_by_user.get(item.user_id))
+                    for item in items
+                ]
         return ContractorListResult(
             items=items,
             total=total,

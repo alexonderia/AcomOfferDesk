@@ -28,7 +28,7 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
-import type { AvailableUnitUser, RecommendedHierarchyNode, UnitNode } from '@shared/api/units';
+import type { AvailableUnitUser, RecommendedHierarchyNode, UnitMember, UnitNode } from '@shared/api/units';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
 import { UnitOrgChart } from './UnitOrgChart';
 import {
@@ -1463,6 +1463,114 @@ const filterAssignmentsByDepartment = (
   );
 };
 
+const UnitMemberCard = ({
+  member,
+  canManage,
+  onRemove,
+}: {
+  member: UnitMember;
+  canManage: boolean;
+  onRemove: () => void;
+}) => (
+  <Card variant="outlined" sx={{ boxShadow: 'none' }}>
+    <CardContent
+      sx={{
+        p: 1.2,
+        '&:last-child': { pb: 1.2 },
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 1,
+      }}
+    >
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
+          {getMemberDisplayName(member)}
+        </Typography>
+        <Typography variant="caption" sx={{ display: 'block', mt: 0.2, color: 'text.primary' }}>
+          {member.role_name}
+        </Typography>
+        <Typography variant="caption" sx={{ display: 'block', mt: 0.35, color: 'text.secondary' }}>
+          {statusLabelByCode[member.status] ?? member.status} • {member.user_id}
+        </Typography>
+      </Box>
+      {canManage ? (
+        <Tooltip title="Удалить участника">
+          <span>
+            <IconButton
+              size="small"
+              aria-label={`Удалить участника ${getMemberDisplayName(member)}`}
+              onClick={onRemove}
+              sx={{
+                color: hierarchyPageColors.softPink,
+                border: '1px solid',
+                borderColor: 'divider',
+                backgroundColor: 'background.paper',
+              }}
+            >
+              <PersonRemoveAlt1OutlinedIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+      ) : null}
+    </CardContent>
+  </Card>
+);
+
+const UnitMemberSection = ({
+  title,
+  accentColor,
+  members,
+  canManage,
+  onRemoveMember,
+}: {
+  title: string;
+  accentColor: string;
+  members: UnitMember[];
+  canManage: boolean;
+  onRemoveMember: (member: UnitMember) => void;
+}) => {
+  if (members.length === 0) {
+    return null;
+  }
+
+  return (
+    <Stack spacing={0.75}>
+      <Stack direction="row" spacing={0.75} alignItems="center">
+        <Box sx={{ width: 8, height: 8, borderRadius: 999, backgroundColor: accentColor }} />
+        <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: 'text.secondary', letterSpacing: 0.2 }}>
+          {title}
+        </Typography>
+        <Box
+          sx={{
+            ml: 0.25,
+            px: 0.75,
+            py: 0.1,
+            borderRadius: 999,
+            backgroundColor: alpha(accentColor, 0.1),
+            color: accentColor,
+            fontSize: 11,
+            fontWeight: 700,
+            lineHeight: 1.4,
+          }}
+        >
+          {members.length}
+        </Box>
+      </Stack>
+      <Stack spacing={0.9}>
+        {members.map((member) => (
+          <UnitMemberCard
+            key={member.user_id}
+            member={member}
+            canManage={canManage}
+            onRemove={() => onRemoveMember(member)}
+          />
+        ))}
+      </Stack>
+    </Stack>
+  );
+};
+
 export const UnitHierarchyPageView = () => {
   const [viewMode, setViewMode] = useState<HierarchyViewMode>('combined');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | 'all'>('all');
@@ -1621,14 +1729,18 @@ export const UnitHierarchyPageView = () => {
   const activeUnitDetails = activeUnitDetailsId !== null
     ? (displayedUnitsById.get(activeUnitDetailsId) ?? unitsById.get(activeUnitDetailsId) ?? null)
     : null;
-  const activeUnitDetailsMembers = useMemo(() => {
+  const activeUnitDetailsGroups = useMemo(() => {
     if (!activeUnitDetails) {
-      return [];
+      return { staff: [] as UnitMember[], contractors: [] as UnitMember[] };
     }
 
     const { contractors, leaders, team } = groupMembersForOrgChart(activeUnitDetails.members);
-    return [...leaders, ...team, ...contractors];
+    return { staff: [...leaders, ...team], contractors };
   }, [activeUnitDetails]);
+  const activeUnitDetailsMembers = useMemo(
+    () => [...activeUnitDetailsGroups.staff, ...activeUnitDetailsGroups.contractors],
+    [activeUnitDetailsGroups]
+  );
   return (
     <Box>
       <Stack spacing={2}>
@@ -1804,8 +1916,24 @@ export const UnitHierarchyPageView = () => {
                                   lineHeight: 1.2,
                                 }}
                               >
-                                Участники: {activeUnitDetailsMembers.length}
+                                Сотрудники: {activeUnitDetailsGroups.staff.length}
                               </Box>
+                              {activeUnitDetailsGroups.contractors.length > 0 ? (
+                                <Box
+                                  sx={{
+                                    borderRadius: 999,
+                                    px: 1,
+                                    py: 0.4,
+                                    backgroundColor: alpha(hierarchyPageColors.softPink, 0.08),
+                                    color: hierarchyPageColors.softPink,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    lineHeight: 1.2,
+                                  }}
+                                >
+                                  Контрагенты: {activeUnitDetailsGroups.contractors.length}
+                                </Box>
+                              ) : null}
                               <Box
                                 sx={{
                                   borderRadius: 999,
@@ -1836,54 +1964,25 @@ export const UnitHierarchyPageView = () => {
                             </Stack>
 
                             {activeUnitDetailsMembers.length > 0 ? (
-                              <Stack spacing={0.9}>
-                                {activeUnitDetailsMembers.map((member) => (
-                                  <Card key={`${activeUnitDetails.unit_id}-${member.user_id}`} variant="outlined" sx={{ boxShadow: 'none' }}>
-                                    <CardContent
-                                      sx={{
-                                        p: 1.2,
-                                        '&:last-child': { pb: 1.2 },
-                                        display: 'flex',
-                                        alignItems: 'flex-start',
-                                        justifyContent: 'space-between',
-                                        gap: 1,
-                                      }}
-                                    >
-                                      <Box sx={{ minWidth: 0 }}>
-                                        <Typography sx={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
-                                          {getMemberDisplayName(member)}
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.2, color: 'text.primary' }}>
-                                          {member.role_name}
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ display: 'block', mt: 0.35, color: 'text.secondary' }}>
-                                          {statusLabelByCode[member.status] ?? member.status} • {member.user_id}
-                                        </Typography>
-                                      </Box>
-                                      {activeUnitDetails.actions.canManageMembers ? (
-                                        <Tooltip title="Удалить участника">
-                                          <span>
-                                            <IconButton
-                                              size="small"
-                                              aria-label={`Удалить участника ${getMemberDisplayName(member)}`}
-                                              onClick={() => {
-                                                void deleteMember(activeUnitDetails, member);
-                                              }}
-                                              sx={{
-                                                color: hierarchyPageColors.softPink,
-                                                border: '1px solid',
-                                                borderColor: 'divider',
-                                                backgroundColor: 'background.paper',
-                                              }}
-                                            >
-                                              <PersonRemoveAlt1OutlinedIcon sx={{ fontSize: 16 }} />
-                                            </IconButton>
-                                          </span>
-                                        </Tooltip>
-                                      ) : null}
-                                    </CardContent>
-                                  </Card>
-                                ))}
+                              <Stack spacing={1.4}>
+                                <UnitMemberSection
+                                  title="Сотрудники"
+                                  accentColor={hierarchyPageColors.softBlue}
+                                  members={activeUnitDetailsGroups.staff}
+                                  canManage={activeUnitDetails.actions.canManageMembers}
+                                  onRemoveMember={(member) => {
+                                    void deleteMember(activeUnitDetails, member);
+                                  }}
+                                />
+                                <UnitMemberSection
+                                  title="Контрагенты"
+                                  accentColor={hierarchyPageColors.softPink}
+                                  members={activeUnitDetailsGroups.contractors}
+                                  canManage={activeUnitDetails.actions.canManageMembers}
+                                  onRemoveMember={(member) => {
+                                    void deleteMember(activeUnitDetails, member);
+                                  }}
+                                />
                               </Stack>
                             ) : (
                               <Box

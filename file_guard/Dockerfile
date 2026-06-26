@@ -23,6 +23,8 @@ COPY file_guard/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY file_guard/clamd.conf /etc/clamav/clamd.conf
 COPY file_guard/freshclam.conf /etc/clamav/freshclam.conf
 
-RUN chmod +x /app/docker-entrypoint.sh
+# Strip CR so ClamAV/shell parse correctly even if files were checked out with CRLF on Windows.
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh /etc/clamav/clamd.conf /etc/clamav/freshclam.conf \
+    && chmod +x /app/docker-entrypoint.sh
 
 CMD ["/app/docker-entrypoint.sh"]

@@ -5,14 +5,14 @@ type ResponseShape = {
   data: UnitMember;
 };
 
-export const addUnitMember = async (unitId: number, userId: string): Promise<UnitMember> => {
+export const addUnitContractor = async (unitId: number, userId: string): Promise<UnitMember> => {
   const response = await fetchJson<ResponseShape>(
-    `/api/v1/units/${unitId}/members`,
+    `/api/v1/units/${unitId}/contractors`,
     {
       method: 'POST',
       body: JSON.stringify({ user_id: userId }),
     },
-    'Не удалось добавить участника'
+    'Не удалось привязать контрагента'
   );
 
   return {

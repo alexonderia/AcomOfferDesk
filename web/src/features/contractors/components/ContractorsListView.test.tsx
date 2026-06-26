@@ -257,6 +257,52 @@ describe('ContractorsListView editing', () => {
     expect(screen.queryByRole('button', { name: 'Редактировать' })).not.toBeInTheDocument();
   });
 
+  it('makes the status field editable in edit mode when status access is granted', async () => {
+    renderView({
+      contractors: [{
+        ...buildContractor(),
+        actions: {
+          ...buildContractor().actions,
+          manage_manual_contractor: true,
+          update_status: true,
+        },
+      }],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+
+    const statusCombobox = await screen.findByRole('combobox', { name: 'contractor-1-status' });
+    expect(statusCombobox).toBeInTheDocument();
+
+    fireEvent.mouseDown(statusCombobox);
+    fireEvent.click(await screen.findByRole('option', { name: 'Активен' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Сохранить/ }));
+
+    await waitFor(() => {
+      expect(updateContractorStatusMock).toHaveBeenCalledWith('contractor-1', { user_status: 'active' });
+    });
+  });
+
+  it('locks the status field in edit mode when status access is missing', async () => {
+    renderView({
+      contractors: [{
+        ...buildContractor(),
+        actions: {
+          ...buildContractor().actions,
+          manage_manual_contractor: true,
+          update_status: false,
+        },
+      }],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+
+    expect(await screen.findByLabelText('contractor-1-full_name')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'contractor-1-status' })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Поле недоступно для редактирования').length).toBeGreaterThan(0);
+  });
+
   it('allows status update from contractor details dialog', async () => {
     mockSession = {
       roleId: ROLE.PROJECT_MANAGER,

@@ -794,10 +794,17 @@ class UserQueryService:
                 settings.operator_role_id,
             ],
         )
-        return _collect_descendant_user_ids(
+        subordinate_ids = _collect_descendant_user_ids(
             manager_user_id=current_user.user_id,
             rows=rows,
         )
+        # Managers also command employees placed below them in the unit hierarchy,
+        # even when they are not direct descendants in the ``users.id_parent`` chain.
+        unit_subordinate_ids = await DepartmentScopeService(
+            self._users
+        ).resolve_descendant_unit_scope_owner_ids_for_user(user_id=current_user.user_id)
+        subordinate_ids.update(unit_subordinate_ids)
+        return subordinate_ids
 
     async def _resolve_internal_staff_scope_user_ids(
         self,
@@ -1069,6 +1076,12 @@ class UserQueryService:
                     manager_user_id=current_user.user_id,
                     rows=rows,
                 )
+                # Also surface employees placed below the manager in the unit
+                # hierarchy (not only direct ``users.id_parent`` descendants).
+                unit_subordinate_ids = await DepartmentScopeService(
+                    self._users
+                ).resolve_descendant_unit_scope_owner_ids_for_user(user_id=current_user.user_id)
+                scoped_owner_ids.update(unit_subordinate_ids)
             rows = [
                 row for row in rows
                 if row[0].id in scoped_owner_ids

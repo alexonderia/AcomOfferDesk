@@ -9,6 +9,7 @@ class UnitMemberSchema(BaseModel):
     role_id: int
     role_name: str
     status: str
+    id_parent_user: str | None = None
 
 
 class AvailableUnitUserSchema(BaseModel):

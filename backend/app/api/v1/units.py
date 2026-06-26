@@ -38,6 +38,7 @@ def _unit_member_schema(item) -> UnitMemberSchema:
         role_id=item.role_id,
         role_name=item.role_name,
         status=item.status,
+        id_parent_user=item.id_parent_user,
     )
 
 
@@ -202,6 +203,44 @@ async def remove_unit_member(
             user_id=user_id,
         )
     return Response(status_code=204)
+
+
+@router.get("/units/{unit_id}/available-contractors", response_model=AvailableUnitUsersResponse)
+async def list_available_contractors_for_unit(
+    unit_id: int = Path(..., ge=1),
+    search: str | None = Query(default=None, min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> AvailableUnitUsersResponse:
+    async with uow:
+        service = UnitService(uow.units, uow.users)
+        items = await service.list_available_contractors_for_unit(
+            current_user=current_user,
+            unit_id=unit_id,
+            search=search,
+        )
+
+    return AvailableUnitUsersResponse(
+        data=AvailableUnitUsersData(items=[_available_user_schema(item) for item in items])
+    )
+
+
+@router.post("/units/{unit_id}/contractors", response_model=UnitMemberResponse)
+async def add_unit_contractor(
+    payload: AddUnitMemberRequest,
+    unit_id: int = Path(..., ge=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UnitMemberResponse:
+    async with uow:
+        service = UnitService(uow.units, uow.users)
+        item = await service.add_contractor(
+            current_user=current_user,
+            unit_id=unit_id,
+            user_id=payload.user_id,
+        )
+
+    return UnitMemberResponse(data=_unit_member_schema(item))
 
 
 @router.get("/units/available-users", response_model=AvailableUnitUsersResponse)

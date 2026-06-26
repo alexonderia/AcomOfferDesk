@@ -5,6 +5,6 @@ export const deleteUnit = async (unitId: number, confirmReassign = false): Promi
   await fetchEmpty(
     `/api/v1/units/${unitId}${query}`,
     { method: 'DELETE' },
-    'Не удалось удалить юнит'
+    'Не удалось удалить объединение'
   );
 };

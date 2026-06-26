@@ -1,6 +1,8 @@
+export { addUnitContractor } from './addUnitContractor';
 export { addUnitMember } from './addUnitMember';
 export { createUnit } from './createUnit';
 export { deleteUnit } from './deleteUnit';
+export { getAvailableContractorsForUnit } from './getAvailableContractorsForUnit';
 export { getAvailableUsersForUnit } from './getAvailableUsersForUnit';
 export { getRecommendedUnitsTree } from './getRecommendedUnitsTree';
 export { getUnitsTree } from './getUnitsTree';

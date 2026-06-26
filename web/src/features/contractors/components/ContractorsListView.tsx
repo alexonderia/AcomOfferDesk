@@ -12,6 +12,7 @@ import {
   FormGroup,
   InputBase,
   MenuItem,
+  Select,
   Stack,
   TextField,
   Tooltip,
@@ -276,6 +277,32 @@ export const ContractorsListView = ({
     return <ContractorReadOnlyFieldFrame locked>{content}</ContractorReadOnlyFieldFrame>;
   }, [isEditMode]);
 
+  const renderStatusField = useCallback((row: ContractorListItem) => {
+    const draft = getDraft(row);
+    const value = (draft.status as string | undefined) ?? getFieldValue(row, 'status');
+    const dirty = isFieldDirty(row, 'status', draft);
+
+    return (
+      <ContractorEditableFieldFrame dirty={dirty}>
+        <Select
+          value={value}
+          onChange={(event) => updateDraftValue(row, 'status', event.target.value)}
+          disabled={isSaving}
+          variant="standard"
+          disableUnderline
+          aria-label={`${row.userId}-status`}
+          inputProps={{ 'aria-label': `${row.userId}-status` }}
+          sx={{ width: '100%', fontSize: 14 }}
+        >
+          <MenuItem value="review">На проверке</MenuItem>
+          <MenuItem value="active">Активен</MenuItem>
+          <MenuItem value="inactive">Неактивен</MenuItem>
+          <MenuItem value="blacklist">В черном списке</MenuItem>
+        </Select>
+      </ContractorEditableFieldFrame>
+    );
+  }, [getDraft, getFieldValue, isFieldDirty, isSaving, updateDraftValue]);
+
   const renderEditableField = useCallback((
     row: ContractorListItem,
     field: ContractorEditField,
@@ -331,11 +358,14 @@ export const ContractorsListView = ({
         getFilterValue: (row) => statusLabelForFilter(row.status),
         getSearchValue: (row) => statusLabelForFilter(row.status),
         getSortValue: (row) => statusLabelForFilter(row.status),
-        renderCell: (row) => (
-          isEditMode
-            ? renderLockedCell(<ContractorStatusPill value={row.status} />)
-            : <ContractorStatusPill value={row.status} />
-        ),
+        renderCell: (row) => {
+          if (!isEditMode) {
+            return <ContractorStatusPill value={row.status} />;
+          }
+          return row.actions.update_status
+            ? renderStatusField(row)
+            : renderLockedCell(<ContractorStatusPill value={row.status} />);
+        },
       },
       {
         id: 'units',
@@ -447,7 +477,7 @@ export const ContractorsListView = ({
         renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell],
+    [contractorStatusFilterOptions, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField],
   );
 
   const openContractorDetails = (row: ContractorListItem) => {

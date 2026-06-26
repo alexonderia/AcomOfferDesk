@@ -163,3 +163,36 @@ class UnitRepository:
             )
         result = await self._session.execute(stmt)
         return list(result.all())
+
+    async def list_available_contractors_for_unit(
+        self,
+        *,
+        unit_id: int,
+        contractor_role_id: int,
+        search: str | None = None,
+    ) -> list[tuple[User, Profile | None, Role]]:
+        active_member_subquery = (
+            select(UnitMember.id_user)
+            .where(
+                UnitMember.id_unit == unit_id,
+                UnitMember.is_active.is_(True),
+            )
+        )
+        stmt = (
+            select(User, Profile, Role)
+            .join(Role, Role.id == User.id_role)
+            .outerjoin(Profile, Profile.id == User.id)
+            .where(User.id_role == contractor_role_id)
+            .where(not_(User.id.in_(active_member_subquery)))
+            .order_by(Profile.full_name.asc().nullslast(), User.id.asc())
+        )
+        normalized_search = (search or "").strip().lower()
+        if normalized_search:
+            like_value = f"%{normalized_search}%"
+            stmt = stmt.where(
+                (func.lower(User.id).like(like_value))
+                | (func.lower(func.coalesce(Profile.full_name, "")).like(like_value))
+                | (func.lower(func.coalesce(Profile.mail, "")).like(like_value))
+            )
+        result = await self._session.execute(stmt)
+        return list(result.all())

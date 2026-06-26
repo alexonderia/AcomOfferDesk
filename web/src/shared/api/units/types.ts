@@ -11,6 +11,7 @@ export type UnitMember = {
   role_id: number;
   role_name: string;
   status: string;
+  id_parent_user: string | null;
 };
 
 export type AvailableUnitUser = {
@@ -68,6 +69,7 @@ const normalizeMember = (item: UnitMemberRow): UnitMember => ({
   role_id: item.role_id ?? 0,
   role_name: item.role_name ?? '',
   status: item.status ?? 'review',
+  id_parent_user: item.id_parent_user ?? null,
 });
 
 const normalizeActions = (actions?: Partial<UnitActions>) => ({

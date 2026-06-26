@@ -263,6 +263,57 @@ Public ingress только через HTTPS reverse proxy.
 
 Этот flow допустим только для `dev`.
 
+### Смена `trycloudflare` адреса в `dev`
+
+`cloudflared` quick tunnel на `trycloudflare.com` выдает новый публичный hostname после перезапуска контейнера. При смене адреса нужно обновить не только сам tunnel URL, но и все публичные OIDC/Keycloak значения, иначе логин ломается либо на `1033`, либо на `redirect_uri`.
+
+Обязательные точки синхронизации в `.env.dev`:
+
+- `KEYCLOAK_PUBLIC_BASE_URL=https://<new-host>.trycloudflare.com/iam`
+- `KEYCLOAK_ISSUER_URL=https://<new-host>.trycloudflare.com/iam/realms/acom-offerdesk`
+- `KC_HOSTNAME=https://<new-host>.trycloudflare.com/iam`
+- `WEB_BASE_URL=https://<new-host>.trycloudflare.com`
+- `PUBLIC_BACKEND_BASE_URL=https://<new-host>.trycloudflare.com`
+
+После изменения env нужно применить обновление в двух слоях:
+
+1. Пересоздать runtime-сервисы, которые читают новый публичный base URL:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d keycloak backend web gateway
+```
+
+2. Повторно применить Keycloak bootstrap клиента `acom-web`, чтобы в realm обновились:
+   - `redirectUris`
+   - `webOrigins`
+   - `rootUrl`
+   - `baseUrl`
+
+Штатный вариант:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.init.yml run --rm --no-deps keycloak_bootstrap
+```
+
+Если нужен только быстрый фикс OIDC-клиента без полного bootstrap, достаточно обновить client `acom-web` через `kcadm` в running `keycloak`.
+
+Минимальная проверка после смены адреса:
+
+```bash
+curl -I https://<new-host>.trycloudflare.com/
+curl -I "https://<new-host>.trycloudflare.com/api/v1/auth/oidc/login?next_path=%2F"
+curl -I "https://<new-host>.trycloudflare.com/iam/realms/acom-offerdesk/protocol/openid-connect/auth?client_id=acom-web&response_type=code&redirect_uri=https%3A%2F%2F<new-host>.trycloudflare.com%2Fapi%2Fv1%2Fauth%2Fcallback"
+```
+
+Ожидаемое поведение:
+
+- главная страница отвечает `200`
+- `/api/v1/auth/oidc/login` отвечает `302`
+- `Location` в этом `302` указывает только на текущий `https://<new-host>.trycloudflare.com/...`
+- OIDC auth endpoint больше не возвращает `Неверный параметр: redirect_uri`
+
+Если открыть старый quick-tunnel hostname после перезапуска `cloudflared`, Cloudflare вернет `Error 1033`, потому что предыдущий временный tunnel уже не существует.
+
 ## Внутренний сервисный поток
 
 | Откуда | Куда | Порт |

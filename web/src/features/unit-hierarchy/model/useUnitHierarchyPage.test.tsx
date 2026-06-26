@@ -150,7 +150,7 @@ describe('useUnitHierarchyPage', () => {
     });
 
     expect(createUnitMock).toHaveBeenCalledWith({ name: 'Проект Б', id_parent: 1 });
-    expect(showSuccessToastMock).toHaveBeenCalledWith('Юнит создан');
+    expect(showSuccessToastMock).toHaveBeenCalledWith('Объединение создано');
   });
 
   it('adds a member into the active unit', async () => {
@@ -173,7 +173,7 @@ describe('useUnitHierarchyPage', () => {
     });
 
     expect(addUnitMemberMock).toHaveBeenCalledWith(2, 'econ-2');
-    expect(showSuccessToastMock).toHaveBeenCalledWith('Сотрудник добавлен в юнит');
+    expect(showSuccessToastMock).toHaveBeenCalledWith('Сотрудник добавлен в объединение');
   });
 
   it('opens delete dialog with reassignment preview for non-empty unit', async () => {
@@ -192,6 +192,6 @@ describe('useUnitHierarchyPage', () => {
     });
 
     expect(deleteUnitMock).toHaveBeenCalledWith(2, true);
-    expect(showSuccessToastMock).toHaveBeenCalledWith('Юнит удален');
+    expect(showSuccessToastMock).toHaveBeenCalledWith('Объединение удалено');
   });
 });

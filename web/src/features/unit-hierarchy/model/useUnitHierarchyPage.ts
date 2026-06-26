@@ -193,6 +193,7 @@ export const useUnitHierarchyPage = () => {
   const [isMovingMember, setIsMovingMember] = useState(false);
   const [deleteDialogState, setDeleteDialogState] = useState<DeleteDialogState>(null);
   const [isDeletingUnit, setIsDeletingUnit] = useState(false);
+  const [contractorDialogUnit, setContractorDialogUnit] = useState<UnitNode | null>(null);
   const deferredMemberSearch = useDeferredValue(memberDialogState.search);
 
   const canCreateRootUnit = hasPermission(session, 'units.create') && session?.roleId === ROLE.SUPERADMIN;
@@ -340,7 +341,7 @@ export const useUnitHierarchyPage = () => {
   const submitUnit = async (payload: { name: string; parentUnitId?: number | null }) => {
     const normalizedName = payload.name.trim();
     if (!normalizedName) {
-      showErrorToast('Название юнита обязательно');
+      showErrorToast('Название объединения обязательно');
       return;
     }
 
@@ -351,7 +352,7 @@ export const useUnitHierarchyPage = () => {
           name: normalizedName,
           id_parent: payload.parentUnitId ?? unitDialogState.unit.id_parent ?? undefined,
         });
-        showSuccessToast('Юнит обновлен');
+        showSuccessToast('Объединение обновлено');
       } else {
         const createdUnit = await createUnit({
           name: normalizedName,
@@ -362,13 +363,13 @@ export const useUnitHierarchyPage = () => {
         if (createdUnit.id_parent === selectedDepartment?.unit_id) {
           setSelectedEditorUnitId(createdUnit.unit_id);
         }
-        showSuccessToast(unitDialogState.mode === 'create-root' ? 'Подразделение создано' : 'Юнит создан');
+        showSuccessToast(unitDialogState.mode === 'create-root' ? 'Подразделение создано' : 'Объединение создано');
       }
 
       closeUnitDialog();
       await loadTree();
     } catch (submitError) {
-      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось сохранить юнит');
+      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось сохранить объединение');
     } finally {
       setIsSavingUnit(false);
     }
@@ -393,7 +394,7 @@ export const useUnitHierarchyPage = () => {
     setIsSavingMember(true);
     try {
       await addUnitMember(memberDialogState.unit.unit_id, memberDialogState.selectedUserId);
-      showSuccessToast('Сотрудник добавлен в юнит');
+      showSuccessToast('Сотрудник добавлен в объединение');
       closeMemberDialog();
       await loadTree();
     } catch (submitError) {
@@ -406,13 +407,31 @@ export const useUnitHierarchyPage = () => {
   const removeMemberFromUnit = async (unit: UnitNode, member: UnitMember) => {
     try {
       await removeUnitMember(unit.unit_id, member.user_id);
-      showSuccessToast('Сотрудник откреплен от юнита');
+      showSuccessToast('Сотрудник откреплен от объединения');
       if (moveMemberState?.member.user_id === member.user_id && moveMemberState.fromUnit.unit_id === unit.unit_id) {
         setMoveMemberState(null);
       }
       await loadTree();
     } catch (removeError) {
       showErrorToast(removeError instanceof Error ? removeError.message : 'Не удалось открепить сотрудника');
+    }
+  };
+
+  const openContractorDialog = (unit: UnitNode) => {
+    setContractorDialogUnit(unit);
+  };
+
+  const closeContractorDialog = () => {
+    setContractorDialogUnit(null);
+  };
+
+  const removeContractorFromUnit = async (unit: UnitNode, member: UnitMember) => {
+    try {
+      await removeUnitMember(unit.unit_id, member.user_id);
+      showSuccessToast('Контрагент откреплен от подразделения');
+      await loadTree();
+    } catch (removeError) {
+      showErrorToast(removeError instanceof Error ? removeError.message : 'Не удалось открепить контрагента');
     }
   };
 
@@ -424,7 +443,7 @@ export const useUnitHierarchyPage = () => {
 
   const submitMoveMember = async () => {
     if (!moveMemberState || moveMemberState.targetUnitId === null) {
-      showErrorToast('Выберите целевой юнит');
+      showErrorToast('Выберите целевое объединение');
       return;
     }
 
@@ -432,7 +451,7 @@ export const useUnitHierarchyPage = () => {
     try {
       await addUnitMember(moveMemberState.targetUnitId, moveMemberState.member.user_id);
       await removeUnitMember(moveMemberState.fromUnit.unit_id, moveMemberState.member.user_id);
-      showSuccessToast('Сотрудник перенесен в другой юнит');
+      showSuccessToast('Сотрудник перенесен в другое объединение');
       closeMoveMemberDialog();
       await loadTree();
     } catch (moveError) {
@@ -461,7 +480,7 @@ export const useUnitHierarchyPage = () => {
     setIsDeletingUnit(true);
     try {
       await deleteUnit(deleteDialogState.unit.unit_id, deleteDialogState.willReassign);
-      showSuccessToast('Юнит удален');
+      showSuccessToast('Объединение удалено');
       if (selectedEditorUnitId === deleteDialogState.unit.unit_id) {
         setSelectedEditorUnitId(null);
       }
@@ -471,7 +490,7 @@ export const useUnitHierarchyPage = () => {
       closeDeleteDialog();
       await loadTree();
     } catch (deleteError) {
-      showErrorToast(deleteError instanceof Error ? deleteError.message : 'Не удалось удалить юнит');
+      showErrorToast(deleteError instanceof Error ? deleteError.message : 'Не удалось удалить объединение');
     } finally {
       setIsDeletingUnit(false);
     }
@@ -513,6 +532,10 @@ export const useUnitHierarchyPage = () => {
     closeMemberDialog,
     submitMember,
     removeMemberFromUnit,
+    contractorDialogUnit,
+    openContractorDialog,
+    closeContractorDialog,
+    removeContractorFromUnit,
     moveMemberState,
     moveUnitOptions,
     setMoveMemberState,

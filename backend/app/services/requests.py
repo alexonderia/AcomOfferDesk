@@ -1462,9 +1462,11 @@ class RequestService:
             ):
                 raise Forbidden("Request is outside your management scope")
             if new_owner_user_id != current_user.user_id:
-                is_subordinate = await self._is_descendant(
-                    ancestor_user_id=current_user.user_id,
-                    target_user_id=new_owner_user_id,
+                # Subordinate via the legacy ``users.id_parent`` chain OR via the
+                # unit hierarchy (a manager placed above the new owner in the unit tree).
+                is_subordinate = await self._is_inside_hierarchy_management_scope(
+                    current_user=current_user,
+                    request_owner_user_id=new_owner_user_id,
                 )
                 if not is_subordinate:
                     raise Forbidden("Owner must be current user or current user's subordinate")

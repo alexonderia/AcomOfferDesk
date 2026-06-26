@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UserListItem } from '@entities/user';
 import { normalizeUserStatus } from '@features/admin/components/UserCardPrimitives';
 import type { ContractorListItem } from '@shared/api/contractors/listContractors';
+import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
 import {
   buildManualContractorDraft,
@@ -248,6 +249,10 @@ export const useContractorTableEditing = ({
             if (Object.keys(payload).length > 0) {
               await updateManualContractor(row.userId, payload);
             }
+          }
+
+          if (draft.status !== undefined && row.actions.update_status) {
+            await updateContractorStatus(row.userId, { user_status: draft.status });
           }
 
           return rowId;

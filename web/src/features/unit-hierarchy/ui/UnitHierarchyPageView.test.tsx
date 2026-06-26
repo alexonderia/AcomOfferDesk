@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { appTheme } from '@shared/theme/appTheme';
 import { UnitHierarchyPageView } from './UnitHierarchyPageView';
@@ -111,6 +111,10 @@ const buildViewState = (): any => ({
   closeMemberDialog: vi.fn(),
   submitMember: vi.fn(),
   removeMemberFromUnit: vi.fn(),
+  contractorDialogUnit: null,
+  openContractorDialog: vi.fn(),
+  closeContractorDialog: vi.fn(),
+  removeContractorFromUnit: vi.fn(),
   moveMemberState: null,
   moveUnitOptions: [],
   setMoveMemberState: vi.fn(),
@@ -139,17 +143,29 @@ describe('UnitHierarchyPageView', () => {
     useUnitHierarchyPageMock.mockReturnValue(buildViewState());
   });
 
-  it('renders department overview with second-level units and staff summary', () => {
+  it('renders department graphs with second-level unit blocks and staff tree', () => {
     renderView();
 
-    expect(screen.getByText('Подразделение как корневой юнит, внутри которого живет граф дочерних юнитов')).toBeInTheDocument();
+    expect(screen.getByText('Подразделения и объединения')).toBeInTheDocument();
     expect(screen.getAllByText('Финансовый блок').length).toBeGreaterThan(0);
-    expect(screen.getByText('Юниты второго уровня')).toBeInTheDocument();
+    expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
+    expect(screen.getByText('Сотрудники подразделения')).toBeInTheDocument();
     expect(screen.getByText('Экономист 1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Открыть редактор графа' })).toBeInTheDocument();
   });
 
-  it('renders graph editor and side panel when a second-level unit is opened', () => {
+  it('opens the editor window when a second-level unit block is clicked', () => {
+    const viewState = buildViewState();
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть редактор объединения Проект А' }));
+
+    expect(viewState.setSelectedEditorUnitId).toHaveBeenCalledWith(2);
+    expect(viewState.setActiveUnitDetailsId).toHaveBeenCalledWith(2);
+  });
+
+  it('renders graph editor window and side panel when a second-level unit is opened', () => {
     const viewState = buildViewState();
     viewState.selectedEditorUnitId = 2;
     viewState.editorRootUnit = baseDepartment.children[0]!;
@@ -160,11 +176,11 @@ describe('UnitHierarchyPageView', () => {
 
     renderView();
 
-    expect(screen.getByText('Граф юнита')).toBeInTheDocument();
+    expect(screen.getByText(/Граф объединения/)).toBeInTheDocument();
     expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Добавить дочерний лист' })).toBeInTheDocument();
 
-    const detailsPanel = screen.getByText('Сотрудники юнита').closest('.MuiCard-root');
+    const detailsPanel = screen.getByText('Сотрудники объединения').closest('.MuiCard-root');
     expect(detailsPanel).not.toBeNull();
     expect(screen.getByText('Финансовый блок / Проект А')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Добавить сотрудника' }).length).toBeGreaterThan(0);
@@ -182,7 +198,7 @@ describe('UnitHierarchyPageView', () => {
     renderView();
 
     const dialog = within(screen.getByRole('dialog'));
-    expect(dialog.getByText('Удаление юнита')).toBeInTheDocument();
+    expect(dialog.getByText('Удаление объединения')).toBeInTheDocument();
     expect(dialog.getByText('Предпросмотр новой иерархии')).toBeInTheDocument();
     expect(dialog.getAllByText('Проект А').length).toBeGreaterThan(0);
   });

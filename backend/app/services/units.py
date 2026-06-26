@@ -37,6 +37,7 @@ class UnitMemberState:
     role_id: int
     role_name: str
     status: str
+    id_parent_user: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +166,7 @@ class UnitService:
             role_id=int(role.id),
             role_name=role.role,
             status=user.status,
+            id_parent_user=user.id_parent,
         )
 
     def _build_available_user_state(self, *, user, profile, role) -> AvailableUnitUserState:
@@ -757,3 +759,78 @@ class UnitService:
             for user, profile, role in rows
             if user.id_role != settings.contractor_role_id
         ]
+
+    async def list_available_contractors_for_unit(
+        self,
+        *,
+        current_user: CurrentUser,
+        unit_id: int,
+        search: str | None = None,
+    ) -> list[AvailableUnitUserState]:
+        UserPolicy.ensure_can_manage_unit_members(current_user)
+        unit = await self._units.get_by_id(unit_id)
+        if unit is None:
+            raise NotFound("Подразделение не найдено")
+        if unit.id_parent is not None:
+            raise Conflict("Контрагентов можно привязывать только к подразделению верхнего уровня")
+        if not unit.is_active:
+            raise Conflict("Для неактивного подразделения нельзя подбирать контрагентов")
+        await self._ensure_manage_access(current_user=current_user, unit=unit)
+        rows = await self._units.list_available_contractors_for_unit(
+            unit_id=unit_id,
+            contractor_role_id=settings.contractor_role_id,
+            search=search,
+        )
+        return [
+            self._build_available_user_state(user=user, profile=profile, role=role)
+            for user, profile, role in rows
+        ]
+
+    async def add_contractor(
+        self,
+        *,
+        current_user: CurrentUser,
+        unit_id: int,
+        user_id: str,
+    ) -> UnitMemberState:
+        UserPolicy.ensure_can_manage_unit_members(current_user)
+        unit = await self._units.get_by_id(unit_id)
+        if unit is None:
+            raise NotFound("Подразделение не найдено")
+        if unit.id_parent is not None:
+            raise Conflict("Контрагентов можно привязывать только к подразделению верхнего уровня")
+        if not unit.is_active:
+            raise Conflict("Нельзя добавлять контрагентов в неактивное подразделение")
+        await self._ensure_manage_access(current_user=current_user, unit=unit)
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("Пользователь не найден")
+        if user.id_role != settings.contractor_role_id:
+            raise Conflict("В подразделение можно добавить только контрагента")
+
+        membership = await self._units.get_member(unit_id=unit_id, user_id=user_id)
+        if membership is not None and membership.is_active:
+            raise Conflict("Контрагент уже привязан к этому подразделению")
+
+        if membership is None:
+            membership = UnitMember(
+                id_unit=unit_id,
+                id_user=user_id,
+                id_assigned_by_user=current_user.user_id,
+                is_active=True,
+            )
+            await self._units.add_member(membership)
+        else:
+            membership.is_active = True
+            membership.id_assigned_by_user = current_user.user_id
+            membership.updated_at = _utcnow_naive()
+
+        await self._units.flush()
+
+        rows = await self._units.list_members(unit_id=unit_id, active_only=True)
+        for _member, member_user, profile, role in rows:
+            if member_user.id == user_id:
+                return self._build_member_state(user=member_user, profile=profile, role=role)
+
+        raise Conflict("Не удалось добавить контрагента в подразделение")

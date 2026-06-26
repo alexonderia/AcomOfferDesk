@@ -169,6 +169,12 @@ class DashboardService:
             }:
                 module_owner_ids = await self._staff_scope.resolve_module_owner_ids(current_user=current_user)
                 module_owner_set = set(module_owner_ids)
+                # Employees placed below the user in the unit hierarchy are also
+                # managed by them, even if not direct ``users.id_parent`` descendants.
+                unit_scope_owner_ids = await self._staff_scope.resolve_unit_management_owner_ids(
+                    current_user=current_user,
+                )
+                module_owner_set |= set(unit_scope_owner_ids)
                 descendant_ids = {
                     user_id for user_id in module_owner_set if user_id != current_user.user_id
                 }

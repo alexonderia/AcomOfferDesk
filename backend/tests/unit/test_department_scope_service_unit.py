@@ -132,6 +132,15 @@ async def test_unit_scope_for_lead_is_only_their_own_unit_subtree():
 
 
 @pytest.mark.asyncio
+async def test_descendant_unit_scope_excludes_current_unit_members():
+    service = DepartmentScopeService(_UnitAwareUsersRepo())
+
+    descendant_scope = await service.resolve_descendant_unit_scope_owner_ids_for_user(user_id="lead-1")
+
+    assert set(descendant_scope) == {"eco-1"}
+
+
+@pytest.mark.asyncio
 async def test_department_membership_spans_root_unit_but_not_other_root():
     service = DepartmentScopeService(_UnitAwareUsersRepo())
 

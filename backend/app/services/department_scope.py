@@ -53,6 +53,19 @@ class _UnitGraph:
             queue.extend(self.children_by_unit.get(unit_id, []))
         return result
 
+    def collect_descendant_unit_ids(self, unit_ids: Iterable[int]) -> set[int]:
+        descendants: set[int] = set()
+        queue: list[int] = []
+        for unit_id in unit_ids:
+            queue.extend(self.children_by_unit.get(int(unit_id), []))
+        while queue:
+            unit_id = queue.pop()
+            if unit_id in descendants:
+                continue
+            descendants.add(unit_id)
+            queue.extend(self.children_by_unit.get(unit_id, []))
+        return descendants
+
     def members_of_units(self, unit_ids: Iterable[int]) -> set[str]:
         owners: set[str] = set()
         for unit_id in unit_ids:
@@ -117,6 +130,22 @@ class DepartmentScopeService:
             return []
         subtree_unit_ids = graph.collect_subtree_unit_ids(user_unit_ids)
         return list(graph.members_of_units(subtree_unit_ids))
+
+    async def resolve_descendant_unit_scope_owner_ids_for_user(self, *, user_id: str) -> list[str]:
+        """Members that sit below the user's direct units in the unit tree.
+
+        This is the extra management scope granted by the unit hierarchy itself:
+        a user can manage employees placed in descendant units, even when they
+        are not direct descendants in ``users.id_parent``.
+        """
+        graph = await self._load_unit_graph()
+        if graph is None:
+            return []
+        user_unit_ids = graph.units_by_user.get(user_id)
+        if not user_unit_ids:
+            return []
+        descendant_unit_ids = graph.collect_descendant_unit_ids(user_unit_ids)
+        return list(graph.members_of_units(descendant_unit_ids))
 
     async def is_user_in_current_user_department(
         self,

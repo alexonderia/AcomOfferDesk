@@ -19,6 +19,12 @@ class _FakeUsersRepo:
             "lead-1": User(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active"),
             "econ-1": User(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1", status="active"),
             "econ-2": User(id="econ-2", id_role=settings.economist_role_id, id_parent="lead-1", status="active"),
+            "contractor-1": User(
+                id="contractor-1",
+                id_role=settings.contractor_role_id,
+                id_parent=None,
+                status="active",
+            ),
         }
         self._profiles: dict[str, Profile] = {}
         self._roles: dict[int, Role] = {}
@@ -47,6 +53,7 @@ class _FakeUnitsRepo:
             settings.project_manager_role_id: Role(id=settings.project_manager_role_id, role="Руководитель проекта"),
             settings.lead_economist_role_id: Role(id=settings.lead_economist_role_id, role="Ведущий экономист"),
             settings.economist_role_id: Role(id=settings.economist_role_id, role="Экономист"),
+            settings.contractor_role_id: Role(id=settings.contractor_role_id, role="Контрагент"),
         }
         self.profiles = {
             "superadmin-1": Profile(id="superadmin-1", full_name="Суперадмин", phone=None, mail=None),
@@ -55,6 +62,7 @@ class _FakeUnitsRepo:
             "lead-1": Profile(id="lead-1", full_name="ВЭ 1", phone=None, mail=None),
             "econ-1": Profile(id="econ-1", full_name="Экономист 1", phone=None, mail=None),
             "econ-2": Profile(id="econ-2", full_name="Экономист 2", phone=None, mail=None),
+            "contractor-1": Profile(id="contractor-1", full_name="Контрагент 1", phone=None, mail=None),
         }
         self.units = {
             1: Unit(id=1, name="Департамент", id_parent=None, is_active=True, id_created_by_user="superadmin-1"),
@@ -280,6 +288,20 @@ async def test_admin_can_list_available_users_without_target_unit(service_contex
 
 
 @pytest.mark.asyncio
+async def test_available_users_exclude_contractors(service_context, make_current_user) -> None:
+    rows = await service_context.service.list_available_users_for_unit(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+        ),
+        unit_id=None,
+    )
+
+    assert "contractor-1" not in [row.user_id for row in rows]
+
+
+@pytest.mark.asyncio
 async def test_remove_member_deactivates_membership(service_context, make_current_user) -> None:
     current_user = make_current_user(
         user_id="admin-1",
@@ -294,6 +316,20 @@ async def test_remove_member_deactivates_membership(service_context, make_curren
     )
 
     assert service_context.units.members[(2, "econ-1")].is_active is False
+
+
+@pytest.mark.asyncio
+async def test_add_member_rejects_contractors(service_context, make_current_user) -> None:
+    with pytest.raises(Conflict, match="Контрагентов нельзя назначать"):
+        await service_context.service.add_member(
+            current_user=make_current_user(
+                user_id="admin-1",
+                role_id=settings.admin_role_id,
+                permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+            ),
+            unit_id=1,
+            user_id="contractor-1",
+        )
 
 
 @pytest.mark.asyncio
@@ -421,3 +457,68 @@ async def test_assign_to_module_skips_inheritance_without_manager_unit(service_c
     assert service_context.units.members[(2, "sub-2")].is_active is True
     # Manager has no unit, so no root-department inheritance happens.
     assert (1, "sub-2") not in service_context.units.members
+
+
+@pytest.mark.asyncio
+async def test_update_unit_can_reparent_within_same_department(service_context, make_current_user) -> None:
+    service_context.units.units[4] = Unit(
+        id=4,
+        name="Отдел",
+        id_parent=1,
+        is_active=True,
+        id_created_by_user="superadmin-1",
+    )
+
+    updated = await service_context.service.update_unit(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.read", "units.update"},
+        ),
+        unit_id=3,
+        id_parent=4,
+    )
+
+    assert updated.id_parent == 4
+    assert service_context.units.units[3].id_parent == 4
+
+
+@pytest.mark.asyncio
+async def test_delete_unit_requires_confirmation_when_members_or_children_exist(service_context, make_current_user) -> None:
+    with pytest.raises(Conflict, match="Подтвердите перенос"):
+        await service_context.service.delete_unit(
+            current_user=make_current_user(
+                user_id="admin-1",
+                role_id=settings.admin_role_id,
+                permissions={"units.read", "units.update", "units.members.manage"},
+            ),
+            unit_id=2,
+            confirm_reassign=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_delete_unit_reassigns_direct_members_and_children_to_parent(service_context, make_current_user) -> None:
+    service_context.units.members[(3, "econ-2")] = UnitMember(
+        id_unit=3,
+        id_user="econ-2",
+        id_assigned_by_user="admin-1",
+        is_active=True,
+    )
+
+    await service_context.service.delete_unit(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.read", "units.update", "units.members.manage"},
+        ),
+        unit_id=2,
+        confirm_reassign=True,
+    )
+
+    assert service_context.units.units[2].is_active is False
+    assert service_context.units.units[2].name.endswith("[archived:2]")
+    assert service_context.units.units[3].id_parent == 1
+    assert service_context.units.members[(2, "econ-1")].is_active is False
+    assert service_context.units.members[(1, "econ-1")].is_active is True
+    assert service_context.units.members[(3, "econ-2")].is_active is True

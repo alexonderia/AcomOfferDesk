@@ -87,13 +87,15 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Keep visual hierarchy subtle: department containers may be slightly heavier than employee cards, but all surfaces should still feel like standard application cards rather than custom marketing panels.
 - Empty combined-hierarchy slots should stay interactive: use a visible placeholder card that opens the existing assignment flow instead of introducing a new ad hoc edit path.
 
-### Convention: Unit Hierarchy Uses Expandable Block Cards
+### Convention: Unit Hierarchy Uses Department Overview Plus Graph Editor
 
-- In the units hierarchy, render each unit as a block card with summary metadata, not as a thin label floating above member cards.
-- Keep a single units-hierarchy representation sourced directly from the backend `units tree`; do not maintain a second frontend-only participant layout that can diverge from DB membership.
-- Keep helper copy on the hierarchy page terse: prefer short labels and empty states over explanatory paragraphs in side panels, cards, and dialogs.
-- Open the participant list in a dedicated details panel on the same page when the user clicks the unit card, and keep add/remove member actions inside that side panel instead of a modal dialog.
-- Empty member lists and leaf-unit child areas should use interactive placeholders that lead into the existing "add employee" and "create child unit" flows.
+- Keep root departments as the landing layer of the page. Show department-level staff/contractor summary first, then list second-level units as entry cards into deeper editing.
+- Opening a second-level unit should switch into a dedicated graph-editor view for that subtree instead of expanding an arbitrarily deep accordion on the overview page.
+- Keep a single hierarchy source backed by `/units/tree`; do not maintain a second frontend-only org structure that can diverge from backend membership and parent links.
+- Each graph node should expose a local create-child affordance so users can extend the structure from the place they are editing, not through a separate global wizard.
+- Keep employee assignment in the same-page details panel for the selected unit, and make unit creation the first step before assigning staff.
+- Deleting a unit that affects structure should use a confirmation dialog with a preview of the post-delete hierarchy rather than a blind destructive confirm.
+- Keep helper copy terse and operational: short labels, short warnings, and focused empty states instead of long explanatory text blocks.
 
 ---
 

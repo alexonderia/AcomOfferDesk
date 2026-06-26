@@ -47,7 +47,7 @@ export const getUnitLevelLabel = (depth: number) => {
   if (depth === 0) {
     return 'Подразделение';
   }
-  return 'Объединение';
+  return 'Юнит';
 };
 
 export const getMemberDisplayName = (member: Pick<UnitMember, 'full_name' | 'user_id'>) =>

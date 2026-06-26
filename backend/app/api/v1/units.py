@@ -133,10 +133,27 @@ async def update_unit(
             current_user=current_user,
             unit_id=unit_id,
             name=payload.name,
-            is_active=payload.is_active,
+            id_parent=payload.id_parent,
         )
 
     return UnitMutationResponse(data=_unit_node_schema(item))
+
+
+@router.delete("/units/{unit_id}", status_code=204)
+async def delete_unit(
+    unit_id: int = Path(..., ge=1),
+    confirm_reassign: bool = Query(default=False),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> Response:
+    async with uow:
+        service = UnitService(uow.units, uow.users)
+        await service.delete_unit(
+            current_user=current_user,
+            unit_id=unit_id,
+            confirm_reassign=confirm_reassign,
+        )
+    return Response(status_code=204)
 
 
 @router.get("/units/{unit_id}/members", response_model=UnitMembersResponse)

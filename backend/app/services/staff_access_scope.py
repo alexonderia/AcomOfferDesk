@@ -50,6 +50,17 @@ class StaffAccessScopeService:
         )
         return await self._department_scope.resolve_subtree_owner_ids(root_user_id=module_root_user_id)
 
+    async def resolve_unit_management_owner_ids(self, *, current_user: CurrentUser) -> list[str]:
+        if current_user.role_id not in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            return []
+        return await self._department_scope.resolve_descendant_unit_scope_owner_ids_for_user(
+            user_id=current_user.user_id,
+        )
+
     async def can_view_request_owner(
         self,
         *,
@@ -66,9 +77,14 @@ class StaffAccessScopeService:
             return False
         if request_owner_user_id == current_user.user_id:
             return True
-        return await self._department_scope.is_user_in_current_user_department(
+        if await self._department_scope.is_user_in_current_user_department(
             current_user=current_user,
             target_user_id=request_owner_user_id,
+        ):
+            return True
+        return await self._is_inside_hierarchy_management_scope(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
         )
 
     async def can_manage_request_owner(
@@ -122,6 +138,9 @@ class StaffAccessScopeService:
                         request_owner_user_id=owner_user_id,
                     ):
                         manageable_owner_ids.add(owner_user_id)
+
+            unit_scope_owner_ids = await self.resolve_unit_management_owner_ids(current_user=current_user)
+            manageable_owner_ids.update(candidate_owner_ids & set(unit_scope_owner_ids))
 
         return manageable_owner_ids
 
@@ -180,10 +199,13 @@ class StaffAccessScopeService:
             settings.economist_role_id,
         }:
             return False
-        return await self._is_descendant(
+        if await self._is_descendant(
             ancestor_user_id=current_user.user_id,
             target_user_id=request_owner_user_id,
-        )
+        ):
+            return True
+        unit_scope_owner_ids = await self.resolve_unit_management_owner_ids(current_user=current_user)
+        return request_owner_user_id in set(unit_scope_owner_ids)
 
     async def _is_descendant(
         self,

@@ -237,3 +237,56 @@ def test_admin_can_load_global_available_users_for_unit_creation(test_client, se
 
     assert response.status_code == 200
     assert [item["user_id"] for item in response.json()["data"]["items"]] == ["econ-1"]
+
+
+def test_admin_can_delete_nested_unit_via_api_with_reassignment_confirmation(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = _UnitsUow()
+    uow.units._next_unit_id = 4
+    uow.units._units[2] = SimpleNamespace(
+        id=2,
+        name="Проект",
+        id_parent=1,
+        is_active=True,
+        id_created_by_user="superadmin-1",
+        updated_at=None,
+    )
+    uow.units._units[3] = SimpleNamespace(
+        id=3,
+        name="Модуль",
+        id_parent=2,
+        is_active=True,
+        id_created_by_user="superadmin-1",
+        updated_at=None,
+    )
+    uow.units._members[(2, "econ-1")] = SimpleNamespace(
+        id_unit=2,
+        id_user="econ-1",
+        id_assigned_by_user="admin-1",
+        is_active=True,
+        updated_at=None,
+    )
+    set_uow(uow)
+    set_current_user(
+        make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={
+                PermissionCodes.UNITS_READ,
+                PermissionCodes.UNITS_UPDATE,
+                PermissionCodes.UNITS_MEMBERS_MANAGE,
+            },
+        )
+    )
+
+    response = test_client.delete("/api/v1/units/2", params={"confirm_reassign": "true"})
+
+    assert response.status_code == 204
+    assert uow.units._units[2].is_active is False
+    assert uow.units._units[3].id_parent == 1
+    assert uow.units._members[(2, "econ-1")].is_active is False
+    assert uow.units._members[(1, "econ-1")].is_active is True

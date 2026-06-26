@@ -1,7 +1,7 @@
 export type UnitActions = {
   can_create_child: boolean;
   can_update: boolean;
-  can_deactivate: boolean;
+  can_delete: boolean;
   can_manage_members: boolean;
 };
 
@@ -31,7 +31,7 @@ export type UnitNode = {
   actions: {
     canCreateChild: boolean;
     canUpdate: boolean;
-    canDeactivate: boolean;
+    canDelete: boolean;
     canManageMembers: boolean;
   };
 };
@@ -73,7 +73,7 @@ const normalizeMember = (item: UnitMemberRow): UnitMember => ({
 const normalizeActions = (actions?: Partial<UnitActions>) => ({
   canCreateChild: Boolean(actions?.can_create_child),
   canUpdate: Boolean(actions?.can_update),
-  canDeactivate: Boolean(actions?.can_deactivate),
+  canDelete: Boolean(actions?.can_delete),
   canManageMembers: Boolean(actions?.can_manage_members),
 });
 

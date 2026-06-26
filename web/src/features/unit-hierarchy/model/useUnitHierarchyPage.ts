@@ -1,421 +1,531 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import {
   addUnitMember,
   createUnit,
+  deleteUnit,
   getAvailableUsersForUnit,
-  getRecommendedUnitsTree,
   getUnitsTree,
   removeUnitMember,
   updateUnit,
   type AvailableUnitUser,
-  type RecommendedHierarchyNode,
   type UnitMember,
   type UnitNode,
 } from '@shared/api/units';
 import { useSystemToasts } from '@shared/ui/toasts';
 
-type UnitDialogMode = 'create-root' | 'create-child' | 'rename' | null;
+type UnitDialogMode = 'create-root' | 'create-child' | 'edit' | null;
 
-type UnitOption = {
-  label: string;
-  unitId: number;
+type UnitDialogState = {
+  mode: UnitDialogMode;
+  unit: UnitNode | null;
 };
 
-type AssignedUnitInfo = UnitOption & {
-  depth: number;
-  unitName: string;
+type MemberDialogState = {
+  unit: UnitNode | null;
+  search: string;
+  selectedUserId: string;
 };
 
-type RecommendedAssignmentCandidate = {
-  full_name: string | null;
-  parentDisplayName: string | null;
-  role_id: number;
-  role_name: string;
-  status: string;
-  user_id: string;
+type MoveMemberState = {
+  member: UnitMember;
+  fromUnit: UnitNode;
+  targetUnitId: number | null;
+} | null;
+
+type DeleteDialogState = {
+  unit: UnitNode;
+  previewTree: UnitNode[];
+  willReassign: boolean;
+} | null;
+
+const flattenUnits = (nodes: UnitNode[]): UnitNode[] =>
+  nodes.flatMap((node) => [node, ...flattenUnits(node.children)]);
+
+const findUnitById = (nodes: UnitNode[], unitId: number): UnitNode | null => {
+  for (const node of nodes) {
+    if (node.unit_id === unitId) {
+      return node;
+    }
+    const childMatch = findUnitById(node.children, unitId);
+    if (childMatch) {
+      return childMatch;
+    }
+  }
+  return null;
 };
 
-const flattenUnitIds = (nodes: UnitNode[]): number[] =>
-  nodes.flatMap((node) => [node.unit_id, ...flattenUnitIds(node.children)]);
+const findParentUnit = (nodes: UnitNode[], unitId: number): UnitNode | null => {
+  for (const node of nodes) {
+    if (node.children.some((child) => child.unit_id === unitId)) {
+      return node;
+    }
+    const nestedMatch = findParentUnit(node.children, unitId);
+    if (nestedMatch) {
+      return nestedMatch;
+    }
+  }
+  return null;
+};
 
-const flattenUnitMembers = (nodes: UnitNode[]): UnitMember[] =>
-  nodes.flatMap((node) => [...node.members, ...flattenUnitMembers(node.children)]);
+const collectDescendantUnitIds = (unit: UnitNode): Set<number> => {
+  const ids = new Set<number>();
+  const visit = (node: UnitNode) => {
+    ids.add(node.unit_id);
+    node.children.forEach(visit);
+  };
+  visit(unit);
+  return ids;
+};
 
-const buildUnitOptions = (nodes: UnitNode[], path: string[] = []): UnitOption[] =>
-  nodes.flatMap((node) => {
-    const nextPath = [...path, node.name];
-    return [
-      {
-        unitId: node.unit_id,
-        label: nextPath.join(' / '),
-      },
-      ...buildUnitOptions(node.children, nextPath),
-    ];
-  });
+const findRootUnitForUnit = (nodes: UnitNode[], unitId: number): UnitNode | null => {
+  for (const root of nodes) {
+    if (findUnitById([root], unitId)) {
+      return root;
+    }
+  }
+  return null;
+};
 
-const buildMemberUnitMap = (
-  nodes: UnitNode[],
-  path: string[] = [],
-  depth = 0,
-  accumulator: Record<string, AssignedUnitInfo[]> = {}
-): Record<string, AssignedUnitInfo[]> => {
-  nodes.forEach((node) => {
-    const nextPath = [...path, node.name];
-    const currentUnit: AssignedUnitInfo = {
-      unitId: node.unit_id,
-      label: nextPath.join(' / '),
-      unitName: node.name,
-      depth,
-    };
+const buildUnitPathLabel = (nodes: UnitNode[], unitId: number): string => {
+  const path: string[] = [];
 
-    node.members.forEach((member) => {
-      const currentAssignments = accumulator[member.user_id] ?? [];
-      accumulator[member.user_id] = [...currentAssignments, currentUnit];
+  const visit = (list: UnitNode[], nextPath: string[]): boolean => {
+    for (const unit of list) {
+      const currentPath = [...nextPath, unit.name];
+      if (unit.unit_id === unitId) {
+        path.push(...currentPath);
+        return true;
+      }
+      if (visit(unit.children, currentPath)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  visit(nodes, []);
+  return path.join(' / ');
+};
+
+const buildUniqueMembers = (root: UnitNode | null, includeContractors: boolean): UnitMember[] => {
+  if (!root) {
+    return [];
+  }
+
+  const byUserId = new Map<string, UnitMember>();
+  flattenUnits([root]).forEach((unit) => {
+    unit.members.forEach((member) => {
+      const isContractor = member.role_id === ROLE.CONTRACTOR;
+      if (includeContractors !== isContractor) {
+        return;
+      }
+      if (!byUserId.has(member.user_id)) {
+        byUserId.set(member.user_id, member);
+      }
     });
-
-    buildMemberUnitMap(node.children, nextPath, depth + 1, accumulator);
   });
 
-  Object.keys(accumulator).forEach((userId) => {
-    accumulator[userId] = accumulator[userId]!
-      .slice()
-      .sort((left, right) => left.depth - right.depth || left.unitName.localeCompare(right.unitName, 'ru'));
+  return [...byUserId.values()].sort((left, right) => {
+    const leftLabel = (left.full_name ?? left.user_id).toLocaleLowerCase('ru');
+    const rightLabel = (right.full_name ?? right.user_id).toLocaleLowerCase('ru');
+    return leftLabel.localeCompare(rightLabel, 'ru');
+  });
+};
+
+const buildDeletePreviewTree = (tree: UnitNode[], unitId: number): UnitNode[] => {
+  const cloneNode = (node: UnitNode): UnitNode => ({
+    ...node,
+    members: [...node.members],
+    children: node.children.map(cloneNode),
+    actions: { ...node.actions },
   });
 
-  return accumulator;
+  const clonedTree = tree.map(cloneNode);
+  const unit = findUnitById(clonedTree, unitId);
+  const parent = findParentUnit(clonedTree, unitId);
+  if (!unit || !parent) {
+    return clonedTree;
+  }
+
+  parent.members = [...parent.members, ...unit.members];
+  parent.children = parent.children.flatMap((child) => (
+    child.unit_id === unitId
+      ? unit.children.map((grandChild) => ({ ...grandChild, id_parent: parent.unit_id }))
+      : [child]
+  ));
+
+  return clonedTree;
 };
 
-const isRecommendedPlaceholder = (node: RecommendedHierarchyNode) => {
-  const normalizedName = (node.full_name ?? '').trim().toLowerCase();
-  return normalizedName.includes('вакан') || normalizedName.includes('не указано');
-};
-
-const collectRecommendedAssignmentCandidates = (
-  nodes: RecommendedHierarchyNode[],
-  assignedUserIds: Set<string>,
-  parentDisplayName: string | null = null
-): RecommendedAssignmentCandidate[] =>
-  nodes.flatMap((node) => {
-    const nextParentDisplayName = node.full_name?.trim() || node.user_id;
-    const ownCandidate = !assignedUserIds.has(node.user_id) && !isRecommendedPlaceholder(node)
-      ? [{
-        user_id: node.user_id,
-        full_name: node.full_name,
-        role_id: node.role_id,
-        role_name: node.role_name,
-        status: node.status,
-        parentDisplayName,
-      }]
-      : [];
-
+const buildUnitOptions = (nodes: UnitNode[], path: string[] = []): Array<{ unitId: number; label: string }> =>
+  nodes.flatMap((unit) => {
+    const nextPath = [...path, unit.name];
     return [
-      ...ownCandidate,
-      ...collectRecommendedAssignmentCandidates(node.children, assignedUserIds, nextParentDisplayName),
+      { unitId: unit.unit_id, label: nextPath.join(' / ') },
+      ...buildUnitOptions(unit.children, nextPath),
     ];
   });
 
 export const useUnitHierarchyPage = () => {
   const { session } = useAuth();
   const { showErrorToast, showSuccessToast } = useSystemToasts();
+
   const [tree, setTree] = useState<UnitNode[]>([]);
-  const [recommendedTree, setRecommendedTree] = useState<RecommendedHierarchyNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [recommendedError, setRecommendedError] = useState<string | null>(null);
-  const [unitDialogMode, setUnitDialogMode] = useState<UnitDialogMode>(null);
-  const [activeUnit, setActiveUnit] = useState<UnitNode | null>(null);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
+  const [selectedEditorUnitId, setSelectedEditorUnitId] = useState<number | null>(null);
+  const [activeUnitDetailsId, setActiveUnitDetailsId] = useState<number | null>(null);
+  const [unitDialogState, setUnitDialogState] = useState<UnitDialogState>({ mode: null, unit: null });
   const [isSavingUnit, setIsSavingUnit] = useState(false);
-  const [isMemberDialogOpen, setIsMemberDialogOpen] = useState(false);
-  const [memberSearch, setMemberSearch] = useState('');
-  const deferredMemberSearch = useDeferredValue(memberSearch);
+  const [memberDialogState, setMemberDialogState] = useState<MemberDialogState>({
+    unit: null,
+    search: '',
+    selectedUserId: '',
+  });
   const [availableUsers, setAvailableUsers] = useState<AvailableUnitUser[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [initialCreateUserId, setInitialCreateUserId] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isSavingMember, setIsSavingMember] = useState(false);
-  const [isAssigningRecommendedUserId, setIsAssigningRecommendedUserId] = useState<string | null>(null);
-  const [isDetachingRecommendedAssignmentKey, setIsDetachingRecommendedAssignmentKey] = useState<string | null>(null);
+  const [moveMemberState, setMoveMemberState] = useState<MoveMemberState>(null);
+  const [isMovingMember, setIsMovingMember] = useState(false);
+  const [deleteDialogState, setDeleteDialogState] = useState<DeleteDialogState>(null);
+  const [isDeletingUnit, setIsDeletingUnit] = useState(false);
+  const deferredMemberSearch = useDeferredValue(memberDialogState.search);
 
   const canCreateRootUnit = hasPermission(session, 'units.create') && session?.roleId === ROLE.SUPERADMIN;
-  const visibleUnitIds = useMemo(() => new Set(flattenUnitIds(tree)), [tree]);
-  const unitOptions = useMemo(() => buildUnitOptions(tree), [tree]);
-  const memberUnitByUserId = useMemo(() => buildMemberUnitMap(tree), [tree]);
-  const assignedUserIds = useMemo(
-    () => new Set(flattenUnitMembers(tree).map((member) => member.user_id)),
+
+  const departments = useMemo(
+    () => tree.filter((unit) => unit.id_parent === null),
     [tree]
   );
-  const unassignedRecommendedMembers = useMemo(
-    () => collectRecommendedAssignmentCandidates(recommendedTree, assignedUserIds),
-    [assignedUserIds, recommendedTree]
+
+  const selectedDepartment = useMemo(
+    () => (selectedDepartmentId !== null ? findUnitById(departments, selectedDepartmentId) : departments[0] ?? null),
+    [departments, selectedDepartmentId]
   );
-  const loadTree = useCallback(async () => {
+
+  const editorRootUnit = useMemo(
+    () => (selectedEditorUnitId !== null ? findUnitById(tree, selectedEditorUnitId) : null),
+    [selectedEditorUnitId, tree]
+  );
+
+  const activeUnitDetails = useMemo(
+    () => (activeUnitDetailsId !== null ? findUnitById(tree, activeUnitDetailsId) : null),
+    [activeUnitDetailsId, tree]
+  );
+
+  const departmentStaff = useMemo(
+    () => buildUniqueMembers(selectedDepartment, false),
+    [selectedDepartment]
+  );
+
+  const departmentContractors = useMemo(
+    () => buildUniqueMembers(selectedDepartment, true),
+    [selectedDepartment]
+  );
+
+  const selectedDepartmentUnitOptions = useMemo(
+    () => (selectedDepartment ? buildUnitOptions([selectedDepartment]) : []),
+    [selectedDepartment]
+  );
+
+  const moveUnitOptions = useMemo(() => {
+    if (!moveMemberState || !selectedDepartment) {
+      return [];
+    }
+
+    return selectedDepartmentUnitOptions
+      .filter((option) => option.unitId !== moveMemberState.fromUnit.unit_id)
+      .map((option) => ({
+        unitId: option.unitId,
+        label: option.label,
+      }));
+  }, [moveMemberState, selectedDepartment, selectedDepartmentUnitOptions]);
+
+  const activeUnitParent = useMemo(
+    () => (activeUnitDetails ? findParentUnit(tree, activeUnitDetails.unit_id) : null),
+    [activeUnitDetails, tree]
+  );
+
+  const activeUnitPathLabel = useMemo(
+    () => (activeUnitDetails ? buildUnitPathLabel(tree, activeUnitDetails.unit_id) : ''),
+    [activeUnitDetails, tree]
+  );
+
+  const editableParentOptions = useMemo(() => {
+    if (unitDialogState.mode !== 'edit' || !unitDialogState.unit || !selectedDepartment) {
+      return [];
+    }
+
+    const blockedIds = collectDescendantUnitIds(unitDialogState.unit);
+    return buildUnitOptions([selectedDepartment]).filter((option) => !blockedIds.has(option.unitId));
+  }, [selectedDepartment, unitDialogState]);
+
+  const loadTree = async (preserveSelection = true) => {
     setIsLoading(true);
     setError(null);
     try {
-      setTree(await getUnitsTree());
+      const nextTree = await getUnitsTree();
+      setTree(nextTree);
+
+      const nextDepartments = nextTree.filter((unit) => unit.id_parent === null);
+      if (nextDepartments.length === 0) {
+        setSelectedDepartmentId(null);
+        setSelectedEditorUnitId(null);
+        setActiveUnitDetailsId(null);
+        return;
+      }
+
+      if (!preserveSelection || selectedDepartmentId === null || !findUnitById(nextDepartments, selectedDepartmentId)) {
+        setSelectedDepartmentId(nextDepartments[0]!.unit_id);
+      }
+
+      if (selectedEditorUnitId !== null && !findUnitById(nextTree, selectedEditorUnitId)) {
+        setSelectedEditorUnitId(null);
+      }
+
+      if (activeUnitDetailsId !== null && !findUnitById(nextTree, activeUnitDetailsId)) {
+        setActiveUnitDetailsId(null);
+      }
     } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : 'Не удалось загрузить иерархию';
-      setError(message);
+      setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить иерархию подразделений');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    void loadTree(false);
   }, []);
 
   useEffect(() => {
-    void loadTree();
-  }, [loadTree]);
-
-  const loadRecommendedTree = useCallback(async () => {
-    setRecommendedError(null);
-    try {
-      setRecommendedTree(await getRecommendedUnitsTree());
-    } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : 'Не удалось загрузить рекомендуемую структуру';
-      setRecommendedError(message);
-      setRecommendedTree([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadRecommendedTree();
-  }, [loadRecommendedTree]);
-
-  const loadAvailableUsers = useCallback(async (unitId: number, searchValue?: string) => {
-    setIsLoadingUsers(true);
-    try {
-      setAvailableUsers(await getAvailableUsersForUnit(unitId, searchValue));
-    } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : 'Не удалось загрузить доступных участников';
-      showErrorToast(message);
-      setAvailableUsers([]);
-    } finally {
-      setIsLoadingUsers(false);
-    }
-  }, [showErrorToast]);
-
-  const loadCreateAvailableUsers = useCallback(async (searchValue?: string) => {
-    try {
-      return await getAvailableUsersForUnit(undefined, searchValue);
-    } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїРёСЃРѕРє СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ';
-      showErrorToast(message);
-      return [];
-    }
-  }, [showErrorToast]);
-
-  useEffect(() => {
-    if (!isMemberDialogOpen || !activeUnit) {
+    if (!memberDialogState.unit) {
       return;
     }
-    void loadAvailableUsers(activeUnit.unit_id, deferredMemberSearch);
-  }, [activeUnit, deferredMemberSearch, isMemberDialogOpen, loadAvailableUsers]);
 
-  const closeUnitDialog = useCallback(() => {
-    setUnitDialogMode(null);
-    setActiveUnit(null);
-    setInitialCreateUserId('');
-  }, []);
+    let cancelled = false;
+    const loadUsers = async () => {
+      setIsLoadingUsers(true);
+      try {
+        const items = await getAvailableUsersForUnit(memberDialogState.unit!.unit_id, deferredMemberSearch);
+        if (!cancelled) {
+          setAvailableUsers(items);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setAvailableUsers([]);
+          showErrorToast(loadError instanceof Error ? loadError.message : 'Не удалось загрузить сотрудников');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingUsers(false);
+        }
+      }
+    };
 
-  const openCreateRootDialog = useCallback((initialUserId?: string) => {
-    setUnitDialogMode('create-root');
-    setActiveUnit(null);
-    setInitialCreateUserId(initialUserId ?? '');
-  }, []);
+    void loadUsers();
+    return () => {
+      cancelled = true;
+    };
+  }, [deferredMemberSearch, memberDialogState.unit, showErrorToast]);
 
-  const openCreateChildDialog = useCallback((unit: UnitNode, initialUserId?: string) => {
-    setUnitDialogMode('create-child');
-    setActiveUnit(unit);
-    setInitialCreateUserId(initialUserId ?? '');
-  }, []);
+  const openCreateRootDialog = () => setUnitDialogState({ mode: 'create-root', unit: null });
+  const openCreateChildDialog = (unit: UnitNode) => setUnitDialogState({ mode: 'create-child', unit });
+  const openEditUnitDialog = (unit: UnitNode) => setUnitDialogState({ mode: 'edit', unit });
+  const closeUnitDialog = () => setUnitDialogState({ mode: null, unit: null });
 
-  const openRenameDialog = useCallback((unit: UnitNode) => {
-    setUnitDialogMode('rename');
-    setActiveUnit(unit);
-    setInitialCreateUserId('');
-  }, []);
-
-  const submitUnit = useCallback(async (unitName: string, selectedCreateUserId?: string) => {
-    const normalizedName = unitName.trim();
+  const submitUnit = async (payload: { name: string; parentUnitId?: number | null }) => {
+    const normalizedName = payload.name.trim();
     if (!normalizedName) {
-      showErrorToast('Название обязательно');
+      showErrorToast('Название юнита обязательно');
       return;
     }
 
     setIsSavingUnit(true);
     try {
-      if (unitDialogMode === 'rename' && activeUnit) {
-        await updateUnit(activeUnit.unit_id, { name: normalizedName });
-        showSuccessToast('Название узла обновлено');
+      if (unitDialogState.mode === 'edit' && unitDialogState.unit) {
+        await updateUnit(unitDialogState.unit.unit_id, {
+          name: normalizedName,
+          id_parent: payload.parentUnitId ?? unitDialogState.unit.id_parent ?? undefined,
+        });
+        showSuccessToast('Юнит обновлен');
       } else {
         const createdUnit = await createUnit({
           name: normalizedName,
-          id_parent: unitDialogMode === 'create-child' && activeUnit ? activeUnit.unit_id : undefined,
+          id_parent: unitDialogState.mode === 'create-child' && unitDialogState.unit
+            ? unitDialogState.unit.unit_id
+            : undefined,
         });
-        if (selectedCreateUserId) {
-          try {
-            await addUnitMember(createdUnit.unit_id, selectedCreateUserId);
-            showSuccessToast('Узел создан, сотрудник добавлен');
-          } catch (assignError) {
-            showSuccessToast('Узел создан');
-            showErrorToast(
-              assignError instanceof Error
-                ? `Узел создан, но сотрудника не удалось добавить: ${assignError.message}`
-                : 'Узел создан, но сотрудника не удалось добавить'
-            );
-            closeUnitDialog();
-            await loadTree();
-            return;
-          }
-        } else {
-          showSuccessToast('Узел создан');
+        if (createdUnit.id_parent === selectedDepartment?.unit_id) {
+          setSelectedEditorUnitId(createdUnit.unit_id);
         }
+        showSuccessToast(unitDialogState.mode === 'create-root' ? 'Подразделение создано' : 'Юнит создан');
       }
+
       closeUnitDialog();
       await loadTree();
     } catch (submitError) {
-      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось сохранить узел');
+      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось сохранить юнит');
     } finally {
       setIsSavingUnit(false);
     }
-  }, [
-    activeUnit,
-    closeUnitDialog,
-    loadTree,
-    showErrorToast,
-    showSuccessToast,
-    unitDialogMode,
-  ]);
+  };
 
-  const deactivateUnit = useCallback(async (unit: UnitNode) => {
-    if (!window.confirm(`Деактивировать узел «${unit.name}»?`)) {
-      return;
-    }
-
-    try {
-      await updateUnit(unit.unit_id, { is_active: false });
-      showSuccessToast('Узел деактивирован');
-      await loadTree();
-    } catch (deactivateError) {
-      showErrorToast(deactivateError instanceof Error ? deactivateError.message : 'Не удалось деактивировать узел');
-    }
-  }, [loadTree, showErrorToast, showSuccessToast]);
-
-  const openMemberDialog = useCallback((unit: UnitNode) => {
-    setActiveUnit(unit);
-    setMemberSearch('');
-    setSelectedUserId('');
+  const openMemberDialog = (unit: UnitNode) => {
+    setMemberDialogState({ unit, search: '', selectedUserId: '' });
     setAvailableUsers([]);
-    setIsMemberDialogOpen(true);
-  }, []);
+  };
 
-  const closeMemberDialog = useCallback(() => {
-    setIsMemberDialogOpen(false);
-    setSelectedUserId('');
-    setMemberSearch('');
+  const closeMemberDialog = () => {
+    setMemberDialogState({ unit: null, search: '', selectedUserId: '' });
     setAvailableUsers([]);
-  }, []);
+  };
 
-  const submitMember = useCallback(async () => {
-    if (!activeUnit || !selectedUserId) {
-      showErrorToast('Выберите участника');
+  const submitMember = async () => {
+    if (!memberDialogState.unit || !memberDialogState.selectedUserId) {
+      showErrorToast('Выберите сотрудника');
       return;
     }
 
     setIsSavingMember(true);
     try {
-      await addUnitMember(activeUnit.unit_id, selectedUserId);
-      showSuccessToast('Участник добавлен');
+      await addUnitMember(memberDialogState.unit.unit_id, memberDialogState.selectedUserId);
+      showSuccessToast('Сотрудник добавлен в юнит');
       closeMemberDialog();
       await loadTree();
     } catch (submitError) {
-      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось добавить участника');
+      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось добавить сотрудника');
     } finally {
       setIsSavingMember(false);
     }
-  }, [activeUnit, closeMemberDialog, loadTree, selectedUserId, showErrorToast, showSuccessToast]);
+  };
 
-  const deleteMember = useCallback(async (unit: UnitNode, member: UnitMember) => {
-    if (!window.confirm(`Удалить участника «${member.full_name ?? member.user_id}» из узла «${unit.name}»?`)) {
+  const removeMemberFromUnit = async (unit: UnitNode, member: UnitMember) => {
+    try {
+      await removeUnitMember(unit.unit_id, member.user_id);
+      showSuccessToast('Сотрудник откреплен от юнита');
+      if (moveMemberState?.member.user_id === member.user_id && moveMemberState.fromUnit.unit_id === unit.unit_id) {
+        setMoveMemberState(null);
+      }
+      await loadTree();
+    } catch (removeError) {
+      showErrorToast(removeError instanceof Error ? removeError.message : 'Не удалось открепить сотрудника');
+    }
+  };
+
+  const openMoveMemberDialog = (unit: UnitNode, member: UnitMember) => {
+    setMoveMemberState({ member, fromUnit: unit, targetUnitId: null });
+  };
+
+  const closeMoveMemberDialog = () => setMoveMemberState(null);
+
+  const submitMoveMember = async () => {
+    if (!moveMemberState || moveMemberState.targetUnitId === null) {
+      showErrorToast('Выберите целевой юнит');
       return;
     }
 
+    setIsMovingMember(true);
     try {
-      await removeUnitMember(unit.unit_id, member.user_id);
-      showSuccessToast('Участник удален из узла');
+      await addUnitMember(moveMemberState.targetUnitId, moveMemberState.member.user_id);
+      await removeUnitMember(moveMemberState.fromUnit.unit_id, moveMemberState.member.user_id);
+      showSuccessToast('Сотрудник перенесен в другой юнит');
+      closeMoveMemberDialog();
+      await loadTree();
+    } catch (moveError) {
+      showErrorToast(moveError instanceof Error ? moveError.message : 'Не удалось перенести сотрудника');
+    } finally {
+      setIsMovingMember(false);
+    }
+  };
+
+  const openDeleteDialog = (unit: UnitNode) => {
+    const previewTree = buildDeletePreviewTree(tree, unit.unit_id);
+    setDeleteDialogState({
+      unit,
+      previewTree,
+      willReassign: unit.id_parent !== null && (unit.members.length > 0 || unit.children.length > 0),
+    });
+  };
+
+  const closeDeleteDialog = () => setDeleteDialogState(null);
+
+  const confirmDeleteUnit = async () => {
+    if (!deleteDialogState) {
+      return;
+    }
+
+    setIsDeletingUnit(true);
+    try {
+      await deleteUnit(deleteDialogState.unit.unit_id, deleteDialogState.willReassign);
+      showSuccessToast('Юнит удален');
+      if (selectedEditorUnitId === deleteDialogState.unit.unit_id) {
+        setSelectedEditorUnitId(null);
+      }
+      if (activeUnitDetailsId === deleteDialogState.unit.unit_id) {
+        setActiveUnitDetailsId(null);
+      }
+      closeDeleteDialog();
       await loadTree();
     } catch (deleteError) {
-      showErrorToast(deleteError instanceof Error ? deleteError.message : 'Не удалось удалить участника');
-    }
-  }, [loadTree, showErrorToast, showSuccessToast]);
-
-  const assignRecommendedMemberToUnit = useCallback(async (userId: string, unitId: number) => {
-    setIsAssigningRecommendedUserId(userId);
-    try {
-      await addUnitMember(unitId, userId);
-      showSuccessToast('Участник закреплен за выбранным узлом');
-      await loadTree();
-    } catch (assignError) {
-      showErrorToast(assignError instanceof Error ? assignError.message : 'Не удалось закрепить участника за узлом');
+      showErrorToast(deleteError instanceof Error ? deleteError.message : 'Не удалось удалить юнит');
     } finally {
-      setIsAssigningRecommendedUserId(null);
+      setIsDeletingUnit(false);
     }
-  }, [loadTree, showErrorToast, showSuccessToast]);
-
-  const detachRecommendedMemberFromUnit = useCallback(async (userId: string, unitId: number) => {
-    const assignmentKey = `${userId}:${unitId}`;
-    setIsDetachingRecommendedAssignmentKey(assignmentKey);
-    try {
-      await removeUnitMember(unitId, userId);
-      showSuccessToast('Привязка сотрудника удалена');
-      await loadTree();
-    } catch (detachError) {
-      showErrorToast(detachError instanceof Error ? detachError.message : 'Не удалось открепить сотрудника от узла');
-    } finally {
-      setIsDetachingRecommendedAssignmentKey(null);
-    }
-  }, [loadTree, showErrorToast, showSuccessToast]);
+  };
 
   return {
     tree,
-    recommendedTree,
+    departments,
     isLoading,
     error,
-    recommendedError,
+    selectedDepartment,
+    selectedDepartmentId,
+    setSelectedDepartmentId,
+    selectedEditorUnitId,
+    setSelectedEditorUnitId,
+    editorRootUnit,
+    departmentStaff,
+    departmentContractors,
+    selectedDepartmentUnitOptions,
     canCreateRootUnit,
-    visibleUnitIds,
-    unitOptions,
-    memberUnitByUserId,
-    unassignedRecommendedMembers,
-    unitDialogMode,
-    activeUnit,
-    initialCreateUserId,
+    activeUnitDetails,
+    activeUnitParent,
+    activeUnitPathLabel,
+    setActiveUnitDetailsId,
+    unitDialogState,
     isSavingUnit,
-    isMemberDialogOpen,
-    availableUsers,
-    selectedUserId,
-    setSelectedUserId,
-    memberSearch,
-    setMemberSearch,
-    isLoadingUsers,
-    isSavingMember,
-    isAssigningRecommendedUserId,
-    isDetachingRecommendedAssignmentKey,
-    loadTree,
-    loadCreateAvailableUsers,
+    editableParentOptions,
     openCreateRootDialog,
     openCreateChildDialog,
-    openRenameDialog,
+    openEditUnitDialog,
     closeUnitDialog,
     submitUnit,
-    deactivateUnit,
+    memberDialogState,
+    setMemberDialogState,
+    availableUsers,
+    isLoadingUsers,
+    isSavingMember,
     openMemberDialog,
     closeMemberDialog,
     submitMember,
-    deleteMember,
-    assignRecommendedMemberToUnit,
-    detachRecommendedMemberFromUnit,
+    removeMemberFromUnit,
+    moveMemberState,
+    moveUnitOptions,
+    setMoveMemberState,
+    isMovingMember,
+    openMoveMemberDialog,
+    closeMoveMemberDialog,
+    submitMoveMember,
+    deleteDialogState,
+    isDeletingUnit,
+    openDeleteDialog,
+    closeDeleteDialog,
+    confirmDeleteUnit,
+    loadTree,
+    findRootUnitForUnit: (unitId: number) => findRootUnitForUnit(tree, unitId),
   };
 };

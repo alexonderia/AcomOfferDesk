@@ -70,13 +70,13 @@ class CreateUnitRequest(BaseModel):
             raise ValueError("Название должно быть строкой")
         normalized = value.strip()
         if not normalized:
-            raise ValueError("Название подразделения обязательно")
+            raise ValueError("Название юнита обязательно")
         return normalized
 
 
 class UpdateUnitRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    is_active: bool | None = None
+    id_parent: int | None = Field(default=None, ge=1)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -87,7 +87,7 @@ class UpdateUnitRequest(BaseModel):
             raise ValueError("Название должно быть строкой")
         normalized = value.strip()
         if not normalized:
-            raise ValueError("Название подразделения обязательно")
+            raise ValueError("Название юнита обязательно")
         return normalized
 
 

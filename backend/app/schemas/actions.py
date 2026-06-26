@@ -51,5 +51,5 @@ class UserActionsSchema(BaseModel):
 class UnitActionsSchema(BaseModel):
     can_create_child: bool = False
     can_update: bool = False
-    can_deactivate: bool = False
+    can_delete: bool = False
     can_manage_members: bool = False

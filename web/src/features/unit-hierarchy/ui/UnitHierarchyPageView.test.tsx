@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { appTheme } from '@shared/theme/appTheme';
 import { UnitHierarchyPageView } from './UnitHierarchyPageView';
@@ -10,78 +10,39 @@ vi.mock('../model/useUnitHierarchyPage', () => ({
   useUnitHierarchyPage: () => useUnitHierarchyPageMock(),
 }));
 
-const buildViewState = () => ({
-  tree: [
+const baseDepartment = {
+  unit_id: 1,
+  name: 'Финансовый блок',
+  id_parent: null,
+  is_active: true,
+  members: [],
+  children: [
     {
-      unit_id: 11,
-      name: 'Финансовый блок',
-      id_parent: null,
+      unit_id: 2,
+      name: 'Проект А',
+      id_parent: 1,
       is_active: true,
       members: [
         {
-          user_id: 'lead-77',
-          full_name: 'Шамина Анжелина Алексеевна',
-          role_id: 5,
-          role_name: 'Ведущий экономист',
-          status: 'active',
-        },
-        {
-          user_id: 'contractor-9',
-          full_name: 'ООО «Ромашка»',
-          role_id: 3,
-          role_name: 'Контрагент',
+          user_id: 'econ-1',
+          full_name: 'Экономист 1',
+          role_id: 6,
+          role_name: 'Экономист',
           status: 'active',
         },
       ],
       children: [
         {
-          unit_id: 12,
-          name: 'Модуль 2',
-          id_parent: 11,
-          is_active: true,
-          members: [
-            {
-              user_id: 'econ-11',
-              full_name: 'Щербакова Виктория Валерьевна',
-              role_id: 6,
-              role_name: 'Экономист',
-              status: 'active',
-            },
-          ],
-          children: [],
-          actions: {
-            canCreateChild: true,
-            canUpdate: true,
-            canDeactivate: true,
-            canManageMembers: true,
-          },
-        },
-      ],
-      actions: {
-        canCreateChild: true,
-        canUpdate: true,
-        canDeactivate: true,
-        canManageMembers: true,
-      },
-    },
-    {
-      unit_id: 21,
-      name: 'Административный блок',
-      id_parent: null,
-      is_active: true,
-      members: [],
-      children: [
-        {
-          unit_id: 22,
-          name: 'Модуль А',
-          id_parent: 21,
+          unit_id: 3,
+          name: 'Лист 1',
+          id_parent: 2,
           is_active: true,
           members: [],
           children: [],
           actions: {
             canCreateChild: true,
             canUpdate: true,
-            canDeactivate: true,
+            canDelete: true,
             canManageMembers: true,
           },
         },
@@ -89,115 +50,81 @@ const buildViewState = () => ({
       actions: {
         canCreateChild: true,
         canUpdate: true,
-        canDeactivate: true,
+        canDelete: true,
         canManageMembers: true,
       },
     },
   ],
-  recommendedTree: [
-    {
-      user_id: 'chief-1',
-      full_name: 'Ахметшин Ренат Габдельфатович',
-      role_id: 1,
-      role_name: 'Главный специалист',
-      status: 'active',
-      id_parent_user: null,
-      children: [
-        {
-          user_id: 'lead-1',
-          full_name: 'Рахматуллин Асхат Ирекович',
-          role_id: 2,
-          role_name: 'Ведущий специалист',
-          status: 'active',
-          id_parent_user: 'chief-1',
-          children: [],
-        },
-      ],
-    },
-  ],
+  actions: {
+    canCreateChild: true,
+    canUpdate: true,
+    canDelete: false,
+    canManageMembers: true,
+  },
+};
+
+const buildViewState = (): any => ({
+  tree: [baseDepartment],
+  departments: [baseDepartment],
   isLoading: false,
   error: null,
-  recommendedError: null,
-  canCreateRootUnit: true,
-  unitOptions: [
-    { unitId: 11, label: 'Финансовый блок' },
-    { unitId: 12, label: 'Финансовый блок / Модуль 2' },
-    { unitId: 21, label: 'Административный блок' },
-    { unitId: 22, label: 'Административный блок / Модуль А' },
-  ],
-  memberUnitByUserId: {
-    'chief-1': [
-      {
-        unitId: 11,
-        unitName: 'Финансовый блок',
-        label: 'Финансовый блок',
-        depth: 0,
-      },
-    ],
-    'lead-1': [
-      {
-        unitId: 11,
-        unitName: 'Финансовый блок',
-        label: 'Финансовый блок',
-        depth: 0,
-      },
-      {
-        unitId: 12,
-        unitName: 'Модуль 2',
-        label: 'Финансовый блок / Модуль 2',
-        depth: 1,
-      },
-      {
-        unitId: 21,
-        unitName: 'Административный блок',
-        label: 'Административный блок',
-        depth: 0,
-      },
-      {
-        unitId: 22,
-        unitName: 'Модуль А',
-        label: 'Административный блок / Модуль А',
-        depth: 1,
-      },
-    ],
-  },
-  unassignedRecommendedMembers: [
+  selectedDepartment: baseDepartment,
+  selectedDepartmentId: 1,
+  setSelectedDepartmentId: vi.fn(),
+  selectedEditorUnitId: null,
+  setSelectedEditorUnitId: vi.fn(),
+  editorRootUnit: null,
+  departmentStaff: [
     {
-      user_id: 'chief-1',
-      full_name: 'Ахметшин Ренат Габдельфатович',
-      role_id: 1,
-      role_name: 'Главный специалист',
+      user_id: 'econ-1',
+      full_name: 'Экономист 1',
+      role_id: 6,
+      role_name: 'Экономист',
       status: 'active',
-      parentDisplayName: null,
     },
   ],
-  unitDialogMode: null,
-  activeUnit: null,
-  initialCreateUserId: '',
+  departmentContractors: [],
+  selectedDepartmentUnitOptions: [
+    { unitId: 1, label: 'Финансовый блок' },
+    { unitId: 2, label: 'Финансовый блок / Проект А' },
+    { unitId: 3, label: 'Финансовый блок / Проект А / Лист 1' },
+  ],
+  canCreateRootUnit: true,
+  activeUnitDetails: null,
+  activeUnitParent: null,
+  activeUnitPathLabel: '',
+  setActiveUnitDetailsId: vi.fn(),
+  unitDialogState: { mode: null, unit: null },
   isSavingUnit: false,
-  isMemberDialogOpen: false,
-  availableUsers: [],
-  selectedUserId: '',
-  setSelectedUserId: vi.fn(),
-  memberSearch: '',
-  setMemberSearch: vi.fn(),
-  isLoadingUsers: false,
-  isSavingMember: false,
-  isAssigningRecommendedUserId: null,
-  isDetachingRecommendedAssignmentKey: null,
-  loadCreateAvailableUsers: vi.fn().mockResolvedValue([]),
+  editableParentOptions: [],
   openCreateRootDialog: vi.fn(),
   openCreateChildDialog: vi.fn(),
-  openRenameDialog: vi.fn(),
+  openEditUnitDialog: vi.fn(),
   closeUnitDialog: vi.fn(),
   submitUnit: vi.fn(),
-  deactivateUnit: vi.fn(),
+  memberDialogState: { unit: null, search: '', selectedUserId: '' },
+  setMemberDialogState: vi.fn(),
+  availableUsers: [],
+  isLoadingUsers: false,
+  isSavingMember: false,
   openMemberDialog: vi.fn(),
   closeMemberDialog: vi.fn(),
   submitMember: vi.fn(),
-  deleteMember: vi.fn(),
-  assignRecommendedMemberToUnit: vi.fn(),
-  detachRecommendedMemberFromUnit: vi.fn(),
+  removeMemberFromUnit: vi.fn(),
+  moveMemberState: null,
+  moveUnitOptions: [],
+  setMoveMemberState: vi.fn(),
+  isMovingMember: false,
+  openMoveMemberDialog: vi.fn(),
+  closeMoveMemberDialog: vi.fn(),
+  submitMoveMember: vi.fn(),
+  deleteDialogState: null,
+  isDeletingUnit: false,
+  openDeleteDialog: vi.fn(),
+  closeDeleteDialog: vi.fn(),
+  confirmDeleteUnit: vi.fn(),
+  loadTree: vi.fn(),
+  findRootUnitForUnit: vi.fn(() => baseDepartment),
 });
 
 const renderView = () => render(
@@ -212,133 +139,51 @@ describe('UnitHierarchyPageView', () => {
     useUnitHierarchyPageMock.mockReturnValue(buildViewState());
   });
 
-  it('renders the combined hierarchy in a single window with a department filter', () => {
+  it('renders department overview with second-level units and staff summary', () => {
     renderView();
 
-    expect(screen.getByText('Объединенная иерархия')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Объединенная схема' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Подразделение как корневой юнит, внутри которого живет граф дочерних юнитов')).toBeInTheDocument();
     expect(screen.getAllByText('Финансовый блок').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Рахматуллин Асхат Ирекович').length).toBeGreaterThan(1);
-    expect(screen.getByLabelText('Подразделения')).toBeInTheDocument();
+    expect(screen.getByText('Юниты второго уровня')).toBeInTheDocument();
+    expect(screen.getByText('Экономист 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Открыть редактор графа' })).toBeInTheDocument();
   });
 
-  it('renders the units hierarchy from db unit compositions and opens the unit details side panel', () => {
-    renderView();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Иерархия объединений' }));
-
-    expect(screen.getByRole('heading', { name: 'Иерархия объединений' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Структура' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Все участники' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав объединения Финансовый блок' }));
-
-    const panel = within(screen.getByRole('complementary', { name: 'Состав объединения' }));
-    expect(panel.getByText('Состав объединения')).toBeInTheDocument();
-    expect(panel.getByText('Шамина Анжелина Алексеевна')).toBeInTheDocument();
-    expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
-    expect(panel.getByRole('button', { name: 'Удалить участника Шамина Анжелина Алексеевна' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Состав объединения' })).not.toBeInTheDocument();
-  });
-
-  it('separates contractors from staff inside the unit details side panel', () => {
-    renderView();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Иерархия объединений' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав объединения Финансовый блок' }));
-
-    const panel = within(screen.getByRole('complementary', { name: 'Состав объединения' }));
-    expect(panel.getByText('Сотрудники')).toBeInTheDocument();
-    expect(panel.getByText('Контрагенты')).toBeInTheDocument();
-    expect(panel.getByText('Шамина Анжелина Алексеевна')).toBeInTheDocument();
-    expect(panel.getByText('ООО «Ромашка»')).toBeInTheDocument();
-    expect(panel.getByRole('button', { name: 'Удалить участника ООО «Ромашка»' })).toBeInTheDocument();
-  });
-
-  it('shows empty participant state inside the unit details side panel', () => {
-    renderView();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Иерархия объединений' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть состав объединения Административный блок' }));
-
-    const panel = within(screen.getByRole('complementary', { name: 'Состав объединения' }));
-    expect(panel.getByText('Участников нет.')).toBeInTheDocument();
-    expect(panel.getByRole('button', { name: 'Добавить сотрудника' })).toBeInTheDocument();
-    expect(screen.getAllByText('Место для нового объединения').length).toBeGreaterThan(0);
-  });
-
-  it('shows manager info and all current assignments inside the employee dialog', () => {
-    renderView();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Изменить привязки Рахматуллин Асхат Ирекович / Модуль 2' }));
-    const dialog = within(screen.getByRole('dialog'));
-
-    expect(dialog.getByText('Руководитель')).toBeInTheDocument();
-    expect(dialog.getByText('Ахметшин Ренат Габдельфатович')).toBeInTheDocument();
-    expect(dialog.getByText('Главный специалист')).toBeInTheDocument();
-    expect(dialog.getAllByText('Финансовый блок / Модуль 2').length).toBeGreaterThan(0);
-    expect(dialog.getByText('Административный блок / Модуль А')).toBeInTheDocument();
-    expect(dialog.getByRole('button', { name: 'Открепить от Модуль 2' })).toBeInTheDocument();
-    expect(dialog.getByRole('button', { name: 'Открепить от Модуль А' })).toBeInTheDocument();
-  });
-
-  it('shows an employee once per leaf unit and lists all memberships on each duplicate card', () => {
-    renderView();
-
-    // lead-1 has two leaf placements (Модуль 2 and Модуль А) → two cards, no
-    // redundant parent-department cards.
-    expect(screen.getAllByText('Рахматуллин Асхат Ирекович')).toHaveLength(2);
-    expect(screen.getAllByText('Ведущий специалист')).toHaveLength(2);
-    // Each duplicate card lists every unit where the employee is a member.
-    expect(screen.getAllByText('Финансовый блок / Модуль 2')).toHaveLength(2);
-    expect(screen.getAllByText('Административный блок / Модуль А')).toHaveLength(2);
-  });
-
-  it('keeps a hierarchy member without a unit inside the manager chain', () => {
+  it('renders graph editor and side panel when a second-level unit is opened', () => {
     const viewState = buildViewState();
-    const unitlessNode = {
-      user_id: 'economist-2',
-      full_name: 'Сидоров Алексей',
-      role_id: 6,
-      role_name: 'Экономист',
-      status: 'active',
-      id_parent_user: 'lead-1',
-      children: [],
-    };
-    viewState.memberUnitByUserId = {
-      'chief-1': [
-        {
-          unitId: 11,
-          unitName: 'Финансовый блок',
-          label: 'Финансовый блок',
-          depth: 0,
-        },
-      ],
-      'lead-1': [
-        {
-          unitId: 11,
-          unitName: 'Финансовый блок',
-          label: 'Финансовый блок',
-          depth: 0,
-        },
-      ],
-    };
-    viewState.recommendedTree = [
-      {
-        ...viewState.recommendedTree[0]!,
-        children: [
-          {
-            ...viewState.recommendedTree[0]!.children[0]!,
-            children: [unitlessNode] as unknown as typeof viewState.recommendedTree[0]['children'][0]['children'],
-          },
-        ],
-      },
-    ] as typeof viewState.recommendedTree;
+    viewState.selectedEditorUnitId = 2;
+    viewState.editorRootUnit = baseDepartment.children[0]!;
+    viewState.activeUnitDetails = baseDepartment.children[0]!;
+    viewState.activeUnitParent = baseDepartment;
+    viewState.activeUnitPathLabel = 'Финансовый блок / Проект А';
     useUnitHierarchyPageMock.mockReturnValue(viewState);
 
     renderView();
 
-    expect(screen.getByText('Сидоров Алексей')).toBeInTheDocument();
-    expect(screen.getAllByText('Не определено')).toHaveLength(1);
+    expect(screen.getByText('Граф юнита')).toBeInTheDocument();
+    expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Добавить дочерний лист' })).toBeInTheDocument();
+
+    const detailsPanel = screen.getByText('Сотрудники юнита').closest('.MuiCard-root');
+    expect(detailsPanel).not.toBeNull();
+    expect(screen.getByText('Финансовый блок / Проект А')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Добавить сотрудника' }).length).toBeGreaterThan(0);
+  });
+
+  it('shows delete preview dialog when delete state is open', () => {
+    const viewState = buildViewState();
+    viewState.deleteDialogState = {
+      unit: baseDepartment.children[0]!,
+      previewTree: [baseDepartment],
+      willReassign: true,
+    };
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('Удаление юнита')).toBeInTheDocument();
+    expect(dialog.getByText('Предпросмотр новой иерархии')).toBeInTheDocument();
+    expect(dialog.getAllByText('Проект А').length).toBeGreaterThan(0);
   });
 });

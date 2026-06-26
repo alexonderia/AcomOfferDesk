@@ -25,7 +25,7 @@ import {
 type UnitOrgNodeProps = {
   depth: number;
   onCreateChild?: ((unit: UnitNode) => void) | undefined;
-  onDeactivate: (unit: UnitNode) => void;
+  onDelete: (unit: UnitNode) => void;
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
   onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
   onRename: (unit: UnitNode) => void;
@@ -34,12 +34,10 @@ type UnitOrgNodeProps = {
   unit: UnitNode;
 };
 
-const getCreateChildActionLabel = () => 'Добавить дочернее объединение';
-
 export const UnitOrgNode = ({
   depth,
   onCreateChild,
-  onDeactivate,
+  onDelete,
   onOpenMemberDialog,
   onOpenUnitDetails,
   onRename,
@@ -48,7 +46,7 @@ export const UnitOrgNode = ({
   unit,
 }: UnitOrgNodeProps) => {
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
-  const hasMenuActions = unit.actions.canUpdate || unit.actions.canDeactivate;
+  const hasMenuActions = unit.actions.canUpdate || unit.actions.canDelete;
   const hasVisiblePrimaryActions = showPrimaryActions && (
     (unit.actions.canCreateChild && Boolean(onCreateChild))
     || (unit.actions.canManageMembers && Boolean(onOpenMemberDialog))
@@ -68,7 +66,7 @@ export const UnitOrgNode = ({
       <Stack spacing={1.25} alignItems="center" sx={{ width: 'max-content' }}>
         <Box
           role={canOpenUnitDetails ? 'button' : undefined}
-          aria-label={canOpenUnitDetails ? `Открыть состав объединения ${unit.name}` : undefined}
+          aria-label={canOpenUnitDetails ? `Открыть состав юнита ${unit.name}` : undefined}
           tabIndex={canOpenUnitDetails ? 0 : undefined}
           onClick={canOpenUnitDetails ? openUnitDetails : undefined}
           onKeyDown={canOpenUnitDetails
@@ -84,7 +82,6 @@ export const UnitOrgNode = ({
             maxWidth: 'min(332px, calc(100vw - 40px))',
             borderRadius: 2.5,
             border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.98)}`,
-            backgroundImage: 'none',
             backgroundColor: '#ffffff',
             boxShadow: hierarchyPageColors.shadow,
             px: 1.4,
@@ -153,19 +150,19 @@ export const UnitOrgNode = ({
                         }}
                       >
                         <EditOutlinedIcon sx={{ mr: 1, fontSize: 18 }} />
-                        Переименовать объединение
+                        Изменить юнит
                       </MenuItem>
                     ) : null}
-                    {unit.actions.canDeactivate ? (
+                    {unit.actions.canDelete ? (
                       <MenuItem
                         onClick={() => {
                           setMenuAnchorEl(null);
-                          onDeactivate(unit);
+                          onDelete(unit);
                         }}
                         sx={{ color: 'error.main' }}
                       >
                         <DeleteOutlineRoundedIcon sx={{ mr: 1, fontSize: 18 }} />
-                        Деактивировать объединение
+                        Удалить юнит
                       </MenuItem>
                     ) : null}
                   </Menu>
@@ -216,7 +213,7 @@ export const UnitOrgNode = ({
                   lineHeight: 1.2,
                 }}
               >
-                Вложенные объединения: {unit.children.length}
+                Дочерние юниты: {unit.children.length}
               </Box>
             </Stack>
 
@@ -233,7 +230,7 @@ export const UnitOrgNode = ({
                     }}
                     sx={{ minHeight: 30, px: 1.15, py: 0.25, borderRadius: 1.4, textTransform: 'none' }}
                   >
-                    {getCreateChildActionLabel()}
+                    Добавить дочерний юнит
                   </Button>
                 ) : null}
                 {canOpenMemberDialog ? (
@@ -297,7 +294,7 @@ export const UnitOrgNode = ({
                 <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
                   <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ color: hierarchyPageColors.textPrimary, fontSize: 13, fontWeight: 700 }}>
-                      Место для нового объединения
+                      Место для нового дочернего юнита
                     </Typography>
                   </Box>
                   {canCreateChild ? (
@@ -378,7 +375,7 @@ export const UnitOrgNode = ({
                   <UnitOrgNode
                     depth={depth + 1}
                     onCreateChild={onCreateChild}
-                    onDeactivate={onDeactivate}
+                    onDelete={onDelete}
                     onOpenMemberDialog={onOpenMemberDialog}
                     onOpenUnitDetails={onOpenUnitDetails}
                     onRename={onRename}

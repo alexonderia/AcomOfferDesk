@@ -3,7 +3,7 @@ import { normalizeUnitNode, type UnitNode } from './types';
 
 export type UpdateUnitPayload = {
   name?: string;
-  is_active?: boolean;
+  id_parent?: number;
 };
 
 type ResponseShape = {

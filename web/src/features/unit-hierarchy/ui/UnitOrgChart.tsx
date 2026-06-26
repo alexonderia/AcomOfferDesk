@@ -7,7 +7,7 @@ import { hierarchyCanvasBackground, hierarchyPageColors } from './unitHierarchyS
 
 type UnitOrgChartProps = {
   onCreateChild?: ((unit: UnitNode) => void) | undefined;
-  onDeactivate: (unit: UnitNode) => void;
+  onDelete: (unit: UnitNode) => void;
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
   onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
   onRename: (unit: UnitNode) => void;
@@ -18,7 +18,7 @@ type UnitOrgChartProps = {
 
 export const UnitOrgChart = memo(({
   onCreateChild,
-  onDeactivate,
+  onDelete,
   onOpenMemberDialog,
   onOpenUnitDetails,
   onRename,
@@ -67,7 +67,7 @@ export const UnitOrgChart = memo(({
           <UnitOrgNode
             depth={0}
             onCreateChild={onCreateChild}
-            onDeactivate={onDeactivate}
+            onDelete={onDelete}
             onOpenMemberDialog={onOpenMemberDialog}
             onOpenUnitDetails={onOpenUnitDetails}
             onRename={onRename}

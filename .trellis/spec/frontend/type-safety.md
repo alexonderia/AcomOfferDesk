@@ -68,49 +68,58 @@ Frontend types should stay aligned with backend DTOs and API contracts.
 #### Correct
 - Keep `id_plan` for mutations and selection state, but pass `plan_name` through the request details API contract and use it as the read-only display source until richer option metadata is available.
 
-## Scenario: Units Hierarchy Uses Separate Recommended Tree Contract
+## Scenario: Units Hierarchy Uses Department Roots And Graph Editor DTOs
 
 ### 1. Scope / Trigger
-- Trigger: the hierarchy management page needs to show both real `units` and a recommended tree derived from the current user hierarchy without mixing those models.
+- Trigger: the hierarchy page now treats root nodes as departments, opens second-level units in a graph editor, and supports move/delete flows that change parent links.
 
 ### 2. Signatures
 - Backend API:
   `GET /api/v1/units/tree`
-  `GET /api/v1/units/recommended-tree`
+  `POST /api/v1/units`
+  `PATCH /api/v1/units/{unit_id}`
+  `DELETE /api/v1/units/{unit_id}?confirm_reassign=<bool>`
+  `GET /api/v1/units/available-users`
 - Frontend API helpers:
   `getUnitsTree(): Promise<UnitNode[]>`
-  `getRecommendedUnitsTree(): Promise<RecommendedHierarchyNode[]>`
+  `createUnit(payload)`
+  `updateUnit(unitId, payload)`
+  `deleteUnit(unitId, confirmReassign)`
 
 ### 3. Contracts
-- `GET /api/v1/units/tree` remains the source of truth for writable hierarchy nodes backed by `units` and `unit_members`.
-- `GET /api/v1/units/recommended-tree` returns a read-only tree of active internal users derived from `users.id_parent`, `profiles`, and `roles`.
-- Recommended tree payload keeps its own wire shape and must not be normalized into `UnitNode`.
-- Each recommended node includes:
-  `user_id`, `full_name`, `role_id`, `role_name`, `status`, `id_parent_user`, `children`.
-- Frontend boundary mapping in `web/src/shared/api/units/types.ts` must keep two separate normalizers:
-  `normalizeUnitNode(...)`
-  `normalizeRecommendedHierarchyNode(...)`
+- `UnitNode` remains the writable DTO sourced from `/units/tree`; root nodes (`id_parent=null`) are departments and nested children are graph nodes.
+- `UnitNode.actions` must normalize backend action flags exactly:
+  `can_create_child -> canCreateChild`
+  `can_update -> canUpdate`
+  `can_delete -> canDelete`
+  `can_manage_members -> canManageMembers`
+- Update payloads may send:
+  `name?: string`
+  `id_parent?: number`
+- Delete flows use the query contract `confirm_reassign` rather than a request body.
+- Frontend delete preview is local UI state only. Do not add preview-only fields to the backend DTO or mutate the server payload shape to support the dialog.
+- Available-user results are staff-only candidates for unit assignment; if contractors appear there, treat it as a backend contract bug instead of widening the frontend types.
 
 ### 4. Validation & Error Matrix
-- `units/tree` succeeds and `recommended-tree` fails -> page still renders real units tree and shows a warning for recommendations only.
-- `recommended-tree` returns an empty list -> UI shows an informational empty state, not a fake placeholder tree.
-- Backend adds/removes fields in the recommended payload -> update the dedicated recommended type/normalizer instead of widening `UnitNode`.
-- User lacks `units.read` -> both endpoints stay forbidden; do not add a frontend-only fallback.
+- Backend starts omitting `can_delete` while the UI still expects it -> default `canDelete` to `false`.
+- Backend changes `id_parent` or action field names -> update `web/src/shared/api/units/types.ts` boundary mapping first; do not patch around it in the page hook.
+- Delete requires reassignment confirmation -> call `deleteUnit(unitId, true)` and keep the preview local; do not invent a second endpoint.
+- Move flow edits parent link -> send `id_parent`; do not create a parallel `parentUnitId` wire contract.
 
 ### 5. Good/Base/Bad Cases
-- Good: the page renders actual unit cards from `/units/tree` and a separate read-only recommendation block from `/units/recommended-tree`.
-- Base: recommendation data is unavailable, but unit CRUD still works because the writable tree uses its own contract.
-- Bad: map recommendation rows into `UnitNode`, invent fake `unit_id` values, or expose create/update actions on recommendation nodes.
+- Good: the page loads `/units/tree`, shows department roots, opens a second-level unit graph, and moves a node by PATCHing only `id_parent`.
+- Base: a simple rename updates only `name` and keeps the existing parent unchanged.
+- Bad: normalize the backend response into a second "graph node" DTO with copied action names and separate parent semantics, then keep that parallel structure drifting away from the API.
 
 ### 6. Tests Required
-- Backend integration: `/api/v1/units/recommended-tree` returns the active manager-subordinate hierarchy for a permitted user.
-- Backend unit: `UnitService.get_recommended_tree()` preserves parent-child order and nesting.
-- Frontend unit: `useUnitHierarchyPage` loads both trees and keeps recommendation data separate from real units.
-- Frontend route/nav tests remain green so `/admin/hierarchy` stays guarded by `units.read`.
+- Frontend unit: `useUnitHierarchyPage` keeps department roots separate from the selected graph-editor subtree.
+- Frontend unit: delete dialog computes `willReassign` from members/children and passes `confirm_reassign` through `deleteUnit(...)`.
+- Frontend unit/view: action buttons hide or disable from normalized `canDelete` / `canManageMembers`, not from role-only checks.
+- Backend integration: `/api/v1/units/{id}` PATCH accepts `id_parent` and DELETE accepts `confirm_reassign`.
 
 ### 7. Wrong vs Correct
 #### Wrong
-- Reuse the `UnitNode` type for both real units and recommendations because the UI “looks similar”.
+- Invent new frontend-only wire fields such as `parentUnitId` or `deleteMode`, or mix local preview data into the API DTO.
 
 #### Correct
-- Keep recommendations as a distinct DTO and render them in a separate read-only section, while unit mutations continue to target only the real `units` API.
+- Keep the backend unit payload as the source of truth, map snake_case fields once at the API boundary, and let the page hook layer compose graph-editor state from that normalized DTO.

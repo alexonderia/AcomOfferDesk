@@ -1371,7 +1371,7 @@ class ManualContractorService:
     async def _resolve_creator_root_unit_ids(self, *, current_user: CurrentUser) -> set[int]:
         if self._units is None:
             return set()
-        return await self._contractor_unit_service().list_direct_root_unit_ids_for_user(user_id=current_user.user_id)
+        return await self._contractor_unit_service().list_effective_root_unit_ids_for_user(user_id=current_user.user_id)
 
     async def _bind_to_creator_root_units_if_needed(
         self,

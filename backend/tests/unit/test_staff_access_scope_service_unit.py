@@ -30,6 +30,30 @@ class _UsersRepo:
         ]
 
 
+class _UnitAwareUsersRepo(_UsersRepo):
+    def __init__(self) -> None:
+        super().__init__()
+        self._users["cross-eco"] = SimpleNamespace(
+            id="cross-eco",
+            id_role=settings.economist_role_id,
+            id_parent=None,
+        )
+
+    async def list_active_units(self):
+        return [
+            (1, None),
+            (2, 1),
+            (3, 2),
+        ]
+
+    async def list_active_unit_memberships(self):
+        return [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("cross-eco", 3),
+        ]
+
+
 def _current_user(*, user_id: str, role_id: int, permissions: frozenset[str] | None = None) -> CurrentUser:
     return CurrentUser(
         user_id=user_id,
@@ -134,3 +158,18 @@ async def test_module_root_for_nested_lead_and_economist_is_top_lead_under_proje
 
     assert lead_module_root == "lead-1"
     assert economist_module_root == "lead-1"
+
+
+@pytest.mark.asyncio
+async def test_unit_descendant_scope_grants_management_even_without_user_parent_chain():
+    service = StaffAccessScopeService(_UnitAwareUsersRepo())
+    current_user = _current_user(user_id="lead-1", role_id=settings.lead_economist_role_id)
+
+    assert await service.can_view_request_owner(
+        current_user=current_user,
+        request_owner_user_id="cross-eco",
+    )
+    assert await service.is_hierarchy_manager_of(
+        current_user=current_user,
+        request_owner_user_id="cross-eco",
+    )

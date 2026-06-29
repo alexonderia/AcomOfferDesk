@@ -22,6 +22,7 @@ describe('accountStateDraft', () => {
       fullName: '\\u0418\\u0432\\u0430\\u043d\\u043e\\u0432 \\u0418\\u0432\\u0430\\u043d',
       phone: '+79991234567',
       mail: 'contractor@example.com',
+      departmentName: null,
       company: {
         companyName: 'ООО Ромашка',
         inn: '\\u0037\\u0037\\u0030\\u0037\\u0030\\u0038\\u0033\\u0038\\u0039\\u0033',

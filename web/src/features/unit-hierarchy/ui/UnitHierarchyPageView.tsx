@@ -2,9 +2,9 @@ import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DeviceHubOutlinedIcon from '@mui/icons-material/DeviceHubOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
+import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined';
 import HandshakeOutlinedIcon from '@mui/icons-material/HandshakeOutlined';
 import {
   Alert,
@@ -30,14 +30,15 @@ import { alpha } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import type { UnitNode } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
+import { useToastMessageEffect } from '@shared/ui/toasts';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
 import { ContractorBindingsDialog } from './ContractorBindingsDialog';
 import { PeopleFlatList, PeopleTree } from './PeopleTree';
 import { UnitOrgChart } from './UnitOrgChart';
 import {
-  getUnitLevelLabel,
   hierarchyCanvasBackground,
   hierarchyPageColors,
+  outlinedIconButtonSx,
   sectionCardSx,
 } from './unitHierarchyStyles';
 
@@ -74,8 +75,8 @@ const UnitFormDialog = ({
   const title = mode === 'create-root'
     ? 'Создать подразделение'
     : mode === 'create-child'
-      ? 'Создать дочернее объединение'
-      : 'Редактировать объединение';
+      ? 'Создать дочерний лист'
+      : 'Редактировать лист';
 
   const selectedParentOption = parentOptions.find((option) => option.unitId === parentUnitId) ?? null;
 
@@ -98,7 +99,7 @@ const UnitFormDialog = ({
               onChange={(_event, value) => setParentUnitId(value?.unitId ?? null)}
               getOptionLabel={(option) => option.label}
               isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
-              renderInput={(params) => <TextField {...params} label="Родительское объединение" />}
+              renderInput={(params) => <TextField {...params} label="Родительский лист" />}
             />
           ) : null}
         </Stack>
@@ -137,6 +138,54 @@ const collectUniqueMembers = (unit: UnitNode, includeContractors: boolean) => {
   return [...byUserId.values()];
 };
 
+const UnitStatTile = ({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: number;
+}) => (
+  <Box
+    sx={{
+      display: 'flex',
+      alignItems: 'baseline',
+      gap: 0.5,
+      borderRadius: 1.5,
+      border: `1px solid ${alpha(color, 0.22)}`,
+      backgroundColor: alpha(color, 0.06),
+      px: 0.9,
+      py: 0.35,
+    }}
+  >
+    <Typography sx={{ fontSize: 13, fontWeight: 800, lineHeight: 1, color }}>
+      {value}
+    </Typography>
+    <Typography sx={{ fontSize: 11, fontWeight: 600, lineHeight: 1, color: hierarchyPageColors.textSecondary, whiteSpace: 'nowrap' }}>
+      {label}
+    </Typography>
+  </Box>
+);
+
+const UnitStatRow = ({
+  childrenCount,
+  contractorCount,
+  staffCount,
+}: {
+  childrenCount?: number | undefined;
+  contractorCount: number;
+  staffCount: number;
+}) => (
+  <Stack direction="row" spacing={0.7} useFlexGap flexWrap="wrap" sx={{ minWidth: 0 }}>
+    <UnitStatTile color={hierarchyPageColors.softTeal} label="Сотрудники" value={staffCount} />
+    <UnitStatTile color={hierarchyPageColors.softPink} label="Контрагенты" value={contractorCount} />
+    {childrenCount !== undefined ? (
+      <UnitStatTile color={hierarchyPageColors.softBlue} label="Дочерние" value={childrenCount} />
+    ) : null}
+  </Stack>
+);
+
 const SecondLevelUnitBlock = ({
   onOpen,
   unit,
@@ -151,7 +200,7 @@ const SecondLevelUnitBlock = ({
     <Box
       role="button"
       tabIndex={0}
-      aria-label={`Открыть редактор объединения ${unit.name}`}
+      aria-label={`Открыть редактор листа ${unit.name}`}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -186,7 +235,7 @@ const SecondLevelUnitBlock = ({
           </Typography>
           <Stack direction="row" spacing={0.6} useFlexGap flexWrap="wrap" sx={{ mt: 0.8 }}>
             <Chip size="small" label={`Сотрудники: ${staffCount}`} />
-            <Chip size="small" label={`Вложенных: ${unit.children.length}`} />
+            <Chip size="small" label={`Вложенные: ${unit.children.length}`} />
             {contractorCount > 0 ? <Chip size="small" label={`Контрагенты: ${contractorCount}`} /> : null}
           </Stack>
         </Box>
@@ -242,23 +291,22 @@ const DepartmentGraphCard = ({
             </Box>
             {canManage ? (
               <Stack direction="row" spacing={0.8} sx={{ flexShrink: 0 }} useFlexGap flexWrap="wrap">
-                <Button size="small" variant="outlined" startIcon={<EditOutlinedIcon sx={{ fontSize: 16 }} />} onClick={onEdit}>
+                <Button size="small" variant="outlined" startIcon={<ApartmentOutlinedIcon sx={{ fontSize: 16 }} />} onClick={onEdit}>
                   Изменить
                 </Button>
                 <Button size="small" variant="outlined" startIcon={<HandshakeOutlinedIcon sx={{ fontSize: 16 }} />} onClick={onAddContractor}>
                   Добавить контрагента
                 </Button>
                 <Button size="small" variant="contained" startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />} onClick={onAddUnit}>
-                  Добавить объединение
+                  Добавить лист
                 </Button>
               </Stack>
             ) : null}
           </Stack>
 
-          <Stack direction="row" spacing={0.7} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-            <Chip size="small" label={`Сотрудники: ${staff.length}`} />
-            <Chip size="small" label={`Контрагенты: ${contractors.length}`} />
-          </Stack>
+          <Box sx={{ mt: 1, maxWidth: 360 }}>
+            <UnitStatRow contractorCount={contractors.length} staffCount={staff.length} />
+          </Box>
 
           <Box
             sx={{
@@ -282,10 +330,10 @@ const DepartmentGraphCard = ({
                     py: 1.5,
                   }}
                 >
-                  <Typography sx={{ fontSize: 14, fontWeight: 700 }}>Пока нет объединений</Typography>
+                  <Typography sx={{ fontSize: 14, fontWeight: 700 }}>Пока нет листов</Typography>
                   {canManage ? (
                     <Button size="small" variant="outlined" startIcon={<AddOutlinedIcon />} onClick={onAddUnit}>
-                      Создать объединение
+                      Создать лист
                     </Button>
                   ) : null}
                 </Stack>
@@ -304,7 +352,7 @@ const DepartmentGraphCard = ({
                     <Box
                       role="button"
                       tabIndex={0}
-                      aria-label="Добавить объединение второго уровня"
+                      aria-label="Добавить лист второго уровня"
                       onClick={onAddUnit}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -331,7 +379,7 @@ const DepartmentGraphCard = ({
                     >
                       <Stack spacing={0.3} alignItems="center">
                         <AddOutlinedIcon />
-                        <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>Новое объединение</Typography>
+                        <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>Новый лист</Typography>
                       </Stack>
                     </Box>
                   ) : null}
@@ -369,7 +417,6 @@ export const UnitHierarchyPageView = () => {
     editorRootUnit,
     canCreateRootUnit,
     activeUnitDetails,
-    activeUnitParent,
     activeUnitPathLabel,
     setActiveUnitDetailsId,
     unitDialogState,
@@ -400,6 +447,10 @@ export const UnitHierarchyPageView = () => {
     openMoveMemberDialog,
     closeMoveMemberDialog,
     submitMoveMember,
+    inlineUnitName,
+    setInlineUnitName,
+    isSavingInlineUnitName,
+    submitInlineUnitName,
     deleteDialogState,
     isDeletingUnit,
     openDeleteDialog,
@@ -423,6 +474,10 @@ export const UnitHierarchyPageView = () => {
 
   const editorDepartment = editorRootUnit ? findRootUnitForUnit(editorRootUnit.unit_id) : null;
   const isEditorOpen = Boolean(editorRootUnit);
+  const canEditActiveUnit = Boolean(activeUnitDetails?.actions.canUpdate);
+  const hasInlineNameChanges = Boolean(activeUnitDetails && inlineUnitName.trim() && inlineUnitName.trim() !== activeUnitDetails.name);
+
+  useToastMessageEffect({ message: error });
 
   const openUnitEditor = (unit: UnitNode) => {
     setSelectedEditorUnitId(unit.unit_id);
@@ -448,43 +503,31 @@ export const UnitHierarchyPageView = () => {
   }
 
   if (error) {
-    return <Alert severity="error">{error}</Alert>;
+    return (
+      <Card variant="outlined" sx={sectionCardSx}>
+        <CardContent>
+          <Stack spacing={1.5} alignItems="flex-start">
+            <Typography variant="body2" color="text.secondary">
+              Не удалось загрузить иерархию подразделений.
+            </Typography>
+            <Button variant="outlined" onClick={() => void loadTree()}>
+              Повторить
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Card
-        variant="outlined"
-        sx={{
-          ...sectionCardSx,
-          backgroundImage: hierarchyCanvasBackground,
-          borderColor: alpha(hierarchyPageColors.canvasBorder, 0.95),
-        }}
-      >
-        <CardContent sx={{ p: { xs: 1.25, md: 1.75 }, '&:last-child': { pb: { xs: 1.25, md: 1.75 } } }}>
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={1.2}
-            justifyContent="space-between"
-            alignItems={{ xs: 'flex-start', sm: 'center' }}
-          >
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" sx={{ fontWeight: 700, color: hierarchyPageColors.softBlue }}>
-                Иерархия
-              </Typography>
-              <Typography sx={{ mt: 0.2, fontSize: { xs: 20, md: 26 }, fontWeight: 800, color: hierarchyPageColors.textPrimary }}>
-                Подразделения и объединения
-              </Typography>
-            </Box>
-
-            {canCreateRootUnit ? (
-              <Button variant="contained" startIcon={<ApartmentOutlinedIcon />} onClick={openCreateRootDialog} sx={{ flexShrink: 0 }}>
-                Новое подразделение
-              </Button>
-            ) : null}
-          </Stack>
-        </CardContent>
-      </Card>
+      {canCreateRootUnit ? (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button variant="contained" startIcon={<ApartmentOutlinedIcon />} onClick={openCreateRootDialog} sx={{ flexShrink: 0 }}>
+            Новое подразделение
+          </Button>
+        </Box>
+      ) : null}
 
       {departments.length === 0 ? (
         <Card variant="outlined" sx={sectionCardSx}>
@@ -534,7 +577,7 @@ export const UnitHierarchyPageView = () => {
                     </Tooltip>
                     <Box sx={{ minWidth: 0 }}>
                       <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary, fontWeight: 700 }} noWrap>
-                        Граф объединения • {editorDepartment?.name ?? 'Подразделение'}
+                        Подразделение {editorDepartment?.name ?? 'АО'}
                       </Typography>
                       <Typography sx={{ fontSize: { xs: 17, md: 20 }, fontWeight: 800, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
                         {editorRootUnit.name}
@@ -542,19 +585,11 @@ export const UnitHierarchyPageView = () => {
                     </Box>
                   </Stack>
 
-                  <Stack direction="row" spacing={0.8} sx={{ flexShrink: 0 }} useFlexGap flexWrap="wrap">
-                    <Button size="small" variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => openEditUnitDialog(editorRootUnit)}>
-                      Изменить объединение
-                    </Button>
-                    <Button size="small" variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => openCreateChildDialog(editorRootUnit)}>
-                      Добавить дочерний лист
-                    </Button>
-                    <Tooltip title="Закрыть окно">
-                      <IconButton onClick={closeUnitEditor} aria-label="Закрыть окно редактора">
-                        <CloseRoundedIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
+                  <Tooltip title="Закрыть окно">
+                    <IconButton onClick={closeUnitEditor} aria-label="Закрыть окно редактора">
+                      <CloseRoundedIcon />
+                    </IconButton>
+                  </Tooltip>
                 </Stack>
               </Box>
             </DialogTitle>
@@ -573,7 +608,6 @@ export const UnitHierarchyPageView = () => {
                     onRemoveMember={(unit, member) => {
                       void removeMemberFromUnit(unit, member);
                     }}
-                    onRename={openEditUnitDialog}
                   />
                 </Box>
 
@@ -589,85 +623,92 @@ export const UnitHierarchyPageView = () => {
                   <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                     {activeUnitDetails ? (
                       <Stack spacing={1.35} sx={{ minWidth: 0 }}>
-                        <Box>
-                          <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary, fontWeight: 700 }}>
-                            {getUnitLevelLabel(activeUnitDetails.id_parent === null ? 0 : 1)}
-                          </Typography>
-                          <Typography sx={{ mt: 0.2, fontSize: 18, fontWeight: 800, overflowWrap: 'anywhere' }}>
-                            {activeUnitDetails.name}
-                          </Typography>
+                        <Stack spacing={0.8} sx={{ minWidth: 0 }}>
+                          <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              {canEditActiveUnit ? (
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  value={inlineUnitName}
+                                  onChange={(event) => setInlineUnitName(event.target.value)}
+                                  placeholder="Название"
+                                />
+                              ) : (
+                                <Typography sx={{ fontSize: 18, fontWeight: 800, overflowWrap: 'anywhere' }}>
+                                  {activeUnitDetails.name}
+                                </Typography>
+                              )}
+                            </Box>
+                            {activeUnitDetails.actions.canDelete ? (
+                              <Tooltip title="Удалить">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => openDeleteDialog(activeUnitDetails)}
+                                  aria-label={`Удалить ${activeUnitDetails.name}`}
+                                  sx={{ ...outlinedIconButtonSx, flexShrink: 0 }}
+                                >
+                                  <DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                              </Tooltip>
+                            ) : null}
+                          </Stack>
                           <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
                             {activeUnitPathLabel}
                           </Typography>
-                        </Box>
-
-                        <Stack direction="row" spacing={0.6} useFlexGap flexWrap="wrap">
-                          <Chip size="small" label={`Сотрудники: ${detailStaff.length}`} />
-                          <Chip size="small" label={`Контрагенты: ${detailContractors.length}`} />
-                          <Chip size="small" label={`Дочерние: ${activeUnitDetails.children.length}`} />
                         </Stack>
 
-                        <Stack direction="row" spacing={0.75}>
+                        {canEditActiveUnit && hasInlineNameChanges ? (
                           <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<EditOutlinedIcon sx={{ fontSize: 16 }} />}
-                            onClick={() => openEditUnitDialog(activeUnitDetails)}
+                            variant="contained"
+                            disabled={isSavingInlineUnitName}
+                            onClick={() => void submitInlineUnitName()}
                           >
-                            Изменить
+                            {isSavingInlineUnitName ? 'Сохраняем...' : 'Сохранить'}
                           </Button>
-                          {activeUnitDetails.actions.canDelete ? (
-                            <Button
-                              size="small"
-                              color="error"
-                              variant="text"
-                              onClick={() => openDeleteDialog(activeUnitDetails)}
-                            >
-                              Удалить
-                            </Button>
-                          ) : null}
-                        </Stack>
+                        ) : null}
+
+                        <UnitStatRow
+                          childrenCount={activeUnitDetails.children.length}
+                          contractorCount={detailContractors.length}
+                          staffCount={detailStaff.length}
+                        />
 
                         <Divider />
 
-                        <Box>
-                          <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary, fontWeight: 700 }}>
-                            Родительское объединение
-                          </Typography>
-                          <Typography sx={{ mt: 0.2, fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>
-                            {activeUnitParent?.name ?? 'Корневое подразделение'}
-                          </Typography>
-                        </Box>
-
-                        <Button
-                          variant="contained"
-                          startIcon={<Groups2OutlinedIcon />}
-                          onClick={() => openMemberDialog(activeUnitDetails)}
-                        >
-                          Добавить сотрудника
-                        </Button>
-
                         <PeopleTree
-                          emptyLabel="В этом объединении пока нет сотрудников."
+                          emptyLabel="В этом листе пока нет сотрудников."
+                          headerAction={activeUnitDetails.actions.canManageMembers ? (
+                            <Tooltip title="Добавить сотрудника">
+                              <IconButton
+                                size="small"
+                                onClick={() => openMemberDialog(activeUnitDetails)}
+                                aria-label={`Добавить сотрудника в ${activeUnitDetails.name}`}
+                                sx={outlinedIconButtonSx}
+                              >
+                                <GroupAddOutlinedIcon sx={{ fontSize: 17 }} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : undefined}
                           members={detailStaff}
                           onMove={(member) => openMoveMemberDialog(activeUnitDetails, member)}
                           onRemove={(member) => {
                             void removeMemberFromUnit(activeUnitDetails, member);
                           }}
-                          title="Сотрудники объединения"
+                          title="Состав"
                         />
 
                         {detailContractors.length > 0 ? (
                           <PeopleFlatList
                             emptyLabel=""
                             members={detailContractors}
-                            title="Контрагенты в узле"
+                            title="Контрагенты"
                           />
                         ) : null}
                       </Stack>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        Выберите узел в графе, чтобы открыть состав и добавить сотрудников.
+                        Выберите лист на графе, чтобы открыть состав и статистику.
                       </Typography>
                     )}
                   </CardContent>
@@ -691,7 +732,7 @@ export const UnitHierarchyPageView = () => {
       ) : null}
 
       <Dialog open={Boolean(memberDialogState.unit)} onClose={closeMemberDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Добавить сотрудника в объединение</DialogTitle>
+        <DialogTitle>Добавить сотрудника в лист</DialogTitle>
         <DialogContent dividers>
           <Autocomplete
             options={availableUsers}
@@ -731,7 +772,7 @@ export const UnitHierarchyPageView = () => {
       />
 
       <Dialog open={Boolean(moveMemberState)} onClose={closeMoveMemberDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Перенести сотрудника в другое объединение</DialogTitle>
+        <DialogTitle>Перенести сотрудника в другой лист</DialogTitle>
         <DialogContent dividers>
           <Autocomplete
             options={moveUnitOptions}
@@ -741,7 +782,7 @@ export const UnitHierarchyPageView = () => {
             }}
             getOptionLabel={(option) => option.label}
             isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
-            renderInput={(params) => <TextField {...params} label="Целевое объединение" />}
+            renderInput={(params) => <TextField {...params} label="Целевой лист" />}
           />
         </DialogContent>
         <DialogActions>
@@ -753,14 +794,14 @@ export const UnitHierarchyPageView = () => {
       </Dialog>
 
       <Dialog open={Boolean(deleteDialogState)} onClose={closeDeleteDialog} maxWidth="lg" fullWidth>
-        <DialogTitle>Удаление объединения</DialogTitle>
+        <DialogTitle>Удаление листа</DialogTitle>
         <DialogContent dividers>
           {deleteDialogState ? (
             <Stack spacing={1.4}>
               <Alert severity={deleteDialogState.willReassign ? 'warning' : 'info'} variant="outlined">
                 {deleteDialogState.willReassign
-                  ? 'Удаление перенесет прямых сотрудников в родительское объединение и поднимет дочерние узлы на уровень выше.'
-                  : 'Объединение будет удалено без переноса сотрудников.'}
+                  ? 'Удаление перенесет прямых сотрудников в родительский лист и поднимет дочерние узлы на уровень выше.'
+                  : 'Лист будет удален без переноса сотрудников.'}
               </Alert>
 
               <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{deleteDialogState.unit.name}</Typography>
@@ -771,7 +812,6 @@ export const UnitHierarchyPageView = () => {
                   tree={deleteDialogState.previewTree}
                   onCreateChild={() => {}}
                   onDelete={() => {}}
-                  onRename={() => {}}
                   showPrimaryActions={false}
                   showZoomControls={false}
                 />

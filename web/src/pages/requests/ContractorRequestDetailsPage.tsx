@@ -13,6 +13,7 @@ import type { ContractorRequestView } from '@shared/api/requests/getContractorRe
 import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest';
 import { hasPermission } from '@shared/auth/permissions';
 import { downloadFile } from '@shared/api/fileDownload';
+import { useToastMessageEffect } from '@shared/ui/toasts';
 import { RequestDetailsMainCard } from '@features/request-details/ui/RequestDetailsMainCard';
 import type { RequestStatus } from '@features/request-details/model/requestDetailsUtils';
 
@@ -51,6 +52,8 @@ export const ContractorRequestDetailsPage = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [offerAmount, setOfferAmount] = useState('');
   const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
+
+  useToastMessageEffect({ message: errorMessage });
 
   useEffect(() => {
     if (!requestId) {
@@ -141,16 +144,11 @@ export const ContractorRequestDetailsPage = () => {
   }
 
   if (!request) {
-    if (errorMessage) {
-      return (
-        <Stack spacing={2} alignItems="flex-start">
-          <Typography color="error">{errorMessage}</Typography>
-        </Stack>
-      );
-    }
     return (
       <Stack spacing={2} alignItems="flex-start">
-        <Typography color="text.secondary">Заявка не найдена.</Typography>
+        <Typography color="text.secondary">
+          {errorMessage ? 'Данные заявки недоступны.' : 'Заявка не найдена.'}
+        </Typography>
       </Stack>
     );
   }
@@ -159,12 +157,6 @@ export const ContractorRequestDetailsPage = () => {
 
   return (
     <Box>
-      {errorMessage ? (
-        <Typography color="error" sx={{ mb: 2 }}>
-          {errorMessage}
-        </Typography>
-      ) : null}
-
       <RequestDetailsMainCard
         requestId={request.id}
         status={requestStatus}

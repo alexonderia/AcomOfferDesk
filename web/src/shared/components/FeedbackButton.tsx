@@ -1,7 +1,6 @@
 import FeedbackOutlined from '@mui/icons-material/FeedbackOutlined';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Alert,
   Box,
   Button,
   Dialog,
@@ -10,7 +9,7 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
-import { alpha, type Theme, useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 import { useState } from 'react';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { useLiveValidatedForm } from '@shared/lib/forms';
@@ -19,6 +18,7 @@ import { createFeedback } from '@shared/api/feedback/createFeedback';
 import { ActionButton } from '@shared/components/ActionButton';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 import { useSystemToasts } from '@shared/ui/toasts';
+import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 
 const schema = z.object({
   text: z.string().trim().min(1, 'Введите текст обратной связи').max(3000, 'Максимум 3000 символов')
@@ -31,31 +31,10 @@ type FeedbackButtonProps = {
   sidebar?: boolean;
 };
 
-const dialogPaperSx = (theme: Theme) => ({
-  borderRadius: 2,
-  px: { xs: 2.5, sm: 3.5 },
-  py: { xs: 3, sm: 3.5 },
-  backgroundColor: theme.palette.background.default,
-  maxHeight: 'min(760px, calc(100vh - 32px))',
-  overflow: 'hidden',
-  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
-});
-
-const dialogContentSx = {
-  p: 0,
-  overflowX: 'hidden',
-  overflowY: 'auto',
-  scrollbarWidth: 'none',
-  '&::-webkit-scrollbar': {
-    display: 'none'
-  }
-};
-
 export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackButtonProps) => {
   const theme = useTheme();
   const { showErrorToast, showSuccessToast } = useSystemToasts();
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const {
     register,
@@ -79,19 +58,16 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
 
   const handleClose = () => {
     setOpen(false);
-    setError(null);
     reset({ text: '' });
   };
 
   const onSubmit = async (values: FormValues) => {
-    setError(null);
     try {
       await createFeedback({ text: values.text.trim() });
       showSuccessToast('Спасибо! Обратная связь отправлена.');
       reset({ text: '' });
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : 'Не удалось отправить обратную связь';
-      setError(message);
       showErrorToast(message);
     }
   };
@@ -175,8 +151,6 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
               <Typography variant="h5" fontWeight={600} lineHeight={1}>
                 Обратная связь по сервису
               </Typography>
-
-              {error ? <Alert severity="error">{error}</Alert> : null}
 
               <ValidatedTextField
                 label="Ваш отзыв"

@@ -4,7 +4,6 @@ import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Alert,
   Box,
   Button,
   CircularProgress,
@@ -18,7 +17,7 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
-import { type Theme, useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 import { useAuth } from '@app/providers/AuthProvider';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor } from '@entities/unavailability';
 import { ActionButton } from '@shared/components/ActionButton';
@@ -39,35 +38,13 @@ import {
 } from '@shared/api/users/getCurrentUserProfile';
 import { ROLE } from '@shared/constants/roles';
 import { useLiveValidatedForm } from '@shared/lib/forms';
-import { useSystemToasts } from '@shared/ui/toasts';
+import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
+import { useSystemToasts, useToastMessageEffect } from '@shared/ui/toasts';
 import { z } from 'zod';
 
 const fallbackText = 'Не указано';
 const defaultDbPlaceholder = 'не указано';
 const MAX_BOT_LINK = 'https://max.ru/id162611077185_1_bot';
-
-const dialogPaperSx = (theme: Theme) => ({
-  borderRadius: 2,
-  px: { xs: 2.5, sm: 3.5 },
-  py: { xs: 3, sm: 3.5 },
-  backgroundColor: theme.palette.background.default,
-  maxHeight: 'min(760px, calc(100vh - 32px))',
-  overflow: 'hidden',
-  boxShadow:
-    theme.palette.mode === 'light'
-      ? '0 24px 80px rgba(15, 23, 42, 0.18)'
-      : '0 24px 80px rgba(0, 0, 0, 0.5)'
-});
-
-const dialogContentSx = {
-  p: 0,
-  overflowX: 'hidden',
-  overflowY: 'auto',
-  scrollbarWidth: 'none',
-  '&::-webkit-scrollbar': {
-    display: 'none'
-  }
-};
 
 const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
@@ -375,6 +352,8 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const [isLoading, setIsLoading] = useState(false);
   const [isSavingNotificationPreferences, setIsSavingNotificationPreferences] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useToastMessageEffect({ message: error });
 
   const {
     register: registerPassword,
@@ -758,10 +737,17 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
             <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 240 }}>
               <CircularProgress size={28} />
             </Stack>
+          ) : !profile ? (
+            <Stack spacing={2} alignItems="flex-start" sx={{ minHeight: 240, justifyContent: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                Не удалось загрузить профиль. Попробуйте еще раз.
+              </Typography>
+              <Button variant="outlined" onClick={() => void loadProfile()}>
+                Повторить
+              </Button>
+            </Stack>
           ) : (
             <Stack spacing={2}>
-              {error ? <Alert severity="error">{error}</Alert> : null}
-
               <Stack spacing={1.5}>
                 <SectionHeader
                   title="Личные данные"

@@ -23,6 +23,7 @@ vi.mock('@shared/api/users/getCurrentUserProfile', () => ({
 }));
 
 vi.mock('@shared/ui/toasts', () => ({
+  useToastMessageEffect: vi.fn(),
   useSystemToasts: () => ({
     showErrorToast: showErrorToastMock,
     showSuccessToast: showSuccessToastMock,

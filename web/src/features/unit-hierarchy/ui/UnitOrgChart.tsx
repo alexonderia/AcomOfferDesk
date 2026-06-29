@@ -6,7 +6,7 @@ import { alpha } from '@mui/material/styles';
 import { memo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import type { UnitNode } from '@shared/api/units';
 import { UnitOrgNode } from './UnitOrgNode';
-import { hierarchyCanvasBackground, hierarchyPageColors } from './unitHierarchyStyles';
+import { hierarchyCanvasBackground, hierarchyPageColors, outlinedIconButtonSx } from './unitHierarchyStyles';
 
 type UnitOrgChartProps = {
   fillHeight?: boolean;
@@ -16,7 +16,6 @@ type UnitOrgChartProps = {
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
   onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
   onRemoveMember?: ((unit: UnitNode, member: UnitNode['members'][number]) => void) | undefined;
-  onRename: (unit: UnitNode) => void;
   showMembers?: boolean;
   showPrimaryActions?: boolean;
   showZoomControls?: boolean;
@@ -39,7 +38,6 @@ export const UnitOrgChart = memo(({
   onOpenMemberDialog,
   onOpenUnitDetails,
   onRemoveMember,
-  onRename,
   showMembers = true,
   showPrimaryActions = true,
   showZoomControls = true,
@@ -137,6 +135,7 @@ export const UnitOrgChart = memo(({
                 disabled={zoom <= MIN_ZOOM}
                 onClick={() => setZoom((current) => clampZoom(current - ZOOM_STEP))}
                 aria-label="Отдалить граф"
+                sx={outlinedIconButtonSx}
               >
                 <ZoomOutRoundedIcon sx={{ fontSize: 18 }} />
               </IconButton>
@@ -152,13 +151,14 @@ export const UnitOrgChart = memo(({
                 disabled={zoom >= MAX_ZOOM}
                 onClick={() => setZoom((current) => clampZoom(current + ZOOM_STEP))}
                 aria-label="Приблизить граф"
+                sx={outlinedIconButtonSx}
               >
                 <ZoomInRoundedIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </span>
           </Tooltip>
           <Tooltip title="Сбросить масштаб">
-            <IconButton size="small" onClick={() => setZoom(DEFAULT_ZOOM)} aria-label="Сбросить масштаб">
+            <IconButton size="small" onClick={() => setZoom(DEFAULT_ZOOM)} aria-label="Сбросить масштаб" sx={outlinedIconButtonSx}>
               <CenterFocusStrongRoundedIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Tooltip>
@@ -221,7 +221,6 @@ export const UnitOrgChart = memo(({
                   onOpenMemberDialog={onOpenMemberDialog}
                   onOpenUnitDetails={onOpenUnitDetails}
                   onRemoveMember={onRemoveMember}
-                  onRename={onRename}
                   showMembers={showMembers}
                   showPrimaryActions={showPrimaryActions}
                   unit={unit}

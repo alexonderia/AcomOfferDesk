@@ -1,6 +1,6 @@
 import UploadFileOutlined from '@mui/icons-material/UploadFileOutlined';
-import { Alert, Box, Button, Dialog, DialogContent, Stack, Tooltip, Typography } from '@mui/material';
-import { alpha, type Theme, useTheme } from '@mui/material/styles';
+import { Box, Button, Dialog, DialogContent, Stack, Tooltip, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useRef, useState } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
 import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
@@ -10,26 +10,7 @@ import { ActionButton } from '@shared/components/ActionButton';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 import { getUploadFileSizeError } from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
-
-const dialogPaperSx = (theme: Theme) => ({
-  borderRadius: 2,
-  px: { xs: 2.5, sm: 3.5 },
-  py: { xs: 3, sm: 3.5 },
-  backgroundColor: theme.palette.background.default,
-  maxHeight: 'min(760px, calc(100vh - 32px))',
-  overflow: 'hidden',
-  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
-});
-
-const dialogContentSx = {
-  p: 0,
-  overflowX: 'hidden',
-  overflowY: 'auto',
-  scrollbarWidth: 'none',
-  '&::-webkit-scrollbar': {
-    display: 'none'
-  }
-};
+import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 
 type NormativeFileButtonProps = {
   iconOnly?: boolean;
@@ -43,7 +24,6 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
   const { showErrorToast, showSuccessToast } = useSystemToasts();
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (session?.roleId === ROLE.CONTRACTOR || !hasPermission(session, 'normative_files.create')) {
@@ -53,7 +33,6 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
   const handleClose = () => {
     setOpen(false);
     setSelectedFile(null);
-    setError(null);
     setIsSubmitting(false);
     if (inputRef.current) {
       inputRef.current.value = '';
@@ -67,19 +46,17 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      setError('Выберите файл');
+      showErrorToast('Выберите файл');
       return;
     }
 
     const sizeError = getUploadFileSizeError(selectedFile);
     if (sizeError) {
-      setError(sizeError);
       showErrorToast(sizeError);
       return;
     }
 
     setIsSubmitting(true);
-    setError(null);
     try {
       await uploadNormativeFile(selectedFile);
       showSuccessToast('Нормативный документ загружен');
@@ -89,7 +66,6 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
       }
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : 'Не удалось загрузить нормативный документ';
-      setError(message);
       showErrorToast(message);
     } finally {
       setIsSubmitting(false);
@@ -212,8 +188,6 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
               Важно: нормативный документ можно загрузить только один раз.
             </Typography>
 
-            {error ? <Alert severity="error">{error}</Alert> : null}
-
             <Box
               sx={{
                 border: '1px solid',
@@ -230,8 +204,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
                   hidden
                   onChange={(event) => {
                     setSelectedFile(event.target.files?.[0] ?? null);
-                    setError(null);
-                                  }}
+                  }}
                 />
                 <Button
                   variant="outlined"

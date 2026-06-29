@@ -116,6 +116,26 @@ class UnitRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
+    async def get_primary_department_name_for_user(self, *, user_id: str) -> str | None:
+        memberships = await self.list_user_units(user_id=user_id, active_only=True)
+        if not memberships:
+            return None
+
+        units = await self.list_units(active_only=True)
+        by_id = {unit.id: unit for unit in units}
+
+        _, start_unit = memberships[0]
+        current = by_id.get(start_unit.id, start_unit)
+        seen: set[int] = set()
+        while (
+            current.id_parent is not None
+            and current.id_parent in by_id
+            and current.id not in seen
+        ):
+            seen.add(current.id)
+            current = by_id[current.id_parent]
+        return current.name
+
     async def list_user_root_unit_ids(self, *, user_id: str) -> list[int]:
         stmt = (
             select(Unit.id)

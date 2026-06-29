@@ -264,6 +264,9 @@ async def get_me(
     async with uow:
         service = UserQueryService(uow.users, uow.user_status_periods)
         me = await service.get_me(current_user)
+        department_name = await uow.units.get_primary_department_name_for_user(
+            user_id=current_user.user_id,
+        )
 
     if current_user.role_id != settings.contractor_role_id:
         me = me.__class__(
@@ -279,7 +282,7 @@ async def get_me(
         )
 
     return MeResponse(
-        data=_me_data(current_user, me),
+        data=_me_data(current_user, me).model_copy(update={"department_name": department_name}),
     )
 
 

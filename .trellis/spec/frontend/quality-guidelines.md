@@ -92,6 +92,7 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Keep root departments as the landing layer of the page. Show department-level staff/contractor summary first, then list second-level units as entry cards into deeper editing.
 - Opening a second-level unit should switch into a dedicated graph-editor view for that subtree instead of expanding an arbitrarily deep accordion on the overview page.
 - Keep a single hierarchy source backed by `/units/tree`; do not maintain a second frontend-only org structure that can diverge from backend membership and parent links.
+- For employee reassignment dialogs inside the graph editor, build destination options from the root that owns the member's current unit, not from whatever overview department is currently selected elsewhere on the page.
 - Each graph node should expose a local create-child affordance so users can extend the structure from the place they are editing, not through a separate global wizard.
 - Keep employee assignment in the same-page details panel for the selected unit, and make unit creation the first step before assigning staff.
 - Deleting a unit that affects structure should use a confirmation dialog with a preview of the post-delete hierarchy rather than a blind destructive confirm.

@@ -275,27 +275,28 @@ Public ingress только через HTTPS reverse proxy.
 - `WEB_BASE_URL=https://<new-host>.trycloudflare.com`
 - `PUBLIC_BACKEND_BASE_URL=https://<new-host>.trycloudflare.com`
 
-После изменения env нужно применить обновление в двух слоях:
+Дополнительно проверьте прокси-слой: `backend/nginx.conf` и maintenance gateway config должны считать `*.trycloudflare.com` HTTPS-хостом для `X-Forwarded-Proto`, иначе OIDC redirect и issuer начинают расходиться с публичным URL.
 
-1. Пересоздать runtime-сервисы, которые читают новый публичный base URL:
-
-```bash
-docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d keycloak backend web gateway
-```
-
-2. Повторно применить Keycloak bootstrap клиента `acom-web`, чтобы в realm обновились:
-   - `redirectUris`
-   - `webOrigins`
-   - `rootUrl`
-   - `baseUrl`
-
-Штатный вариант:
+После изменения env нужно пересоздать runtime-сервисы, которые читают новый публичный base URL:
 
 ```bash
-docker compose --env-file .env.dev -f docker-compose.init.yml run --rm --no-deps keycloak_bootstrap
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml --profile tunnel up -d --force-recreate keycloak backend web gateway cloudflared
 ```
 
-Если нужен только быстрый фикс OIDC-клиента без полного bootstrap, достаточно обновить client `acom-web` через `kcadm` в running `keycloak`.
+В `docker-compose.dev.yml` dev-Keycloak теперь сам запускает `infra/keycloak/bootstrap.sh` при старте, поэтому после пересоздания `keycloak` клиент `acom-web` автоматически получает актуальные:
+
+- `redirectUris`
+- `webOrigins`
+- `rootUrl`
+- `baseUrl`
+
+Если нужно быстро переприменить bootstrap вручную без полного пересоздания dev-стека, используйте штатный one-shot init:
+
+```bash
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.init.yml run --rm --no-deps keycloak_bootstrap
+```
+
+Если нужен только срочный фикс OIDC-клиента без полного bootstrap, достаточно обновить client `acom-web` через `kcadm` в running `keycloak`.
 
 Минимальная проверка после смены адреса:
 

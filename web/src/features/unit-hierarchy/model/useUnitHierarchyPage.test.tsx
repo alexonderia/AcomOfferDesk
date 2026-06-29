@@ -75,6 +75,104 @@ const treeResponse = [
   },
 ];
 
+const multiDepartmentTreeResponse = [
+  {
+    unit_id: 1,
+    name: 'Финансы',
+    id_parent: null,
+    is_active: true,
+    members: [],
+    children: [
+      {
+        unit_id: 2,
+        name: 'Проект А',
+        id_parent: 1,
+        is_active: true,
+        members: [],
+        children: [],
+        actions: {
+          canCreateChild: true,
+          canUpdate: true,
+          canDelete: true,
+          canManageMembers: true,
+        },
+      },
+    ],
+    actions: {
+      canCreateChild: true,
+      canUpdate: true,
+      canDelete: false,
+      canManageMembers: true,
+    },
+  },
+  {
+    unit_id: 10,
+    name: 'АО',
+    id_parent: null,
+    is_active: true,
+    members: [],
+    children: [
+      {
+        unit_id: 11,
+        name: 'Модуль 2',
+        id_parent: 10,
+        is_active: true,
+        members: [
+          {
+            user_id: 'econ-9',
+            full_name: 'Иванова Ольга Игоревна',
+            role_id: ROLE.ECONOMIST,
+            role_name: 'Экономист',
+            status: 'active',
+          },
+        ],
+        children: [],
+        actions: {
+          canCreateChild: true,
+          canUpdate: true,
+          canDelete: true,
+          canManageMembers: true,
+        },
+      },
+      {
+        unit_id: 12,
+        name: 'Модуль 2.1',
+        id_parent: 10,
+        is_active: true,
+        members: [],
+        children: [
+          {
+            unit_id: 13,
+            name: 'Модуль 2.1.1',
+            id_parent: 12,
+            is_active: true,
+            members: [],
+            children: [],
+            actions: {
+              canCreateChild: true,
+              canUpdate: true,
+              canDelete: true,
+              canManageMembers: true,
+            },
+          },
+        ],
+        actions: {
+          canCreateChild: true,
+          canUpdate: true,
+          canDelete: true,
+          canManageMembers: true,
+        },
+      },
+    ],
+    actions: {
+      canCreateChild: true,
+      canUpdate: true,
+      canDelete: false,
+      canManageMembers: true,
+    },
+  },
+];
+
 describe('useUnitHierarchyPage', () => {
   beforeEach(() => {
     useAuthMock.mockReset();
@@ -193,5 +291,26 @@ describe('useUnitHierarchyPage', () => {
 
     expect(deleteUnitMock).toHaveBeenCalledWith(2, true);
     expect(showSuccessToastMock).toHaveBeenCalledWith('Объединение удалено');
+  });
+  it('builds move targets from the member unit root instead of the currently selected department', async () => {
+    getUnitsTreeMock.mockResolvedValueOnce(multiDepartmentTreeResponse);
+
+    const { result } = renderHook(() => useUnitHierarchyPage());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.selectedDepartment?.name).toBe('Финансы');
+
+    const module2 = result.current.departments[1]!.children[0]!;
+    const member = module2.members[0]!;
+
+    act(() => {
+      result.current.openMoveMemberDialog(module2, member);
+    });
+
+    expect(result.current.moveUnitOptions).toEqual([
+      { unitId: 10, label: 'АО' },
+      { unitId: 12, label: 'АО / Модуль 2.1' },
+      { unitId: 13, label: 'АО / Модуль 2.1 / Модуль 2.1.1' },
+    ]);
   });
 });

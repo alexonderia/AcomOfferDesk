@@ -1,7 +1,6 @@
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import {
-  Alert,
   Box,
   Button,
   Checkbox,
@@ -32,7 +31,7 @@ import {
   type ContractorListItem,
 } from '@shared/api/contractors/listContractors';
 import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
-import { useSystemToasts } from '@shared/ui/toasts';
+import { useSystemToasts, useToastMessageEffect } from '@shared/ui/toasts';
 import { hierarchyPageColors } from './unitHierarchyStyles';
 
 const CONTRACTOR_FETCH_LIMIT = 100;
@@ -75,6 +74,8 @@ export const ContractorBindingsDialog = ({
   const [draftsById, setDraftsById] = useState<DraftsById>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [isSavingAll, setIsSavingAll] = useState(false);
+
+  useToastMessageEffect({ message: error });
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -236,9 +237,6 @@ export const ContractorBindingsDialog = ({
               ),
             }}
           />
-
-          {error ? <Alert severity="error">{error}</Alert> : null}
-
           {isLoading ? (
             <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 160 }}>
               <CircularProgress />

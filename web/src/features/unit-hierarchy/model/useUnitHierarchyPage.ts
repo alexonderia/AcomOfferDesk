@@ -194,6 +194,8 @@ export const useUnitHierarchyPage = () => {
   const [deleteDialogState, setDeleteDialogState] = useState<DeleteDialogState>(null);
   const [isDeletingUnit, setIsDeletingUnit] = useState(false);
   const [contractorDialogUnit, setContractorDialogUnit] = useState<UnitNode | null>(null);
+  const [inlineUnitName, setInlineUnitName] = useState('');
+  const [isSavingInlineUnitName, setIsSavingInlineUnitName] = useState(false);
   const deferredMemberSearch = useDeferredValue(memberDialogState.search);
 
   const canCreateRootUnit = hasPermission(session, 'units.create') && session?.roleId === ROLE.SUPERADMIN;
@@ -233,18 +235,26 @@ export const useUnitHierarchyPage = () => {
     [selectedDepartment]
   );
 
+  const moveMemberRootUnit = useMemo(() => {
+    if (!moveMemberState) {
+      return null;
+    }
+
+    return findRootUnitForUnit(tree, moveMemberState.fromUnit.unit_id);
+  }, [moveMemberState, tree]);
+
   const moveUnitOptions = useMemo(() => {
-    if (!moveMemberState || !selectedDepartment) {
+    if (!moveMemberState || !moveMemberRootUnit) {
       return [];
     }
 
-    return selectedDepartmentUnitOptions
+    return buildUnitOptions([moveMemberRootUnit])
       .filter((option) => option.unitId !== moveMemberState.fromUnit.unit_id)
       .map((option) => ({
         unitId: option.unitId,
         label: option.label,
       }));
-  }, [moveMemberState, selectedDepartment, selectedDepartmentUnitOptions]);
+  }, [moveMemberRootUnit, moveMemberState]);
 
   const activeUnitParent = useMemo(
     () => (activeUnitDetails ? findParentUnit(tree, activeUnitDetails.unit_id) : null),
@@ -332,6 +342,10 @@ export const useUnitHierarchyPage = () => {
       cancelled = true;
     };
   }, [deferredMemberSearch, memberDialogState.unit, showErrorToast]);
+
+  useEffect(() => {
+    setInlineUnitName(activeUnitDetails?.name ?? '');
+  }, [activeUnitDetails]);
 
   const openCreateRootDialog = () => setUnitDialogState({ mode: 'create-root', unit: null });
   const openCreateChildDialog = (unit: UnitNode) => setUnitDialogState({ mode: 'create-child', unit });
@@ -461,6 +475,36 @@ export const useUnitHierarchyPage = () => {
     }
   };
 
+  const submitInlineUnitName = async () => {
+    if (!activeUnitDetails) {
+      return;
+    }
+
+    const normalizedName = inlineUnitName.trim();
+    if (!normalizedName) {
+      showErrorToast('Название объединения обязательно');
+      return;
+    }
+
+    if (normalizedName === activeUnitDetails.name) {
+      return;
+    }
+
+    setIsSavingInlineUnitName(true);
+    try {
+      await updateUnit(activeUnitDetails.unit_id, {
+        name: normalizedName,
+        id_parent: activeUnitDetails.id_parent ?? undefined,
+      });
+      showSuccessToast('Объединение обновлено');
+      await loadTree();
+    } catch (submitError) {
+      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось сохранить объединение');
+    } finally {
+      setIsSavingInlineUnitName(false);
+    }
+  };
+
   const openDeleteDialog = (unit: UnitNode) => {
     const previewTree = buildDeletePreviewTree(tree, unit.unit_id);
     setDeleteDialogState({
@@ -543,6 +587,10 @@ export const useUnitHierarchyPage = () => {
     openMoveMemberDialog,
     closeMoveMemberDialog,
     submitMoveMember,
+    inlineUnitName,
+    setInlineUnitName,
+    isSavingInlineUnitName,
+    submitInlineUnitName,
     deleteDialogState,
     isDeletingUnit,
     openDeleteDialog,

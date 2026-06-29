@@ -1,26 +1,21 @@
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined';
-import MoreHorizOutlinedIcon from '@mui/icons-material/MoreHorizOutlined';
 import {
   Box,
-  Button,
   IconButton,
-  Menu,
-  MenuItem,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useState } from 'react';
 import type { UnitNode } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
 import { PeopleFlatList, PeopleTree } from './PeopleTree';
 import {
   connectorLineSx,
   hierarchyPageColors,
+  outlinedIconButtonSx,
 } from './unitHierarchyStyles';
 
 type UnitOrgNodeProps = {
@@ -31,7 +26,6 @@ type UnitOrgNodeProps = {
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
   onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
   onRemoveMember?: ((unit: UnitNode, member: UnitNode['members'][number]) => void) | undefined;
-  onRename: (unit: UnitNode) => void;
   showMembers?: boolean;
   showPrimaryActions?: boolean;
   unit: UnitNode;
@@ -45,13 +39,11 @@ export const UnitOrgNode = ({
   onOpenMemberDialog,
   onOpenUnitDetails,
   onRemoveMember,
-  onRename,
   showMembers = true,
   showPrimaryActions = true,
   unit,
 }: UnitOrgNodeProps) => {
-  const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
-  const hasMenuActions = unit.actions.canUpdate || unit.actions.canDelete;
+  const canDelete = unit.actions.canDelete;
   const canCreateChild = showPrimaryActions && unit.actions.canCreateChild && Boolean(onCreateChild);
   const canOpenMemberDialog = unit.actions.canManageMembers && Boolean(onOpenMemberDialog);
   const canOpenUnitDetails = Boolean(onOpenUnitDetails);
@@ -74,7 +66,6 @@ export const UnitOrgNode = ({
       onOpenMemberDialog={onOpenMemberDialog}
       onOpenUnitDetails={onOpenUnitDetails}
       onRemoveMember={onRemoveMember}
-      onRename={onRename}
       showMembers={showMembers}
       showPrimaryActions={showPrimaryActions}
       unit={child}
@@ -115,7 +106,7 @@ export const UnitOrgNode = ({
         }}
       >
         <Stack spacing={1.15}>
-          <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="flex-start">
+          <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
             <Box sx={{ minWidth: 0 }}>
               <Typography
                 sx={{
@@ -130,112 +121,26 @@ export const UnitOrgNode = ({
               </Typography>
             </Box>
 
-            {hasMenuActions ? (
-              <>
+            {canDelete ? (
+              <Tooltip title="Удалить">
                 <IconButton
                   size="small"
+                  aria-label={`Удалить объединение ${unit.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
-                    setMenuAnchorEl(event.currentTarget);
+                    onDelete(unit);
                   }}
                   sx={{
-                    mt: -0.2,
                     mr: -0.35,
-                    color: alpha(hierarchyPageColors.textSecondary, 0.92),
+                    flexShrink: 0,
+                    ...outlinedIconButtonSx,
                   }}
                 >
-                  <MoreHorizOutlinedIcon sx={{ fontSize: 18 }} />
+                  <DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />
                 </IconButton>
-                <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={() => setMenuAnchorEl(null)}>
-                  {unit.actions.canUpdate ? (
-                    <MenuItem
-                      onClick={() => {
-                        setMenuAnchorEl(null);
-                        onRename(unit);
-                      }}
-                    >
-                      <EditOutlinedIcon sx={{ mr: 1, fontSize: 18 }} />
-                      Изменить объединение
-                    </MenuItem>
-                  ) : null}
-                  {unit.actions.canDelete ? (
-                    <MenuItem
-                      onClick={() => {
-                        setMenuAnchorEl(null);
-                        onDelete(unit);
-                      }}
-                      sx={{ color: 'error.main' }}
-                    >
-                      <DeleteOutlineRoundedIcon sx={{ mr: 1, fontSize: 18 }} />
-                      Удалить объединение
-                    </MenuItem>
-                  ) : null}
-                </Menu>
-              </>
+              </Tooltip>
             ) : null}
           </Stack>
-
-          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-            <Box
-              sx={{
-                borderRadius: 999,
-                px: 1,
-                py: 0.38,
-                backgroundColor: alpha(hierarchyPageColors.softBlue, 0.08),
-                color: hierarchyPageColors.softBlue,
-                fontSize: 11.5,
-                fontWeight: 700,
-                lineHeight: 1.2,
-              }}
-            >
-              Сотрудники: {staff.length}
-            </Box>
-            {contractors.length > 0 ? (
-              <Box
-                sx={{
-                  borderRadius: 999,
-                  px: 1,
-                  py: 0.38,
-                  backgroundColor: alpha(hierarchyPageColors.softPink, 0.08),
-                  color: hierarchyPageColors.softPink,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  lineHeight: 1.2,
-                }}
-              >
-                Контрагенты: {contractors.length}
-              </Box>
-            ) : null}
-            <Box
-              sx={{
-                borderRadius: 999,
-                px: 1,
-                py: 0.38,
-                backgroundColor: alpha(hierarchyPageColors.softTeal, 0.08),
-                color: hierarchyPageColors.softTeal,
-                fontSize: 11.5,
-                fontWeight: 700,
-                lineHeight: 1.2,
-              }}
-            >
-              Дочерние объединения: {unit.children.length}
-            </Box>
-          </Stack>
-
-          {showPrimaryActions && canOpenMemberDialog ? (
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<GroupAddOutlinedIcon sx={{ fontSize: 16 }} />}
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenMemberDialog?.(unit);
-              }}
-              sx={{ alignSelf: 'flex-start', minHeight: 30, px: 1.15, py: 0.25, borderRadius: 1.4, textTransform: 'none' }}
-            >
-              Добавить сотрудника
-            </Button>
-          ) : null}
 
           {showMembers ? (
             <Box
@@ -247,6 +152,21 @@ export const UnitOrgNode = ({
             >
               <PeopleTree
                 emptyLabel="Сотрудников пока нет."
+                headerAction={showPrimaryActions && canOpenMemberDialog ? (
+                  <Tooltip title="Добавить сотрудника">
+                    <IconButton
+                      size="small"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenMemberDialog?.(unit);
+                      }}
+                      aria-label={`Добавить сотрудника в ${unit.name}`}
+                      sx={outlinedIconButtonSx}
+                    >
+                      <GroupAddOutlinedIcon sx={{ fontSize: 17 }} />
+                    </IconButton>
+                  </Tooltip>
+                ) : undefined}
                 members={staff}
                 onMove={canManageMembers && onMoveMember ? (member) => onMoveMember(unit, member) : undefined}
                 onRemove={canManageMembers && onRemoveMember ? (member) => onRemoveMember(unit, member) : undefined}
@@ -268,9 +188,9 @@ export const UnitOrgNode = ({
 
           {canCreateChild ? (
             <>
-              <Tooltip title="Добавить дочернее объединение">
+              <Tooltip title="Добавить дочерний лист">
                 <IconButton
-                  aria-label={`Добавить дочернее объединение в ${unit.name}`}
+                  aria-label={`Добавить дочерний лист в ${unit.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     onCreateChild?.(unit);

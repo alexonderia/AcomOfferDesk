@@ -1,4 +1,4 @@
-﻿import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -12,7 +12,7 @@ import { ROLE } from '@shared/constants/roles';
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
-import { useSystemToasts } from '@shared/ui/toasts';
+import { useSystemToasts, useToastMessageEffect } from '@shared/ui/toasts';
 import { buildDraft, emptyDraft, type ProfileDraft } from './accountStateDraft';
 
 type DraftErrors = Partial<Record<keyof ProfileDraft, string>>;
@@ -145,6 +145,8 @@ export const AccountStatePage = () => {
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
   const isReview = session?.status === 'review';
   const isBlocked = session?.status === 'inactive' || session?.status === 'blacklist';
+
+  useToastMessageEffect({ message: !isBlocked ? errorMessage : null });
 
   useEffect(() => {
     if (!session) {
@@ -295,8 +297,6 @@ export const AccountStatePage = () => {
                 </Typography>
               ) : null}
             </Stack>
-            {!isBlocked && errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-
             {!isBlocked && !isSubmitted ? (
               <>
                 <Stack spacing={1.5}>

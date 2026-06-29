@@ -36,6 +36,17 @@ export const connectorLineSx = {
   borderRadius: 999,
 } as const;
 
+export const outlinedIconButtonSx = {
+  border: `1px solid ${alpha(hierarchyPageColors.softBlue, 0.45)}`,
+  borderRadius: 1.5,
+  color: hierarchyPageColors.softBlue,
+  transition: 'border-color 0.16s ease, background-color 0.16s ease',
+  '&:hover': {
+    borderColor: hierarchyPageColors.softBlue,
+    backgroundColor: alpha(hierarchyPageColors.softBlue, 0.08),
+  },
+} as const;
+
 export const statusLabelByCode: Record<string, string> = {
   active: 'Активен',
   inactive: 'Неактивен',

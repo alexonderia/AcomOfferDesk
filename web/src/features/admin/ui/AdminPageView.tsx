@@ -1,5 +1,4 @@
 import {
-  Alert,
   Box,
   Button,
   Dialog,
@@ -11,35 +10,16 @@ import {
   Typography,
   type SelectChangeEvent
 } from '@mui/material';
-import { alpha, type Theme } from '@mui/material/styles';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
 import { ROLE } from '@shared/constants/roles';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { formatRuPhone } from '@shared/lib/phone';
+import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
+import { useToastMessageEffect } from '@shared/ui/toasts';
 import { employeePersonLabels, type UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
-
-const dialogPaperSx = (theme: Theme) => ({
-  borderRadius: 2,
-  px: { xs: 2.5, sm: 3.5 },
-  py: { xs: 3, sm: 3.5 },
-  backgroundColor: theme.palette.background.default,
-  maxHeight: 'min(760px, calc(100vh - 32px))',
-  overflow: 'hidden',
-  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
-});
-
-const dialogContentSx = {
-  p: 0,
-  overflowX: 'hidden',
-  overflowY: 'auto',
-  scrollbarWidth: 'none',
-  '&::-webkit-scrollbar': {
-    display: 'none'
-  }
-};
 
 const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
@@ -132,6 +112,8 @@ export const AdminPageView = () => {
   const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
   const isParentFieldValid = hasValue(parentIdValue) && !errors.id_parent;
 
+  useToastMessageEffect({ message: usersError });
+
   return (
     <Stack spacing={2}>
       {!isLeadLike ? (
@@ -148,9 +130,6 @@ export const AdminPageView = () => {
           </Select>
         </Stack>
       ) : null}
-
-      {usersError ? <Alert severity="error">{usersError}</Alert> : null}
-
       {activeTab === 'contractors' ? (
         <ContractorsListView
           contractors={contractors}

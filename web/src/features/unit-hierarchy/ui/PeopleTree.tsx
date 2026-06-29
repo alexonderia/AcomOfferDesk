@@ -1,5 +1,6 @@
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
+import type { ReactNode } from 'react';
 import { Avatar, Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import type { UnitMember } from '@shared/api/units';
@@ -7,6 +8,7 @@ import {
   getMemberAccentColor,
   hierarchyPageColors,
   isPlaceholderPersonName,
+  outlinedIconButtonSx,
   statusLabelByCode,
 } from './unitHierarchyStyles';
 
@@ -142,14 +144,14 @@ export const PersonRow = ({
         <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
           {onMove ? (
             <Tooltip title="Переместить в другое объединение">
-              <IconButton size="small" onClick={() => onMove(member)} aria-label={`Переместить ${getDisplayName(member)}`}>
+              <IconButton size="small" onClick={() => onMove(member)} aria-label={`Переместить ${getDisplayName(member)}`} sx={outlinedIconButtonSx}>
                 <SwapHorizRoundedIcon sx={{ fontSize: 17 }} />
               </IconButton>
             </Tooltip>
           ) : null}
           {onRemove ? (
             <Tooltip title="Открепить от объединения">
-              <IconButton size="small" color="error" onClick={() => onRemove(member)} aria-label={`Открепить ${getDisplayName(member)}`}>
+              <IconButton size="small" onClick={() => onRemove(member)} aria-label={`Открепить ${getDisplayName(member)}`} sx={outlinedIconButtonSx}>
                 <DeleteOutlineRoundedIcon sx={{ fontSize: 17 }} />
               </IconButton>
             </Tooltip>
@@ -212,12 +214,14 @@ const EmptyState = ({ label }: { label: string }) => (
 
 export const PeopleTree = ({
   emptyLabel,
+  headerAction,
   members,
   onMove,
   onRemove,
   title,
 }: {
   emptyLabel: string;
+  headerAction?: ReactNode;
   members: UnitMember[];
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
@@ -228,7 +232,10 @@ export const PeopleTree = ({
   return (
     <Stack spacing={1} sx={{ minWidth: 0 }}>
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-        <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+        <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+          {headerAction}
+        </Stack>
         {members.length > 0 ? (
           <Typography variant="caption" color="text.secondary">
             {members.length}
@@ -250,18 +257,23 @@ export const PeopleTree = ({
 
 export const PeopleFlatList = ({
   emptyLabel,
+  headerAction,
   members,
   onRemove,
   title,
 }: {
   emptyLabel: string;
+  headerAction?: ReactNode;
   members: UnitMember[];
   onRemove?: ((member: UnitMember) => void) | undefined;
   title: string;
 }) => (
   <Stack spacing={1} sx={{ minWidth: 0 }}>
     <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-      <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+      <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+        {headerAction}
+      </Stack>
       {members.length > 0 ? (
         <Typography variant="caption" color="text.secondary">
           {members.length}

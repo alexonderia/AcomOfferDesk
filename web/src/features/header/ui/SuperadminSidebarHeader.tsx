@@ -7,14 +7,20 @@ import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mu
 import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '@app/providers/AuthProvider';
 import { ActionButton } from '@shared/components/ActionButton';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
 import { NotificationBell } from '@features/notifications';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
+import { getCurrentUserProfile } from '@shared/api/users/getCurrentUserProfile';
+import { ROLE } from '@shared/constants/roles';
 import type { HeaderConfig } from '../model/types';
 import { getHeaderNavigationIcon } from './navigationIcons';
+
+const DEFAULT_BRAND = 'AcomOfferDesk';
+const ROLES_WITHOUT_DEPARTMENT_BRAND: number[] = [ROLE.SUPERADMIN, ROLE.CONTRACTOR];
 
 const navLinkStyles = { textDecoration: 'none', display: 'block', width: '100%' } as const;
 
@@ -32,9 +38,41 @@ export const SuperadminSidebarHeader = ({
   onToggleCollapse,
 }: SuperadminSidebarHeaderProps) => {
   const theme = useTheme();
+  const { session } = useAuth();
+  const [departmentName, setDepartmentName] = useState<string | null>(null);
   const [isCompactHeight, setIsCompactHeight] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerHeight <= 760 : false
   );
+
+  const roleId = session?.roleId;
+  const canShowDepartmentBrand =
+    typeof roleId === 'number' && !ROLES_WITHOUT_DEPARTMENT_BRAND.includes(roleId);
+
+  useEffect(() => {
+    if (!canShowDepartmentBrand) {
+      setDepartmentName(null);
+      return;
+    }
+
+    let active = true;
+    getCurrentUserProfile()
+      .then((profile) => {
+        if (active) {
+          setDepartmentName(profile.departmentName);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDepartmentName(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canShowDepartmentBrand]);
+
+  const brandText = canShowDepartmentBrand && departmentName ? departmentName : DEFAULT_BRAND;
   const [isEdgeHovered, setIsEdgeHovered] = useState(false);
   const [isToggleHovered, setIsToggleHovered] = useState(false);
   const [isToggleVisible, setIsToggleVisible] = useState(false);
@@ -98,8 +136,19 @@ export const SuperadminSidebarHeader = ({
     >
       <Stack sx={{ height: '100%' }}>
         <Stack direction="row" alignItems="center" justifyContent={collapsed ? 'center' : 'space-between'} sx={{ minHeight: 44, mb: 1.8 }}>
-          <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>
-            {collapsed ? 'A' : 'AcomOfferDesk'}
+          <Typography
+            title={collapsed ? undefined : brandText}
+            sx={{
+              fontSize: 22,
+              fontWeight: 700,
+              lineHeight: 1.1,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {collapsed ? brandText.charAt(0).toUpperCase() : brandText}
           </Typography>
         </Stack>
 

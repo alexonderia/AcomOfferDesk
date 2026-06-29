@@ -90,6 +90,10 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 ### Convention: Unit Hierarchy Uses Department Overview Plus Graph Editor
 
 - Keep root departments as the landing layer of the page. Show department-level staff/contractor summary first, then list second-level units as entry cards into deeper editing.
+- Keep the overview compact and scan-friendly: prefer a searchable stack of department cards with one expanded details area over rendering every department in a fully expanded wide layout.
+- Place filter/search controls in the main page toolbar and let them match department names, nested unit names, and visible member identity fields instead of adding a second frontend-only hierarchy index.
+- If `canUpdate` is granted, allow unit and department renaming directly in the visible field on the page/editor surface; do not force a separate rename dialog for name-only edits.
+- Keep create/manage actions attached to the relevant toolbar or card header. Do not leave standalone floating add tiles or detached action buttons between hierarchy blocks.
 - Opening a second-level unit should switch into a dedicated graph-editor view for that subtree instead of expanding an arbitrarily deep accordion on the overview page.
 - Keep a single hierarchy source backed by `/units/tree`; do not maintain a second frontend-only org structure that can diverge from backend membership and parent links.
 - For employee reassignment dialogs inside the graph editor, build destination options from the root that owns the member's current unit, not from whatever overview department is currently selected elsewhere on the page.

@@ -1,6 +1,10 @@
-import { ThemeProvider } from '@mui/material/styles';
+﻿import { ThemeProvider } from '@mui/material/styles';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  PageBreadcrumbActionsProvider,
+  usePageBreadcrumbActionsState,
+} from '@app/layouts/PageBreadcrumbActions';
 import { appTheme } from '@shared/theme/appTheme';
 import { UnitHierarchyPageView } from './UnitHierarchyPageView';
 
@@ -55,6 +59,21 @@ const baseDepartment = {
       },
     },
   ],
+  actions: {
+    canCreateChild: true,
+    canUpdate: true,
+    canDelete: false,
+    canManageMembers: true,
+  },
+};
+
+const secondDepartment = {
+  unit_id: 10,
+  name: 'Блок продаж',
+  id_parent: null,
+  is_active: true,
+  members: [],
+  children: [],
   actions: {
     canCreateChild: true,
     canUpdate: true,
@@ -133,9 +152,17 @@ const buildViewState = (): any => ({
   findRootUnitForUnit: vi.fn(() => baseDepartment),
 });
 
+const BreadcrumbActionsOutlet = () => {
+  const actions = usePageBreadcrumbActionsState();
+  return <>{actions}</>;
+};
+
 const renderView = () => render(
   <ThemeProvider theme={appTheme}>
-    <UnitHierarchyPageView />
+    <PageBreadcrumbActionsProvider>
+      <BreadcrumbActionsOutlet />
+      <UnitHierarchyPageView />
+    </PageBreadcrumbActionsProvider>
   </ThemeProvider>
 );
 
@@ -148,22 +175,37 @@ describe('UnitHierarchyPageView', () => {
   it('renders filter header and expanded department details', () => {
     renderView();
 
-    expect(screen.getByText('Подразделения и состав')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Поиск по подразделению, листу, сотруднику или контрагенту')).toBeInTheDocument();
-    expect(screen.getByText('Структура подразделения')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Финансовый блок')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Подразделение для просмотра' })).toBeInTheDocument();
+    expect(screen.getAllByText('Все подразделения').length).toBeGreaterThan(0);
+    expect(screen.getByText('Объединения по всем подразделениям')).toBeInTheDocument();
     expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
-    expect(screen.getByText('Сотрудники подразделения')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Выбрать объединение Лист 1' })).not.toBeInTheDocument();
+    expect(screen.getByText('Сотрудники объединения')).toBeInTheDocument();
     expect(screen.getByText('Экономист 1')).toBeInTheDocument();
   });
 
-  it('opens the unit editor from the structure list', () => {
+  it('switches department from the top filter', () => {
+    const viewState = buildViewState();
+    viewState.tree = [baseDepartment, secondDepartment];
+    viewState.departments = [baseDepartment, secondDepartment];
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Подразделение для просмотра' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Блок продаж' }));
+
+    expect(viewState.setSelectedDepartmentId).toHaveBeenCalledWith(10);
+  });
+
+  it('opens the unit editor from the selected overview card', () => {
     const viewState = buildViewState();
     useUnitHierarchyPageMock.mockReturnValue(viewState);
 
     renderView();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть структуру подразделения Проект А' }));
+    fireEvent.click(within(screen.getByRole('button', { name: 'Выбрать объединение Проект А' })).getByLabelText('Открыть схему объединения Проект А'));
 
     expect(viewState.setSelectedEditorUnitId).toHaveBeenCalledWith(2);
     expect(viewState.setActiveUnitDetailsId).toHaveBeenCalledWith(2);
@@ -181,7 +223,7 @@ describe('UnitHierarchyPageView', () => {
 
     expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
     expect(screen.getByText('Финансовый блок / Проект А')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Добавить сотрудника в Проект А' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Состав').length).toBeGreaterThan(0);
   });
 

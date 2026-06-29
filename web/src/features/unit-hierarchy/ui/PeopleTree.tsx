@@ -1,4 +1,4 @@
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+﻿import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import type { ReactNode } from 'react';
 import { Avatar, Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
@@ -291,3 +291,4 @@ export const PeopleFlatList = ({
     )}
   </Stack>
 );
+

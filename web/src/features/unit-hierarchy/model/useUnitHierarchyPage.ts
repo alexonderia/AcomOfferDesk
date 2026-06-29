@@ -204,10 +204,15 @@ export const useUnitHierarchyPage = () => {
     [tree]
   );
 
-  const selectedDepartment = useMemo(
-    () => (selectedDepartmentId !== null ? findUnitById(departments, selectedDepartmentId) : departments[0] ?? null),
-    [departments, selectedDepartmentId]
-  );
+  const selectedDepartment = useMemo(() => {
+    if (departments.length === 0) {
+      return null;
+    }
+    if (selectedDepartmentId === null) {
+      return departments[0] ?? null;
+    }
+    return departments.find((department) => department.unit_id === selectedDepartmentId) ?? departments[0] ?? null;
+  }, [departments, selectedDepartmentId]);
 
   const editorRootUnit = useMemo(
     () => (selectedEditorUnitId !== null ? findUnitById(tree, selectedEditorUnitId) : null),

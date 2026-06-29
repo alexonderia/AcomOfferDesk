@@ -1,4 +1,4 @@
-import { alpha } from '@mui/material/styles';
+﻿import { alpha } from '@mui/material/styles';
 import type { UnitMember } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
 
@@ -16,7 +16,7 @@ export const hierarchyPageColors = {
 } as const;
 
 export const hierarchyCanvasBackground = `
-  linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, ${alpha(hierarchyPageColors.canvas, 0.98)} 100%)
+  linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 100%)
 `;
 
 export const hierarchySurfaceBackground = `
@@ -24,7 +24,7 @@ export const hierarchySurfaceBackground = `
 `;
 
 export const sectionCardSx = {
-  borderRadius: 2.5,
+  borderRadius: 2,
   borderColor: alpha(hierarchyPageColors.canvasBorder, 0.9),
   backgroundImage: 'none',
   backgroundColor: '#ffffff',
@@ -47,6 +47,18 @@ export const outlinedIconButtonSx = {
   },
 } as const;
 
+export const orgNodeCardSx = {
+  width: 332,
+  maxWidth: 'min(332px, calc(100vw - 40px))',
+  borderRadius: 2.5,
+  border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.98)}`,
+  backgroundColor: '#ffffff',
+  boxShadow: hierarchyPageColors.shadow,
+  px: 1.4,
+  py: 1.3,
+  zIndex: 1,
+} as const;
+
 export const statusLabelByCode: Record<string, string> = {
   active: 'Активен',
   inactive: 'Неактивен',
@@ -58,7 +70,7 @@ export const getUnitLevelLabel = (depth: number) => {
   if (depth === 0) {
     return 'Подразделение';
   }
-  return 'Объединение';
+  return 'Подраздел';
 };
 
 export const getMemberDisplayName = (member: Pick<UnitMember, 'full_name' | 'user_id'>) =>
@@ -134,3 +146,4 @@ export const groupMembersForOrgChart = (members: UnitMember[]): MemberGroup => {
 
   return groups;
 };
+

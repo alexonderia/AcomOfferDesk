@@ -15,6 +15,7 @@ import { PeopleFlatList, PeopleTree } from './PeopleTree';
 import {
   connectorLineSx,
   hierarchyPageColors,
+  orgNodeCardSx,
   outlinedIconButtonSx,
 } from './unitHierarchyStyles';
 
@@ -88,15 +89,7 @@ export const UnitOrgNode = ({
           }
           : undefined}
         sx={{
-          width: 332,
-          maxWidth: 'min(332px, calc(100vw - 40px))',
-          borderRadius: 2.5,
-          border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.98)}`,
-          backgroundColor: '#ffffff',
-          boxShadow: hierarchyPageColors.shadow,
-          px: 1.4,
-          py: 1.3,
-          zIndex: 1,
+          ...orgNodeCardSx,
           cursor: canOpenUnitDetails ? 'pointer' : 'default',
           transition: canOpenUnitDetails ? 'border-color 0.16s ease, box-shadow 0.16s ease' : undefined,
           '&:hover': canOpenUnitDetails ? {

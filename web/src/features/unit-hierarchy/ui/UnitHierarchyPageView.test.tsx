@@ -181,8 +181,32 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.getByText('Объединения по всем подразделениям')).toBeInTheDocument();
     expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Выбрать объединение Лист 1' })).not.toBeInTheDocument();
-    expect(screen.getByText('Сотрудники объединения')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Сотрудники/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Экономист 1')).toBeInTheDocument();
+  });
+
+  it('switches between staff and contractors in overview details', () => {
+    const viewState = buildViewState();
+    const departmentWithContractor = structuredClone(baseDepartment);
+    departmentWithContractor.children[0].members.push({
+      user_id: 'contractor-1',
+      full_name: 'Контрагент 1',
+      role_id: 3,
+      role_name: 'Контрагент',
+      status: 'active',
+    });
+    viewState.tree = [departmentWithContractor];
+    viewState.departments = [departmentWithContractor];
+    viewState.selectedDepartment = departmentWithContractor;
+    viewState.findRootUnitForUnit = vi.fn(() => departmentWithContractor);
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Контрагенты/ }));
+
+    expect(screen.getByText('Контрагент 1')).toBeInTheDocument();
+    expect(screen.queryByText('Экономист 1')).not.toBeInTheDocument();
   });
 
   it('switches department from the top filter', () => {

@@ -215,6 +215,7 @@ const EmptyState = ({ label }: { label: string }) => (
 export const PeopleTree = ({
   emptyLabel,
   headerAction,
+  hideHeader = false,
   members,
   onMove,
   onRemove,
@@ -222,6 +223,7 @@ export const PeopleTree = ({
 }: {
   emptyLabel: string;
   headerAction?: ReactNode;
+  hideHeader?: boolean;
   members: UnitMember[];
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
@@ -231,17 +233,19 @@ export const PeopleTree = ({
 
   return (
     <Stack spacing={1} sx={{ minWidth: 0 }}>
-      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-        <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
-          {headerAction}
+      {hideHeader ? null : (
+        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+            {headerAction}
+          </Stack>
+          {members.length > 0 ? (
+            <Typography variant="caption" color="text.secondary">
+              {members.length}
+            </Typography>
+          ) : null}
         </Stack>
-        {members.length > 0 ? (
-          <Typography variant="caption" color="text.secondary">
-            {members.length}
-          </Typography>
-        ) : null}
-      </Stack>
+      )}
       {roots.length === 0 ? (
         <EmptyState label={emptyLabel} />
       ) : (
@@ -258,28 +262,32 @@ export const PeopleTree = ({
 export const PeopleFlatList = ({
   emptyLabel,
   headerAction,
+  hideHeader = false,
   members,
   onRemove,
   title,
 }: {
   emptyLabel: string;
   headerAction?: ReactNode;
+  hideHeader?: boolean;
   members: UnitMember[];
   onRemove?: ((member: UnitMember) => void) | undefined;
   title: string;
 }) => (
   <Stack spacing={1} sx={{ minWidth: 0 }}>
-    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-      <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
-        <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
-        {headerAction}
+    {hideHeader ? null : (
+      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+        <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+          {headerAction}
+        </Stack>
+        {members.length > 0 ? (
+          <Typography variant="caption" color="text.secondary">
+            {members.length}
+          </Typography>
+        ) : null}
       </Stack>
-      {members.length > 0 ? (
-        <Typography variant="caption" color="text.secondary">
-          {members.length}
-        </Typography>
-      ) : null}
-    </Stack>
+    )}
     {members.length === 0 ? (
       <EmptyState label={emptyLabel} />
     ) : (

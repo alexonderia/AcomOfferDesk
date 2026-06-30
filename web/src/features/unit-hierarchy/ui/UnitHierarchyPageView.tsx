@@ -81,6 +81,8 @@ type OverviewUnitCard = {
   unit: UnitNode;
 };
 
+type OverviewMemberView = 'staff' | 'contractors';
+
 const UnitFormDialog = ({
   isSaving,
   mode,
@@ -289,6 +291,165 @@ const UnitStatRow = ({
     ) : null}
   </Stack>
 );
+
+const compactOverviewActionButtonSx = {
+  ...outlinedIconButtonSx,
+  width: 36,
+  height: 36,
+} as const;
+
+const CompactUnitActions = ({
+  canCreateChild,
+  canManageMembers,
+  onAddLeaf,
+  onManageContractors,
+  onOpenSchema,
+  size = 'small',
+  unitName,
+}: {
+  canCreateChild: boolean;
+  canManageMembers: boolean;
+  onAddLeaf: () => void;
+  onManageContractors: () => void;
+  onOpenSchema: () => void;
+  size?: 'small' | 'medium';
+  unitName: string;
+}) => {
+  const isSmall = size === 'small';
+
+  return (
+    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center">
+      <Button
+        size={size}
+        variant="outlined"
+        startIcon={<AccountTreeOutlinedIcon sx={{ fontSize: 16 }} />}
+        onClick={onOpenSchema}
+        sx={{ minHeight: isSmall ? 38 : 42, borderRadius: isSmall ? 1.5 : 1.75, px: isSmall ? 1.6 : 2 }}
+      >
+        Схема
+      </Button>
+      {canManageMembers ? (
+        <Tooltip title="Контрагенты">
+          <IconButton
+            size="small"
+            aria-label={`Открыть контрагентов объединения ${unitName}`}
+            onClick={onManageContractors}
+            sx={compactOverviewActionButtonSx}
+          >
+            <HandshakeOutlinedIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {canCreateChild ? (
+        <Tooltip title="Добавить лист">
+          <IconButton
+            size="small"
+            aria-label={`Добавить лист в ${unitName}`}
+            onClick={onAddLeaf}
+            sx={compactOverviewActionButtonSx}
+          >
+            <AddOutlinedIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+    </Stack>
+  );
+};
+
+const OverviewMemberViewToggle = ({
+  contractorCount,
+  staffCount,
+  value,
+  onChange,
+}: {
+  contractorCount: number;
+  staffCount: number;
+  value: OverviewMemberView;
+  onChange: (nextValue: OverviewMemberView) => void;
+}) => {
+  const options: Array<{ color: string; count: number; label: string; value: OverviewMemberView }> = [
+    {
+      color: hierarchyPageColors.softTeal,
+      count: staffCount,
+      label: 'Сотрудники',
+      value: 'staff',
+    },
+    {
+      color: hierarchyPageColors.softPink,
+      count: contractorCount,
+      label: 'Контрагенты',
+      value: 'contractors',
+    },
+  ];
+
+  return (
+    <Box
+      role="tablist"
+      aria-label="Переключение списка участников"
+      sx={{
+        display: 'inline-flex',
+        alignSelf: 'flex-start',
+        gap: 0.45,
+        p: 0.45,
+        borderRadius: 2,
+        border: `1px solid ${alpha(hierarchyPageColors.canvasBorder, 0.92)}`,
+        backgroundColor: alpha(hierarchyPageColors.canvas, 0.88),
+      }}
+    >
+      {options.map((option) => {
+        const isActive = option.value === value;
+
+        return (
+          <Box
+            key={option.value}
+            component="button"
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(option.value)}
+            sx={{
+              appearance: 'none',
+              border: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 0.8,
+              borderRadius: 1.5,
+              backgroundColor: isActive ? '#ffffff' : 'transparent',
+              boxShadow: isActive ? '0 1px 2px rgba(15, 23, 42, 0.06)' : 'none',
+              color: isActive ? hierarchyPageColors.textPrimary : hierarchyPageColors.textSecondary,
+              cursor: 'pointer',
+              font: 'inherit',
+              px: 1.15,
+              py: 0.8,
+              transition: 'background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease',
+            }}
+          >
+            <Typography sx={{ fontSize: 13.5, fontWeight: 800, lineHeight: 1, color: 'inherit' }}>
+              {option.label}
+            </Typography>
+            <Box
+              component="span"
+              sx={{
+                minWidth: 22,
+                borderRadius: 999,
+                backgroundColor: alpha(option.color, isActive ? 0.16 : 0.1),
+                color: isActive ? option.color : hierarchyPageColors.textSecondary,
+                px: 0.7,
+                py: 0.2,
+                fontSize: 11,
+                fontWeight: 800,
+                lineHeight: 1,
+                textAlign: 'center',
+              }}
+            >
+              {option.count}
+            </Box>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+};
 
 const InlineUnitNameField = ({
   canEdit,
@@ -550,6 +711,7 @@ export const UnitHierarchyPageView = () => {
   const [departmentScope, setDepartmentScope] = useState<'all' | number>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOverviewUnitId, setSelectedOverviewUnitId] = useState<number | null>(null);
+  const [selectedOverviewMemberView, setSelectedOverviewMemberView] = useState<OverviewMemberView>('staff');
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const normalizedQuery = useMemo(
@@ -651,6 +813,10 @@ export const UnitHierarchyPageView = () => {
       title: scopedDepartment?.name ?? 'Подразделение',
     };
   }, [departmentScope, overviewCards.length, scopedDepartment, scopedDepartments, selectedDepartmentView]);
+
+  const selectedOverviewVisibleMembers = selectedOverviewMemberView === 'staff'
+    ? selectedOverviewCard?.visibleStaff ?? []
+    : selectedOverviewCard?.visibleContractors ?? [];
 
   useEffect(() => {
     if (departmentScope !== 'all' && !departments.some((department) => department.unit_id === departmentScope)) {
@@ -918,39 +1084,15 @@ export const UnitHierarchyPageView = () => {
                   </Box>
 
                   {departmentScope !== 'all' && selectedDepartmentView ? (
-                    <Stack direction="row" spacing={0.9} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<AccountTreeOutlinedIcon sx={{ fontSize: 16 }} />}
-                        onClick={() => openUnitEditor(selectedDepartmentView.department)}
-                        sx={{ minHeight: 42, borderRadius: 1.75, px: 2 }}
-                      >
-                        Схема
-                      </Button>
-                      {selectedDepartmentView.department.actions.canManageMembers ? (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<HandshakeOutlinedIcon sx={{ fontSize: 16 }} />}
-                          onClick={() => openContractorDialog(selectedDepartmentView.department)}
-                          sx={{ minHeight: 42, borderRadius: 1.75, px: 2 }}
-                        >
-                          Контрагент
-                        </Button>
-                      ) : null}
-                      {selectedDepartmentView.department.actions.canCreateChild ? (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
-                          onClick={() => handleAddUnit(selectedDepartmentView.department.unit_id, selectedDepartmentView.department)}
-                          sx={{ minHeight: 42, borderRadius: 1.75, px: 2 }}
-                        >
-                          Добавить лист
-                        </Button>
-                      ) : null}
-                    </Stack>
+                    <CompactUnitActions
+                      canCreateChild={selectedDepartmentView.department.actions.canCreateChild}
+                      canManageMembers={selectedDepartmentView.department.actions.canManageMembers}
+                      onAddLeaf={() => handleAddUnit(selectedDepartmentView.department.unit_id, selectedDepartmentView.department)}
+                      onManageContractors={() => openContractorDialog(selectedDepartmentView.department)}
+                      onOpenSchema={() => openUnitEditor(selectedDepartmentView.department)}
+                      size="medium"
+                      unitName={selectedDepartmentView.department.name}
+                    />
                   ) : null}
                 </Stack>
 
@@ -1070,12 +1212,17 @@ export const UnitHierarchyPageView = () => {
                   </Box>
 
                   <Stack spacing={1} sx={{ minWidth: 0 }}>
-                    <Card variant="outlined" sx={sectionCardSx}>
+                    <Card variant="outlined" sx={{ ...sectionCardSx, overflow: 'hidden' }}>
                       <CardContent sx={{ p: 1.1, '&:last-child': { pb: 1.1 } }}>
                         {selectedOverviewCard ? (
-                          <Stack spacing={1}>
-                            <Stack spacing={1} alignItems="stretch">
-                              <Box sx={{ minWidth: 0 }}>
+                          <Stack spacing={1.15}>
+                            <Stack
+                              direction={{ xs: 'column', sm: 'row' }}
+                              spacing={1}
+                              justifyContent="space-between"
+                              alignItems={{ xs: 'stretch', sm: 'flex-start' }}
+                            >
+                              <Box sx={{ minWidth: 0, flex: 1 }}>
                                 <Typography sx={{ fontSize: 14.5, fontWeight: 800, overflowWrap: 'anywhere' }}>
                                   {selectedOverviewCard.unit.name}
                                 </Typography>
@@ -1083,40 +1230,14 @@ export const UnitHierarchyPageView = () => {
                                   {selectedOverviewCard.department.name}
                                 </Typography>
                               </Box>
-
-                              <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  startIcon={<AccountTreeOutlinedIcon sx={{ fontSize: 16 }} />}
-                                  onClick={() => openUnitEditor(selectedOverviewCard.unit)}
-                                  sx={{ minHeight: 38, borderRadius: 1.5, px: 1.6 }}
-                                >
-                                  Схема
-                                </Button>
-                                {selectedOverviewCard.unit.actions.canManageMembers ? (
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<HandshakeOutlinedIcon sx={{ fontSize: 16 }} />}
-                                    onClick={() => openContractorDialog(selectedOverviewCard.unit)}
-                                    sx={{ minHeight: 38, borderRadius: 1.5, px: 1.6 }}
-                                  >
-                                    Контрагент
-                                  </Button>
-                                ) : null}
-                                {selectedOverviewCard.unit.actions.canCreateChild ? (
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
-                                    onClick={() => handleAddUnit(selectedOverviewCard.department.unit_id, selectedOverviewCard.unit)}
-                                    sx={{ minHeight: 38, borderRadius: 1.5, px: 1.6 }}
-                                  >
-                                    Добавить лист
-                                  </Button>
-                                ) : null}
-                              </Stack>
+                              <CompactUnitActions
+                                canCreateChild={selectedOverviewCard.unit.actions.canCreateChild}
+                                canManageMembers={selectedOverviewCard.unit.actions.canManageMembers}
+                                onAddLeaf={() => handleAddUnit(selectedOverviewCard.department.unit_id, selectedOverviewCard.unit)}
+                                onManageContractors={() => openContractorDialog(selectedOverviewCard.unit)}
+                                onOpenSchema={() => openUnitEditor(selectedOverviewCard.unit)}
+                                unitName={selectedOverviewCard.unit.name}
+                              />
                             </Stack>
 
                             <UnitStatRow
@@ -1124,28 +1245,40 @@ export const UnitHierarchyPageView = () => {
                               contractorCount={selectedOverviewCard.totalContractors}
                               staffCount={selectedOverviewCard.totalStaff}
                             />
+                            <Divider />
+
+                            <OverviewMemberViewToggle
+                              contractorCount={selectedOverviewCard.visibleContractors.length}
+                              staffCount={selectedOverviewCard.visibleStaff.length}
+                              value={selectedOverviewMemberView}
+                              onChange={setSelectedOverviewMemberView}
+                            />
+
+                            <Box
+                              sx={{
+                                maxHeight: { xs: 'none', xl: 488 },
+                                overflowY: 'auto',
+                                pr: 0.2,
+                              }}
+                            >
+                              {selectedOverviewMemberView === 'staff' ? (
+                                <PeopleTree
+                                  emptyLabel="Сотрудников пока нет."
+                                  hideHeader
+                                  members={selectedOverviewVisibleMembers}
+                                  title="Сотрудники объединения"
+                                />
+                              ) : (
+                                <PeopleFlatList
+                                  emptyLabel="Контрагентов пока нет."
+                                  hideHeader
+                                  members={selectedOverviewVisibleMembers}
+                                  title="Контрагенты объединения"
+                                />
+                              )}
+                            </Box>
                           </Stack>
                         ) : null}
-
-                        <Box sx={{ maxHeight: { xs: 'none', xl: 420 }, overflowY: 'auto', pr: 0.2 }}>
-                          <PeopleTree
-                            emptyLabel="Сотрудников пока нет."
-                            members={selectedOverviewCard?.visibleStaff ?? []}
-                            title="Сотрудники объединения"
-                          />
-                        </Box>
-                      </CardContent>
-                    </Card>
-
-                    <Card variant="outlined" sx={sectionCardSx}>
-                      <CardContent sx={{ p: 1.1, '&:last-child': { pb: 1.1 } }}>
-                        <Box sx={{ maxHeight: { xs: 'none', xl: 320 }, overflowY: 'auto', pr: 0.2 }}>
-                          <PeopleFlatList
-                            emptyLabel="Контрагентов пока нет."
-                            members={selectedOverviewCard?.visibleContractors ?? []}
-                            title="Контрагенты объединения"
-                          />
-                        </Box>
                       </CardContent>
                     </Card>
                   </Stack>

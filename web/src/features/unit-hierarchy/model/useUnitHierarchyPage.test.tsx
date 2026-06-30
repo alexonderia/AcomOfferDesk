@@ -6,6 +6,7 @@ import { useUnitHierarchyPage } from './useUnitHierarchyPage';
 const useAuthMock = vi.fn();
 const getUnitsTreeMock = vi.fn();
 const getAvailableUsersForUnitMock = vi.fn();
+const getUnassignedUsersMock = vi.fn();
 const addUnitMemberMock = vi.fn();
 const createUnitMock = vi.fn();
 const deleteUnitMock = vi.fn();
@@ -21,6 +22,7 @@ vi.mock('@app/providers/AuthProvider', () => ({
 vi.mock('@shared/api/units', () => ({
   getUnitsTree: (...args: unknown[]) => getUnitsTreeMock(...args),
   getAvailableUsersForUnit: (...args: unknown[]) => getAvailableUsersForUnitMock(...args),
+  getUnassignedUsers: (...args: unknown[]) => getUnassignedUsersMock(...args),
   addUnitMember: (...args: unknown[]) => addUnitMemberMock(...args),
   createUnit: (...args: unknown[]) => createUnitMock(...args),
   deleteUnit: (...args: unknown[]) => deleteUnitMock(...args),
@@ -178,6 +180,8 @@ describe('useUnitHierarchyPage', () => {
     useAuthMock.mockReset();
     getUnitsTreeMock.mockReset();
     getAvailableUsersForUnitMock.mockReset();
+    getUnassignedUsersMock.mockReset();
+    getUnassignedUsersMock.mockResolvedValue([]);
     addUnitMemberMock.mockReset();
     createUnitMock.mockReset();
     deleteUnitMock.mockReset();

@@ -80,10 +80,12 @@ export const buildPeopleTree = (members: UnitMember[]): PersonTreeNode[] => {
 
 export const PersonRow = ({
   member,
+  onAssign,
   onMove,
   onRemove,
 }: {
   member: UnitMember;
+  onAssign?: ((member: UnitMember) => void) | undefined;
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
 }) => {
@@ -140,8 +142,15 @@ export const PersonRow = ({
         </Stack>
       </Box>
 
-      {(onMove || onRemove) ? (
+      {(onAssign || onMove || onRemove) ? (
         <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
+          {onAssign ? (
+            <Tooltip title="Определить в подразделение">
+              <IconButton size="small" onClick={() => onAssign(member)} aria-label={`Определить ${getDisplayName(member)} в подразделение`} sx={outlinedIconButtonSx}>
+                <SwapHorizRoundedIcon sx={{ fontSize: 17 }} />
+              </IconButton>
+            </Tooltip>
+          ) : null}
           {onMove ? (
             <Tooltip title="Переместить в другое объединение">
               <IconButton size="small" onClick={() => onMove(member)} aria-label={`Переместить ${getDisplayName(member)}`} sx={outlinedIconButtonSx}>
@@ -264,6 +273,7 @@ export const PeopleFlatList = ({
   headerAction,
   hideHeader = false,
   members,
+  onAssign,
   onRemove,
   title,
 }: {
@@ -271,6 +281,7 @@ export const PeopleFlatList = ({
   headerAction?: ReactNode;
   hideHeader?: boolean;
   members: UnitMember[];
+  onAssign?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
   title: string;
 }) => (
@@ -293,7 +304,7 @@ export const PeopleFlatList = ({
     ) : (
       <Stack spacing={0.6} sx={{ minWidth: 0 }}>
         {members.map((member) => (
-          <PersonRow key={member.user_id} member={member} onRemove={onRemove} />
+          <PersonRow key={member.user_id} member={member} onAssign={onAssign} onRemove={onRemove} />
         ))}
       </Stack>
     )}

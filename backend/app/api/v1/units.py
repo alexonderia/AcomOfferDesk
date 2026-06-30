@@ -225,6 +225,25 @@ async def list_available_contractors_for_unit(
     )
 
 
+@router.get("/units/unassigned-users", response_model=AvailableUnitUsersResponse)
+@router.get("/units/unassigned-users/", response_model=AvailableUnitUsersResponse, include_in_schema=False)
+async def list_unassigned_users(
+    search: str | None = Query(default=None, min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> AvailableUnitUsersResponse:
+    async with uow:
+        service = UnitService(uow.units, uow.users)
+        items = await service.list_unassigned_users(
+            current_user=current_user,
+            search=search,
+        )
+
+    return AvailableUnitUsersResponse(
+        data=AvailableUnitUsersData(items=[_available_user_schema(item) for item in items])
+    )
+
+
 @router.post("/units/{unit_id}/contractors", response_model=UnitMemberResponse)
 async def add_unit_contractor(
     payload: AddUnitMemberRequest,

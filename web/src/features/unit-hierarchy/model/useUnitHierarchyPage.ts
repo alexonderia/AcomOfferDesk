@@ -7,6 +7,7 @@ import {
   createUnit,
   deleteUnit,
   getAvailableUsersForUnit,
+  getUnassignedUsers,
   getUnitsTree,
   removeUnitMember,
   updateUnit,
@@ -32,6 +33,11 @@ type MemberDialogState = {
 type MoveMemberState = {
   member: UnitMember;
   fromUnit: UnitNode;
+  targetUnitId: number | null;
+} | null;
+
+type AssignMemberState = {
+  user: { user_id: string; full_name: string | null };
   targetUnitId: number | null;
 } | null;
 
@@ -195,6 +201,10 @@ export const useUnitHierarchyPage = () => {
   const [isDeletingUnit, setIsDeletingUnit] = useState(false);
   const [contractorDialogUnit, setContractorDialogUnit] = useState<UnitNode | null>(null);
   const [isSavingUnitNameId, setIsSavingUnitNameId] = useState<number | null>(null);
+  const [unassignedUsers, setUnassignedUsers] = useState<AvailableUnitUser[]>([]);
+  const [isLoadingUnassignedUsers, setIsLoadingUnassignedUsers] = useState(false);
+  const [assignMemberState, setAssignMemberState] = useState<AssignMemberState>(null);
+  const [isAssigningMember, setIsAssigningMember] = useState(false);
   const deferredMemberSearch = useDeferredValue(memberDialogState.search);
 
   const canCreateRootUnit = hasPermission(session, 'units.create') && session?.roleId === ROLE.SUPERADMIN;
@@ -260,6 +270,8 @@ export const useUnitHierarchyPage = () => {
       }));
   }, [moveMemberRootUnit, moveMemberState]);
 
+  const assignUnitOptions = useMemo(() => buildUnitOptions(tree), [tree]);
+
   const activeUnitParent = useMemo(
     () => (activeUnitDetails ? findParentUnit(tree, activeUnitDetails.unit_id) : null),
     [activeUnitDetails, tree]
@@ -279,9 +291,22 @@ export const useUnitHierarchyPage = () => {
     return buildUnitOptions([selectedDepartment]).filter((option) => !blockedIds.has(option.unitId));
   }, [selectedDepartment, unitDialogState]);
 
+  const loadUnassignedUsers = useCallback(async () => {
+    setIsLoadingUnassignedUsers(true);
+    try {
+      const items = await getUnassignedUsers();
+      setUnassignedUsers(items);
+    } catch {
+      setUnassignedUsers([]);
+    } finally {
+      setIsLoadingUnassignedUsers(false);
+    }
+  }, []);
+
   const loadTree = useCallback(async (preserveSelection = true) => {
     setIsLoading(true);
     setError(null);
+    void loadUnassignedUsers();
     try {
       const nextTree = await getUnitsTree();
       setTree(nextTree);
@@ -310,7 +335,7 @@ export const useUnitHierarchyPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [activeUnitDetailsId, selectedDepartmentId, selectedEditorUnitId]);
+  }, [activeUnitDetailsId, loadUnassignedUsers, selectedDepartmentId, selectedEditorUnitId]);
 
   useEffect(() => {
     void loadTree(false);
@@ -475,6 +500,31 @@ export const useUnitHierarchyPage = () => {
     }
   };
 
+  const openAssignMemberDialog = (user: { user_id: string; full_name: string | null }) => {
+    setAssignMemberState({ user, targetUnitId: null });
+  };
+
+  const closeAssignMemberDialog = () => setAssignMemberState(null);
+
+  const submitAssignMember = async () => {
+    if (!assignMemberState || assignMemberState.targetUnitId === null) {
+      showErrorToast('Выберите подразделение');
+      return;
+    }
+
+    setIsAssigningMember(true);
+    try {
+      await addUnitMember(assignMemberState.targetUnitId, assignMemberState.user.user_id);
+      showSuccessToast('Сотрудник определён в подразделение');
+      closeAssignMemberDialog();
+      await loadTree();
+    } catch (submitError) {
+      showErrorToast(submitError instanceof Error ? submitError.message : 'Не удалось определить сотрудника');
+    } finally {
+      setIsAssigningMember(false);
+    }
+  };
+
   const submitUnitName = async (unit: UnitNode, nextName: string) => {
     const normalizedName = nextName.trim();
     if (!normalizedName) {
@@ -591,6 +641,15 @@ export const useUnitHierarchyPage = () => {
     closeDeleteDialog,
     confirmDeleteUnit,
     loadTree,
+    unassignedUsers,
+    isLoadingUnassignedUsers,
+    assignMemberState,
+    setAssignMemberState,
+    isAssigningMember,
+    assignUnitOptions,
+    openAssignMemberDialog,
+    closeAssignMemberDialog,
+    submitAssignMember,
     findRootUnitForUnit: (unitId: number) => findRootUnitForUnit(tree, unitId),
   };
 };

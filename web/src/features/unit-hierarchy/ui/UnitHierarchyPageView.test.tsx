@@ -155,6 +155,15 @@ const buildViewState = (): any => ({
   closeDeleteDialog: vi.fn(),
   confirmDeleteUnit: vi.fn(),
   loadTree: vi.fn(),
+  unassignedUsers: [],
+  isLoadingUnassignedUsers: false,
+  assignMemberState: null,
+  setAssignMemberState: vi.fn(),
+  isAssigningMember: false,
+  assignUnitOptions: [],
+  openAssignMemberDialog: vi.fn(),
+  closeAssignMemberDialog: vi.fn(),
+  submitAssignMember: vi.fn(),
   findRootUnitForUnit: vi.fn(() => baseDepartment),
 });
 

@@ -760,6 +760,22 @@ class UnitService:
             if user.id_role != settings.contractor_role_id
         ]
 
+    async def list_unassigned_users(
+        self,
+        *,
+        current_user: CurrentUser,
+        search: str | None = None,
+    ) -> list[AvailableUnitUserState]:
+        await self._ensure_read_access(current_user=current_user)
+        rows = await self._units.list_unassigned_users(
+            contractor_role_id=settings.contractor_role_id,
+            search=search,
+        )
+        return [
+            self._build_available_user_state(user=user, profile=profile, role=role)
+            for user, profile, role in rows
+        ]
+
     async def list_available_contractors_for_unit(
         self,
         *,

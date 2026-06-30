@@ -5,6 +5,7 @@ export { deleteUnit } from './deleteUnit';
 export { getAvailableContractorsForUnit } from './getAvailableContractorsForUnit';
 export { getAvailableUsersForUnit } from './getAvailableUsersForUnit';
 export { getRecommendedUnitsTree } from './getRecommendedUnitsTree';
+export { getUnassignedUsers } from './getUnassignedUsers';
 export { getUnitsTree } from './getUnitsTree';
 export { removeUnitMember } from './removeUnitMember';
 export { updateUnit } from './updateUnit';

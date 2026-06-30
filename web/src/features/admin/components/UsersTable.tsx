@@ -30,6 +30,7 @@ import { updateUserManager } from '@shared/api/users/updateUserManager';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
+import { getUnitsTree, type UnitMember, type UnitNode } from '@shared/api/units';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
 import {
@@ -615,6 +616,26 @@ const managerRoleNameById: Record<number, string> = {
   [ROLE.ECONOMIST]: 'Экономист',
 };
 
+const formatUnitManager = (member: UnitMember): string => {
+  const roleLabel = member.role_name || managerRoleNameById[member.role_id] || `Роль ${member.role_id}`;
+  return `${roleLabel} — ${member.full_name ?? member.user_id} (${member.user_id})`;
+};
+
+const sortUnitManagers = (members: UnitMember[]): UnitMember[] =>
+  [...members].sort((a, b) => {
+    if (a.role_id !== b.role_id) {
+      return a.role_id - b.role_id;
+    }
+    return (a.full_name ?? a.user_id).localeCompare(b.full_name ?? b.user_id, 'ru');
+  });
+
+type UnitSubdivisionGroup = {
+  rootId: number;
+  rootName: string;
+  isDirectRootMember: boolean;
+  unions: Array<{ unitId: number; name: string; managers: UnitMember[] }>;
+};
+
 const PROJECT_MANAGER_STATUS_TARGET_ROLES: number[] = [
   ROLE.PROJECT_MANAGER,
   ROLE.LEAD_ECONOMIST,
@@ -662,6 +683,8 @@ export const UsersTable = ({
   const [managerError, setManagerError] = useState<string | null>(null);
   const [managerUserId, setManagerUserId] = useState('');
   const [isUpdatingManager, setIsUpdatingManager] = useState(false);
+  const [unitsTree, setUnitsTree] = useState<UnitNode[] | null>(null);
+  const unitsTreeRequestedRef = useRef(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
   const [manualContractorDraft, setManualContractorDraft] = useState<ManualContractorDraft>(() => ({
     login: '',
@@ -878,12 +901,126 @@ export const UsersTable = ({
     };
   }, [selectedUser?.user_id, shouldLoadDepartmentDelegations]);
 
+  useEffect(() => {
+    if (!shouldLoadDepartmentDelegations || unitsTreeRequestedRef.current) {
+      return;
+    }
+    unitsTreeRequestedRef.current = true;
+    void getUnitsTree()
+      .then((items) => setUnitsTree(items))
+      .catch(() => setUnitsTree([]));
+  }, [shouldLoadDepartmentDelegations]);
+
   const availableManagerOptions = useMemo(() => {
     if (!selectedUser) {
       return [];
     }
     return managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id);
   }, [managerOptions, selectedUser]);
+
+  const unitSubdivisionGroups = useMemo<UnitSubdivisionGroup[]>(() => {
+    if (!selectedUser || !unitsTree) {
+      return [];
+    }
+
+    const nodeById = new Map<number, UnitNode>();
+    const parentById = new Map<number, number | null>();
+    const indexNode = (node: UnitNode, parentId: number | null) => {
+      nodeById.set(node.unit_id, node);
+      parentById.set(node.unit_id, parentId);
+      node.children.forEach((child) => indexNode(child, node.unit_id));
+    };
+    unitsTree.forEach((node) => indexNode(node, null));
+
+    const chainToRoot = (unitId: number): number[] => {
+      const chain: number[] = [];
+      const seen = new Set<number>();
+      let current: number | null = unitId;
+      while (current != null && !seen.has(current)) {
+        seen.add(current);
+        chain.push(current);
+        current = parentById.get(current) ?? null;
+      }
+      return chain;
+    };
+
+    const membershipUnitIds: number[] = [];
+    nodeById.forEach((node, unitId) => {
+      if (node.members.some((member) => member.user_id === selectedUser.user_id)) {
+        membershipUnitIds.push(unitId);
+      }
+    });
+
+    // Непосредственный руководитель = участники юнита на один уровень выше
+    // (родительского), исключая самого сотрудника.
+    const managersOneLevelUp = (unitId: number): UnitMember[] => {
+      const parentId = parentById.get(unitId) ?? null;
+      if (parentId == null) {
+        return [];
+      }
+      const parentNode = nodeById.get(parentId);
+      if (!parentNode) {
+        return [];
+      }
+      return parentNode.members.filter((member) => member.user_id !== selectedUser.user_id);
+    };
+
+    type UnionAccumulator = { name: string; managersById: Map<string, UnitMember> };
+    const groupsByRoot = new Map<
+      number,
+      { isDirectRootMember: boolean; unions: Map<number, UnionAccumulator> }
+    >();
+
+    membershipUnitIds.forEach((unitId) => {
+      const chain = chainToRoot(unitId);
+      const rootId = chain[chain.length - 1];
+      let group = groupsByRoot.get(rootId);
+      if (!group) {
+        group = { isDirectRootMember: false, unions: new Map<number, UnionAccumulator>() };
+        groupsByRoot.set(rootId, group);
+      }
+      if (unitId === rootId) {
+        group.isDirectRootMember = true;
+        return;
+      }
+      const unionId = chain[chain.length - 2];
+      const unionNode = nodeById.get(unionId);
+      if (!unionNode) {
+        return;
+      }
+      let union = group.unions.get(unionId);
+      if (!union) {
+        union = { name: unionNode.name, managersById: new Map<string, UnitMember>() };
+        group.unions.set(unionId, union);
+      }
+      managersOneLevelUp(unitId).forEach((manager) => {
+        union!.managersById.set(manager.user_id, manager);
+      });
+    });
+
+    const groups: UnitSubdivisionGroup[] = [];
+    groupsByRoot.forEach((group, rootId) => {
+      const rootNode = nodeById.get(rootId);
+      if (!rootNode) {
+        return;
+      }
+      const unions = Array.from(group.unions.entries())
+        .map(([unitId, union]) => ({
+          unitId,
+          name: union.name,
+          managers: sortUnitManagers(Array.from(union.managersById.values())),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      groups.push({
+        rootId,
+        rootName: rootNode.name,
+        isDirectRootMember: group.isDirectRootMember,
+        unions,
+      });
+    });
+
+    return groups.sort((a, b) => a.rootName.localeCompare(b.rootName, 'ru'));
+  }, [selectedUser, unitsTree]);
 
   const canShowManagerSection = Boolean(
     selectedUser?.actions.update_manager
@@ -1658,6 +1795,62 @@ export const UsersTable = ({
                       >
                         {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
                       </Button>
+                    </Stack>
+                  </Stack>
+                ) : null}
+
+                {unitSubdivisionGroups.length > 0 ? (
+                  <Stack
+                    spacing={1.2}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: { xs: 1.4, sm: 1.8 },
+                      backgroundColor: 'background.paper'
+                    }}
+                  >
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                      Руководитель по объединениям
+                    </Typography>
+                    <Stack spacing={1.4}>
+                      {unitSubdivisionGroups.map((group) => (
+                        <Box key={group.rootId}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            {group.rootName}
+                          </Typography>
+                          {group.unions.length > 0 ? (
+                            <Stack spacing={0.6} sx={{ mt: 0.6, pl: 1.4 }}>
+                              {group.unions.map((union) => (
+                                <Box key={union.unitId}>
+                                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                    {union.name}
+                                  </Typography>
+                                  {union.managers.length > 0 ? (
+                                    union.managers.map((manager) => (
+                                      <Typography
+                                        key={manager.user_id}
+                                        variant="body2"
+                                        color="text.secondary"
+                                      >
+                                        {`Руководитель: ${formatUnitManager(manager)}`}
+                                      </Typography>
+                                    ))
+                                  ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                      Руководитель: нет
+                                    </Typography>
+                                  )}
+                                </Box>
+                              ))}
+                            </Stack>
+                          ) : group.isDirectRootMember ? (
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3 }}>
+                              Состоит в подразделении напрямую (верхний уровень)
+                            </Typography>
+                          ) : null}
+                        </Box>
+                      ))}
                     </Stack>
                   </Stack>
                 ) : null}

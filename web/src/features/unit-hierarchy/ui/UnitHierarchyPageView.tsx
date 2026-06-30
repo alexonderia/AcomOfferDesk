@@ -707,6 +707,15 @@ export const UnitHierarchyPageView = () => {
     confirmDeleteUnit,
     findRootUnitForUnit,
     loadTree,
+    unassignedUsers,
+    isLoadingUnassignedUsers,
+    assignMemberState,
+    isAssigningMember,
+    assignUnitOptions,
+    openAssignMemberDialog,
+    closeAssignMemberDialog,
+    submitAssignMember,
+    setAssignMemberState,
   } = useUnitHierarchyPage();
 
   const [departmentScope, setDepartmentScope] = useState<'all' | number>('all');
@@ -837,6 +846,7 @@ export const UnitHierarchyPageView = () => {
 
   const selectedUser = availableUsers.find((user) => user.user_id === memberDialogState.selectedUserId) ?? null;
   const selectedMoveTarget = moveUnitOptions.find((option) => option.unitId === moveMemberState?.targetUnitId) ?? null;
+  const selectedAssignTarget = assignUnitOptions.find((option) => option.unitId === assignMemberState?.targetUnitId) ?? null;
 
   const detailStaff = useMemo(
     () => (activeUnitDetails?.members ?? []).filter((member) => member.role_id !== ROLE.CONTRACTOR),
@@ -845,6 +855,20 @@ export const UnitHierarchyPageView = () => {
   const detailContractors = useMemo(
     () => (activeUnitDetails?.members ?? []).filter((member) => member.role_id === ROLE.CONTRACTOR),
     [activeUnitDetails]
+  );
+
+  const unassignedMembers = useMemo<UnitMember[]>(
+    () => (unassignedUsers ?? [])
+      .map((user) => ({
+        user_id: user.user_id,
+        full_name: user.full_name,
+        role_id: user.role_id,
+        role_name: user.role_name,
+        status: user.status,
+        id_parent_user: null,
+      }))
+      .filter((member) => matchesMemberQuery(member, normalizedQuery)),
+    [normalizedQuery, unassignedUsers]
   );
 
   const editorDepartment = editorRootUnit ? findRootUnitForUnit(editorRootUnit.unit_id) : null;
@@ -1298,6 +1322,67 @@ export const UnitHierarchyPageView = () => {
         </Stack>
       )}
 
+      {departments.length > 0 ? (
+        <Card
+          variant="outlined"
+          sx={{
+            ...sectionCardSx,
+            borderRadius: 2.5,
+            borderColor: alpha(hierarchyPageColors.canvasBorder, 0.95),
+          }}
+        >
+          <CardContent sx={{ p: { xs: 1.25, md: 1.7 }, '&:last-child': { pb: { xs: 1.25, md: 1.7 } } }}>
+            <Stack spacing={1.2}>
+              <Stack
+                direction="row"
+                spacing={1}
+                justifyContent="space-between"
+                alignItems="center"
+                useFlexGap
+                flexWrap="wrap"
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: { xs: 16, md: 18 }, fontWeight: 800, lineHeight: 1.2 }}>
+                    Нераспределённые сотрудники
+                  </Typography>
+                  <Typography sx={{ fontSize: 12, color: hierarchyPageColors.textSecondary }}>
+                    Активные сотрудники, не закреплённые ни за одним подразделением. Нажмите на кнопку рядом с сотрудником, чтобы быстро определить его в нужный юнит.
+                  </Typography>
+                </Box>
+                <UnitStatTile
+                  color={hierarchyPageColors.softPink}
+                  label="Сотрудники"
+                  value={unassignedMembers.length}
+                />
+              </Stack>
+
+              <Divider />
+
+              {isLoadingUnassignedUsers && unassignedMembers.length === 0 ? (
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ py: 0.5 }}>
+                  <CircularProgress size={16} />
+                  <Typography variant="body2" color="text.secondary">
+                    Загрузка списка...
+                  </Typography>
+                </Stack>
+              ) : (
+                <Box sx={{ maxHeight: { xs: 'none', md: 360 }, overflowY: 'auto', pr: 0.2 }}>
+                  <PeopleFlatList
+                    emptyLabel={normalizedQuery
+                      ? 'По заданному поиску нераспределённых сотрудников не найдено.'
+                      : 'Все сотрудники закреплены за подразделениями.'}
+                    hideHeader
+                    members={unassignedMembers}
+                    onAssign={(member) => openAssignMemberDialog(member)}
+                    title="Нераспределённые сотрудники"
+                  />
+                </Box>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Dialog fullScreen open={isEditorOpen} onClose={closeUnitEditor}>
         {editorRootUnit ? (
           <>
@@ -1513,6 +1598,34 @@ export const UnitHierarchyPageView = () => {
           <Button onClick={closeMoveMemberDialog}>Отмена</Button>
           <Button variant="contained" disabled={isMovingMember || !moveMemberState?.targetUnitId} onClick={() => void submitMoveMember()}>
             {isMovingMember ? 'Переносим...' : 'Перенести'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(assignMemberState)} onClose={closeAssignMemberDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {assignMemberState?.user.full_name?.trim()
+            ? `Определить сотрудника «${assignMemberState.user.full_name}» в подразделение`
+            : 'Определить сотрудника в подразделение'}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Autocomplete
+            options={assignUnitOptions}
+            value={selectedAssignTarget}
+            onChange={(_event, value) => {
+              setAssignMemberState((current) => current ? { ...current, targetUnitId: value?.unitId ?? null } : current);
+            }}
+            getOptionLabel={(option) => option.label}
+            isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
+            renderInput={(params) => (
+              <TextField {...params} label="Подразделение" placeholder="Выберите подразделение или группу" />
+            )}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeAssignMemberDialog}>Отмена</Button>
+          <Button variant="contained" disabled={isAssigningMember || !assignMemberState?.targetUnitId} onClick={() => void submitAssignMember()}>
+            {isAssigningMember ? 'Определяем...' : 'Определить'}
           </Button>
         </DialogActions>
       </Dialog>

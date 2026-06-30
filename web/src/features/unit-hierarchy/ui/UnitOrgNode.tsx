@@ -1,4 +1,4 @@
-import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined';
 import {
@@ -21,8 +21,8 @@ import {
 
 type UnitOrgNodeProps = {
   depth: number;
-  onCreateChild?: ((unit: UnitNode) => void) | undefined;
   onDelete: (unit: UnitNode) => void;
+  onOpenCreateChildDialog?: ((unit: UnitNode) => void) | undefined;
   onMoveMember?: ((unit: UnitNode, member: UnitNode['members'][number]) => void) | undefined;
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
   onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
@@ -34,8 +34,8 @@ type UnitOrgNodeProps = {
 
 export const UnitOrgNode = ({
   depth,
-  onCreateChild,
   onDelete,
+  onOpenCreateChildDialog,
   onMoveMember,
   onOpenMemberDialog,
   onOpenUnitDetails,
@@ -45,7 +45,7 @@ export const UnitOrgNode = ({
   unit,
 }: UnitOrgNodeProps) => {
   const canDelete = unit.actions.canDelete;
-  const canCreateChild = showPrimaryActions && unit.actions.canCreateChild && Boolean(onCreateChild);
+  const canCreateChild = showPrimaryActions && unit.actions.canCreateChild && Boolean(onOpenCreateChildDialog);
   const canOpenMemberDialog = unit.actions.canManageMembers && Boolean(onOpenMemberDialog);
   const canOpenUnitDetails = Boolean(onOpenUnitDetails);
   const canManageMembers = unit.actions.canManageMembers;
@@ -61,8 +61,8 @@ export const UnitOrgNode = ({
   const renderChildNode = (child: UnitNode) => (
     <UnitOrgNode
       depth={depth + 1}
-      onCreateChild={onCreateChild}
       onDelete={onDelete}
+      onOpenCreateChildDialog={onOpenCreateChildDialog}
       onMoveMember={onMoveMember}
       onOpenMemberDialog={onOpenMemberDialog}
       onOpenUnitDetails={onOpenUnitDetails}
@@ -82,11 +82,11 @@ export const UnitOrgNode = ({
         onClick={canOpenUnitDetails ? openUnitDetails : undefined}
         onKeyDown={canOpenUnitDetails
           ? (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              openUnitDetails();
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openUnitDetails();
+              }
             }
-          }
           : undefined}
         sx={{
           ...orgNodeCardSx,
@@ -123,11 +123,7 @@ export const UnitOrgNode = ({
                     event.stopPropagation();
                     onDelete(unit);
                   }}
-                  sx={{
-                    mr: -0.35,
-                    flexShrink: 0,
-                    ...outlinedIconButtonSx,
-                  }}
+                  sx={{ ...outlinedIconButtonSx, mr: -0.35, flexShrink: 0 }}
                 >
                   <DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />
                 </IconButton>
@@ -181,12 +177,12 @@ export const UnitOrgNode = ({
 
           {canCreateChild ? (
             <>
-              <Tooltip title="Добавить дочерний лист">
+              <Tooltip title="Создать дочернюю группу">
                 <IconButton
-                  aria-label={`Добавить дочерний лист в ${unit.name}`}
+                  aria-label={`Создать дочернюю группу в ${unit.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
-                    onCreateChild?.(unit);
+                    onOpenCreateChildDialog?.(unit);
                   }}
                   sx={{
                     width: 32,
@@ -197,7 +193,7 @@ export const UnitOrgNode = ({
                     '&:hover': { bgcolor: 'primary.dark' },
                   }}
                 >
-                  <AddOutlinedIcon sx={{ fontSize: 20 }} />
+                  <AddRoundedIcon sx={{ fontSize: 20 }} />
                 </IconButton>
               </Tooltip>
               {hasChildren ? <Box sx={{ ...connectorLineSx, width: '2px', height: '20px', mb: '-1px' }} /> : null}
@@ -206,40 +202,40 @@ export const UnitOrgNode = ({
 
           {hasChildren ? (
             unit.children.length === 1 ? (
-              renderChildNode(unit.children[0]!)
-            ) : (
-              <Box sx={{ display: 'flex', gap: 2.2, alignItems: 'flex-start', justifyContent: 'center', width: 'max-content' }}>
-                {unit.children.map((child, index) => {
-                  const isFirst = index === 0;
-                  const isLast = index === unit.children.length - 1;
+            renderChildNode(unit.children[0]!)
+          ) : (
+            <Box sx={{ display: 'flex', gap: 2.2, alignItems: 'flex-start', justifyContent: 'center', width: 'max-content' }}>
+              {unit.children.map((child, index) => {
+                const isFirst = index === 0;
+                const isLast = index === unit.children.length - 1;
 
-                  return (
-                    <Box key={child.unit_id} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
-                      <Box sx={{ position: 'relative', width: '100%', height: '20px', minWidth: 220 }}>
-                        {!isFirst ? (
-                          <Box sx={{ ...connectorLineSx, position: 'absolute', top: 0, left: 0, right: '50%', height: '2px' }} />
-                        ) : null}
-                        {!isLast ? (
-                          <Box sx={{ ...connectorLineSx, position: 'absolute', top: 0, left: '50%', right: 0, height: '2px' }} />
-                        ) : null}
-                        <Box
-                          sx={{
-                            ...connectorLineSx,
-                            position: 'absolute',
-                            top: 0,
-                            left: '50%',
-                            width: '2px',
-                            height: '21px',
-                            transform: 'translateX(-50%)',
-                          }}
-                        />
-                      </Box>
-                      {renderChildNode(child)}
+                return (
+                  <Box key={child.unit_id} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
+                    <Box sx={{ position: 'relative', width: '100%', height: '20px', minWidth: 220 }}>
+                      {!isFirst ? (
+                        <Box sx={{ ...connectorLineSx, position: 'absolute', top: 0, left: 0, right: '50%', height: '2px' }} />
+                      ) : null}
+                      {!isLast ? (
+                        <Box sx={{ ...connectorLineSx, position: 'absolute', top: 0, left: '50%', right: 0, height: '2px' }} />
+                      ) : null}
+                      <Box
+                        sx={{
+                          ...connectorLineSx,
+                          position: 'absolute',
+                          top: 0,
+                          left: '50%',
+                          width: '2px',
+                          height: '21px',
+                          transform: 'translateX(-50%)',
+                        }}
+                      />
                     </Box>
-                  );
-                })}
-              </Box>
-            )
+                    {renderChildNode(child)}
+                  </Box>
+                );
+              })}
+            </Box>
+          )
           ) : null}
         </Box>
       ) : null}

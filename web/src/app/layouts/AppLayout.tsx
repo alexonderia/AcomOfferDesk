@@ -7,7 +7,11 @@ import { AppHeader, MobileBottomNavigation, useHeaderConfig } from '@features/he
 import { AppFooter } from '@shared/components/AppFooter';
 import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
 import { MOBILE_BOTTOM_NAV_CONTENT_PADDING, useIsMobileViewport } from '@shared/lib/responsive';
-import { PageBreadcrumbActionsProvider, usePageBreadcrumbActionsState } from './PageBreadcrumbActions';
+import {
+  PageBreadcrumbActionsProvider,
+  usePageBreadcrumbActionsState,
+  usePageBreadcrumbItemsState,
+} from './PageBreadcrumbActions';
 
 const LayoutBreadcrumbs = ({
   items,
@@ -15,7 +19,8 @@ const LayoutBreadcrumbs = ({
   items: { key: string; label: string; onClick?: () => void }[];
 }) => {
   const breadcrumbActions = usePageBreadcrumbActionsState();
-  return <BreadcrumbsNav items={items} trailing={breadcrumbActions} />;
+  const pageBreadcrumbItems = usePageBreadcrumbItemsState();
+  return <BreadcrumbsNav items={pageBreadcrumbItems.length > 0 ? pageBreadcrumbItems : items} trailing={breadcrumbActions} />;
 };
 
 export const AppLayout = () => {

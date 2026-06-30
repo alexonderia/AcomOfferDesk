@@ -1,11 +1,10 @@
-﻿import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined';
 import HandshakeOutlinedIcon from '@mui/icons-material/HandshakeOutlined';
+import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import {
   Alert,
@@ -32,7 +31,7 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
+import { useSetPageBreadcrumbActions, useSetPageBreadcrumbItems } from '@app/layouts/PageBreadcrumbActions';
 import type { UnitMember, UnitNode } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
 import { useToastMessageEffect } from '@shared/ui/toasts';
@@ -106,7 +105,7 @@ const UnitFormDialog = ({
   const title = mode === 'create-root'
     ? 'Создать подразделение'
     : mode === 'create-child'
-      ? 'Создать дочерний лист'
+      ? 'Создать дочернюю группу'
       : 'Изменить подразделение';
 
   const selectedParentOption = parentOptions.find((option) => option.unitId === parentUnitId) ?? null;
@@ -130,7 +129,7 @@ const UnitFormDialog = ({
               onChange={(_event, value) => setParentUnitId(value?.unitId ?? null)}
               getOptionLabel={(option) => option.label}
               isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
-              renderInput={(params) => <TextField {...params} label="Родительский лист" />}
+              renderInput={(params) => <TextField {...params} label="Родительская группа" />}
             />
           ) : null}
         </Stack>
@@ -276,18 +275,15 @@ const UnitStatTile = ({
 
 const UnitStatRow = ({
   childrenCount,
-  contractorCount,
   staffCount,
 }: {
   childrenCount?: number | undefined;
-  contractorCount: number;
   staffCount: number;
 }) => (
   <Stack direction="row" spacing={0.7} useFlexGap flexWrap="wrap" sx={{ minWidth: 0 }}>
     <UnitStatTile color={hierarchyPageColors.softTeal} label="Сотрудники" value={staffCount} />
-    <UnitStatTile color={hierarchyPageColors.softPink} label="Контрагенты" value={contractorCount} />
     {childrenCount !== undefined ? (
-      <UnitStatTile color={hierarchyPageColors.softBlue} label="Листы" value={childrenCount} />
+      <UnitStatTile color={hierarchyPageColors.softBlue} label="Группы" value={childrenCount} />
     ) : null}
   </Stack>
 );
@@ -299,19 +295,17 @@ const compactOverviewActionButtonSx = {
 } as const;
 
 const CompactUnitActions = ({
-  canCreateChild,
   canManageMembers,
-  onAddLeaf,
   onManageContractors,
   onOpenSchema,
+  showContractorsButton = true,
   size = 'small',
   unitName,
 }: {
-  canCreateChild: boolean;
   canManageMembers: boolean;
-  onAddLeaf: () => void;
   onManageContractors: () => void;
   onOpenSchema: () => void;
+  showContractorsButton?: boolean;
   size?: 'small' | 'medium';
   unitName: string;
 }) => {
@@ -322,13 +316,13 @@ const CompactUnitActions = ({
       <Button
         size={size}
         variant="outlined"
-        startIcon={<AccountTreeOutlinedIcon sx={{ fontSize: 16 }} />}
+        startIcon={<LanOutlinedIcon sx={{ fontSize: 16 }} />}
         onClick={onOpenSchema}
         sx={{ minHeight: isSmall ? 38 : 42, borderRadius: isSmall ? 1.5 : 1.75, px: isSmall ? 1.6 : 2 }}
       >
         Схема
       </Button>
-      {canManageMembers ? (
+      {showContractorsButton && canManageMembers ? (
         <Tooltip title="Контрагенты">
           <IconButton
             size="small"
@@ -337,18 +331,6 @@ const CompactUnitActions = ({
             sx={compactOverviewActionButtonSx}
           >
             <HandshakeOutlinedIcon sx={{ fontSize: 17 }} />
-          </IconButton>
-        </Tooltip>
-      ) : null}
-      {canCreateChild ? (
-        <Tooltip title="Добавить лист">
-          <IconButton
-            size="small"
-            aria-label={`Добавить лист в ${unitName}`}
-            onClick={onAddLeaf}
-            sx={compactOverviewActionButtonSx}
-          >
-            <AddOutlinedIcon sx={{ fontSize: 17 }} />
           </IconButton>
         </Tooltip>
       ) : null}
@@ -451,6 +433,8 @@ const OverviewMemberViewToggle = ({
   );
 };
 
+void OverviewMemberViewToggle;
+
 const InlineUnitNameField = ({
   canEdit,
   isSaving,
@@ -463,6 +447,7 @@ const InlineUnitNameField = ({
   unit: UnitNode;
 }) => {
   const [draft, setDraft] = useState(unit.name);
+  const unitNameLabel = unit.id_parent === null ? 'Название подразделения' : 'Название группы';
 
   useEffect(() => {
     setDraft(unit.name);
@@ -489,43 +474,61 @@ const InlineUnitNameField = ({
   }
 
   return (
-    <TextField
-      fullWidth
-      size="small"
-      value={draft}
-      onBlur={() => {
-        void commit();
-      }}
-      onChange={(event) => setDraft(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          void commit();
-          event.currentTarget.blur();
-        }
-        if (event.key === 'Escape') {
-          setDraft(unit.name);
-          event.currentTarget.blur();
-        }
-      }}
-      placeholder="Название подразделения"
-      inputProps={{ 'aria-label': `Название подразделения ${unit.name}` }}
-      InputProps={{
-        endAdornment: isSaving ? <CircularProgress size={15} /> : null,
-      }}
+    <Box
       sx={{
-        '& .MuiOutlinedInput-root': {
-          borderRadius: 1.5,
-          backgroundColor: alpha('#ffffff', 0.92),
-        },
-        '& .MuiInputBase-input': {
-          fontSize: { xs: 17, md: 20 },
-          fontWeight: 800,
-          lineHeight: 1.2,
-          px: 0.2,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        minHeight: { xs: 42, md: 46 },
+        px: { xs: 1.1, md: 1.25 },
+        borderRadius: 2,
+        border: `1px solid ${alpha(hierarchyPageColors.canvasBorder, 0.9)}`,
+        backgroundColor: '#ffffff',
+        '&:focus-within': {
+          borderColor: hierarchyPageColors.softBlue,
         },
       }}
-    />
+    >
+      <InputBase
+        fullWidth
+        value={draft}
+        onBlur={() => {
+          void commit();
+        }}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            void commit();
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            setDraft(unit.name);
+            event.currentTarget.blur();
+          }
+        }}
+        placeholder={unitNameLabel}
+        inputProps={{ 'aria-label': `${unitNameLabel} ${unit.name}` }}
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          color: hierarchyPageColors.textPrimary,
+          '& .MuiInputBase-input': {
+            px: 0,
+            py: 0,
+            fontSize: { xs: 17, md: 20 },
+            fontWeight: 800,
+            lineHeight: 1.2,
+            letterSpacing: '-0.015em',
+          },
+          '& .MuiInputBase-input::placeholder': {
+            color: alpha(hierarchyPageColors.textSecondary, 0.82),
+            opacity: 1,
+          },
+        }}
+      />
+      {isSaving ? <CircularProgress size={15} sx={{ flexShrink: 0, color: hierarchyPageColors.softBlue }} /> : null}
+    </Box>
   );
 };
 
@@ -574,7 +577,7 @@ const UnitListRow = ({
         flexShrink: 0,
       }}
     >
-      <AccountTreeOutlinedIcon sx={{ fontSize: 18 }} />
+      <LanOutlinedIcon sx={{ fontSize: 18 }} />
     </IconButton>
   );
 
@@ -608,7 +611,6 @@ const UnitListRow = ({
         </Typography>
         <UnitStatRow
           childrenCount={card.unit.children.length}
-          contractorCount={card.totalContractors}
           staffCount={card.totalStaff}
         />
         {openButton}
@@ -652,7 +654,6 @@ const UnitListRow = ({
 
       <UnitStatRow
         childrenCount={card.unit.children.length}
-        contractorCount={card.totalContractors}
         staffCount={card.totalStaff}
       />
     </Box>
@@ -713,6 +714,8 @@ export const UnitHierarchyPageView = () => {
   const [selectedOverviewUnitId, setSelectedOverviewUnitId] = useState<number | null>(null);
   const [selectedOverviewMemberView, setSelectedOverviewMemberView] = useState<OverviewMemberView>('staff');
   const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  void setSelectedOverviewMemberView;
 
   const normalizedQuery = useMemo(
     () => normalizeSearch(deferredSearchQuery),
@@ -799,7 +802,6 @@ export const UnitHierarchyPageView = () => {
   const overviewScopeSummary = useMemo(() => {
     if (departmentScope === 'all') {
       return {
-        contractorCount: scopedDepartments.reduce((sum, department) => sum + collectUniqueMembers(department, true).length, 0),
         leafCount: overviewCards.length,
         staffCount: scopedDepartments.reduce((sum, department) => sum + collectUniqueMembers(department, false).length, 0),
         title: 'Все подразделения',
@@ -807,7 +809,6 @@ export const UnitHierarchyPageView = () => {
     }
 
     return {
-      contractorCount: selectedDepartmentView?.totalContractors ?? 0,
       leafCount: scopedDepartment?.children.length ?? 0,
       staffCount: selectedDepartmentView?.totalStaff ?? 0,
       title: scopedDepartment?.name ?? 'Подразделение',
@@ -862,11 +863,6 @@ export const UnitHierarchyPageView = () => {
     setActiveUnitDetailsId(null);
   };
 
-  const handleAddUnit = (rootDepartmentId: number, parentUnit: UnitNode) => {
-    setSelectedDepartmentId(rootDepartmentId);
-    openCreateChildDialog(parentUnit);
-  };
-
   const handleSelectDepartmentScope = (departmentId: number) => {
     setDepartmentScope(departmentId);
     setSelectedDepartmentId(departmentId);
@@ -900,8 +896,6 @@ export const UnitHierarchyPageView = () => {
             px: 1,
           }}
         >
-          <SearchRoundedIcon sx={{ mr: 0.85, color: hierarchyPageColors.textSecondary, flexShrink: 0 }} />
-
           <FormControl variant="standard" sx={{ minWidth: { xs: 120, sm: 170 }, maxWidth: { xs: 150, sm: 200 }, flexShrink: 0 }}>
             <Select
               disableUnderline
@@ -942,11 +936,13 @@ export const UnitHierarchyPageView = () => {
 
           <Divider orientation="vertical" flexItem sx={{ mx: 1, my: 0.75 }} />
 
+          <SearchRoundedIcon sx={{ mr: 0.85, color: hierarchyPageColors.textSecondary, flexShrink: 0 }} />
+
           <InputBase
             fullWidth
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Поиск по подразделению, листу, сотруднику или контрагенту"
+            placeholder="Поиск по подразделению, группе, сотруднику или контрагенту"
             inputProps={{ 'aria-label': 'Поиск по иерархии' }}
             sx={{
               flex: 1,
@@ -990,7 +986,25 @@ export const UnitHierarchyPageView = () => {
     setSelectedDepartmentId,
   ]);
 
+  const breadcrumbItems = useMemo(
+    () => (scopedDepartment
+      ? [
+          {
+            key: 'hierarchy-root',
+            label: 'Иерархия',
+            onClick: () => setDepartmentScope('all'),
+          },
+          {
+            key: `hierarchy-department-${scopedDepartment.unit_id}`,
+            label: scopedDepartment.name,
+          },
+        ]
+      : []),
+    [scopedDepartment]
+  );
+
   useSetPageBreadcrumbActions(breadcrumbActions);
+  useSetPageBreadcrumbItems(breadcrumbItems);
 
   if (isLoading) {
     return (
@@ -1078,18 +1092,16 @@ export const UnitHierarchyPageView = () => {
 
                     <Stack direction="row" spacing={0.7} useFlexGap flexWrap="wrap" sx={{ mt: 1.1 }}>
                       <UnitStatTile color={hierarchyPageColors.softTeal} label="Сотрудники" value={overviewScopeSummary.staffCount} />
-                      <UnitStatTile color={hierarchyPageColors.softPink} label="Контрагенты" value={overviewScopeSummary.contractorCount} />
                       <UnitStatTile color={hierarchyPageColors.softBlue} label="Объединения" value={overviewScopeSummary.leafCount} />
                     </Stack>
                   </Box>
 
                   {departmentScope !== 'all' && selectedDepartmentView ? (
                     <CompactUnitActions
-                      canCreateChild={selectedDepartmentView.department.actions.canCreateChild}
                       canManageMembers={selectedDepartmentView.department.actions.canManageMembers}
-                      onAddLeaf={() => handleAddUnit(selectedDepartmentView.department.unit_id, selectedDepartmentView.department)}
                       onManageContractors={() => openContractorDialog(selectedDepartmentView.department)}
                       onOpenSchema={() => openUnitEditor(selectedDepartmentView.department)}
+                      showContractorsButton
                       size="medium"
                       unitName={selectedDepartmentView.department.name}
                     />
@@ -1231,28 +1243,19 @@ export const UnitHierarchyPageView = () => {
                                 </Typography>
                               </Box>
                               <CompactUnitActions
-                                canCreateChild={selectedOverviewCard.unit.actions.canCreateChild}
                                 canManageMembers={selectedOverviewCard.unit.actions.canManageMembers}
-                                onAddLeaf={() => handleAddUnit(selectedOverviewCard.department.unit_id, selectedOverviewCard.unit)}
                                 onManageContractors={() => openContractorDialog(selectedOverviewCard.unit)}
                                 onOpenSchema={() => openUnitEditor(selectedOverviewCard.unit)}
+                                showContractorsButton={false}
                                 unitName={selectedOverviewCard.unit.name}
                               />
                             </Stack>
 
                             <UnitStatRow
                               childrenCount={selectedOverviewCard.unit.children.length}
-                              contractorCount={selectedOverviewCard.totalContractors}
                               staffCount={selectedOverviewCard.totalStaff}
                             />
                             <Divider />
-
-                            <OverviewMemberViewToggle
-                              contractorCount={selectedOverviewCard.visibleContractors.length}
-                              staffCount={selectedOverviewCard.visibleStaff.length}
-                              value={selectedOverviewMemberView}
-                              onChange={setSelectedOverviewMemberView}
-                            />
 
                             <Box
                               sx={{
@@ -1286,7 +1289,7 @@ export const UnitHierarchyPageView = () => {
 
                 {normalizedQuery ? (
                   <Typography sx={{ fontSize: 12, color: hierarchyPageColors.textSecondary }}>
-                    Показано {overviewCards.length} объединений, {overviewCards.reduce((sum, card) => sum + card.visibleUnits, 0)} видимых листов, {sumVisibleMembers(overviewCards, 'visibleStaff')} сотрудников и {sumVisibleMembers(overviewCards, 'visibleContractors')} контрагентов.
+                    Показано {overviewCards.length} объединений, {overviewCards.reduce((sum, card) => sum + card.visibleUnits, 0)} видимых групп, {sumVisibleMembers(overviewCards, 'visibleStaff')} сотрудников и {sumVisibleMembers(overviewCards, 'visibleContractors')} контрагентов.
                   </Typography>
                 ) : null}
               </Stack>
@@ -1339,8 +1342,8 @@ export const UnitHierarchyPageView = () => {
                   <UnitOrgChart
                     fillHeight
                     tree={[editorRootUnit]}
-                    onCreateChild={openCreateChildDialog}
                     onDelete={openDeleteDialog}
+                    onOpenCreateChildDialog={openCreateChildDialog}
                     onMoveMember={(unit, member) => openMoveMemberDialog(unit, member)}
                     onOpenMemberDialog={openMemberDialog}
                     onOpenUnitDetails={(unit) => setActiveUnitDetailsId(unit.unit_id)}
@@ -1392,14 +1395,13 @@ export const UnitHierarchyPageView = () => {
 
                         <UnitStatRow
                           childrenCount={activeUnitDetails.children.length}
-                          contractorCount={detailContractors.length}
                           staffCount={detailStaff.length}
                         />
 
                         <Divider />
 
                         <PeopleTree
-                          emptyLabel="В этом листе пока нет сотрудников."
+                          emptyLabel="В этой группе пока нет сотрудников."
                           headerAction={activeUnitDetails.actions.canManageMembers ? (
                             <Tooltip title="Добавить сотрудника">
                               <IconButton
@@ -1430,7 +1432,7 @@ export const UnitHierarchyPageView = () => {
                       </Stack>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        Выберите лист на схеме, чтобы открыть состав и статистику.
+                        Выберите группу на схеме, чтобы открыть состав и статистику.
                       </Typography>
                     )}
                   </CardContent>
@@ -1454,7 +1456,7 @@ export const UnitHierarchyPageView = () => {
       ) : null}
 
       <Dialog open={Boolean(memberDialogState.unit)} onClose={closeMemberDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Добавить сотрудника в лист</DialogTitle>
+        <DialogTitle>Добавить сотрудника в группу</DialogTitle>
         <DialogContent dividers>
           <Autocomplete
             options={availableUsers}
@@ -1494,7 +1496,7 @@ export const UnitHierarchyPageView = () => {
       />
 
       <Dialog open={Boolean(moveMemberState)} onClose={closeMoveMemberDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Перенести сотрудника в другой лист</DialogTitle>
+        <DialogTitle>Перенести сотрудника в другую группу</DialogTitle>
         <DialogContent dividers>
           <Autocomplete
             options={moveUnitOptions}
@@ -1504,7 +1506,7 @@ export const UnitHierarchyPageView = () => {
             }}
             getOptionLabel={(option) => option.label}
             isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
-            renderInput={(params) => <TextField {...params} label="Целевой лист" />}
+            renderInput={(params) => <TextField {...params} label="Целевая группа" />}
           />
         </DialogContent>
         <DialogActions>
@@ -1516,14 +1518,14 @@ export const UnitHierarchyPageView = () => {
       </Dialog>
 
       <Dialog open={Boolean(deleteDialogState)} onClose={closeDeleteDialog} maxWidth="lg" fullWidth>
-        <DialogTitle>Удаление листа</DialogTitle>
+        <DialogTitle>Удаление группы</DialogTitle>
         <DialogContent dividers>
           {deleteDialogState ? (
             <Stack spacing={1.4}>
               <Alert severity={deleteDialogState.willReassign ? 'warning' : 'info'} variant="outlined">
                 {deleteDialogState.willReassign
-                  ? 'Удаление перенесет прямых сотрудников в родительский лист и поднимет дочерние узлы на уровень выше.'
-                  : 'Лист будет удален без переноса сотрудников.'}
+                  ? 'Удаление перенесет прямых сотрудников в родительскую группу и поднимет дочерние узлы на уровень выше.'
+                  : 'Группа будет удалена без переноса сотрудников.'}
               </Alert>
 
               <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{deleteDialogState.unit.name}</Typography>
@@ -1532,7 +1534,6 @@ export const UnitHierarchyPageView = () => {
                 <Typography sx={{ mb: 1, fontSize: 14, fontWeight: 700 }}>Предпросмотр новой иерархии</Typography>
                 <UnitOrgChart
                   tree={deleteDialogState.previewTree}
-                  onCreateChild={() => {}}
                   onDelete={() => {}}
                   showPrimaryActions={false}
                   showZoomControls={false}

@@ -26,10 +26,16 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
+import { useAuth } from '@app/providers/AuthProvider';
+import { mapUserListItemToContractorListItem } from '@features/contractors/lib/mapUserListItemToContractorListItem';
 import {
   listContractorsTable,
   type ContractorListItem,
 } from '@shared/api/contractors/listContractors';
+import { getContractorRootUnits } from '@shared/api/contractors/getContractorRootUnits';
+import { getUsers } from '@shared/api/users/getUsers';
+import { hasPermission } from '@shared/auth/permissions';
+import { ROLE } from '@shared/constants/roles';
 import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
 import { useSystemToasts, useToastMessageEffect } from '@shared/ui/toasts';
 import { hierarchyPageColors } from './unitHierarchyStyles';
@@ -59,12 +65,28 @@ const buildContractorLabel = (row: ContractorListItem) => {
   return { login: row.userId, fullName: fullName || null, company: company || null };
 };
 
+const matchesContractorSearch = (row: ContractorListItem, normalizedSearch: string) => {
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  const haystack = [
+    row.userId,
+    row.fullName ?? '',
+    row.companyName ?? '',
+    row.mail ?? '',
+  ].join(' ').toLocaleLowerCase('ru');
+
+  return haystack.includes(normalizedSearch);
+};
+
 export const ContractorBindingsDialog = ({
   open,
   departmentName,
   onClose,
   onSaved,
 }: ContractorBindingsDialogProps) => {
+  const { session } = useAuth();
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -103,16 +125,38 @@ export const ContractorBindingsDialog = ({
     setIsLoading(true);
     setError(null);
 
-    void listContractorsTable({
-      search: debouncedSearch || undefined,
-      limit: CONTRACTOR_FETCH_LIMIT,
-    })
+    const normalizedSearch = debouncedSearch.toLocaleLowerCase('ru');
+    const loadRows = hasPermission(session, 'contractors.read')
+      ? listContractorsTable({
+          search: debouncedSearch || undefined,
+          limit: CONTRACTOR_FETCH_LIMIT,
+        }).then((result) => result.items)
+      : getUsers(ROLE.CONTRACTOR)
+          .then(async (result) => {
+            const filteredItems = result.items
+              .map(mapUserListItemToContractorListItem)
+              .filter((item) => matchesContractorSearch(item, normalizedSearch))
+              .slice(0, CONTRACTOR_FETCH_LIMIT);
+
+            const rootUnitsByUserId = new Map(
+              await Promise.all(
+                filteredItems.map(async (item) => [item.userId, await getContractorRootUnits(item.userId)] as const)
+              )
+            );
+
+            return filteredItems.map((item) => ({
+              ...item,
+              rootUnits: rootUnitsByUserId.get(item.userId) ?? null,
+            }));
+          });
+
+    void loadRows
       .then((result) => {
         if (cancelled) {
           return;
         }
-        setRows(result.items);
-        setDraftsById(buildDrafts(result.items));
+        setRows(result);
+        setDraftsById(buildDrafts(result));
       })
       .catch((loadError) => {
         if (cancelled) {
@@ -130,7 +174,7 @@ export const ContractorBindingsDialog = ({
     return () => {
       cancelled = true;
     };
-  }, [open, debouncedSearch]);
+  }, [open, debouncedSearch, session]);
 
   const handleToggle = (row: ContractorListItem, unitId: number, checked: boolean) => {
     setDraftsById((prev) => ({

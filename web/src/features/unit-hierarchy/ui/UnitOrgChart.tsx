@@ -10,8 +10,8 @@ import { hierarchyCanvasBackground, hierarchyPageColors, outlinedIconButtonSx } 
 
 type UnitOrgChartProps = {
   fillHeight?: boolean;
-  onCreateChild?: ((unit: UnitNode) => void) | undefined;
   onDelete: (unit: UnitNode) => void;
+  onOpenCreateChildDialog?: ((unit: UnitNode) => void) | undefined;
   onMoveMember?: ((unit: UnitNode, member: UnitNode['members'][number]) => void) | undefined;
   onOpenMemberDialog?: ((unit: UnitNode) => void) | undefined;
   onOpenUnitDetails?: ((unit: UnitNode) => void) | undefined;
@@ -32,8 +32,8 @@ const clampZoom = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.
 
 export const UnitOrgChart = memo(({
   fillHeight = false,
-  onCreateChild,
   onDelete,
+  onOpenCreateChildDialog,
   onMoveMember,
   onOpenMemberDialog,
   onOpenUnitDetails,
@@ -215,8 +215,8 @@ export const UnitOrgChart = memo(({
               >
                 <UnitOrgNode
                   depth={0}
-                  onCreateChild={onCreateChild}
                   onDelete={onDelete}
+                  onOpenCreateChildDialog={onOpenCreateChildDialog}
                   onMoveMember={onMoveMember}
                   onOpenMemberDialog={onOpenMemberDialog}
                   onOpenUnitDetails={onOpenUnitDetails}

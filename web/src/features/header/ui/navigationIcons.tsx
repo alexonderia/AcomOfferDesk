@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import AnalyticsOutlined from '@mui/icons-material/AnalyticsOutlined';
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined';
 import FeedbackOutlined from '@mui/icons-material/FeedbackOutlined';
@@ -9,6 +8,7 @@ import HandshakeOutlined from '@mui/icons-material/HandshakeOutlined';
 import HelpOutline from '@mui/icons-material/HelpOutline';
 import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
 import InsertInvitationOutlined from '@mui/icons-material/InsertInvitationOutlined';
+import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
 import MonetizationOnOutlined from '@mui/icons-material/MonetizationOnOutlined';
 import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
@@ -18,7 +18,7 @@ import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined';
 
 const iconByKey: Record<string, ReactNode> = {
   users: <PersonOutline fontSize="small" />,
-  hierarchy: <AccountTreeOutlined fontSize="small" />,
+  hierarchy: <LanOutlinedIcon fontSize="small" />,
   requests: <InsertDriveFileOutlined fontSize="small" />,
   feedback: <FeedbackOutlined fontSize="small" />,
   offers: <FilePresentOutlinedIcon fontSize="small" />,

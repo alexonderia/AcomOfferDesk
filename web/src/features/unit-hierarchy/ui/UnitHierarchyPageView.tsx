@@ -38,6 +38,7 @@ import { useToastMessageEffect } from '@shared/ui/toasts';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
 import { ContractorBindingsDialog } from './ContractorBindingsDialog';
 import { PeopleFlatList, PeopleTree } from './PeopleTree';
+import { UnitOrgReadonlyList } from './UnitOrgReadonlyList';
 import { UnitOrgChart } from './UnitOrgChart';
 import {
   hierarchyCanvasBackground,
@@ -723,6 +724,7 @@ export const UnitHierarchyPageView = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOverviewUnitId, setSelectedOverviewUnitId] = useState<number | null>(null);
   const [selectedOverviewMemberView, setSelectedOverviewMemberView] = useState<OverviewMemberView>('staff');
+  const [editorViewMode, setEditorViewMode] = useState<'schema' | 'list'>('schema');
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   void setSelectedOverviewMemberView;
@@ -886,6 +888,7 @@ export const UnitHierarchyPageView = () => {
   const closeUnitEditor = () => {
     setSelectedEditorUnitId(null);
     setActiveUnitDetailsId(null);
+    setEditorViewMode('schema');
   };
 
   const handleSelectDepartmentScope = (departmentId: number) => {
@@ -1290,17 +1293,16 @@ export const UnitHierarchyPageView = () => {
                               }}
                             >
                               {selectedOverviewMemberView === 'staff' ? (
-                                <PeopleTree
+                                <UnitOrgReadonlyList
                                   emptyLabel="Сотрудников пока нет."
-                                  hideHeader
-                                  members={selectedOverviewVisibleMembers}
-                                  title="Сотрудники объединения"
+                                  units={[selectedOverviewCard.filteredUnit]}
                                 />
                               ) : (
                                 <PeopleFlatList
                                   emptyLabel="Контрагентов пока нет."
                                   hideHeader
                                   members={selectedOverviewVisibleMembers}
+                                  readonly
                                   title="Контрагенты объединения"
                                 />
                               )}
@@ -1413,11 +1415,30 @@ export const UnitHierarchyPageView = () => {
                     </Box>
                   </Stack>
 
-                  <Tooltip title="Закрыть окно">
-                    <IconButton onClick={closeUnitEditor} aria-label="Закрыть окно редактора">
-                      <CloseRoundedIcon />
-                    </IconButton>
-                  </Tooltip>
+                  <Stack direction="row" spacing={0.75} alignItems="center">
+                    <Button
+                      size="small"
+                      variant={editorViewMode === 'schema' ? 'contained' : 'outlined'}
+                      startIcon={<LanOutlinedIcon sx={{ fontSize: 16 }} />}
+                      onClick={() => setEditorViewMode('schema')}
+                      sx={{ minHeight: 36 }}
+                    >
+                      Схема
+                    </Button>
+                    <Button
+                      size="small"
+                      variant={editorViewMode === 'list' ? 'contained' : 'outlined'}
+                      onClick={() => setEditorViewMode('list')}
+                      sx={{ minHeight: 36 }}
+                    >
+                      Список
+                    </Button>
+                    <Tooltip title="Закрыть окно">
+                      <IconButton onClick={closeUnitEditor} aria-label="Закрыть окно редактора">
+                        <CloseRoundedIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
                 </Stack>
               </Box>
             </DialogTitle>
@@ -1425,18 +1446,24 @@ export const UnitHierarchyPageView = () => {
             <DialogContent sx={{ p: { xs: 1.25, md: 2 }, backgroundColor: alpha(hierarchyPageColors.canvas, 0.4) }}>
               <Box sx={{ display: 'grid', gap: 1.6, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) minmax(0, 360px)' }, mt: 1 }}>
                 <Box sx={{ minWidth: 0 }}>
-                  <UnitOrgChart
-                    fillHeight
-                    tree={[editorRootUnit]}
-                    onDelete={openDeleteDialog}
-                    onOpenCreateChildDialog={openCreateChildDialog}
-                    onMoveMember={(unit, member) => openMoveMemberDialog(unit, member)}
-                    onOpenMemberDialog={openMemberDialog}
-                    onOpenUnitDetails={(unit) => setActiveUnitDetailsId(unit.unit_id)}
-                    onRemoveMember={(unit, member) => {
-                      void removeMemberFromUnit(unit, member);
-                    }}
-                  />
+                  {editorViewMode === 'schema' ? (
+                    <UnitOrgChart
+                      fillHeight
+                      tree={[editorRootUnit]}
+                      onDelete={openDeleteDialog}
+                      onOpenCreateChildDialog={openCreateChildDialog}
+                      onMoveMember={(unit, member) => openMoveMemberDialog(unit, member)}
+                      onOpenMemberDialog={openMemberDialog}
+                      onOpenUnitDetails={(unit) => setActiveUnitDetailsId(unit.unit_id)}
+                      onRemoveMember={(unit, member) => {
+                        void removeMemberFromUnit(unit, member);
+                      }}
+                    />
+                  ) : (
+                    <Card variant="outlined" sx={{ ...sectionCardSx, p: 1.25 }}>
+                      <UnitOrgReadonlyList units={[editorRootUnit]} />
+                    </Card>
+                  )}
                 </Box>
 
                 <Card

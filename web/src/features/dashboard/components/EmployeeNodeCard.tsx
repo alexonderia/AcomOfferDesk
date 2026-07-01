@@ -1,12 +1,12 @@
 import {
-  Box,
+  Card,
+  CardContent,
   Chip,
   IconButton,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
 import type { ResponsibilityEmployeeNode } from '@shared/api/users/getResponsibilityDashboard';
 import { formatUnavailabilityDate, getUnavailabilityStatusLabel, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import {
@@ -20,13 +20,12 @@ import {
 } from './dashboardUtils';
 import { ChevronUpIcon, ChevronDownIcon, SegmentedProgressBar } from './DashboardCharts';
 
-const treeLineColor = alpha('#64748b', 0.28);
-
-const EmployeeNodeCard = ({
+export const EmployeeNodeCard = ({
   node,
   level,
   expanded,
   onToggle,
+  renderChildren = true,
   statusColors,
   activeUnavailabilityByUser,
   upcomingUnavailabilityByUser,
@@ -35,6 +34,7 @@ const EmployeeNodeCard = ({
   level: number;
   expanded: ExpandedState;
   onToggle: (userId: string) => void;
+  renderChildren?: boolean;
   statusColors: Record<string, string>;
   activeUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
   upcomingUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
@@ -42,56 +42,57 @@ const EmployeeNodeCard = ({
   const ownTotals = getNodeTotals(node.statuses);
   const subordinatesTotals = collectDescendantTotals(node);
   const hasSubordinates = node.children.length > 0;
-  const isExpanded = expanded[node.user_id] ?? true;
+  const isExpanded = expanded[node.user_id] ?? false;
   const activeUnavailability = activeUnavailabilityByUser[node.user_id] ?? null;
   const upcomingUnavailability = upcomingUnavailabilityByUser[node.user_id] ?? null;
   const upcomingUrgency = upcomingUnavailability ? getUpcomingUrgency(upcomingUnavailability.startedAt) : null;
   const upcomingRelativeLabel = upcomingUnavailability ? getRelativeAvailabilityLabel(upcomingUnavailability.startedAt) : null;
-  const ownCount = sumTotals(ownTotals);
-  const subordinatesCount = sumTotals(subordinatesTotals);
 
   return (
-    <Box sx={{ minWidth: 0, position: 'relative' }}>
-      <Box
-        sx={{
-          borderRadius: 1.5,
-          border: '1px solid',
-          borderColor: level === 0 ? alpha('#2563eb', 0.22) : 'divider',
-          backgroundColor: level === 0 ? alpha('#2563eb', 0.04) : 'background.paper',
-          px: 1.25,
-          py: 1,
-        }}
-      >
-        <Stack spacing={0.85}>
-          <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography
-                sx={{
-                  fontWeight: 700,
-                  fontSize: 14,
-                  lineHeight: 1.25,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-                title={node.full_name || node.user_id}
-              >
-                {node.full_name || node.user_id}
-              </Typography>
-              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.35 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  {node.role_name}
-                </Typography>
+    <Card
+      variant="outlined"
+      sx={{
+        ml: level * 2,
+        borderRadius: 2,
+        borderColor: 'divider',
+        background: level === 0 ? 'rgba(47,111,214,0.06)' : 'background.paper',
+      }}
+    >
+      <CardContent sx={{ pb: '16px !important' }}>
+        <Stack spacing={1.2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1}>
+            <Stack spacing={0.5}>
+              <Typography fontWeight={700}>{node.full_name || node.user_id}</Typography>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                {activeUnavailability ? (
+                  <Chip
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    label={`${getUnavailabilityStatusLabel(activeUnavailability.status)} до ${formatUnavailabilityDate(activeUnavailability.endedAt)}`}
+                  />
+                ) : null}
+                {upcomingUnavailability ? (
+                  <Chip
+                    size="small"
+                    color={upcomingUrgency === 'soon' ? 'warning' : 'default'}
+                    variant="outlined"
+                    label={`${getUnavailabilityStatusLabel(upcomingUnavailability.status)} с ${formatUnavailabilityDate(upcomingUnavailability.startedAt)}`}
+                  />
+                ) : null}
+              </Stack>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                <Chip size="small" label={node.role_name} />
                 <Typography variant="caption" color="text.secondary">
-                  · В работе: {ownCount}
+                  В работе: {sumTotals(ownTotals)}
                 </Typography>
                 {hasSubordinates ? (
                   <Typography variant="caption" color="text.secondary">
-                    · Подчинённые: {subordinatesCount}
+                    Подчинённые: {sumTotals(subordinatesTotals)}
                   </Typography>
                 ) : null}
               </Stack>
-            </Box>
+            </Stack>
             {hasSubordinates ? (
               <Tooltip title={isExpanded ? 'Свернуть' : 'Развернуть'}>
                 <IconButton
@@ -99,7 +100,13 @@ const EmployeeNodeCard = ({
                   onClick={() => onToggle(node.user_id)}
                   aria-label={isExpanded ? 'Свернуть подчинённых' : 'Развернуть подчинённых'}
                   aria-expanded={isExpanded}
-                  sx={{ mt: -0.25, mr: -0.5, color: 'text.secondary' }}
+                  sx={{
+                    p: 0,
+                    color: 'primary.main',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    '&:hover': { backgroundColor: 'transparent' },
+                  }}
                 >
                   {isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
                 </IconButton>
@@ -107,111 +114,52 @@ const EmployeeNodeCard = ({
             ) : null}
           </Stack>
 
-          {(activeUnavailability || upcomingUnavailability) ? (
-            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-              {activeUnavailability ? (
-                <Chip
-                  size="small"
-                  color="error"
-                  variant="outlined"
-                  label={`${getUnavailabilityStatusLabel(activeUnavailability.status)} до ${formatUnavailabilityDate(activeUnavailability.endedAt)}`}
-                />
-              ) : null}
-              {upcomingUnavailability ? (
-                <Chip
-                  size="small"
-                  color={upcomingUrgency === 'soon' ? 'warning' : 'default'}
-                  variant="outlined"
-                  label={`${getUnavailabilityStatusLabel(upcomingUnavailability.status)} с ${formatUnavailabilityDate(upcomingUnavailability.startedAt)}`}
-                />
-              ) : null}
-            </Stack>
-          ) : null}
-
-          <Box>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.35 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Личная загрузка
+          <Stack spacing={1}>
+            <Typography variant="body2" fontWeight={600}>
+              Личная загрузка
+            </Typography>
+            <SegmentedProgressBar totals={ownTotals} statusColors={statusColors} />
+            {activeUnavailability ? (
+              <Typography variant="caption" color="error.main">
+                Сейчас недоступен: {getUnavailabilityStatusLabel(activeUnavailability.status)} ({formatUnavailabilityRange(activeUnavailability)})
               </Typography>
-              {ownCount > 0 ? (
-                <Typography variant="caption" color="text.secondary">
-                  {ownCount}
-                </Typography>
-              ) : null}
-            </Stack>
-            <SegmentedProgressBar totals={ownTotals} statusColors={statusColors} height={10} />
-          </Box>
+            ) : null}
+            {upcomingUnavailability ? (
+              <Typography variant="caption" color={upcomingUrgency === 'soon' ? 'warning.main' : 'text.secondary'}>
+                Будет недоступен: {getUnavailabilityStatusLabel(upcomingUnavailability.status)} ({formatUnavailabilityRange(upcomingUnavailability)})
+                {upcomingRelativeLabel ? `, ${upcomingRelativeLabel}` : ''}
+              </Typography>
+            ) : null}
+          </Stack>
 
           {hasSubordinates ? (
-            <Box>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.35 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Загрузка подчинённых
-                </Typography>
-                {subordinatesCount > 0 ? (
-                  <Typography variant="caption" color="text.secondary">
-                    {subordinatesCount}
-                  </Typography>
-                ) : null}
-              </Stack>
-              <SegmentedProgressBar totals={subordinatesTotals} statusColors={statusColors} height={10} />
-            </Box>
-          ) : null}
-
-          {activeUnavailability ? (
-            <Typography variant="caption" color="error.main">
-              Сейчас недоступен: {getUnavailabilityStatusLabel(activeUnavailability.status)} ({formatUnavailabilityRange(activeUnavailability)})
-            </Typography>
-          ) : null}
-          {upcomingUnavailability ? (
-            <Typography variant="caption" color={upcomingUrgency === 'soon' ? 'warning.main' : 'text.secondary'}>
-              Будет недоступен: {getUnavailabilityStatusLabel(upcomingUnavailability.status)} ({formatUnavailabilityRange(upcomingUnavailability)})
-              {upcomingRelativeLabel ? `, ${upcomingRelativeLabel}` : ''}
-            </Typography>
+            <Stack spacing={1}>
+              <Typography variant="body2" fontWeight={600}>
+                Загрузка подчинённых (суммарно)
+              </Typography>
+              <SegmentedProgressBar totals={subordinatesTotals} statusColors={statusColors} />
+            </Stack>
           ) : null}
         </Stack>
-      </Box>
+      </CardContent>
 
-      {hasSubordinates && isExpanded ? (
-        <Box
-          sx={{
-            mt: 0.55,
-            ml: 1.75,
-            pl: 1.5,
-            borderLeft: `2px solid ${treeLineColor}`,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0.55,
-          }}
-        >
+      {renderChildren && hasSubordinates && isExpanded ? (
+        <Stack spacing={1.2} sx={{ pb: 2, pr: 2, pl: 2 }}>
           {node.children.map((child) => (
-            <Box key={child.user_id} sx={{ position: 'relative' }}>
-              <Box
-                sx={{
-                  position: 'absolute',
-                  left: -24,
-                  top: 18,
-                  width: 22,
-                  height: 2,
-                  bgcolor: treeLineColor,
-                  borderRadius: 999,
-                }}
-              />
-              <EmployeeNodeCard
-                node={child}
-                level={level + 1}
-                expanded={expanded}
-                onToggle={onToggle}
-                statusColors={statusColors}
-                activeUnavailabilityByUser={activeUnavailabilityByUser}
-                upcomingUnavailabilityByUser={upcomingUnavailabilityByUser}
-              />
-            </Box>
+            <EmployeeNodeCard
+              key={child.user_id}
+              node={child}
+              level={level + 1}
+              expanded={expanded}
+              onToggle={onToggle}
+              renderChildren={renderChildren}
+              statusColors={statusColors}
+              activeUnavailabilityByUser={activeUnavailabilityByUser}
+              upcomingUnavailabilityByUser={upcomingUnavailabilityByUser}
+            />
           ))}
-        </Box>
+        </Stack>
       ) : null}
-    </Box>
+    </Card>
   );
 };
-
-export { EmployeeNodeCard };

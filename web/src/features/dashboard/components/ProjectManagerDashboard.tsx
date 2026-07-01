@@ -5,6 +5,7 @@
   Card,
   CardContent,
   Chip,
+  FormControl,
   MenuItem,
   Select,
   Stack,
@@ -45,7 +46,24 @@ import {
 } from './dashboardUtils';
 import { CircularProcessChart, EmployeeWorkloadChart } from './DashboardCharts';
 import { EmployeeNodeCard } from './EmployeeNodeCard';
+import { EmployeeUnitWorkloadList } from './EmployeeUnitWorkloadList';
+import { getUnitsTree, type UnitNode } from '@shared/api/units';
 import { useSystemToasts } from '@shared/ui/toasts';
+import { indexEmployeeNodes, unitHasDashboardStaff } from '../lib/buildUnitWorkloadTree';
+
+const ALL_DEPARTMENTS_SCOPE = '__all_departments__';
+
+const getWorkloadDisplayUnits = (
+  department: UnitNode,
+  employeeById: Map<string, ResponsibilityEmployeeNode>,
+): UnitNode[] => {
+  const visibleChildren = department.children.filter((child) => unitHasDashboardStaff(child, employeeById));
+  if (visibleChildren.length > 0) {
+    return visibleChildren;
+  }
+
+  return unitHasDashboardStaff(department, employeeById) ? [department] : [];
+};
 
 const getRequestStatusTone = (status: string): StatusPillTone => {
   if (status === 'open') {
@@ -71,6 +89,7 @@ export const ProjectManagerDashboard = () => {
   const lastErrorRef = useRef<string | null>(null);
 
   const [tree, setTree] = useState<ResponsibilityEmployeeNode[]>([]);
+  const [unitsTree, setUnitsTree] = useState<UnitNode[]>([]);
   const [unassignedRequests, setUnassignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
   const [myRequests, setMyRequests] = useState<ResponsibilityDashboardRequest[]>([]);
   const [assignedRequests, setAssignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
@@ -84,6 +103,7 @@ export const ProjectManagerDashboard = () => {
     ended_at: string;
   }>>([]);
   const [requestsTab, setRequestsTab] = useState<'unassigned' | 'mine' | 'assigned'>('unassigned');
+  const [selectedDepartmentUnitId, setSelectedDepartmentUnitId] = useState<string>(ALL_DEPARTMENTS_SCOPE);
   const [assignmentState, setAssignmentState] = useState<AssignmentState>({});
   const [expandedNodes, setExpandedNodes] = useState<ExpandedState>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -95,8 +115,12 @@ export const ProjectManagerDashboard = () => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const response = await getResponsibilityDashboard();
+      const [response, units] = await Promise.all([
+        getResponsibilityDashboard(),
+        getUnitsTree().catch(() => [] as UnitNode[]),
+      ]);
       setTree(response.tree);
+      setUnitsTree(units);
       setUnassignedRequests(response.unassignedRequests);
       setMyRequests(response.myRequests);
       setAssignedRequests(response.assignedRequests);
@@ -129,8 +153,23 @@ export const ProjectManagerDashboard = () => {
   }, [isLeadEconomist, requestsTab]);
 
   const allSubordinates = useMemo(() => flattenEmployees(tree), [tree]);
+  const employeeById = useMemo(() => indexEmployeeNodes(tree), [tree]);
   const globalTotals = useMemo(() => collectGlobalTotals(tree), [tree]);
   const inProgressTotal = useMemo(() => sumTotals(globalTotals), [globalTotals]);
+  const workloadDepartments = useMemo(
+    () => unitsTree.filter((unit) => unitHasDashboardStaff(unit, employeeById)),
+    [employeeById, unitsTree]
+  );
+  const selectedDepartmentUnits = useMemo(() => {
+    if (selectedDepartmentUnitId === ALL_DEPARTMENTS_SCOPE) {
+      return workloadDepartments.flatMap((department) => getWorkloadDisplayUnits(department, employeeById));
+    }
+
+    return workloadDepartments
+      .filter((unit) => String(unit.unit_id) === selectedDepartmentUnitId)
+      .flatMap((department) => getWorkloadDisplayUnits(department, employeeById));
+  }, [employeeById, selectedDepartmentUnitId, workloadDepartments]);
+  const shouldShowOrphansInWorkload = selectedDepartmentUnitId === ALL_DEPARTMENTS_SCOPE;
 
   const pendingAssignmentIds = useMemo(
     () => Object.entries(assignmentState).filter(([, ownerId]) => Boolean(ownerId)).map(([requestId]) => requestId),
@@ -311,6 +350,17 @@ export const ProjectManagerDashboard = () => {
     lastErrorRef.current = errorMessage;
   }, [errorMessage, showErrorToast]);
 
+  useEffect(() => {
+    if (selectedDepartmentUnitId === ALL_DEPARTMENTS_SCOPE) {
+      return;
+    }
+
+    const hasSelectedDepartment = workloadDepartments.some((unit) => String(unit.unit_id) === selectedDepartmentUnitId);
+    if (!hasSelectedDepartment) {
+      setSelectedDepartmentUnitId(ALL_DEPARTMENTS_SCOPE);
+    }
+  }, [selectedDepartmentUnitId, workloadDepartments]);
+
   return (
     <Stack spacing={2.5}>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -373,13 +423,50 @@ export const ProjectManagerDashboard = () => {
       >
         <Card sx={{ borderRadius: 2 }}>
           <CardContent>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 700 }}>
-              Занятость штата
-            </Typography>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.25}
+              justifyContent="space-between"
+              alignItems={{ sm: 'center' }}
+              sx={{ mb: 2 }}
+            >
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                Занятость штата
+              </Typography>
+              {workloadDepartments.length > 0 ? (
+                <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 240 } }}>
+                  <Select
+                    displayEmpty
+                    value={selectedDepartmentUnitId}
+                    onChange={(event) => setSelectedDepartmentUnitId(String(event.target.value))}
+                    aria-label="Фильтр по подразделению для занятости штата"
+                  >
+                    <MenuItem value={ALL_DEPARTMENTS_SCOPE}>Все подразделения</MenuItem>
+                    {workloadDepartments.map((unit) => (
+                      <MenuItem key={unit.unit_id} value={String(unit.unit_id)}>
+                        {unit.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
+            </Stack>
             {isLoading ? (
               <Typography color="text.secondary">Загрузка...</Typography>
             ) : tree.length === 0 ? (
               <Typography color="text.secondary">Подчинённые сотрудники не найдены</Typography>
+            ) : workloadDepartments.length > 0 ? (
+              <EmployeeUnitWorkloadList
+                activeUnavailabilityByUser={activeUnavailabilityByUser}
+                allUnits={unitsTree}
+                employeeTree={tree}
+                expanded={expandedNodes}
+                onToggle={toggleNode}
+                showOrphans={shouldShowOrphansInWorkload}
+                statusColors={statusColors}
+                units={selectedDepartmentUnits}
+                upcomingUnavailabilityByUser={upcomingUnavailabilityByUser}
+              />
             ) : (
               <Stack spacing={1.2}>
                 {tree.map((node) => (

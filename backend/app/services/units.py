@@ -364,6 +364,26 @@ class UnitService:
             visible_root_ids=visible_root_ids,
         )
 
+    async def get_tree_for_user_hierarchy(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+    ) -> list[UnitNodeState]:
+        hierarchy = UnitHierarchyService(self._users)
+        graph = await hierarchy._get_graph()
+        if graph is None:
+            return []
+
+        visible_root_ids = graph.root_unit_ids_for_user(target_user_id)
+        if not visible_root_ids:
+            return []
+
+        return await self._build_tree_nodes(
+            current_user=current_user,
+            visible_root_ids=visible_root_ids,
+        )
+
     async def _scope_recommended_rows_to_responsibility(
         self,
         *,

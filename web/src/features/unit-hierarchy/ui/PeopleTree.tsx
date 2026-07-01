@@ -1,273 +1,119 @@
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import type { ReactNode } from 'react';
-import { Avatar, Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import type { UnitMember } from '@shared/api/units';
-import { buildPeopleTree, type PersonTreeNode } from '../model/buildPeopleTree';
-import {
-  getMemberAccentColor,
-  hierarchyPageColors,
-  isPlaceholderPersonName,
-  outlinedIconButtonSx,
-  statusLabelByCode,
-} from './unitHierarchyStyles';
+import { buildPeopleTree, type PersonTreeNode } from '@shared/lib/hierarchy/buildPeopleTree';
+import { HierarchyTreeBranch } from '@shared/ui/hierarchy/HierarchyTreeBranch';
+import { HierarchyViewPersonRow } from '@shared/ui/hierarchy/HierarchyViewPersonRow';
+import { getHierarchyEmptyStateSx } from '@shared/ui/hierarchy/hierarchyThemeStyles';
+import type { HierarchyPersonVisual } from '@shared/ui/hierarchy/hierarchyPersonUtils';
+import { HierarchyPeopleViewTree } from './HierarchyPeopleViewTree';
+import { outlinedIconButtonSx } from './unitHierarchyStyles';
 
-export type { PersonTreeNode } from '../model/buildPeopleTree';
-export { buildPeopleTree } from '../model/buildPeopleTree';
+export type { PersonTreeNode } from '@shared/lib/hierarchy/buildPeopleTree';
+export { buildPeopleTree } from '@shared/lib/hierarchy/buildPeopleTree';
 
-const statusColorByCode: Record<string, string> = {
-  active: '#16a34a',
-  inactive: '#9ca3af',
-  review: '#d97706',
-  blacklist: '#dc2626',
-};
+const memberToPerson = (member: UnitMember): HierarchyPersonVisual => ({
+  userId: member.user_id,
+  fullName: member.full_name,
+  roleName: member.role_name,
+  status: member.status,
+});
 
-const treeLineColor = alpha(hierarchyPageColors.connector, 0.42);
-
-const getDisplayName = (member: UnitMember): string => {
-  const name = member.full_name?.trim();
-  if (!name) {
-    return member.user_id;
-  }
-  if (isPlaceholderPersonName(name)) {
-    return 'Вакансия';
-  }
-  return name;
-};
-
-const getInitials = (member: UnitMember): string => {
-  const name = member.full_name?.trim();
-  if (name && !isPlaceholderPersonName(name)) {
-    const parts = name.split(/\s+/).filter(Boolean);
-    const initials = `${parts[0]?.[0] ?? ''}${parts.length > 1 ? parts[1]?.[0] ?? '' : ''}`;
-    if (initials) {
-      return initials.toUpperCase();
-    }
-  }
-  return (member.user_id || '?').slice(0, 2).toUpperCase();
-};
-
-const getRelationLabel = (depth: number, hasChildren: boolean): string | null => {
-  if (depth === 0 && hasChildren) {
-    return 'Руководитель';
-  }
-  if (depth > 0) {
-    return 'Подчинённый';
-  }
-  return null;
-};
-
-export const PersonRow = ({
+const MemberActions = ({
   member,
   onAssign,
   onMove,
   onRemove,
-  relationLabel,
 }: {
   member: UnitMember;
   onAssign?: ((member: UnitMember) => void) | undefined;
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
-  relationLabel?: string | null;
 }) => {
-  const accent = getMemberAccentColor(member.role_name);
-  const statusColor = statusColorByCode[member.status] ?? hierarchyPageColors.textSecondary;
+  if (!onAssign && !onMove && !onRemove) {
+    return null;
+  }
+
+  const displayName = member.full_name?.trim() || member.user_id;
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1,
-        minWidth: 0,
-        borderRadius: 1.5,
-        border: `1px solid ${alpha(hierarchyPageColors.canvasBorder, 0.9)}`,
-        backgroundColor: relationLabel === 'Руководитель'
-          ? alpha(hierarchyPageColors.softBlue, 0.04)
-          : '#ffffff',
-        px: 1,
-        py: 0.75,
-      }}
-    >
-      <Avatar
-        sx={{
-          width: 34,
-          height: 34,
-          fontSize: 13,
-          fontWeight: 600,
-          bgcolor: alpha(accent, 0.14),
-          color: accent,
-          flexShrink: 0,
-        }}
-      >
-        {getInitials(member)}
-      </Avatar>
-
-      <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-          {relationLabel ? (
-            <Typography
-              variant="caption"
-              sx={{
-                flexShrink: 0,
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: '0.03em',
-                textTransform: 'uppercase',
-                color: relationLabel === 'Руководитель' ? hierarchyPageColors.softBlue : hierarchyPageColors.textSecondary,
-              }}
-            >
-              {relationLabel}
-            </Typography>
-          ) : null}
-          <Typography
-            sx={{
-              fontSize: 13.5,
-              fontWeight: 600,
-              lineHeight: 1.2,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              minWidth: 0,
-            }}
-            title={getDisplayName(member)}
-          >
-            {getDisplayName(member)}
-          </Typography>
-        </Stack>
-        <Stack direction="row" spacing={0.6} alignItems="center" sx={{ mt: 0.1, minWidth: 0 }}>
-          <Tooltip title={statusLabelByCode[member.status] ?? member.status}>
-            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: statusColor, flexShrink: 0 }} />
-          </Tooltip>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-            title={member.role_name}
-          >
-            {member.role_name}
-          </Typography>
-        </Stack>
-      </Box>
-
-      {(onAssign || onMove || onRemove) ? (
-        <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
-          {onAssign ? (
-            <Tooltip title="Определить в подразделение">
-              <IconButton size="small" onClick={() => onAssign(member)} aria-label={`Определить ${getDisplayName(member)} в подразделение`} sx={outlinedIconButtonSx}>
-                <SwapHorizRoundedIcon sx={{ fontSize: 17 }} />
-              </IconButton>
-            </Tooltip>
-          ) : null}
-          {onMove ? (
-            <Tooltip title="Переместить в другое объединение">
-              <IconButton size="small" onClick={() => onMove(member)} aria-label={`Переместить ${getDisplayName(member)}`} sx={outlinedIconButtonSx}>
-                <SwapHorizRoundedIcon sx={{ fontSize: 17 }} />
-              </IconButton>
-            </Tooltip>
-          ) : null}
-          {onRemove ? (
-            <Tooltip title="Открепить от объединения">
-              <IconButton size="small" onClick={() => onRemove(member)} aria-label={`Открепить ${getDisplayName(member)}`} sx={outlinedIconButtonSx}>
-                <DeleteOutlineRoundedIcon sx={{ fontSize: 17 }} />
-              </IconButton>
-            </Tooltip>
-          ) : null}
-        </Stack>
+    <Stack direction="row" spacing={0.25}>
+      {onAssign ? (
+        <Tooltip title="Определить в подразделение">
+          <IconButton size="small" onClick={() => onAssign(member)} aria-label={`Определить ${displayName} в подразделение`} sx={outlinedIconButtonSx}>
+            <SwapHorizRoundedIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
       ) : null}
-    </Box>
+      {onMove ? (
+        <Tooltip title="Переместить в другое объединение">
+          <IconButton size="small" onClick={() => onMove(member)} aria-label={`Переместить ${displayName}`} sx={outlinedIconButtonSx}>
+            <SwapHorizRoundedIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {onRemove ? (
+        <Tooltip title="Открепить от объединения">
+          <IconButton size="small" onClick={() => onRemove(member)} aria-label={`Открепить ${displayName}`} sx={outlinedIconButtonSx}>
+            <DeleteOutlineRoundedIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+    </Stack>
   );
 };
 
-const PersonTreeBranch = ({
-  depth = 0,
-  node,
+const ManagePersonRow = ({
+  isRoot = false,
+  member,
+  onAssign,
   onMove,
   onRemove,
 }: {
-  depth?: number;
-  node: PersonTreeNode;
+  isRoot?: boolean;
+  member: UnitMember;
+  onAssign?: ((member: UnitMember) => void) | undefined;
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
-}) => {
-  const relationLabel = getRelationLabel(depth, node.children.length > 0);
+}) => (
+  <HierarchyViewPersonRow
+    endAdornment={<MemberActions member={member} onAssign={onAssign} onMove={onMove} onRemove={onRemove} />}
+    highlight={isRoot}
+    person={memberToPerson(member)}
+  />
+);
+
+const renderManageBranch = (
+  node: PersonTreeNode,
+  isRoot: boolean,
+  onAssign?: ((member: UnitMember) => void) | undefined,
+  onMove?: ((member: UnitMember) => void) | undefined,
+  onRemove?: ((member: UnitMember) => void) | undefined,
+) => (
+  <HierarchyTreeBranch
+    key={node.user_id}
+    content={<ManagePersonRow isRoot={isRoot} member={node} onAssign={onAssign} onMove={onMove} onRemove={onRemove} />}
+  >
+    {node.children.length > 0
+      ? node.children.map((child) => renderManageBranch(child, false, onAssign, onMove, onRemove))
+      : null}
+  </HierarchyTreeBranch>
+);
+
+const EmptyState = ({ label }: { label: string }) => {
+  const theme = useTheme();
 
   return (
-    <Box sx={{ minWidth: 0 }}>
-      <PersonRow member={node} relationLabel={relationLabel} onMove={onMove} onRemove={onRemove} />
-      {node.children.length > 0 ? (
-        <Box sx={{ position: 'relative', ml: 2.75, mt: 0.35 }}>
-          <Box
-            sx={{
-              position: 'absolute',
-              left: 0,
-              top: -10,
-              width: 2,
-              height: 10,
-              bgcolor: treeLineColor,
-            }}
-          />
-          <Box
-            sx={{
-              borderLeft: `2px solid ${treeLineColor}`,
-              pl: 2,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.55,
-            }}
-          >
-            {node.children.map((child, index) => (
-              <Box key={child.user_id} sx={{ position: 'relative' }}>
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    left: -18,
-                    top: 18,
-                    width: 16,
-                    height: 2,
-                    bgcolor: treeLineColor,
-                  }}
-                />
-                {index === node.children.length - 1 ? (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      left: -2,
-                      top: 20,
-                      bottom: 0,
-                      width: 4,
-                      bgcolor: '#ffffff',
-                      zIndex: 1,
-                    }}
-                  />
-                ) : null}
-                <PersonTreeBranch depth={depth + 1} node={child} onMove={onMove} onRemove={onRemove} />
-              </Box>
-            ))}
-          </Box>
-        </Box>
-      ) : null}
+    <Box sx={getHierarchyEmptyStateSx(theme)}>
+      <Typography variant="body2" color="text.secondary">
+        {label}
+      </Typography>
     </Box>
   );
 };
-
-const EmptyState = ({ label }: { label: string }) => (
-  <Box
-    sx={{
-      borderRadius: 2,
-      border: '1px dashed',
-      borderColor: alpha(hierarchyPageColors.canvasBorder, 0.88),
-      backgroundColor: alpha(hierarchyPageColors.canvas, 0.72),
-      px: 1.25,
-      py: 1.1,
-    }}
-  >
-    <Typography variant="body2" color="text.secondary">
-      {label}
-    </Typography>
-  </Box>
-);
 
 export const PeopleTree = ({
   emptyLabel,
@@ -276,6 +122,7 @@ export const PeopleTree = ({
   members,
   onMove,
   onRemove,
+  readonly = false,
   title,
 }: {
   emptyLabel: string;
@@ -284,8 +131,10 @@ export const PeopleTree = ({
   members: UnitMember[];
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
+  readonly?: boolean;
   title: string;
 }) => {
+  const isReadonly = readonly || (!onMove && !onRemove);
   const roots = buildPeopleTree(members);
 
   return (
@@ -305,12 +154,12 @@ export const PeopleTree = ({
       )}
       {roots.length === 0 ? (
         <EmptyState label={emptyLabel} />
+      ) : isReadonly ? (
+        <HierarchyPeopleViewTree emptyLabel={emptyLabel} members={members} />
       ) : (
-        <Stack spacing={0.6} sx={{ minWidth: 0 }}>
-          {roots.map((root) => (
-            <PersonTreeBranch key={root.user_id} node={root} onMove={onMove} onRemove={onRemove} />
-          ))}
-        </Stack>
+        <>
+          {roots.map((root) => renderManageBranch(root, true, undefined, onMove, onRemove))}
+        </>
       )}
     </Stack>
   );
@@ -323,6 +172,7 @@ export const PeopleFlatList = ({
   members,
   onAssign,
   onRemove,
+  readonly = false,
   title,
 }: {
   emptyLabel: string;
@@ -331,30 +181,41 @@ export const PeopleFlatList = ({
   members: UnitMember[];
   onAssign?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
+  readonly?: boolean;
   title: string;
-}) => (
-  <Stack spacing={1} sx={{ minWidth: 0 }}>
-    {hideHeader ? null : (
-      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-        <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{title}</Typography>
-          {headerAction}
+}) => {
+  const isReadonly = readonly || (!onAssign && !onRemove);
+
+  return (
+    <Stack spacing={1} sx={{ minWidth: 0 }}>
+      {hideHeader ? null : (
+        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{title}</Typography>
+            {headerAction}
+          </Stack>
+          {members.length > 0 ? (
+            <Typography variant="caption" color="text.secondary">
+              {members.length}
+            </Typography>
+          ) : null}
         </Stack>
-        {members.length > 0 ? (
-          <Typography variant="caption" color="text.secondary">
-            {members.length}
-          </Typography>
-        ) : null}
-      </Stack>
-    )}
-    {members.length === 0 ? (
-      <EmptyState label={emptyLabel} />
-    ) : (
-      <Stack spacing={0.6} sx={{ minWidth: 0 }}>
-        {members.map((member) => (
-          <PersonRow key={member.user_id} member={member} onAssign={onAssign} onRemove={onRemove} />
-        ))}
-      </Stack>
-    )}
-  </Stack>
-);
+      )}
+      {members.length === 0 ? (
+        <EmptyState label={emptyLabel} />
+      ) : isReadonly ? (
+        <Stack spacing={0.15}>
+          {members.map((member) => (
+            <HierarchyViewPersonRow key={member.user_id} highlight person={memberToPerson(member)} />
+          ))}
+        </Stack>
+      ) : (
+        <Stack spacing={0.15}>
+          {members.map((member) => (
+            <ManagePersonRow key={member.user_id} member={member} onAssign={onAssign} onRemove={onRemove} />
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  );
+};

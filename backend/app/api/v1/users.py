@@ -8,6 +8,7 @@ from app.api.action_flags import UserActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
+from app.domain.exceptions import Forbidden
 from app.domain.policies import CurrentUser
 from app.schemas.users import (
     DepartmentDelegationAccessSchema,
@@ -65,7 +66,8 @@ from app.schemas.users import (
     UserContractorDelegationsUpdateRequest,
     UpdateNotificationPreferencesRequest,
 )
-from app.domain.exceptions import Forbidden
+from app.api.v1.units import _unit_node_schema
+from app.schemas.units import UnitTreeData, UnitTreeResponse
 from app.services.users import (
     ManualContractorCreateInput,
     ManualContractorService,
@@ -77,6 +79,7 @@ from app.services.users import (
     UserStatusService,
 )
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
+from app.services.units import UnitService
 from app.services.max_account_linking import link_max_account
 from app.services.max_notifications import notify_account_linked as notify_max_account_linked
 from app.services.max_registration_links import MaxExistingLinkExpiredError, MaxExistingLinkInvalidError, resolve_max_existing_link_token
@@ -737,6 +740,25 @@ async def get_user_hierarchy(
             raise Forbidden("Иерархия пользователя недоступна")
 
     return UserHierarchyResponse(data=_user_hierarchy_data(state))
+
+
+@router.get("/users/{user_id}/hierarchy/units-tree", response_model=UnitTreeResponse)
+async def get_user_hierarchy_units_tree(
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UnitTreeResponse:
+    async with uow:
+        hierarchy = UnitHierarchyService(uow.users)
+        if not await hierarchy.can_view_user(current_user=current_user, target_user_id=user_id):
+            raise Forbidden("Недостаточно прав для просмотра иерархии пользователя")
+        service = UnitService(uow.units, uow.users)
+        items = await service.get_tree_for_user_hierarchy(
+            current_user=current_user,
+            target_user_id=user_id,
+        )
+
+    return UnitTreeResponse(data=UnitTreeData(items=[_unit_node_schema(item) for item in items]))
 
 
 @router.get("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)

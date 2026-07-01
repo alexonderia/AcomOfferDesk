@@ -200,6 +200,32 @@ def service_context():
     units = _FakeUnitsRepo(users)
     users._profiles = units.profiles
     users._roles = units.roles
+
+    async def list_active_units():
+        return [
+            (int(unit.id), int(unit.id_parent) if unit.id_parent is not None else None)
+            for unit in units.units.values()
+            if unit.is_active
+        ]
+
+    async def list_active_unit_details():
+        return [
+            (int(unit.id), unit.name, int(unit.id_parent) if unit.id_parent is not None else None)
+            for unit in units.units.values()
+            if unit.is_active
+        ]
+
+    async def list_active_unit_memberships():
+        return [
+            (member_user_id, unit_id)
+            for (unit_id, member_user_id), member in units.members.items()
+            if member.is_active
+        ]
+
+    users.list_active_units = list_active_units
+    users.list_active_unit_details = list_active_unit_details
+    users.list_active_unit_memberships = list_active_unit_memberships
+
     service = UnitService(units, users)
     return SimpleNamespace(service=service, users=users, units=units)
 
@@ -353,6 +379,52 @@ async def test_get_tree_returns_units_with_members(service_context, make_current
     assert tree[0].children[0].name == "Проект"
     assert tree[0].children[0].members[0].user_id == "econ-1"
     assert tree[0].children[0].members[0].id_parent_user is None
+
+
+@pytest.mark.asyncio
+async def test_get_tree_for_user_hierarchy_returns_all_assigned_department_roots(
+    service_context,
+    make_current_user,
+) -> None:
+    service_context.units.units[4] = Unit(
+        id=4,
+        name="Департамент B",
+        id_parent=None,
+        is_active=True,
+        id_created_by_user="superadmin-1",
+    )
+    service_context.units.units[5] = Unit(
+        id=5,
+        name="Проект B",
+        id_parent=4,
+        is_active=True,
+        id_created_by_user="superadmin-1",
+    )
+    service_context.units.members[(5, "econ-1")] = UnitMember(
+        id_unit=5,
+        id_user="econ-1",
+        id_assigned_by_user="admin-1",
+        is_active=True,
+    )
+
+    viewer_tree = await service_context.service.get_tree(
+        current_user=make_current_user(
+            user_id="pm-1",
+            role_id=settings.project_manager_role_id,
+            permissions={"units.read"},
+        ),
+    )
+    subject_tree = await service_context.service.get_tree_for_user_hierarchy(
+        current_user=make_current_user(
+            user_id="pm-1",
+            role_id=settings.project_manager_role_id,
+            permissions={"units.read"},
+        ),
+        target_user_id="econ-1",
+    )
+
+    assert [item.unit_id for item in viewer_tree] == [1]
+    assert sorted(item.unit_id for item in subject_tree) == [1, 4]
 
 
 @pytest.mark.asyncio

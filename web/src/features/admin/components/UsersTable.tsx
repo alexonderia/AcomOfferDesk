@@ -29,6 +29,9 @@ import { updateUserStatus } from '@shared/api/users/updateUserStatus';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
 import { getUserHierarchy, type UserHierarchy } from '@shared/api/users/getUserHierarchy';
+import { getUserHierarchyUnitsTree } from '@shared/api/users/getUserHierarchyUnitsTree';
+import type { UnitNode } from '@shared/api/units';
+import { UserHierarchyTree } from './UserHierarchyTree';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
 import {
@@ -352,201 +355,6 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
   );
 };
 
-const hierarchyKindLabel: Record<'manager' | 'self' | 'subordinate', string> = {
-  manager: 'Руководитель',
-  self: 'Вы',
-  subordinate: 'Подчинённый',
-};
-
-const HierarchyPersonLine = ({
-  kind,
-  name,
-  roleName,
-}: {
-  kind: 'manager' | 'self' | 'subordinate';
-  name: string;
-  roleName: string;
-}) => {
-  const theme = useTheme();
-  const accent =
-    kind === 'manager'
-      ? theme.palette.success.main
-      : kind === 'self'
-        ? theme.palette.primary.main
-        : theme.palette.info.main;
-
-  return (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
-      sx={{
-        minWidth: 0,
-        py: 0.65,
-        px: 1,
-        borderRadius: 1,
-        bgcolor: kind === 'self' ? alpha(accent, 0.08) : 'transparent',
-        border: kind === 'self' ? `1px solid ${alpha(accent, 0.2)}` : '1px solid transparent',
-      }}
-    >
-      <Typography
-        variant="caption"
-        sx={{
-          flexShrink: 0,
-          width: 88,
-          fontSize: 10,
-          fontWeight: 600,
-          letterSpacing: '0.03em',
-          textTransform: 'uppercase',
-          color: accent,
-        }}
-      >
-        {hierarchyKindLabel[kind]}
-      </Typography>
-      <Box sx={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, bgcolor: accent }} />
-      <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Typography
-          variant="body2"
-          sx={{
-            fontWeight: kind === 'self' ? 600 : 500,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-          title={name}
-        >
-          {name}
-        </Typography>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}
-          title={roleName}
-        >
-          {roleName}
-        </Typography>
-      </Box>
-    </Stack>
-  );
-};
-
-const UserHierarchyTree = ({ hierarchy }: { hierarchy: UserHierarchy }) => {
-  const theme = useTheme();
-
-  if (hierarchy.units.length === 0) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        Сотрудник не состоит в объединениях.
-      </Typography>
-    );
-  }
-
-  const userName = hierarchy.user.fullName ?? hierarchy.user.userId;
-
-  return (
-    <Stack spacing={1}>
-      {hierarchy.units.map((unit) => {
-        const managers = hierarchy.managers.filter((manager) => manager.sourceUnitId === unit.unitId);
-        const subordinates = hierarchy.subordinates.filter((subordinate) => subordinate.sourceUnitId === unit.unitId);
-
-        return (
-          <Box
-            key={unit.unitId}
-            sx={{
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1.5,
-              overflow: 'hidden',
-              backgroundColor: 'background.paper',
-            }}
-          >
-            <Box
-              sx={{
-                px: 1.25,
-                py: 0.75,
-                bgcolor: alpha(theme.palette.text.primary, 0.03),
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              <Typography
-                variant="caption"
-                sx={{ fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'text.secondary' }}
-              >
-                {unit.name}
-              </Typography>
-            </Box>
-            <Stack spacing={0} sx={{ py: 0.35 }}>
-              {managers.map((manager) => (
-                <HierarchyPersonLine
-                  key={`${manager.userId}-${manager.sourceUnitId}`}
-                  kind="manager"
-                  name={manager.fullName ?? manager.userId}
-                  roleName={manager.roleName}
-                />
-              ))}
-              <HierarchyPersonLine kind="self" name={userName} roleName={hierarchy.user.roleName} />
-              {subordinates.length > 0 ? (
-                <Box sx={{ position: 'relative', ml: 1.5 }}>
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      left: 0,
-                      top: -8,
-                      width: 2,
-                      height: 8,
-                      bgcolor: alpha(theme.palette.divider, 1),
-                    }}
-                  />
-                  <Box
-                    sx={{
-                      pl: 1.25,
-                      borderLeft: `2px solid ${alpha(theme.palette.divider, 1)}`,
-                    }}
-                  >
-                    {subordinates.map((subordinate, index) => (
-                      <Box key={`${subordinate.userId}-${subordinate.sourceUnitId}`} sx={{ position: 'relative' }}>
-                        <Box
-                          sx={{
-                            position: 'absolute',
-                            left: -20,
-                            top: 14,
-                            width: 18,
-                            height: 2,
-                            bgcolor: alpha(theme.palette.divider, 1),
-                          }}
-                        />
-                        {index === subordinates.length - 1 ? (
-                          <Box
-                            sx={{
-                              position: 'absolute',
-                              left: -2,
-                              top: 16,
-                              bottom: 0,
-                              width: 4,
-                              bgcolor: 'background.paper',
-                              zIndex: 1,
-                            }}
-                          />
-                        ) : null}
-                        <HierarchyPersonLine
-                          kind="subordinate"
-                          name={subordinate.fullName ?? subordinate.userId}
-                          roleName={subordinate.roleName}
-                        />
-                      </Box>
-                    ))}
-                  </Box>
-                </Box>
-              ) : null}
-            </Stack>
-          </Box>
-        );
-      })}
-    </Stack>
-  );
-};
-
 type ContractorMobileCardProps = {
   row: UserListItem;
   isContactExpanded: boolean;
@@ -850,6 +658,7 @@ export const UsersTable = ({
   const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
   const [subordinateError, setSubordinateError] = useState<string | null>(null);
   const [userHierarchy, setUserHierarchy] = useState<UserHierarchy | null>(null);
+  const [userHierarchyUnitsTree, setUserHierarchyUnitsTree] = useState<UnitNode[]>([]);
   const [userHierarchyError, setUserHierarchyError] = useState<string | null>(null);
   const [isLoadingUserHierarchy, setIsLoadingUserHierarchy] = useState(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
@@ -1379,17 +1188,23 @@ export const UsersTable = ({
     setSubordinateProfile(null);
     setSubordinateError(null);
     setUserHierarchy(null);
+    setUserHierarchyUnitsTree([]);
     setUserHierarchyError(null);
     setIsLoadingUserHierarchy(true);
     setOpenSubordinateUnavailability(false);
 
-    void getUserHierarchy(clickedUser.user_id)
-      .then((state) => {
+    void Promise.all([
+      getUserHierarchy(clickedUser.user_id),
+      getUserHierarchyUnitsTree(clickedUser.user_id),
+    ])
+      .then(([state, unitsTree]) => {
         setUserHierarchy(state);
+        setUserHierarchyUnitsTree(unitsTree);
         setUserHierarchyError(null);
       })
       .catch((error) => {
         setUserHierarchy(null);
+        setUserHierarchyUnitsTree([]);
         setUserHierarchyError(error instanceof Error ? error.message : 'Не удалось загрузить иерархию сотрудника');
       })
       .finally(() => {
@@ -1697,7 +1512,7 @@ export const UsersTable = ({
                     ) : null}
 
                     {userHierarchy ? (
-                      <UserHierarchyTree hierarchy={userHierarchy} />
+                      <UserHierarchyTree hierarchy={userHierarchy} unitsTree={userHierarchyUnitsTree} />
                     ) : null}
                   </Stack>
                 </SourceSection>

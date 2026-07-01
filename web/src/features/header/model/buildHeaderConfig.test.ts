@@ -139,6 +139,34 @@ describe('buildHeaderConfig role navigation', () => {
     );
   });
 
+  it('highlights hierarchy tab for project manager on hierarchy page', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.PROJECT_MANAGER,
+      pathname: '/admin/hierarchy',
+      canOpenUsersPage: true,
+      canOpenHierarchyPage: true,
+      canViewDashboardProcess: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['dashboard', 'requests', 'employees', 'hierarchy']);
+    expect(config.activeTab).toBe('hierarchy');
+  });
+
+  it('highlights hierarchy tab for economist on hierarchy page', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ECONOMIST,
+      pathname: '/admin/hierarchy',
+      canOpenUsersPage: true,
+      canOpenHierarchyPage: true,
+      canViewDashboardPlans: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['plan', 'requests', 'economists', 'hierarchy']);
+    expect(config.activeTab).toBe('hierarchy');
+  });
+
   it('hides admin section when users permission is missing', () => {
     const config = buildHeaderConfig({
       ...baseArgs(),

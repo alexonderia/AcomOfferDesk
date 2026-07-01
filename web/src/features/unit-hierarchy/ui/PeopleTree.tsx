@@ -1,4 +1,4 @@
-﻿import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import type { ReactNode } from 'react';
 import { Avatar, Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
@@ -36,7 +36,7 @@ const getInitials = (member: UnitMember): string => {
   const name = member.full_name?.trim();
   if (name && !isPlaceholderPersonName(name)) {
     const parts = name.split(/\s+/).filter(Boolean);
-    const initials = `${parts[0]?.[0] ?? ''}${parts.length > 1 ? parts[1]![0] : ''}`;
+    const initials = `${parts[0]?.[0] ?? ''}${parts.length > 1 ? parts[1]?.[0] ?? '' : ''}`;
     if (initials) {
       return initials.toUpperCase();
     }
@@ -53,15 +53,13 @@ export const buildPeopleTree = (members: UnitMember[]): PersonTreeNode[] => {
   members.forEach((member) => {
     const parentId = member.id_parent_user;
     if (parentId && parentId !== member.user_id && nodes.has(parentId)) {
-      nodes.get(parentId)!.children.push(nodes.get(member.user_id)!);
+      nodes.get(parentId)?.children.push(nodes.get(member.user_id)!);
       childIds.add(member.user_id);
     }
   });
 
   const sortNodes = (list: PersonTreeNode[]) => {
-    list.sort((left, right) =>
-      getDisplayName(left).localeCompare(getDisplayName(right), 'ru')
-    );
+    list.sort((left, right) => getDisplayName(left).localeCompare(getDisplayName(right), 'ru'));
     list.forEach((node) => sortNodes(node.children));
   };
 
@@ -69,7 +67,6 @@ export const buildPeopleTree = (members: UnitMember[]): PersonTreeNode[] => {
     .filter((member) => !childIds.has(member.user_id))
     .map((member) => nodes.get(member.user_id)!);
 
-  // Fallback for pathological cycles: never drop members.
   if (roots.length === 0 && members.length > 0) {
     roots = members.map((member) => ({ ...member, children: [] }));
   }
@@ -172,12 +169,10 @@ export const PersonRow = ({
 };
 
 const PersonTreeBranch = ({
-  depth,
   node,
   onMove,
   onRemove,
 }: {
-  depth: number;
   node: PersonTreeNode;
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
@@ -197,7 +192,7 @@ const PersonTreeBranch = ({
         }}
       >
         {node.children.map((child) => (
-          <PersonTreeBranch key={child.user_id} depth={depth + 1} node={child} onMove={onMove} onRemove={onRemove} />
+          <PersonTreeBranch key={child.user_id} node={child} onMove={onMove} onRemove={onRemove} />
         ))}
       </Box>
     ) : null}
@@ -260,7 +255,7 @@ export const PeopleTree = ({
       ) : (
         <Stack spacing={0.6} sx={{ minWidth: 0 }}>
           {roots.map((root) => (
-            <PersonTreeBranch key={root.user_id} depth={0} node={root} onMove={onMove} onRemove={onRemove} />
+            <PersonTreeBranch key={root.user_id} node={root} onMove={onMove} onRemove={onRemove} />
           ))}
         </Stack>
       )}
@@ -310,4 +305,3 @@ export const PeopleFlatList = ({
     )}
   </Stack>
 );
-

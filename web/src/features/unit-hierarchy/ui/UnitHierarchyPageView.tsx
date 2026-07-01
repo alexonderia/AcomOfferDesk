@@ -105,7 +105,7 @@ const UnitFormDialog = ({
   const title = mode === 'create-root'
     ? 'Создать подразделение'
     : mode === 'create-child'
-      ? 'Создать дочернюю группу'
+      ? 'Создать дочернее объединение'
       : 'Изменить подразделение';
 
   const selectedParentOption = parentOptions.find((option) => option.unitId === parentUnitId) ?? null;
@@ -129,7 +129,7 @@ const UnitFormDialog = ({
               onChange={(_event, value) => setParentUnitId(value?.unitId ?? null)}
               getOptionLabel={(option) => option.label}
               isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
-              renderInput={(params) => <TextField {...params} label="Родительская группа" />}
+              renderInput={(params) => <TextField {...params} label="Родительское объединение" />}
             />
           ) : null}
         </Stack>
@@ -669,6 +669,7 @@ export const UnitHierarchyPageView = () => {
     setSelectedEditorUnitId,
     editorRootUnit,
     canCreateRootUnit,
+    canManageUnitMembers,
     activeUnitDetails,
     activeUnitPathLabel,
     setActiveUnitDetailsId,
@@ -1322,7 +1323,7 @@ export const UnitHierarchyPageView = () => {
         </Stack>
       )}
 
-      {departments.length > 0 ? (
+      {departments.length > 0 && canManageUnitMembers ? (
         <Card
           variant="outlined"
           sx={{
@@ -1346,7 +1347,7 @@ export const UnitHierarchyPageView = () => {
                     Нераспределённые сотрудники
                   </Typography>
                   <Typography sx={{ fontSize: 12, color: hierarchyPageColors.textSecondary }}>
-                    Активные сотрудники, не закреплённые ни за одним подразделением. Нажмите на кнопку рядом с сотрудником, чтобы быстро определить его в нужный юнит.
+                    Активные сотрудники, не закреплённые ни за одним объединением. Нажмите на кнопку рядом с сотрудником, чтобы быстро определить его в нужное объединение.
                   </Typography>
                 </Box>
                 <UnitStatTile
@@ -1517,7 +1518,7 @@ export const UnitHierarchyPageView = () => {
                       </Stack>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        Выберите группу на схеме, чтобы открыть состав и статистику.
+                        Выберите объединение на схеме, чтобы открыть состав и статистику.
                       </Typography>
                     )}
                   </CardContent>
@@ -1541,7 +1542,7 @@ export const UnitHierarchyPageView = () => {
       ) : null}
 
       <Dialog open={Boolean(memberDialogState.unit)} onClose={closeMemberDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Добавить сотрудника в группу</DialogTitle>
+        <DialogTitle>Добавить сотрудника в объединение</DialogTitle>
         <DialogContent dividers>
           <Autocomplete
             options={availableUsers}
@@ -1563,6 +1564,8 @@ export const UnitHierarchyPageView = () => {
                 placeholder="Начните вводить имя или логин"
               />
             )}
+            noOptionsText={isLoadingUsers ? 'Загружаем сотрудников...' : 'Сотрудники не найдены'}
+            loadingText="Загружаем сотрудников..."
           />
         </DialogContent>
         <DialogActions>
@@ -1581,7 +1584,7 @@ export const UnitHierarchyPageView = () => {
       />
 
       <Dialog open={Boolean(moveMemberState)} onClose={closeMoveMemberDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Перенести сотрудника в другую группу</DialogTitle>
+        <DialogTitle>Перенести сотрудника в другое объединение</DialogTitle>
         <DialogContent dividers>
           <Autocomplete
             options={moveUnitOptions}
@@ -1591,7 +1594,7 @@ export const UnitHierarchyPageView = () => {
             }}
             getOptionLabel={(option) => option.label}
             isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
-            renderInput={(params) => <TextField {...params} label="Целевая группа" />}
+            renderInput={(params) => <TextField {...params} label="Целевое объединение" />}
           />
         </DialogContent>
         <DialogActions>
@@ -1605,8 +1608,8 @@ export const UnitHierarchyPageView = () => {
       <Dialog open={Boolean(assignMemberState)} onClose={closeAssignMemberDialog} maxWidth="sm" fullWidth>
         <DialogTitle>
           {assignMemberState?.user.full_name?.trim()
-            ? `Определить сотрудника «${assignMemberState.user.full_name}» в подразделение`
-            : 'Определить сотрудника в подразделение'}
+            ? `Определить сотрудника «${assignMemberState.user.full_name}» в объединение`
+            : 'Определить сотрудника в объединение'}
         </DialogTitle>
         <DialogContent dividers>
           <Autocomplete
@@ -1618,7 +1621,7 @@ export const UnitHierarchyPageView = () => {
             getOptionLabel={(option) => option.label}
             isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
             renderInput={(params) => (
-              <TextField {...params} label="Подразделение" placeholder="Выберите подразделение или группу" />
+              <TextField {...params} label="Объединение" placeholder="Выберите объединение" />
             )}
           />
         </DialogContent>
@@ -1631,13 +1634,13 @@ export const UnitHierarchyPageView = () => {
       </Dialog>
 
       <Dialog open={Boolean(deleteDialogState)} onClose={closeDeleteDialog} maxWidth="lg" fullWidth>
-        <DialogTitle>Удаление группы</DialogTitle>
+        <DialogTitle>Удаление объединения</DialogTitle>
         <DialogContent dividers>
           {deleteDialogState ? (
             <Stack spacing={1.4}>
               <Alert severity={deleteDialogState.willReassign ? 'warning' : 'info'} variant="outlined">
                 {deleteDialogState.willReassign
-                  ? 'Удаление перенесет прямых сотрудников в родительскую группу и поднимет дочерние узлы на уровень выше.'
+                  ? 'Удаление перенесет прямых сотрудников в родительское объединение и поднимет дочерние узлы на уровень выше.'
                   : 'Группа будет удалена без переноса сотрудников.'}
               </Alert>
 

@@ -115,6 +115,7 @@ const buildViewState = (): any => ({
     { unitId: 3, label: 'Финансовый блок / Проект А / Группа 1' },
   ],
   canCreateRootUnit: true,
+  canManageUnitMembers: true,
   activeUnitDetails: null,
   activeUnitParent: null,
   activeUnitPathLabel: '',
@@ -267,6 +268,26 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.queryByLabelText('Открыть контрагентов объединения Проект А')).not.toBeInTheDocument();
   });
 
+  it('hides unassigned employees block for read-only users', () => {
+    const viewState = buildViewState();
+    viewState.canManageUnitMembers = false;
+    viewState.unassignedUsers = [
+      {
+        user_id: 'econ-2',
+        full_name: 'Экономист 2',
+        role_id: 6,
+        role_name: 'Экономист',
+        status: 'active',
+      },
+    ];
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    expect(screen.queryByText('Нераспределённые сотрудники')).not.toBeInTheDocument();
+    expect(screen.queryByText('Экономист 2')).not.toBeInTheDocument();
+  });
+
   it('adds selected department to breadcrumbs', () => {
     const viewState = buildViewState();
     viewState.tree = [baseDepartment, secondDepartment];
@@ -339,7 +360,7 @@ describe('UnitHierarchyPageView', () => {
     renderView();
 
     const dialog = within(screen.getByRole('dialog'));
-    expect(dialog.getByText('Удаление группы')).toBeInTheDocument();
+    expect(dialog.getByText('Удаление объединения')).toBeInTheDocument();
     expect(dialog.getByText('Предпросмотр новой иерархии')).toBeInTheDocument();
     expect(dialog.getAllByText('Проект А').length).toBeGreaterThan(0);
   });

@@ -166,6 +166,7 @@ const buildSuperadminMobileNavItems = (
 const buildProjectManagerMobileNavItems = (
   showNormative: boolean,
   canOpenUsersPage: boolean,
+  canOpenHierarchyPage: boolean,
   canOpenContractorsPage: boolean,
   canViewDashboardProcess: boolean,
   canViewDashboardSavings: boolean,
@@ -189,6 +190,9 @@ const buildProjectManagerMobileNavItems = (
 
   if (canOpenUsersPage) {
     items.push({ key: 'employees', label: LABELS.employees, to: '/admin' });
+  }
+  if (canOpenHierarchyPage) {
+    items.push({ key: 'hierarchy', label: LABELS.hierarchy, to: '/admin/hierarchy' });
   }
 
   items.push(
@@ -261,6 +265,7 @@ const buildEconomistMobileNavItems = (
   canViewDashboardProcess: boolean,
   canViewDashboardSavings: boolean,
   canOpenUsersPage: boolean,
+  canOpenHierarchyPage: boolean,
   canOpenContractorsPage: boolean
 ): HeaderMobileNavItem[] => {
   const items: HeaderMobileNavItem[] = [];
@@ -283,6 +288,9 @@ const buildEconomistMobileNavItems = (
 
   if (canOpenUsersPage) {
     items.push({ key: 'employees', label: LABELS.employees, to: '/admin' });
+  }
+  if (canOpenHierarchyPage) {
+    items.push({ key: 'hierarchy', label: LABELS.hierarchy, to: '/admin/hierarchy' });
   }
 
   items.push(
@@ -407,6 +415,7 @@ const resolveDefaultMobileNavItems = ({
     return buildProjectManagerMobileNavItems(
       canManageNormativeFiles,
       canOpenUsersPage,
+      canOpenHierarchyPage,
       canOpenContractorsPage,
       canViewDashboardProcess,
       canViewDashboardSavings,
@@ -429,6 +438,7 @@ const resolveDefaultMobileNavItems = ({
         canViewDashboardProcess,
         canViewDashboardSavings,
         canOpenUsersPage,
+        canOpenHierarchyPage,
         canOpenContractorsPage
       );
     }
@@ -662,6 +672,7 @@ export const buildHeaderConfig = ({
       mobileNavItems: buildProjectManagerMobileNavItems(
         canManageNormativeFiles,
         canOpenUsersPage,
+        canOpenHierarchyPage,
         canOpenContractorsPage,
         canViewDashboardProcess,
         canViewDashboardSavings,
@@ -673,6 +684,7 @@ export const buildHeaderConfig = ({
         ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: LABELS.plan }] : []),
         { key: 'requests', value: 'requests', label: LABELS.requests },
         ...(canOpenUsersPage ? [{ key: 'employees', value: 'employees', label: LABELS.employees }] : []),
+        ...(canOpenHierarchyPage ? [{ key: 'hierarchy', value: 'hierarchy', label: LABELS.hierarchy }] : []),
         ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: LABELS.contractors }] : []),
       ],
       activeTab: isResponsibilityDashboard
@@ -681,13 +693,15 @@ export const buildHeaderConfig = ({
           ? 'savings'
           : isResponsibilityPlan
             ? 'plan'
-            : isResponsibilityEmployeesPage
-              ? 'employees'
-              : isResponsibilityContractorsPage
-                ? 'contractors'
-                : isNormativeFilesPage
-                  ? 'normative'
-                  : 'requests',
+            : isHierarchyPage
+                ? 'hierarchy'
+                : isResponsibilityEmployeesPage
+                  ? 'employees'
+                  : isResponsibilityContractorsPage
+                    ? 'contractors'
+                    : isNormativeFilesPage
+                      ? 'normative'
+                      : 'requests',
       onTabChange: (value) => {
         if (value === 'dashboard' && canViewDashboardProcess) {
           onNavigateToDashboard();
@@ -703,6 +717,10 @@ export const buildHeaderConfig = ({
         }
         if (value === 'employees' && canOpenUsersPage) {
           onNavigateToAdmin();
+          return;
+        }
+        if (value === 'hierarchy' && canOpenHierarchyPage) {
+          onNavigateToHierarchy();
           return;
         }
         if (value === 'contractors' && canOpenContractorsPage) {
@@ -771,6 +789,7 @@ export const buildHeaderConfig = ({
         canViewDashboardProcess,
         canViewDashboardSavings,
         canOpenUsersPage,
+        canOpenHierarchyPage,
         canOpenContractorsPage
       ),
       tabs: [
@@ -779,6 +798,7 @@ export const buildHeaderConfig = ({
         ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: LABELS.plan }] : []),
         { key: 'requests', value: 'requests', label: LABELS.requests },
         ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: LABELS.employees }] : []),
+        ...(canOpenHierarchyPage ? [{ key: 'hierarchy', value: 'hierarchy', label: LABELS.hierarchy }] : []),
         ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: LABELS.contractors }] : []),
       ],
       activeTab: isResponsibilityDashboard
@@ -787,8 +807,10 @@ export const buildHeaderConfig = ({
           ? 'savings'
           : isResponsibilityPlan
             ? 'plan'
-            : pathname === '/admin'
-              ? 'economists'
+            : isHierarchyPage
+                ? 'hierarchy'
+              : pathname === '/admin'
+                ? 'economists'
               : pathname.startsWith('/contractors')
                 ? 'contractors'
                 : 'requests',
@@ -807,6 +829,10 @@ export const buildHeaderConfig = ({
         }
         if (value === 'economists' && canOpenUsersPage) {
           onNavigateToAdmin();
+          return;
+        }
+        if (value === 'hierarchy' && canOpenHierarchyPage) {
+          onNavigateToHierarchy();
           return;
         }
         if (value === 'contractors' && canOpenContractorsPage) {
@@ -833,6 +859,7 @@ export const buildHeaderConfig = ({
         canViewDashboardProcess,
         canViewDashboardSavings,
         canOpenUsersPage,
+        canOpenHierarchyPage,
         canOpenContractorsPage
       ),
       tabs: [
@@ -841,6 +868,7 @@ export const buildHeaderConfig = ({
         ...(canViewDashboardPlans ? [{ key: 'plan', value: 'plan', label: LABELS.plan }] : []),
         { key: 'requests', value: 'requests', label: LABELS.requests },
         ...(canOpenUsersPage ? [{ key: 'economists', value: 'economists', label: LABELS.employees }] : []),
+        ...(canOpenHierarchyPage ? [{ key: 'hierarchy', value: 'hierarchy', label: LABELS.hierarchy }] : []),
         ...(canOpenContractorsPage ? [{ key: 'contractors', value: 'contractors', label: LABELS.contractors }] : []),
       ],
       activeTab: isResponsibilityDashboard
@@ -849,8 +877,10 @@ export const buildHeaderConfig = ({
           ? 'savings'
           : isResponsibilityPlan
             ? 'plan'
-            : pathname.startsWith('/admin')
-              ? 'economists'
+            : isHierarchyPage
+                ? 'hierarchy'
+              : pathname.startsWith('/admin')
+                ? 'economists'
               : pathname.startsWith('/contractors')
                 ? 'contractors'
                 : 'requests',
@@ -869,6 +899,10 @@ export const buildHeaderConfig = ({
         }
         if (value === 'economists' && canOpenUsersPage) {
           onNavigateToAdmin();
+          return;
+        }
+        if (value === 'hierarchy' && canOpenHierarchyPage) {
+          onNavigateToHierarchy();
           return;
         }
         if (value === 'contractors' && canOpenContractorsPage) {

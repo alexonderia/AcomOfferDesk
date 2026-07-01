@@ -20,17 +20,16 @@ import {
 } from '@mui/material';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
-import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
-import { updateUserManager } from '@shared/api/users/updateUserManager';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
-import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { getUnitsTree, type UnitMember, type UnitNode } from '@shared/api/units';
+import { getUserHierarchy, type UserHierarchy } from '@shared/api/users/getUserHierarchy';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
 import {
@@ -117,6 +116,9 @@ type UserRow = {
   id_role: number;
   role: string;
   status: StatusFormValues['user_status'];
+  units_count: number;
+  managers_count: number;
+  subordinates_count: number;
 };
 
 const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
@@ -202,7 +204,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
     { key: 'mail', label: 'E-mail', value: row.mail },
     ...(canViewRoleIds ? [{ key: 'role_id', label: 'ID роли', value: String(row.id_role) }] : []),
     { key: 'role', label: 'Роль', value: row.role },
-    { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] }
+    { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] },
   ];
 
   const handleToggleExpand = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -350,6 +352,144 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
     </Paper>
   );
 };
+
+const HierarchySummaryTile = ({
+  accentColor,
+  label,
+  value,
+}: {
+  accentColor: string;
+  label: string;
+  value: number;
+}) => (
+  <Stack
+    spacing={0.35}
+    sx={{
+      minWidth: 0,
+      borderRadius: 1.5,
+      border: '1px solid',
+      borderColor: alpha(accentColor, 0.2),
+      backgroundColor: alpha(accentColor, 0.06),
+      px: 1.2,
+      py: 1,
+    }}
+  >
+    <Typography sx={{ fontSize: 24, fontWeight: 800, lineHeight: 1, color: accentColor }}>
+      {value}
+    </Typography>
+    <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+      {label}
+    </Typography>
+  </Stack>
+);
+
+const HierarchySectionCard = ({
+  accentColor,
+  children,
+  count,
+  emptyLabel,
+  title,
+}: {
+  accentColor: string;
+  children: ReactNode;
+  count: number;
+  emptyLabel: string;
+  title: string;
+}) => (
+  <Stack
+    spacing={0.9}
+    sx={{
+      minWidth: 0,
+      border: '1px solid',
+      borderColor: alpha(accentColor, 0.18),
+      borderRadius: 1.75,
+      p: 1.2,
+      backgroundColor: alpha(accentColor, 0.045),
+    }}
+  >
+    <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+        {title}
+      </Typography>
+      <Box
+        component="span"
+        sx={{
+          flexShrink: 0,
+          borderRadius: 999,
+          backgroundColor: alpha(accentColor, 0.12),
+          color: accentColor,
+          px: 0.8,
+          py: 0.25,
+          fontSize: 11,
+          fontWeight: 800,
+          lineHeight: 1,
+        }}
+      >
+        {count}
+      </Box>
+    </Stack>
+    {count > 0 ? children : (
+      <Typography variant="body2" color="text.secondary">
+        {emptyLabel}
+      </Typography>
+    )}
+  </Stack>
+);
+
+const HierarchyEntryCard = ({
+  accentColor,
+  badge,
+  subtitle,
+  title,
+}: {
+  accentColor: string;
+  badge?: string;
+  subtitle?: string;
+  title: string;
+}) => (
+  <Stack
+    spacing={0.5}
+    sx={{
+      minWidth: 0,
+      borderRadius: 1.4,
+      border: '1px solid',
+      borderColor: alpha(accentColor, 0.14),
+      backgroundColor: 'background.paper',
+      px: 1,
+      py: 0.95,
+    }}
+  >
+    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+      <Typography variant="body2" sx={{ minWidth: 0, fontWeight: 700, overflowWrap: 'anywhere' }}>
+        {title}
+      </Typography>
+      {badge ? (
+        <Box
+          component="span"
+          sx={{
+            flexShrink: 0,
+            borderRadius: 999,
+            backgroundColor: alpha(accentColor, 0.1),
+            color: accentColor,
+            px: 0.75,
+            py: 0.2,
+            fontSize: 10.5,
+            fontWeight: 800,
+            lineHeight: 1.1,
+            textAlign: 'center',
+          }}
+        >
+          {badge}
+        </Box>
+      ) : null}
+    </Stack>
+    {subtitle ? (
+      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+        {subtitle}
+      </Typography>
+    ) : null}
+  </Stack>
+);
 
 type ContractorMobileCardProps = {
   row: UserListItem;
@@ -679,10 +819,9 @@ export const UsersTable = ({
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
   const [subordinateError, setSubordinateError] = useState<string | null>(null);
-  const [managerOptions, setManagerOptions] = useState<UserListItem[]>([]);
-  const [managerError, setManagerError] = useState<string | null>(null);
-  const [managerUserId, setManagerUserId] = useState('');
-  const [isUpdatingManager, setIsUpdatingManager] = useState(false);
+  const [userHierarchy, setUserHierarchy] = useState<UserHierarchy | null>(null);
+  const [userHierarchyError, setUserHierarchyError] = useState<string | null>(null);
+  const [isLoadingUserHierarchy, setIsLoadingUserHierarchy] = useState(false);
   const [unitsTree, setUnitsTree] = useState<UnitNode[] | null>(null);
   const unitsTreeRequestedRef = useRef(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
@@ -713,6 +852,7 @@ export const UsersTable = ({
   const { session } = useAuth();
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const lastDelegationToastRef = useRef<string | null>(null);
+  const theme = useTheme();
 
   const {
     register,
@@ -756,10 +896,6 @@ export const UsersTable = ({
       ended_at: ''
     });
   }, [subordinateProfile, resetSubordinateUnavailability]);
-
-  useEffect(() => {
-    setManagerUserId(selectedUser?.id_parent ?? '');
-  }, [selectedUser?.id_parent]);
 
   useEffect(() => {
     if (!selectedUser) {
@@ -824,34 +960,6 @@ export const UsersTable = ({
     setManualContractorPassword(value);
   };
 
-  useEffect(() => {
-    if (!selectedUser?.actions.update_manager) {
-      setManagerOptions([]);
-      setManagerError(null);
-      return;
-    }
-
-    let isCancelled = false;
-    setManagerError(null);
-    void getManagerCandidates(selectedUser.role_id, selectedUser.user_id)
-      .then((result) => {
-        if (!isCancelled) {
-          setManagerOptions(result.items);
-          setManagerError(null);
-        }
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          setManagerOptions([]);
-          setManagerError(error instanceof Error ? error.message : 'Не удалось загрузить список руководителей');
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedUser?.actions.update_manager, selectedUser?.role_id, selectedUser?.user_id]);
-
   const shouldLoadDepartmentDelegations = Boolean(
     selectedUser
     && !isContractorsTab
@@ -911,13 +1019,6 @@ export const UsersTable = ({
       .catch(() => setUnitsTree([]));
   }, [shouldLoadDepartmentDelegations]);
 
-  const availableManagerOptions = useMemo(() => {
-    if (!selectedUser) {
-      return [];
-    }
-    return managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id);
-  }, [managerOptions, selectedUser]);
-
   const unitSubdivisionGroups = useMemo<UnitSubdivisionGroup[]>(() => {
     if (!selectedUser || !unitsTree) {
       return [];
@@ -951,7 +1052,7 @@ export const UsersTable = ({
       }
     });
 
-    // Непосредственный руководитель = участники юнита на один уровень выше
+    // Непосредственный руководитель = участники объединения на один уровень выше
     // (родительского), исключая самого сотрудника.
     const managersOneLevelUp = (unitId: number): UnitMember[] => {
       const parentId = parentById.get(unitId) ?? null;
@@ -1022,15 +1123,6 @@ export const UsersTable = ({
     return groups.sort((a, b) => a.rootName.localeCompare(b.rootName, 'ru'));
   }, [selectedUser, unitsTree]);
 
-  const canShowManagerSection = Boolean(
-    selectedUser?.actions.update_manager
-    && !managerError
-    && (
-      availableManagerOptions.length > 0
-      || selectedUser.role_id === ROLE.PROJECT_MANAGER
-    ),
-  );
-
   const shouldLoadContractorDelegations = Boolean(
     selectedUser
     && !isContractorsTab
@@ -1086,7 +1178,10 @@ export const UsersTable = ({
         mail: user.mail ?? '—',
         id_role: user.role_id,
         role: getRoleLabel(user.role_id),
-        status: normalizeUserStatus(user.status)
+        status: normalizeUserStatus(user.status),
+        units_count: user.units_count,
+        managers_count: user.managers_count,
+        subordinates_count: user.subordinates_count
       })),
     [getRoleLabel, users]
   );
@@ -1222,32 +1317,6 @@ export const UsersTable = ({
 
     return allowedRoleOptions;
   }, [allowedRoleOptions, canUpdateRole, users]);
-
-  const handleManagerUpdate = async () => {
-    const canBeWithoutManager = selectedUser?.role_id === ROLE.PROJECT_MANAGER;
-    if (
-      !selectedUser
-      || (managerUserId === '' && !canBeWithoutManager)
-      || managerUserId === (selectedUser.id_parent ?? '')
-    ) {
-      return;
-    }
-
-    setManagerError(null);
-    setIsUpdatingManager(true);
-    try {
-      await updateUserManager(selectedUser.user_id, {
-        manager_user_id: managerUserId || null,
-      });
-      await onStatusUpdated();
-      setSelectedUser(null);
-      setSubordinateProfile(null);
-    } catch (error) {
-      setManagerError(error instanceof Error ? error.message : 'Не удалось обновить руководителя');
-    } finally {
-      setIsUpdatingManager(false);
-    }
-  };
 
   const handleManualContractorSave = async () => {
     if (!selectedUser || !selectedUser.actions.manage_manual_contractor) {
@@ -1396,10 +1465,23 @@ export const UsersTable = ({
     setSelectedUser(clickedUser);
     setSubordinateProfile(null);
     setSubordinateError(null);
-    setManagerOptions([]);
-    setManagerError(null);
-    setManagerUserId(clickedUser.id_parent ?? '');
+    setUserHierarchy(null);
+    setUserHierarchyError(null);
+    setIsLoadingUserHierarchy(true);
     setOpenSubordinateUnavailability(false);
+
+    void getUserHierarchy(clickedUser.user_id)
+      .then((state) => {
+        setUserHierarchy(state);
+        setUserHierarchyError(null);
+      })
+      .catch((error) => {
+        setUserHierarchy(null);
+        setUserHierarchyError(error instanceof Error ? error.message : 'Не удалось загрузить иерархию сотрудника');
+      })
+      .finally(() => {
+        setIsLoadingUserHierarchy(false);
+      });
 
     if (!clickedUser.actions.view_profile || !subordinateProfileRoleIds.has(clickedUser.role_id)) {
       return;
@@ -1677,6 +1759,130 @@ export const UsersTable = ({
                   </Stack>
                 </Box>
 
+                <SourceSection title="Иерархия по объединениям" source="units">
+                  <Stack spacing={1.2}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+                        gap: 1.2
+                      }}
+                    >
+                      <InfoRow label="Объединения" value={selectedUser.units_count} />
+                      <InfoRow label="Руководители" value={selectedUser.managers_count} />
+                      <InfoRow label="Подчинённые" value={selectedUser.subordinates_count} />
+                    </Box>
+
+                    {isLoadingUserHierarchy ? (
+                      <Typography variant="body2" color="text.secondary">
+                        Загружаем связи сотрудника...
+                      </Typography>
+                    ) : null}
+
+                    {userHierarchyError ? (
+                      <Alert severity="warning">{userHierarchyError}</Alert>
+                    ) : null}
+
+                    {userHierarchy ? (
+                      <Stack spacing={1.2}>
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+                            gap: 1,
+                          }}
+                        >
+                          <HierarchySummaryTile
+                            accentColor={theme.palette.primary.main}
+                            label="Объединения"
+                            value={userHierarchy.units.length}
+                          />
+                          <HierarchySummaryTile
+                            accentColor={theme.palette.success.main}
+                            label="Руководители"
+                            value={userHierarchy.managers.length}
+                          />
+                          <HierarchySummaryTile
+                            accentColor={theme.palette.info.main}
+                            label="Подчинённые"
+                            value={userHierarchy.subordinates.length}
+                          />
+                        </Box>
+
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', lg: 'repeat(3, minmax(0, 1fr))' },
+                            gap: 1.2,
+                          }}
+                        >
+                          <HierarchySectionCard
+                            accentColor={theme.palette.primary.main}
+                            count={userHierarchy.units.length}
+                            emptyLabel="Сотрудник не состоит в объединениях."
+                            title="Объединения"
+                          >
+                            {userHierarchy.units.length > 0 ? (
+                              <Stack spacing={0.7}>
+                                {userHierarchy.units.map((unit) => (
+                                  <HierarchyEntryCard
+                                    key={unit.unitId}
+                                    accentColor={theme.palette.primary.main}
+                                    title={unit.name}
+                                    subtitle={unit.parentUnitId === null ? 'Корневое объединение' : 'Вложенное объединение'}
+                                  />
+                                ))}
+                              </Stack>
+                            ) : null}
+                          </HierarchySectionCard>
+
+                          <HierarchySectionCard
+                            accentColor={theme.palette.success.main}
+                            count={userHierarchy.managers.length}
+                            emptyLabel="Руководители не найдены."
+                            title="Руководители"
+                          >
+                            {userHierarchy.managers.length > 0 ? (
+                              <Stack spacing={0.7}>
+                                {userHierarchy.managers.map((manager) => (
+                                  <HierarchyEntryCard
+                                    key={`${manager.userId}-${manager.sourceUnitId}`}
+                                    accentColor={theme.palette.success.main}
+                                    badge={manager.sourceUnitName}
+                                    subtitle={`${manager.userId} · ${manager.roleName}`}
+                                    title={manager.fullName ?? manager.userId}
+                                  />
+                                ))}
+                              </Stack>
+                            ) : null}
+                          </HierarchySectionCard>
+
+                          <HierarchySectionCard
+                            accentColor={theme.palette.info.main}
+                            count={userHierarchy.subordinates.length}
+                            emptyLabel="Подчинённые не найдены."
+                            title="Подчинённые"
+                          >
+                            {userHierarchy.subordinates.length > 0 ? (
+                              <Stack spacing={0.7}>
+                                {userHierarchy.subordinates.map((subordinate) => (
+                                  <HierarchyEntryCard
+                                    key={`${subordinate.userId}-${subordinate.sourceUnitId}`}
+                                    accentColor={theme.palette.info.main}
+                                    badge={subordinate.sourceUnitName}
+                                    subtitle={`${subordinate.userId} · ${subordinate.roleName}`}
+                                    title={subordinate.fullName ?? subordinate.userId}
+                                  />
+                                ))}
+                              </Stack>
+                            ) : null}
+                          </HierarchySectionCard>
+                        </Box>
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                </SourceSection>
+
                 {subordinateProfile ? (
                   <Stack spacing={1.2}>
                     {subordinateError ? <Alert severity="warning">{subordinateError}</Alert> : null}
@@ -1741,65 +1947,7 @@ export const UsersTable = ({
                   </Stack>
                 ) : null}
 
-                {canShowManagerSection && selectedUser ? (
-                  <Stack
-                    spacing={1.2}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 1,
-                      p: { xs: 1.4, sm: 1.8 },
-                      backgroundColor: 'background.paper'
-                    }}
-                  >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                      Смена руководителя
-                    </Typography>
-                    <TextField
-                      select
-                      size="small"
-                      label="Новый руководитель"
-                      value={managerUserId}
-                      onChange={(event) => setManagerUserId(event.target.value)}
-                      disabled={isUpdatingManager}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 1,
-                          backgroundColor: 'background.paper'
-                        }
-                      }}
-                    >
-                      {selectedUser.role_id === ROLE.PROJECT_MANAGER ? (
-                        <MenuItem value="">
-                          Без руководителя
-                        </MenuItem>
-                      ) : null}
-                      {availableManagerOptions.map((manager) => (
-                          <MenuItem key={manager.user_id} value={manager.user_id}>
-                            {manager.full_name
-                              ? `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
-                              : `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.user_id}`}
-                          </MenuItem>
-                        ))}
-                    </TextField>
-                    <Stack direction="row" justifyContent="flex-end">
-                      <Button
-                        variant="outlined"
-                        onClick={() => void handleManagerUpdate()}
-                        disabled={
-                          (managerUserId === '' && selectedUser.role_id !== ROLE.PROJECT_MANAGER)
-                          || managerUserId === (selectedUser.id_parent ?? '')
-                          || isUpdatingManager
-                        }
-                        sx={{ borderRadius: 1, textTransform: 'none' }}
-                      >
-                        {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
-                      </Button>
-                    </Stack>
-                  </Stack>
-                ) : null}
-
-                {unitSubdivisionGroups.length > 0 ? (
+                {!userHierarchy && unitSubdivisionGroups.length > 0 ? (
                   <Stack
                     spacing={1.2}
                     sx={{

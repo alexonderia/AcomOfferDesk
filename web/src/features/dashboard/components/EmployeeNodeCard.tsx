@@ -26,6 +26,7 @@ export const EmployeeNodeCard = ({
   expanded,
   onToggle,
   renderChildren = true,
+  suppressLevelIndent = false,
   statusColors,
   activeUnavailabilityByUser,
   upcomingUnavailabilityByUser,
@@ -35,6 +36,7 @@ export const EmployeeNodeCard = ({
   expanded: ExpandedState;
   onToggle: (userId: string) => void;
   renderChildren?: boolean;
+  suppressLevelIndent?: boolean;
   statusColors: Record<string, string>;
   activeUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
   upcomingUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
@@ -52,7 +54,7 @@ export const EmployeeNodeCard = ({
     <Card
       variant="outlined"
       sx={{
-        ml: level * 2,
+        ml: suppressLevelIndent ? 0 : level * 2,
         borderRadius: 2,
         borderColor: 'divider',
         background: level === 0 ? 'rgba(47,111,214,0.06)' : 'background.paper',

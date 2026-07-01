@@ -2,6 +2,7 @@ import { Stack } from '@mui/material';
 import type { UnitNode } from '@shared/api/units';
 import type { ResponsibilityEmployeeNode } from '@shared/api/users/getResponsibilityDashboard';
 import { HierarchyTreeBranch } from '@shared/ui/hierarchy/HierarchyTreeBranch';
+import { HIERARCHY_LIST_COMPACT_BLOCK_GAP } from '@shared/ui/hierarchy/hierarchyThemeStyles';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import {
   buildOrphanEmployeeRoots,
@@ -54,6 +55,7 @@ const UnitWorkloadSection = ({
 
     return (
       <HierarchyTreeBranch
+        variant="compact"
         content={(
           <EmployeeNodeCard
             activeUnavailabilityByUser={activeUnavailabilityByUser}
@@ -62,6 +64,7 @@ const UnitWorkloadSection = ({
             node={node}
             onToggle={onToggle}
             renderChildren={false}
+            suppressLevelIndent
             statusColors={statusColors}
             upcomingUnavailabilityByUser={upcomingUnavailabilityByUser}
           />
@@ -81,7 +84,7 @@ const UnitWorkloadSection = ({
   }
 
   return (
-    <>
+    <Stack spacing={HIERARCHY_LIST_COMPACT_BLOCK_GAP}>
       {workloadRoots.map((node) => (
         <WorkloadBranch
           key={`${unit.unit_id}-${node.user_id}`}
@@ -89,7 +92,7 @@ const UnitWorkloadSection = ({
           node={node}
         />
       ))}
-    </>
+    </Stack>
   );
 };
 
@@ -110,7 +113,7 @@ export const EmployeeUnitWorkloadList = ({
   const visibleRoots = units.filter((unit) => unitHasDashboardStaff(unit, employeeById));
 
   return (
-    <Stack spacing={1.2}>
+    <Stack spacing={HIERARCHY_LIST_COMPACT_BLOCK_GAP}>
       {visibleRoots.map((unit) => (
         <UnitWorkloadSection
           key={unit.unit_id}

@@ -2,11 +2,30 @@ import { alpha, type Theme } from '@mui/material/styles';
 import type { HierarchyPersonTone } from './hierarchyPersonUtils';
 
 export const HIERARCHY_LIST_INDENT_PX = 20;
+export const HIERARCHY_LIST_COMPACT_INDENT_PX = 12;
+export const HIERARCHY_LIST_COMPACT_BLOCK_GAP = 1.25;
 export const HIERARCHY_LIST_ROW_MIN_HEIGHT = 48;
+
+export type HierarchyGuideVariant = 'tree' | 'compact';
 
 export const getHierarchyGuideColor = (theme: Theme) => theme.palette.divider;
 
-export const getHierarchyNestedGroupSx = (theme: Theme) => {
+export const getHierarchyNestedGroupSx = (
+  theme: Theme,
+  variant: HierarchyGuideVariant = 'tree',
+) => {
+  if (variant === 'compact') {
+    return {
+      ml: `${HIERARCHY_LIST_COMPACT_INDENT_PX}px`,
+      pl: `${HIERARCHY_LIST_COMPACT_INDENT_PX}px`,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: HIERARCHY_LIST_COMPACT_BLOCK_GAP,
+      borderLeft: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
+      minWidth: 0,
+    } as const;
+  }
+
   const guideColor = getHierarchyGuideColor(theme);
   const maskColor = theme.palette.background.paper;
 

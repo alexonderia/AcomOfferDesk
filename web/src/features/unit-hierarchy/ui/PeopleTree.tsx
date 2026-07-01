@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Avatar, Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import type { UnitMember } from '@shared/api/units';
+import { buildPeopleTree, type PersonTreeNode } from '../model/buildPeopleTree';
 import {
   getMemberAccentColor,
   hierarchyPageColors,
@@ -12,7 +13,8 @@ import {
   statusLabelByCode,
 } from './unitHierarchyStyles';
 
-export type PersonTreeNode = UnitMember & { children: PersonTreeNode[] };
+export type { PersonTreeNode } from '../model/buildPeopleTree';
+export { buildPeopleTree } from '../model/buildPeopleTree';
 
 const statusColorByCode: Record<string, string> = {
   active: '#16a34a',
@@ -20,6 +22,8 @@ const statusColorByCode: Record<string, string> = {
   review: '#d97706',
   blacklist: '#dc2626',
 };
+
+const treeLineColor = alpha(hierarchyPageColors.connector, 0.42);
 
 const getDisplayName = (member: UnitMember): string => {
   const name = member.full_name?.trim();
@@ -44,35 +48,14 @@ const getInitials = (member: UnitMember): string => {
   return (member.user_id || '?').slice(0, 2).toUpperCase();
 };
 
-export const buildPeopleTree = (members: UnitMember[]): PersonTreeNode[] => {
-  const nodes = new Map<string, PersonTreeNode>(
-    members.map((member) => [member.user_id, { ...member, children: [] }])
-  );
-  const childIds = new Set<string>();
-
-  members.forEach((member) => {
-    const parentId = member.id_parent_user;
-    if (parentId && parentId !== member.user_id && nodes.has(parentId)) {
-      nodes.get(parentId)?.children.push(nodes.get(member.user_id)!);
-      childIds.add(member.user_id);
-    }
-  });
-
-  const sortNodes = (list: PersonTreeNode[]) => {
-    list.sort((left, right) => getDisplayName(left).localeCompare(getDisplayName(right), 'ru'));
-    list.forEach((node) => sortNodes(node.children));
-  };
-
-  let roots = members
-    .filter((member) => !childIds.has(member.user_id))
-    .map((member) => nodes.get(member.user_id)!);
-
-  if (roots.length === 0 && members.length > 0) {
-    roots = members.map((member) => ({ ...member, children: [] }));
+const getRelationLabel = (depth: number, hasChildren: boolean): string | null => {
+  if (depth === 0 && hasChildren) {
+    return 'Руководитель';
   }
-
-  sortNodes(roots);
-  return roots;
+  if (depth > 0) {
+    return 'Подчинённый';
+  }
+  return null;
 };
 
 export const PersonRow = ({
@@ -80,11 +63,13 @@ export const PersonRow = ({
   onAssign,
   onMove,
   onRemove,
+  relationLabel,
 }: {
   member: UnitMember;
   onAssign?: ((member: UnitMember) => void) | undefined;
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
+  relationLabel?: string | null;
 }) => {
   const accent = getMemberAccentColor(member.role_name);
   const statusColor = statusColorByCode[member.status] ?? hierarchyPageColors.textSecondary;
@@ -96,9 +81,11 @@ export const PersonRow = ({
         alignItems: 'center',
         gap: 1,
         minWidth: 0,
-        borderRadius: 2,
+        borderRadius: 1.5,
         border: `1px solid ${alpha(hierarchyPageColors.canvasBorder, 0.9)}`,
-        backgroundColor: '#ffffff',
+        backgroundColor: relationLabel === 'Руководитель'
+          ? alpha(hierarchyPageColors.softBlue, 0.04)
+          : '#ffffff',
         px: 1,
         py: 0.75,
       }}
@@ -108,7 +95,7 @@ export const PersonRow = ({
           width: 34,
           height: 34,
           fontSize: 13,
-          fontWeight: 700,
+          fontWeight: 600,
           bgcolor: alpha(accent, 0.14),
           color: accent,
           flexShrink: 0,
@@ -118,12 +105,37 @@ export const PersonRow = ({
       </Avatar>
 
       <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Typography
-          sx={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-          title={getDisplayName(member)}
-        >
-          {getDisplayName(member)}
-        </Typography>
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+          {relationLabel ? (
+            <Typography
+              variant="caption"
+              sx={{
+                flexShrink: 0,
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
+                color: relationLabel === 'Руководитель' ? hierarchyPageColors.softBlue : hierarchyPageColors.textSecondary,
+              }}
+            >
+              {relationLabel}
+            </Typography>
+          ) : null}
+          <Typography
+            sx={{
+              fontSize: 13.5,
+              fontWeight: 600,
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              minWidth: 0,
+            }}
+            title={getDisplayName(member)}
+          >
+            {getDisplayName(member)}
+          </Typography>
+        </Stack>
         <Stack direction="row" spacing={0.6} alignItems="center" sx={{ mt: 0.1, minWidth: 0 }}>
           <Tooltip title={statusLabelByCode[member.status] ?? member.status}>
             <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: statusColor, flexShrink: 0 }} />
@@ -169,35 +181,76 @@ export const PersonRow = ({
 };
 
 const PersonTreeBranch = ({
+  depth = 0,
   node,
   onMove,
   onRemove,
 }: {
+  depth?: number;
   node: PersonTreeNode;
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
-}) => (
-  <Box sx={{ minWidth: 0 }}>
-    <PersonRow member={node} onMove={onMove} onRemove={onRemove} />
-    {node.children.length > 0 ? (
-      <Box
-        sx={{
-          mt: 0.6,
-          ml: { xs: 1.25, sm: 2 },
-          pl: { xs: 1, sm: 1.5 },
-          borderLeft: `2px solid ${alpha(hierarchyPageColors.connector, 0.35)}`,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 0.6,
-        }}
-      >
-        {node.children.map((child) => (
-          <PersonTreeBranch key={child.user_id} node={child} onMove={onMove} onRemove={onRemove} />
-        ))}
-      </Box>
-    ) : null}
-  </Box>
-);
+}) => {
+  const relationLabel = getRelationLabel(depth, node.children.length > 0);
+
+  return (
+    <Box sx={{ minWidth: 0 }}>
+      <PersonRow member={node} relationLabel={relationLabel} onMove={onMove} onRemove={onRemove} />
+      {node.children.length > 0 ? (
+        <Box sx={{ position: 'relative', ml: 2.75, mt: 0.35 }}>
+          <Box
+            sx={{
+              position: 'absolute',
+              left: 0,
+              top: -10,
+              width: 2,
+              height: 10,
+              bgcolor: treeLineColor,
+            }}
+          />
+          <Box
+            sx={{
+              borderLeft: `2px solid ${treeLineColor}`,
+              pl: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.55,
+            }}
+          >
+            {node.children.map((child, index) => (
+              <Box key={child.user_id} sx={{ position: 'relative' }}>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    left: -18,
+                    top: 18,
+                    width: 16,
+                    height: 2,
+                    bgcolor: treeLineColor,
+                  }}
+                />
+                {index === node.children.length - 1 ? (
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      left: -2,
+                      top: 20,
+                      bottom: 0,
+                      width: 4,
+                      bgcolor: '#ffffff',
+                      zIndex: 1,
+                    }}
+                  />
+                ) : null}
+                <PersonTreeBranch depth={depth + 1} node={child} onMove={onMove} onRemove={onRemove} />
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      ) : null}
+    </Box>
+  );
+};
 
 const EmptyState = ({ label }: { label: string }) => (
   <Box
@@ -240,7 +293,7 @@ export const PeopleTree = ({
       {hideHeader ? null : (
         <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
           <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{title}</Typography>
             {headerAction}
           </Stack>
           {members.length > 0 ? (
@@ -284,7 +337,7 @@ export const PeopleFlatList = ({
     {hideHeader ? null : (
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
         <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>{title}</Typography>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{title}</Typography>
           {headerAction}
         </Stack>
         {members.length > 0 ? (

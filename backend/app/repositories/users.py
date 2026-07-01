@@ -569,6 +569,19 @@ class UserRepository:
             for unit_id, parent_id in result.all()
         ]
 
+    async def list_active_unit_details(self) -> list[tuple[int, str, int | None]]:
+        """Active units as (unit_id, unit_name, parent_unit_id) tuples."""
+        stmt = (
+            select(Unit.id, Unit.name, Unit.id_parent)
+            .where(Unit.is_active.is_(True))
+            .order_by(Unit.id_parent.asc().nullsfirst(), Unit.name.asc(), Unit.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [
+            (int(unit_id), str(name), int(parent_id) if parent_id is not None else None)
+            for unit_id, name, parent_id in result.all()
+        ]
+
     async def list_active_unit_memberships(self) -> list[tuple[str, int]]:
         """Active unit memberships (in active units) as (user_id, unit_id) pairs."""
         stmt = (

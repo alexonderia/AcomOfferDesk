@@ -47,6 +47,9 @@ const toUserListItem = (row: ContractorListItem): UserListItem => ({
   company_mail: row.companyMail,
   address: row.address,
   note: row.note,
+  units_count: 0,
+  managers_count: 0,
+  subordinates_count: 0,
   actions: row.actions,
 });
 

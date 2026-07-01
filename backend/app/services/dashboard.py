@@ -14,6 +14,7 @@ from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.requests import format_request_status
 
 
@@ -121,6 +122,7 @@ class DashboardService:
         self._plans = plans
         self._department_scope = DepartmentScopeService(users)
         self._staff_scope = StaffAccessScopeService(users)
+        self._hierarchy = UnitHierarchyService(users)
 
     async def get_responsibility_dashboard(self, *, current_user: CurrentUser) -> ResponsibilityDashboard:
         self._ensure_can_view_responsibility_dashboard(current_user)
@@ -150,10 +152,16 @@ class DashboardService:
             has_permission(current_user, PermissionCodes.DEPARTMENT_DASHBOARD_READ)
             or current_user.role_id == settings.project_manager_role_id
         ):
-            department_owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
-                current_user=current_user,
+            department_owner_ids = set(
+                await self._department_scope.resolve_department_owner_ids_for_current_user(
+                    current_user=current_user,
+                )
             )
-            descendant_ids = {item for item in department_owner_ids if item != current_user.user_id}
+            department_owner_ids.add(current_user.user_id)
+            subordinate_owner_ids = set(
+                await self._hierarchy.get_subordinate_user_ids(user_id=current_user.user_id)
+            )
+            descendant_ids = {item for item in subordinate_owner_ids if item != current_user.user_id}
             staff_owner_ids = list(department_owner_ids)
             my_owner_ids = (
                 [current_user.user_id]
@@ -162,54 +170,31 @@ class DashboardService:
             )
             assigned_owner_ids = list(descendant_ids)
             hierarchy_scope_owner_ids = list(department_owner_ids)
-        else:
-            if current_user.role_id in {
-                settings.lead_economist_role_id,
-                settings.economist_role_id,
-            }:
-                module_owner_ids = await self._staff_scope.resolve_module_owner_ids(current_user=current_user)
-                module_owner_set = set(module_owner_ids)
-                # Employees placed below the user in the unit hierarchy are also
-                # managed by them, even if not direct ``users.id_parent`` descendants.
-                unit_scope_owner_ids = await self._staff_scope.resolve_unit_management_owner_ids(
-                    current_user=current_user,
-                )
-                module_owner_set |= set(unit_scope_owner_ids)
-                descendant_ids = {
-                    user_id for user_id in module_owner_set if user_id != current_user.user_id
-                }
-                staff_owner_ids = list(module_owner_set)
-                hierarchy_scope_owner_ids = list(module_owner_set)
-            else:
-                descendant_ids = set()
-                for user_id in by_id:
-                    cursor = user_id
-                    seen: set[str] = set()
-                    while cursor and cursor not in seen:
-                        seen.add(cursor)
-                        if cursor == current_user.user_id:
-                            if user_id != current_user.user_id:
-                                descendant_ids.add(user_id)
-                            break
-                        parent = by_id.get(cursor)
-                        cursor = parent[0].id_parent if parent else None
-
-                staff_owner_ids = list(descendant_ids)
-                hierarchy_scope_owner_ids = await self._resolve_hierarchy_scope_owner_ids(
-                    current_user_id=current_user.user_id,
-                )
-
-            if current_user.role_id == settings.lead_economist_role_id and current_user.user_id in by_id:
-                staff_owner_ids = list({current_user.user_id, *staff_owner_ids})
-
-            my_owner_ids = (
-                [current_user.user_id]
-                if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}
-                else []
+        elif current_user.role_id in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            module_owner_set = set(await self._staff_scope.resolve_module_owner_ids(current_user=current_user))
+            module_owner_set.add(current_user.user_id)
+            subordinate_owner_ids = set(
+                await self._hierarchy.get_subordinate_user_ids(user_id=current_user.user_id)
             )
+            descendant_ids = {user_id for user_id in subordinate_owner_ids if user_id != current_user.user_id}
+            staff_owner_ids = list(module_owner_set)
+            hierarchy_scope_owner_ids = list(module_owner_set)
+            my_owner_ids = [current_user.user_id] if current_user.role_id == settings.lead_economist_role_id else []
             assigned_owner_ids = list(descendant_ids)
+        else:
+            descendant_ids = set()
+            staff_owner_ids = [current_user.user_id] if current_user.user_id in by_id else []
+            hierarchy_scope_owner_ids = list(staff_owner_ids)
+            my_owner_ids = []
+            assigned_owner_ids = []
 
         staff_owner_ids = [user_id for user_id in staff_owner_ids if user_id in by_id]
+        primary_manager_by_user_id = await self._resolve_primary_manager_by_user_ids(
+            user_ids=staff_owner_ids,
+        )
 
         request_counters = await self._requests.count_in_progress_requests_by_owner(
             owner_ids=staff_owner_ids,
@@ -237,7 +222,7 @@ class DashboardService:
                 full_name=profile.full_name if profile else None,
                 role_id=user.id_role,
                 role_name=role.role,
-                parent_user_id=user.id_parent,
+                parent_user_id=primary_manager_by_user_id.get(user.id),
                 in_progress_total=sum(status_counts.values()),
                 statuses=statuses,
             )
@@ -405,24 +390,20 @@ class DashboardService:
             return
         UserPolicy.ensure_can_view_responsibility_dashboard(current_user)
 
-    async def _resolve_hierarchy_scope_owner_ids(self, *, current_user_id: str) -> list[str]:
-        pairs = await self._users.list_active_user_parent_pairs()
-        children_by_parent: dict[str, list[str]] = {}
-        for user_id, parent_id in pairs:
-            if parent_id:
-                children_by_parent.setdefault(parent_id, []).append(user_id)
-
-        visible_ids: set[str] = {current_user_id}
-        stack: list[str] = [current_user_id]
-        while stack:
-            manager_id = stack.pop()
-            for child_id in children_by_parent.get(manager_id, []):
-                if child_id in visible_ids:
-                    continue
-                visible_ids.add(child_id)
-                stack.append(child_id)
-
-        return list(visible_ids)
+    async def _resolve_primary_manager_by_user_ids(
+        self,
+        *,
+        user_ids: list[str],
+    ) -> dict[str, str | None]:
+        visible_user_ids = set(user_ids)
+        result: dict[str, str | None] = {}
+        for user_id in user_ids:
+            manager = await self._hierarchy.get_primary_manager(
+                user_id=user_id,
+                visible_user_ids=visible_user_ids,
+            )
+            result[user_id] = manager.user_id if manager is not None else None
+        return result
 
     def _sort_children(self, nodes: list[DashboardEconomistNode]) -> None:
         for node in nodes:

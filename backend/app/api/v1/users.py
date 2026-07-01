@@ -14,7 +14,11 @@ from app.schemas.users import (
     EconomistListData,
     EconomistListItemSchema,
     EconomistListResponse,
+    HierarchyRelationBriefSchema,
+    HierarchyUnitBriefSchema,
+    HierarchyUserBriefSchema,
     LinkMyMaxAccountRequest,
+    LegacyHierarchyData,
     NotificationPreferencesData,
     NotificationPreferencesResponse,
     ManualContractorCreateRequest,
@@ -38,6 +42,8 @@ from app.schemas.users import (
     UpdateMyCompanyContactsRequest,
     UpdateMyCredentialsRequest,
     UpdateMyProfileRequest,
+    UserHierarchyData,
+    UserHierarchyResponse,
     UserListData,
     UserListItemSchema,
     UserManagerUpdateData,
@@ -70,6 +76,7 @@ from app.services.users import (
     UserSelfService,
     UserStatusService,
 )
+from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.max_account_linking import link_max_account
 from app.services.max_notifications import notify_account_linked as notify_max_account_linked
 from app.services.max_registration_links import MaxExistingLinkExpiredError, MaxExistingLinkInvalidError, resolve_max_existing_link_token
@@ -196,6 +203,57 @@ def _contractor_delegations_data(item) -> UserContractorDelegationsData:
     )
 
 
+def _hierarchy_user_brief_schema(item) -> HierarchyUserBriefSchema:
+    return HierarchyUserBriefSchema(
+        user_id=item.user_id,
+        full_name=item.full_name,
+        role_id=item.role_id,
+        role_name=item.role_name,
+        status=_ru_user_status(item.status),
+    )
+
+
+def _hierarchy_relation_schema(item) -> HierarchyRelationBriefSchema:
+    return HierarchyRelationBriefSchema(
+        user_id=item.user_id,
+        full_name=item.full_name,
+        role_id=item.role_id,
+        role_name=item.role_name,
+        status=_ru_user_status(item.status),
+        source_unit_id=item.source_unit_id,
+        source_unit_name=item.source_unit_name,
+    )
+
+
+def _user_hierarchy_data(item: UserHierarchyProfileState) -> UserHierarchyData:
+    return UserHierarchyData(
+        user=_hierarchy_user_brief_schema(item.user),
+        units=[
+            HierarchyUnitBriefSchema(
+                unit_id=unit.unit_id,
+                name=unit.name,
+                id_parent=unit.id_parent,
+            )
+            for unit in item.units
+        ],
+        managers=[_hierarchy_relation_schema(manager) for manager in item.managers],
+        subordinates=[_hierarchy_relation_schema(subordinate) for subordinate in item.subordinates],
+        legacy_hierarchy=LegacyHierarchyData(
+            legacy_manager=(
+                _hierarchy_user_brief_schema(item.legacy_hierarchy.legacy_manager)
+                if item.legacy_hierarchy.legacy_manager is not None
+                else None
+            ),
+            legacy_subordinates=[
+                _hierarchy_user_brief_schema(subordinate)
+                for subordinate in item.legacy_hierarchy.legacy_subordinates
+            ],
+            is_business_source=item.legacy_hierarchy.is_business_source,
+            note=item.legacy_hierarchy.note,
+        ),
+    )
+
+
 @router.get("/users", response_model=UserListResponse)
 @router.get("/users/", response_model=UserListResponse, include_in_schema=False)
 async def list_users(
@@ -215,8 +273,13 @@ async def list_users(
     )
 
 
-@router.get("/users/manager-candidates", response_model=UserListResponse)
-@router.get("/users/manager-candidates/", response_model=UserListResponse, include_in_schema=False)
+@router.get(
+    "/users/manager-candidates",
+    response_model=UserListResponse,
+    deprecated=True,
+    summary="[Legacy] Кандидаты в руководители по users.id_parent",
+)
+@router.get("/users/manager-candidates/", response_model=UserListResponse, include_in_schema=False, deprecated=True)
 async def list_manager_candidates(
     target_role_id: int = Query(..., ge=1),
     target_user_id: str | None = Query(default=None, min_length=1),
@@ -284,6 +347,21 @@ async def get_me(
     return MeResponse(
         data=_me_data(current_user, me).model_copy(update={"department_name": department_name}),
     )
+
+
+@router.get("/users/me/hierarchy", response_model=UserHierarchyResponse)
+@router.get("/users/me/hierarchy/", response_model=UserHierarchyResponse, include_in_schema=False)
+async def get_my_hierarchy(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserHierarchyResponse:
+    async with uow:
+        hierarchy = UnitHierarchyService(uow.users)
+        state = await hierarchy.get_user_hierarchy_profile(user_id=current_user.user_id)
+        if state is None:
+            raise Forbidden("Иерархия пользователя недоступна")
+
+    return UserHierarchyResponse(data=_user_hierarchy_data(state))
 
 
 @router.get("/users/me/registration-profile", response_model=MeResponse)
@@ -638,6 +716,29 @@ async def get_subordinate_profile(
     )
 
 
+@router.get("/users/{user_id}/hierarchy", response_model=UserHierarchyResponse)
+async def get_user_hierarchy(
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserHierarchyResponse:
+    async with uow:
+        hierarchy = UnitHierarchyService(uow.users)
+        if not await hierarchy.can_view_user(current_user=current_user, target_user_id=user_id):
+            raise Forbidden("Недостаточно прав для просмотра иерархии пользователя")
+        visible_user_ids = await hierarchy.get_visible_user_ids(current_user=current_user)
+        if current_user.user_id == user_id or visible_user_ids is None:
+            visible_user_ids = None
+        state = await hierarchy.get_user_hierarchy_profile(
+            user_id=user_id,
+            visible_user_ids=visible_user_ids,
+        )
+        if state is None:
+            raise Forbidden("Иерархия пользователя недоступна")
+
+    return UserHierarchyResponse(data=_user_hierarchy_data(state))
+
+
 @router.get("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)
 async def get_user_department_delegations(
     user_id: str = Path(...),
@@ -928,7 +1029,12 @@ async def update_user_role(
     )
 
 
-@router.patch("/users/{user_id}/manager", response_model=UserManagerUpdateResponse)
+@router.patch(
+    "/users/{user_id}/manager",
+    response_model=UserManagerUpdateResponse,
+    deprecated=True,
+    summary="[Legacy] Смена руководителя через users.id_parent",
+)
 async def update_user_manager(
     payload: UserManagerUpdateRequest,
     user_id: str = Path(...),

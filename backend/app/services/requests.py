@@ -23,6 +23,7 @@ from app.services.email_notifications import EmailNotificationService
 from app.services.contractor_units import ContractorUnitService
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
 from app.services.contractor_outbound_notifications import (
@@ -705,19 +706,12 @@ class RequestService:
             )
 
     async def _is_descendant(self, *, ancestor_user_id: str, target_user_id: str) -> bool:
-        cursor_id: str | None = target_user_id
-        visited: set[str] = set()
-
-        while cursor_id is not None and cursor_id not in visited:
-            visited.add(cursor_id)
-            if cursor_id == ancestor_user_id:
-                return True
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                return False
-            cursor_id = cursor_user.id_parent
-
-        return False
+        if ancestor_user_id == target_user_id:
+            return True
+        return await UnitHierarchyService(self._users).is_manager_of(
+            manager_user_id=ancestor_user_id,
+            subordinate_user_id=target_user_id,
+        )
 
     async def _ensure_plan_assignment_allowed(
         self,
@@ -1177,48 +1171,13 @@ class RequestService:
                     current_user=current_user,
                 )
             )
-            owners.update(
-                await self._department_scope.resolve_subtree_owner_ids(
-                    root_user_id=current_user.user_id,
-                )
-            )
             return list(owners)
 
         if current_user.role_id in {
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            has_units = await self._department_scope.user_has_active_unit_membership(
-                user_id=current_user.user_id,
-            )
-            if not has_units:
-                # Rollout fallback: keep current hierarchy-department behavior.
-                department_owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
-                    current_user=current_user,
-                )
-                if department_owner_ids:
-                    return department_owner_ids
-                # Fallback for broken or incomplete hierarchy links.
-                if current_user.role_id == settings.lead_economist_role_id:
-                    return await self._resolve_visible_owner_ids_for_hierarchy_root(
-                        root_user_id=current_user.user_id,
-                    )
-                lead_root_user_id = await self._resolve_lead_economist_scope_root_user_id(
-                    current_user_id=current_user.user_id,
-                )
-                return await self._resolve_visible_owner_ids_for_hierarchy_root(
-                    root_user_id=lead_root_user_id,
-                )
-
-            # Lead/economist with unit membership: only their own unit subtree plus their
-            # hierarchy subordinates. A department.requests.read delegation widens this to the
-            # whole root-unit department.
             owners = {current_user.user_id}
-            owners.update(
-                await self._resolve_visible_owner_ids_for_hierarchy_root(
-                    root_user_id=current_user.user_id,
-                )
-            )
             owners.update(
                 await self._department_scope.resolve_unit_scope_owner_ids_for_user(
                     user_id=current_user.user_id,
@@ -1462,8 +1421,8 @@ class RequestService:
             ):
                 raise Forbidden("Request is outside your management scope")
             if new_owner_user_id != current_user.user_id:
-                # Subordinate via the legacy ``users.id_parent`` chain OR via the
-                # unit hierarchy (a manager placed above the new owner in the unit tree).
+                # New owner must stay inside the current user's unit-based
+                # management contour.
                 is_subordinate = await self._is_inside_hierarchy_management_scope(
                     current_user=current_user,
                     request_owner_user_id=new_owner_user_id,
@@ -1494,39 +1453,4 @@ class RequestService:
             current_user=current_user,
         )
         return target_user_id in set(department_user_ids)
-
-    async def _resolve_lead_economist_scope_root_user_id(self, *, current_user_id: str) -> str:
-        cursor_id: str | None = current_user_id
-        visited: set[str] = set()
-
-        while cursor_id is not None and cursor_id not in visited:
-            visited.add(cursor_id)
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                break
-            if cursor_user.id_role == settings.lead_economist_role_id:
-                return cursor_user.id
-            cursor_id = cursor_user.id_parent
-
-        return current_user_id
-
-    async def _resolve_visible_owner_ids_for_hierarchy_root(self, *, root_user_id: str) -> list[str]:
-        rows = await self._users.list_active_user_parent_pairs()
-        children_by_parent: dict[str, list[str]] = {}
-        for user_id, parent_id in rows:
-            if parent_id is None:
-                continue
-            children_by_parent.setdefault(parent_id, []).append(user_id)
-
-        visible: set[str] = {root_user_id}
-        queue: list[str] = [root_user_id]
-        while queue:
-            manager_id = queue.pop()
-            for child_id in children_by_parent.get(manager_id, []):
-                if child_id in visible:
-                    continue
-                visible.add(child_id)
-                queue.append(child_id)
-
-        return list(visible)
 

@@ -123,9 +123,8 @@ async def test_lead_with_department_delegation_sees_whole_root_unit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lead_without_unit_membership_falls_back_to_full_department() -> None:
+async def test_lead_without_unit_membership_keeps_only_self_scope() -> None:
     users = _UsersRepo()
-    # lead-1 is no longer a member of any unit -> rollout fallback to hierarchy department.
     users._memberships = [m for m in users._memberships if m[0] != "lead-1"]
     service = _build_service(users)
 
@@ -133,4 +132,4 @@ async def test_lead_without_unit_membership_falls_back_to_full_department() -> N
         current_user=_user(user_id="lead-1", role_id=settings.lead_economist_role_id),
     )
 
-    assert set(owner_ids) == {"pm-1", "lead-1", "eco-1", "lead-2", "eco-2"}
+    assert set(owner_ids) == {"lead-1"}

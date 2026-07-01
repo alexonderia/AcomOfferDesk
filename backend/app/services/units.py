@@ -10,6 +10,7 @@ from app.domain.policies import UserPolicy
 from app.models.orm_models import Unit, UnitMember, User
 from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
+from app.services.unit_hierarchy import UnitHierarchyService
 
 
 def _utcnow_naive() -> datetime:
@@ -121,9 +122,9 @@ class UnitService:
         UserPolicy.ensure_can_read_units(current_user)
         if self._is_superadmin(current_user):
             return await self._list_manageable_root_ids(current_user=current_user)
-        if current_user.role_id != settings.admin_role_id:
-            raise Forbidden("Недостаточно прав для просмотра иерархии подразделений")
-        return await self._list_manageable_root_ids(current_user=current_user)
+        if current_user.role_id == settings.admin_role_id:
+            return await self._list_manageable_root_ids(current_user=current_user)
+        return set(await self._units.list_user_root_unit_ids(user_id=current_user.user_id))
 
     async def _ensure_read_scope_for_unit(self, *, current_user: CurrentUser, unit: Unit) -> set[int]:
         readable_root_ids = await self._ensure_read_access(current_user=current_user)
@@ -159,14 +160,14 @@ class UnitService:
             return
         raise Conflict("Юнит с таким названием уже существует на этом уровне")
 
-    def _build_member_state(self, *, user, profile, role) -> UnitMemberState:
+    def _build_member_state(self, *, user, profile, role, manager_user_id: str | None = None) -> UnitMemberState:
         return UnitMemberState(
             user_id=user.id,
             full_name=profile.full_name if profile is not None else None,
             role_id=int(role.id),
             role_name=role.role,
             status=user.status,
-            id_parent_user=user.id_parent,
+            id_parent_user=manager_user_id,
         )
 
     def _build_available_user_state(self, *, user, profile, role) -> AvailableUnitUserState:
@@ -178,16 +179,48 @@ class UnitService:
             status=user.status,
         )
 
-    def _build_recommended_hierarchy_node_state(self, *, user, profile, role, children) -> RecommendedHierarchyNodeState:
+    def _build_recommended_hierarchy_node_state(
+        self,
+        *,
+        user,
+        profile,
+        role,
+        manager_user_id: str | None,
+        children,
+    ) -> RecommendedHierarchyNodeState:
         return RecommendedHierarchyNodeState(
             user_id=user.id,
             full_name=profile.full_name if profile is not None else None,
             role_id=int(role.id),
             role_name=role.role,
             status=user.status,
-            id_parent_user=user.id_parent,
+            id_parent_user=manager_user_id,
             children=children,
         )
+
+    async def _build_member_states(self, *, rows: list[tuple[UnitMember, User, object | None, object]]) -> list[UnitMemberState]:
+        if not rows:
+            return []
+
+        hierarchy = UnitHierarchyService(self._users)
+        visible_user_ids = {user.id for _member, user, _profile, _role in rows}
+        parent_by_user_id: dict[str, str | None] = {}
+        for user_id in visible_user_ids:
+            manager = await hierarchy.get_primary_manager(
+                user_id=user_id,
+                visible_user_ids=visible_user_ids,
+            )
+            parent_by_user_id[user_id] = manager.user_id if manager is not None else None
+
+        return [
+            self._build_member_state(
+                user=user,
+                profile=profile,
+                role=role,
+                manager_user_id=parent_by_user_id.get(user.id),
+            )
+            for _member, user, profile, role in rows
+        ]
 
     def _collect_visible_unit_ids(
         self,
@@ -221,10 +254,8 @@ class UnitService:
         unit: Unit,
         can_manage: bool,
     ) -> UnitNodeState:
-        members = [
-            self._build_member_state(user=user, profile=profile, role=role)
-            for _member, user, profile, role in await self._units.list_members(unit_id=int(unit.id))
-        ]
+        member_rows = await self._units.list_members(unit_id=int(unit.id))
+        members = await self._build_member_states(rows=member_rows)
         children = await self._units.list_children(unit_id=int(unit.id), active_only=True)
         can_delete = can_manage and (
             unit.id_parent is not None
@@ -263,11 +294,16 @@ class UnitService:
 
         visible_ids = self._collect_visible_unit_ids(units=units, visible_root_ids=visible_root_ids)
         visible_units = [unit for unit in units if int(unit.id) in visible_ids]
-        members_by_unit: dict[int, list[UnitMemberState]] = {int(unit.id): [] for unit in visible_units}
+        member_rows_by_unit: dict[int, list[tuple[UnitMember, User, object | None, object]]] = {
+            int(unit.id): []
+            for unit in visible_units
+        }
         for member, user, profile, role in await self._units.list_members_for_units(unit_ids=sorted(visible_ids)):
-            members_by_unit.setdefault(int(member.id_unit), []).append(
-                self._build_member_state(user=user, profile=profile, role=role)
-            )
+            member_rows_by_unit.setdefault(int(member.id_unit), []).append((member, user, profile, role))
+
+        members_by_unit: dict[int, list[UnitMemberState]] = {}
+        for unit_id, unit_rows in member_rows_by_unit.items():
+            members_by_unit[unit_id] = await self._build_member_states(rows=unit_rows)
 
         manageable_root_ids = await self._list_manageable_root_ids(current_user=current_user)
         root_cache: dict[int, int] = {}
@@ -338,32 +374,14 @@ class UnitService:
         visible_ids = self._collect_visible_unit_ids(units=units, visible_root_ids=readable_root_ids)
         all_unit_ids = [int(unit.id) for unit in units]
 
-        users_with_any_unit: set[str] = set()
         anchored_user_ids: set[str] = set()
         for member, _user, _profile, _role in await self._units.list_members_for_units(unit_ids=all_unit_ids):
-            users_with_any_unit.add(member.id_user)
             if int(member.id_unit) in visible_ids:
                 anchored_user_ids.add(member.id_user)
 
         by_id = {row[0].id: row for row in active_rows}
         anchored_user_ids &= set(by_id.keys())
-
-        children_by_parent: dict[str, list[str]] = {}
-        for user, _profile, _role in active_rows:
-            if user.id_parent in by_id:
-                children_by_parent.setdefault(user.id_parent, []).append(user.id)
-
-        in_scope: set[str] = set(anchored_user_ids)
-        queue: list[str] = list(anchored_user_ids)
-        while queue:
-            parent_id = queue.pop()
-            for child_id in children_by_parent.get(parent_id, []):
-                if child_id in in_scope or child_id in users_with_any_unit:
-                    continue
-                in_scope.add(child_id)
-                queue.append(child_id)
-
-        return [row for row in active_rows if row[0].id in in_scope]
+        return [row for row in active_rows if row[0].id in anchored_user_ids]
 
     async def get_recommended_tree(self, *, current_user: CurrentUser) -> list[RecommendedHierarchyNodeState]:
         readable_root_ids = await self._ensure_read_access(current_user=current_user)
@@ -388,9 +406,12 @@ class UnitService:
             if not active_rows:
                 return []
 
+        hierarchy = UnitHierarchyService(self._users)
         by_id = {user.id: (user, profile, role) for user, profile, role in active_rows}
+        visible_user_ids = set(by_id.keys())
         children_by_parent: dict[str | None, list[str]] = {}
         sort_keys: dict[str, tuple[int, str, str]] = {}
+        parent_by_user_id: dict[str, str | None] = {}
 
         for user, profile, role in active_rows:
             sort_keys[user.id] = (
@@ -398,7 +419,16 @@ class UnitService:
                 (profile.full_name or "").casefold(),
                 user.id.casefold(),
             )
-            parent_id = user.id_parent if user.id_parent in by_id else None
+            manager = await hierarchy.get_primary_manager(
+                user_id=user.id,
+                visible_user_ids=visible_user_ids,
+            )
+            parent_id = (
+                manager.user_id
+                if manager is not None and manager.user_id in by_id and manager.user_id != user.id
+                else None
+            )
+            parent_by_user_id[user.id] = parent_id
             children_by_parent.setdefault(parent_id, []).append(user.id)
 
         for child_ids in children_by_parent.values():
@@ -418,6 +448,7 @@ class UnitService:
                 user=user,
                 profile=profile,
                 role=role,
+                manager_user_id=parent_by_user_id.get(user.id),
                 children=children,
             )
 
@@ -565,34 +596,6 @@ class UnitService:
             membership.id_assigned_by_user = assigned_by_user_id
             membership.updated_at = _utcnow_naive()
 
-    async def _resolve_user_root_unit_ids(self, *, user_id: str) -> set[int]:
-        root_ids: set[int] = set()
-        for _member, unit in await self._units.list_user_units(user_id=user_id, active_only=True):
-            root_ids.add(await self._resolve_root_unit_id(unit=unit))
-        return root_ids
-
-    async def _inherit_manager_root_unit_if_needed(
-        self,
-        *,
-        current_user: CurrentUser,
-        unit: Unit,
-        user: User,
-    ) -> None:
-        if unit.id_parent is None:
-            return
-        manager_id = user.id_parent
-        if not manager_id:
-            return
-        module_root_id = await self._resolve_root_unit_id(unit=unit)
-        manager_root_ids = await self._resolve_user_root_unit_ids(user_id=manager_id)
-        if module_root_id not in manager_root_ids:
-            return
-        await self._ensure_active_membership(
-            unit_id=module_root_id,
-            user_id=user.id,
-            assigned_by_user_id=current_user.user_id,
-        )
-
     async def add_member(
         self,
         *,
@@ -631,18 +634,13 @@ class UnitService:
             membership.id_assigned_by_user = current_user.user_id
             membership.updated_at = _utcnow_naive()
 
-        await self._inherit_manager_root_unit_if_needed(
-            current_user=current_user,
-            unit=unit,
-            user=user,
-        )
-
         await self._units.flush()
 
         rows = await self._units.list_members(unit_id=unit_id, active_only=True)
-        for _member, member_user, profile, role in rows:
-            if member_user.id == user_id:
-                return self._build_member_state(user=member_user, profile=profile, role=role)
+        member_states = await self._build_member_states(rows=rows)
+        for member_state in member_states:
+            if member_state.user_id == user_id:
+                return member_state
 
         raise Conflict("Не удалось добавить пользователя в юнит")
 
@@ -721,10 +719,7 @@ class UnitService:
             raise NotFound("Юнит не найден")
         await self._ensure_read_scope_for_unit(current_user=current_user, unit=unit)
         rows = await self._units.list_members(unit_id=unit_id, active_only=True)
-        return [
-            self._build_member_state(user=user, profile=profile, role=role)
-            for _member, user, profile, role in rows
-        ]
+        return await self._build_member_states(rows=rows)
 
     async def list_available_users_for_unit(
         self,
@@ -845,8 +840,9 @@ class UnitService:
         await self._units.flush()
 
         rows = await self._units.list_members(unit_id=unit_id, active_only=True)
-        for _member, member_user, profile, role in rows:
-            if member_user.id == user_id:
-                return self._build_member_state(user=member_user, profile=profile, role=role)
+        member_states = await self._build_member_states(rows=rows)
+        for member_state in member_states:
+            if member_state.user_id == user_id:
+                return member_state
 
         raise Conflict("Не удалось добавить контрагента в подразделение")

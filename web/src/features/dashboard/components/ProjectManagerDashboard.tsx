@@ -106,7 +106,7 @@ export const ProjectManagerDashboard = () => {
         const next = { ...prev };
         for (const node of flattenEmployees(response.tree)) {
           if (node.children.length > 0 && next[node.user_id] === undefined) {
-            next[node.user_id] = false;
+            next[node.user_id] = true;
           }
         }
         return next;

@@ -1859,24 +1859,6 @@ class OfferService:
             request_owner_user_id=request_owner_user_id,
         )
 
-    async def _is_descendant(
-        self,
-        *,
-        ancestor_user_id: str,
-        target_user_id: str,
-    ) -> bool:
-        cursor_id: str | None = target_user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            if cursor_id == ancestor_user_id:
-                return True
-            visited.add(cursor_id)
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                return False
-            cursor_id = cursor_user.id_parent
-        return False
-
     def _resolve_message_type(self, *, has_text: bool, has_attachments: bool) -> str:
         if has_text and has_attachments:
             return "mixed"

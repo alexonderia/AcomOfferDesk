@@ -264,7 +264,7 @@ const UnitStatTile = ({
       py: 0.35,
     }}
   >
-    <Typography sx={{ fontSize: 13, fontWeight: 800, lineHeight: 1, color }}>
+    <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1, color }}>
       {value}
     </Typography>
     <Typography sx={{ fontSize: 11, fontWeight: 600, lineHeight: 1, color: hierarchyPageColors.textSecondary, whiteSpace: 'nowrap' }}>
@@ -406,7 +406,7 @@ const OverviewMemberViewToggle = ({
               transition: 'background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease',
             }}
           >
-            <Typography sx={{ fontSize: 13.5, fontWeight: 800, lineHeight: 1, color: 'inherit' }}>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1, color: 'inherit' }}>
               {option.label}
             </Typography>
             <Box
@@ -419,7 +419,7 @@ const OverviewMemberViewToggle = ({
                 px: 0.7,
                 py: 0.2,
                 fontSize: 11,
-                fontWeight: 800,
+                fontWeight: 600,
                 lineHeight: 1,
                 textAlign: 'center',
               }}
@@ -467,7 +467,7 @@ const InlineUnitNameField = ({
 
   if (!canEdit) {
     return (
-      <Typography sx={{ fontSize: { xs: 18, md: 21 }, fontWeight: 800, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
+      <Typography sx={{ fontSize: { xs: 18, md: 21 }, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
         {unit.name}
       </Typography>
     );
@@ -517,7 +517,7 @@ const InlineUnitNameField = ({
             px: 0,
             py: 0,
             fontSize: { xs: 17, md: 20 },
-            fontWeight: 800,
+            fontWeight: 600,
             lineHeight: 1.2,
             letterSpacing: '-0.015em',
           },
@@ -605,7 +605,7 @@ const UnitListRow = ({
         }}
       >
         <Typography
-          sx={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, lineHeight: 1.25, color: hierarchyPageColors.textPrimary, overflowWrap: 'anywhere' }}
+          sx={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, lineHeight: 1.25, color: hierarchyPageColors.textPrimary, overflowWrap: 'anywhere' }}
         >
           {card.unit.name}
         </Typography>
@@ -641,7 +641,7 @@ const UnitListRow = ({
     >
       <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.24, color: hierarchyPageColors.textPrimary, overflowWrap: 'anywhere' }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.24, color: hierarchyPageColors.textPrimary, overflowWrap: 'anywhere' }}>
             {card.unit.name}
           </Typography>
           <Typography sx={{ mt: 0.2, fontSize: 11.5, color: hierarchyPageColors.textSecondary, overflowWrap: 'anywhere' }}>
@@ -940,7 +940,7 @@ export const UnitHierarchyPageView = () => {
               sx={{
                 minHeight: 40,
                 fontSize: 14,
-                fontWeight: 700,
+                fontWeight: 600,
                 color: hierarchyPageColors.textPrimary,
                 '& .MuiSelect-select': {
                   display: 'flex',
@@ -989,7 +989,7 @@ export const UnitHierarchyPageView = () => {
               flexShrink: 0,
               px: 2,
               fontSize: 14,
-              fontWeight: 700,
+              fontWeight: 600,
               whiteSpace: 'nowrap',
             }}
           >
@@ -1070,7 +1070,7 @@ export const UnitHierarchyPageView = () => {
         <Card variant="outlined" sx={sectionCardSx}>
           <CardContent>
             <Stack spacing={1.25} alignItems="flex-start">
-              <Typography sx={{ fontSize: 15, fontWeight: 700 }}>Ничего не найдено</Typography>
+              <Typography sx={{ fontSize: 15, fontWeight: 600 }}>Ничего не найдено</Typography>
               <Typography variant="body2" color="text.secondary">
                 {departmentScope === 'all'
                   ? 'По выбранному фильтру не найдено объединений второго уровня. Попробуйте изменить поиск или выбрать конкретное подразделение.'
@@ -1103,7 +1103,7 @@ export const UnitHierarchyPageView = () => {
                 >
                   <Box sx={{ minWidth: 0, flex: 1 }}>
                     {departmentScope === 'all' || !selectedDepartmentView ? (
-                      <Typography sx={{ fontSize: { xs: 18, md: 21 }, fontWeight: 800, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
+                      <Typography sx={{ fontSize: { xs: 18, md: 21 }, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
                         {overviewScopeSummary.title}
                       </Typography>
                     ) : (
@@ -1155,7 +1155,7 @@ export const UnitHierarchyPageView = () => {
                   >
                     <Stack spacing={1}>
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ fontSize: 14.5, fontWeight: 800 }}>
+                        <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>
                           {departmentScope === 'all' ? 'Объединения по всем подразделениям' : 'Объединения подразделения'}
                         </Typography>
                         <Typography sx={{ fontSize: 12, color: hierarchyPageColors.textSecondary }}>
@@ -1201,7 +1201,7 @@ export const UnitHierarchyPageView = () => {
                                     },
                                   }}
                                 >
-                                  <Typography sx={{ fontSize: 14.5, fontWeight: 800, color: hierarchyPageColors.textPrimary, overflowWrap: 'anywhere' }}>
+                                  <Typography sx={{ fontSize: 14.5, fontWeight: 600, color: hierarchyPageColors.textPrimary, overflowWrap: 'anywhere' }}>
                                     {group.department.name}
                                   </Typography>
                                   <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: hierarchyPageColors.softBlue, whiteSpace: 'nowrap' }}>
@@ -1260,7 +1260,7 @@ export const UnitHierarchyPageView = () => {
                               alignItems={{ xs: 'stretch', sm: 'flex-start' }}
                             >
                               <Box sx={{ minWidth: 0, flex: 1 }}>
-                                <Typography sx={{ fontSize: 14.5, fontWeight: 800, overflowWrap: 'anywhere' }}>
+                                <Typography sx={{ fontSize: 14.5, fontWeight: 600, overflowWrap: 'anywhere' }}>
                                   {selectedOverviewCard.unit.name}
                                 </Typography>
                                 <Typography sx={{ fontSize: 12, color: hierarchyPageColors.textSecondary, overflowWrap: 'anywhere' }}>
@@ -1343,7 +1343,7 @@ export const UnitHierarchyPageView = () => {
                 flexWrap="wrap"
               >
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: { xs: 16, md: 18 }, fontWeight: 800, lineHeight: 1.2 }}>
+                  <Typography sx={{ fontSize: { xs: 16, md: 18 }, fontWeight: 600, lineHeight: 1.2 }}>
                     Нераспределённые сотрудники
                   </Typography>
                   <Typography sx={{ fontSize: 12, color: hierarchyPageColors.textSecondary }}>
@@ -1404,10 +1404,10 @@ export const UnitHierarchyPageView = () => {
                       </IconButton>
                     </Tooltip>
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary, fontWeight: 700 }} noWrap>
+                      <Typography variant="caption" sx={{ color: hierarchyPageColors.textSecondary, fontWeight: 600 }} noWrap>
                         Подразделение {editorDepartment?.name ?? 'Без названия'}
                       </Typography>
-                      <Typography sx={{ fontSize: { xs: 17, md: 20 }, fontWeight: 800, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
+                      <Typography sx={{ fontSize: { xs: 17, md: 20 }, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
                         {editorRootUnit.name}
                       </Typography>
                     </Box>
@@ -1644,10 +1644,10 @@ export const UnitHierarchyPageView = () => {
                   : 'Группа будет удалена без переноса сотрудников.'}
               </Alert>
 
-              <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{deleteDialogState.unit.name}</Typography>
+              <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{deleteDialogState.unit.name}</Typography>
 
               <Box>
-                <Typography sx={{ mb: 1, fontSize: 14, fontWeight: 700 }}>Предпросмотр новой иерархии</Typography>
+                <Typography sx={{ mb: 1, fontSize: 14, fontWeight: 600 }}>Предпросмотр новой иерархии</Typography>
                 <UnitOrgChart
                   tree={deleteDialogState.previewTree}
                   onDelete={() => {}}

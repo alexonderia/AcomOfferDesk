@@ -137,19 +137,26 @@ class UnitRepository:
         return current.name
 
     async def list_user_root_unit_ids(self, *, user_id: str) -> list[int]:
-        stmt = (
-            select(Unit.id)
-            .join(UnitMember, UnitMember.id_unit == Unit.id)
-            .where(
-                Unit.id_parent.is_(None),
-                Unit.is_active.is_(True),
-                UnitMember.id_user == user_id,
-                UnitMember.is_active.is_(True),
-            )
-            .order_by(Unit.id.asc())
-        )
-        result = await self._session.execute(stmt)
-        return [int(value) for value in result.scalars().all()]
+        memberships = await self.list_user_units(user_id=user_id, active_only=True)
+        if not memberships:
+            return []
+
+        units = await self.list_units(active_only=True)
+        by_id = {int(unit.id): unit for unit in units}
+        root_ids: set[int] = set()
+
+        for _member, start_unit in memberships:
+            current = by_id.get(int(start_unit.id), start_unit)
+            seen: set[int] = set()
+            while current.id_parent is not None and int(current.id) not in seen:
+                seen.add(int(current.id))
+                parent = by_id.get(int(current.id_parent))
+                if parent is None:
+                    break
+                current = parent
+            root_ids.add(int(current.id))
+
+        return sorted(root_ids)
 
     async def list_available_users_for_unit(
         self,

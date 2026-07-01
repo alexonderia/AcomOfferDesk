@@ -48,6 +48,7 @@ from app.services.notifications import NotificationService
 from app.services.department_scope import DepartmentScopeService
 from app.services.requests import RequestEditInput, RequestService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 router = APIRouter()
@@ -1021,13 +1022,11 @@ async def _resolve_department_owner_scope_ids_for_current_user(
         settings.economist_role_id,
     }:
         return set()
-    root_user_id = await _resolve_department_root_user_id(
-        uow=uow,
-        current_user=current_user,
+    return set(
+        await DepartmentScopeService(uow.users).resolve_department_owner_ids_for_current_user(
+            current_user=current_user,
+        )
     )
-    if root_user_id is None:
-        return set()
-    return await _collect_hierarchy_user_ids(uow=uow, root_user_id=root_user_id)
 
 
 async def _resolve_standard_owner_scope_ids_for_current_user(
@@ -1042,81 +1041,10 @@ async def _resolve_standard_owner_scope_ids_for_current_user(
         settings.lead_economist_role_id,
         settings.economist_role_id,
     }:
-        users = getattr(uow, "users", None)
-        if users is not None and callable(getattr(users, "get_by_id", None)):
-            department_owner_ids = await DepartmentScopeService(users).resolve_department_owner_ids_for_current_user(
-                current_user=current_user,
-            )
-            if department_owner_ids:
-                return set(department_owner_ids)
-
-        if current_user.role_id in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-        }:
-            return await _collect_hierarchy_user_ids(uow=uow, root_user_id=current_user.user_id)
-        lead_root_user_id = await _resolve_lead_economist_scope_root_user_id(
-            uow=uow,
-            current_user_id=current_user.user_id,
+        visible_user_ids = await UnitHierarchyService(uow.users).get_visible_user_ids(
+            current_user=current_user,
         )
-        visible = await _collect_hierarchy_user_ids(uow=uow, root_user_id=lead_root_user_id)
-        return visible | {current_user.user_id}
-    return set()
-
-
-async def _resolve_lead_economist_scope_root_user_id(
-    *,
-    uow: UnitOfWork,
-    current_user_id: str,
-) -> str:
-    cursor_id: str | None = current_user_id
-    visited: set[str] = set()
-    while cursor_id is not None and cursor_id not in visited:
-        visited.add(cursor_id)
-        cursor_user = await uow.users.get_by_id(cursor_id)
-        if cursor_user is None:
-            break
-        if cursor_user.id_role == settings.lead_economist_role_id:
-            return cursor_user.id
-        cursor_id = cursor_user.id_parent
-    return current_user_id
-
-
-async def _resolve_department_root_user_id(
-    *,
-    uow: UnitOfWork,
-    current_user: CurrentUser,
-) -> str | None:
-    if current_user.role_id == settings.project_manager_role_id:
-        return current_user.user_id
-    cursor_id: str | None = current_user.user_id
-    visited: set[str] = set()
-    while cursor_id is not None and cursor_id not in visited:
-        visited.add(cursor_id)
-        cursor_user = await uow.users.get_by_id(cursor_id)
-        if cursor_user is None:
+        if visible_user_ids is None:
             return None
-        if cursor_user.id_role == settings.project_manager_role_id:
-            return cursor_user.id
-        cursor_id = cursor_user.id_parent
-    return None
-
-
-async def _collect_hierarchy_user_ids(*, uow: UnitOfWork, root_user_id: str) -> set[str]:
-    rows = await uow.users.list_active_user_parent_pairs()
-    children_by_parent: dict[str, list[str]] = {}
-    for user_id, parent_id in rows:
-        if parent_id is None:
-            continue
-        children_by_parent.setdefault(parent_id, []).append(user_id)
-
-    visible: set[str] = {root_user_id}
-    queue: list[str] = [root_user_id]
-    while queue:
-        manager_id = queue.pop()
-        for child_id in children_by_parent.get(manager_id, []):
-            if child_id in visible:
-                continue
-            visible.add(child_id)
-            queue.append(child_id)
-    return visible
+        return visible_user_ids
+    return set()

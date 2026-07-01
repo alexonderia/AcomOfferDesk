@@ -214,8 +214,8 @@ def test_superadmin_can_load_recommended_units_tree(test_client, set_uow, set_cu
 
     assert response.status_code == 200
     items = response.json()["data"]["items"]
-    assert [item["user_id"] for item in items] == ["admin-1", "pm-1"]
-    assert items[1]["children"][0]["user_id"] == "lead-1"
+    assert [item["user_id"] for item in items] == ["admin-1", "pm-1", "lead-1", "econ-1"]
+    assert all(item["children"] == [] for item in items)
 
 
 def test_admin_can_load_global_available_users_for_unit_creation(test_client, set_uow, set_current_user, make_current_user):

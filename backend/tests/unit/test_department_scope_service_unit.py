@@ -17,12 +17,33 @@ class _UsersRepo:
             "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent="pm-1", status="active"),
             "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-2", status="active"),
         }
+        self._units = [
+            (1, None),
+            (2, 1),
+            (4, 2),
+            (10, None),
+            (11, 10),
+        ]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("eco-1", 4),
+            ("eco-2", 4),
+            ("pm-2", 10),
+            ("lead-2", 11),
+        ]
 
     async def get_by_id(self, user_id: str):
         return self._users.get(user_id)
 
     async def list_active_user_parent_pairs(self):
         return [(item.id, item.id_parent) for item in self._users.values() if item.status == "active"]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 def _current_user(*, user_id: str, role_id: int) -> CurrentUser:
@@ -164,9 +185,8 @@ async def test_user_has_active_unit_membership_reflects_graph():
 
 
 @pytest.mark.asyncio
-async def test_department_scope_falls_back_to_hierarchy_without_unit_membership():
+async def test_department_scope_without_unit_membership_returns_empty_scope():
     repo = _UnitAwareUsersRepo()
-    # Drop all memberships -> no unit data -> hierarchy fallback.
     repo._memberships = []
     service = DepartmentScopeService(repo)
 
@@ -174,4 +194,4 @@ async def test_department_scope_falls_back_to_hierarchy_without_unit_membership(
         current_user=_current_user(user_id="eco-1", role_id=settings.economist_role_id),
     )
 
-    assert set(department) == {"pm-1", "lead-1", "eco-1", "eco-2"}
+    assert department == []

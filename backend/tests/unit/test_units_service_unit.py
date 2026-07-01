@@ -156,14 +156,18 @@ class _FakeUnitsRepo:
         return rows
 
     async def list_user_root_unit_ids(self, *, user_id: str) -> list[int]:
-        unit_ids: list[int] = []
-        for (unit_id, member_user_id), member in self.members.items():
-            if member_user_id != user_id or not member.is_active:
-                continue
-            unit = self.units[unit_id]
-            if unit.is_active and unit.id_parent is None:
-                unit_ids.append(unit_id)
-        return sorted(unit_ids)
+        root_ids: set[int] = set()
+        for _member, unit in await self.list_user_units(user_id=user_id, active_only=True):
+            current = unit
+            seen: set[int] = set()
+            while current.id_parent is not None and int(current.id) not in seen:
+                seen.add(int(current.id))
+                parent = self.units.get(int(current.id_parent))
+                if parent is None:
+                    break
+                current = parent
+            root_ids.add(int(current.id))
+        return sorted(root_ids)
 
     async def list_available_users_for_unit(
         self,
@@ -345,8 +349,25 @@ async def test_get_tree_returns_units_with_members(service_context, make_current
     assert len(tree) == 1
     assert tree[0].name == "Департамент"
     assert tree[0].members[0].user_id == "admin-1"
+    assert tree[0].members[0].id_parent_user is None
     assert tree[0].children[0].name == "Проект"
     assert tree[0].children[0].members[0].user_id == "econ-1"
+    assert tree[0].children[0].members[0].id_parent_user is None
+
+
+@pytest.mark.asyncio
+async def test_internal_employee_can_view_attached_root_hierarchy(service_context, make_current_user) -> None:
+    tree = await service_context.service.get_tree(
+        current_user=make_current_user(
+            user_id="econ-1",
+            role_id=settings.economist_role_id,
+            permissions={"units.read"},
+        ),
+    )
+
+    assert len(tree) == 1
+    assert tree[0].unit_id == 1
+    assert tree[0].children[0].unit_id == 2
 
 
 @pytest.mark.asyncio
@@ -359,11 +380,8 @@ async def test_get_recommended_tree_returns_current_user_hierarchy(service_conte
         ),
     )
 
-    assert len(tree) == 2
-    assert tree[0].user_id == "admin-1"
-    assert tree[1].user_id == "pm-1"
-    assert tree[1].children[0].user_id == "lead-1"
-    assert [child.user_id for child in tree[1].children[0].children] == ["econ-1", "econ-2"]
+    assert [node.user_id for node in tree] == ["admin-1", "pm-1", "lead-1", "econ-1", "econ-2"]
+    assert all(node.children == [] for node in tree)
 
 
 def _flatten_recommended_ids(nodes) -> list[str]:
@@ -376,7 +394,7 @@ def _flatten_recommended_ids(nodes) -> list[str]:
 
 @pytest.mark.asyncio
 async def test_get_recommended_tree_scopes_admin_to_responsibility_zone(service_context, make_current_user) -> None:
-    # A user without a unit, sitting below an in-zone member, stays in the admin's scope.
+    # A user without a unit no longer inherits visibility through legacy parent chains.
     service_context.users.users["econ-3"] = User(
         id="econ-3",
         id_role=settings.economist_role_id,
@@ -394,19 +412,16 @@ async def test_get_recommended_tree_scopes_admin_to_responsibility_zone(service_
     )
 
     visible_ids = _flatten_recommended_ids(tree)
-    # admin-1 (root unit member) and econ-1 (sub-unit member) plus econ-1's unit-less descendant.
-    assert sorted(visible_ids) == ["admin-1", "econ-1", "econ-3"]
-    # Managers above the zone and out-of-zone economists must not leak in.
+    assert sorted(visible_ids) == ["admin-1", "econ-1"]
     assert "pm-1" not in visible_ids
     assert "lead-1" not in visible_ids
     assert "econ-2" not in visible_ids
-
-    econ_one = next(node for node in tree if node.user_id == "econ-1")
-    assert [child.user_id for child in econ_one.children] == ["econ-3"]
+    assert "econ-3" not in visible_ids
+    assert all(node.children == [] for node in tree)
 
 
 @pytest.mark.asyncio
-async def test_assign_to_module_inherits_manager_root_unit(service_context, make_current_user) -> None:
+async def test_assign_to_module_does_not_inherit_manager_root_unit(service_context, make_current_user) -> None:
     # Subordinate of admin-1 (who is a member of the root department "Департамент").
     service_context.users.users["sub-1"] = User(
         id="sub-1",
@@ -426,11 +441,8 @@ async def test_assign_to_module_inherits_manager_root_unit(service_context, make
         user_id="sub-1",
     )
 
-    # Joined the requested module ...
     assert service_context.units.members[(2, "sub-1")].is_active is True
-    # ... and inherited the manager's root department.
-    assert (1, "sub-1") in service_context.units.members
-    assert service_context.units.members[(1, "sub-1")].is_active is True
+    assert (1, "sub-1") not in service_context.units.members
 
 
 @pytest.mark.asyncio
@@ -455,7 +467,6 @@ async def test_assign_to_module_skips_inheritance_without_manager_unit(service_c
     )
 
     assert service_context.units.members[(2, "sub-2")].is_active is True
-    # Manager has no unit, so no root-department inheritance happens.
     assert (1, "sub-2") not in service_context.units.members
 
 

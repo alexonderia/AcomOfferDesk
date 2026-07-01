@@ -8,7 +8,6 @@ import { useAdminPage } from './useAdminPage';
 const useAuthMock = vi.fn();
 const getUsersMock = vi.fn();
 const listContractorsMock = vi.fn();
-const getManagerCandidatesMock = vi.fn();
 const registerUserMock = vi.fn();
 const createManualContractorMock = vi.fn();
 const showErrorToastMock = vi.fn();
@@ -24,10 +23,6 @@ vi.mock('@shared/api/users/getUsers', () => ({
 
 vi.mock('@shared/api/contractors/listContractors', () => ({
   listContractors: (...args: unknown[]) => listContractorsMock(...args),
-}));
-
-vi.mock('@shared/api/users/getManagerCandidates', () => ({
-  getManagerCandidates: (...args: unknown[]) => getManagerCandidatesMock(...args),
 }));
 
 vi.mock('@shared/api/auth/registerUser', () => ({
@@ -70,7 +65,6 @@ describe('useAdminPage', () => {
     useAuthMock.mockReset();
     getUsersMock.mockReset();
     listContractorsMock.mockReset();
-    getManagerCandidatesMock.mockReset();
     registerUserMock.mockReset();
     createManualContractorMock.mockReset();
     showErrorToastMock.mockReset();
@@ -79,7 +73,6 @@ describe('useAdminPage', () => {
     useAuthMock.mockReturnValue({ session: baseSession });
     getUsersMock.mockResolvedValue({ items: [] });
     listContractorsMock.mockResolvedValue([]);
-    getManagerCandidatesMock.mockResolvedValue({ items: [] });
   });
 
   it('loads contractors via users api when contractors.read is missing', async () => {

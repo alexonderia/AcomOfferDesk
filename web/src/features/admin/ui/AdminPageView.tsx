@@ -28,12 +28,6 @@ const inputFieldSx = {
   }
 };
 
-const roleNameById: Record<number, string> = {
-  [ROLE.PROJECT_MANAGER]: 'РП',
-  [ROLE.LEAD_ECONOMIST]: 'ВЭ',
-  [ROLE.ECONOMIST]: 'Экономист',
-};
-
 const sectionTitleSx = {
   fontSize: 13,
   fontWeight: 700,
@@ -62,8 +56,6 @@ export const AdminPageView = () => {
     getRoleLabel,
     canOpenCreateDialog,
     isContractorRole,
-    requiresParent,
-    managerOptions,
     loadUsers,
     handleClose,
     onSubmit,
@@ -81,12 +73,10 @@ export const AdminPageView = () => {
   const selectedRoleId = watch('role_id');
   const loginValue = watch('login');
   const mailValue = watch('mail');
-  const parentIdValue = watch('id_parent');
   const companyNameValue = watch('company_name');
   const innValue = watch('inn');
   const companyPhoneValue = watch('company_phone');
   const isEmployeesTab = activeTab !== 'contractors';
-
   const handleRoleSelectChange = (event: SelectChangeEvent<UserTab>) => {
     handleTabChange(event.target.value as UserTab);
   };
@@ -110,7 +100,6 @@ export const AdminPageView = () => {
   const isCompanyNameFieldValid = hasValue(companyNameValue) && !errors.company_name;
   const isInnFieldValid = hasValue(innValue) && !errors.inn;
   const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
-  const isParentFieldValid = hasValue(parentIdValue) && !errors.id_parent;
 
   useToastMessageEffect({ message: usersError });
 
@@ -329,43 +318,6 @@ export const AdminPageView = () => {
                     }}
                     sx={inputFieldSx}
                   />
-
-                  {selectedRoleId === ROLE.PROJECT_MANAGER || requiresParent ? (
-                    <TextField
-                      label={
-                        requiresParent
-                          ? (
-                            <RequiredFieldLabel
-                              label={
-                                selectedRoleId === ROLE.ECONOMIST
-                                  ? 'Руководитель (ведущий экономист или экономист)'
-                                  : 'Руководитель (руководитель проекта или ведущий экономист)'
-                              }
-                              isValid={isParentFieldValid}
-                            />
-                          )
-                          : 'Руководитель (руководитель проекта)'
-                      }
-                      select
-                      error={Boolean(getFieldError('id_parent'))}
-                      helperText={getFieldError('id_parent') ?? (managerOptions.length ? '' : 'Нет доступных руководителей')}
-                      {...register('id_parent')}
-                      sx={inputFieldSx}
-                    >
-                      {!requiresParent ? (
-                        <MenuItem value="">
-                          Без руководителя
-                        </MenuItem>
-                      ) : null}
-                      {managerOptions.map((manager) => (
-                        <MenuItem key={manager.user_id} value={manager.user_id}>
-                          {manager.full_name
-                            ? `${roleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
-                            : `${roleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.user_id}`}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  ) : null}
                 </>
               )}
 

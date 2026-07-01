@@ -2,7 +2,7 @@
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
@@ -40,6 +40,7 @@ from app.services.registration_admin_notify import (
 from app.services.department_scope import DepartmentScopeService
 from app.services.contractor_units import ContractorUnitService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.services.unit_hierarchy import HierarchyCounts, UnitHierarchyService
 from app.repositories.max_users import MaxUserRepository
 from app.models.orm_models import MaxUser
 from app.services.max_notifications import (
@@ -117,42 +118,10 @@ async def _is_descendant_user(
     ancestor_user_id: str,
     target_user_id: str,
 ) -> bool:
-    cursor_id: str | None = target_user_id
-    visited: set[str] = set()
-
-    while cursor_id is not None and cursor_id not in visited:
-        visited.add(cursor_id)
-        if cursor_id == ancestor_user_id:
-            return True
-        cursor_user = await users.get_by_id(cursor_id)
-        if cursor_user is None:
-            return False
-        cursor_id = cursor_user.id_parent
-
-    return False
-
-
-def _collect_descendant_user_ids(
-    *,
-    manager_user_id: str,
-    rows: list[tuple[User, Profile | None, Role]],
-) -> set[str]:
-    by_id = {user.id: user for user, _, _ in rows}
-    descendant_ids: set[str] = set()
-
-    for user_id in by_id:
-        cursor_id: str | None = user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            visited.add(cursor_id)
-            if cursor_id == manager_user_id:
-                descendant_ids.add(user_id)
-                break
-            cursor_user = by_id.get(cursor_id)
-            cursor_id = cursor_user.id_parent if cursor_user is not None else None
-
-    return descendant_ids
-
+    return await UnitHierarchyService(users).is_manager_of(
+        manager_user_id=ancestor_user_id,
+        subordinate_user_id=target_user_id,
+    )
 
 def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
     if has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY):
@@ -418,8 +387,6 @@ class UserRegistrationService:
         role_rule = _hierarchy_rule_for_role(role_id=role_id)
         if not role_rule.parent_allowed:
             id_parent = None
-        elif role_rule.parent_required and id_parent is None:
-            raise Conflict(_manager_required_error(role_id=role_id))
 
         if id_parent is not None:
             if id_parent == user_id:
@@ -430,21 +397,11 @@ class UserRegistrationService:
             if parent_user.id_role not in role_rule.allowed_parent_role_ids:
                 raise Conflict("Выбранный пользователь не может быть руководителем для этой роли")
 
-            if current_user.role_id == settings.lead_economist_role_id:
-                rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                    role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
-                )
-                descendant_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
-                )
-                allowed_parent_ids = {current_user.user_id} | {
-                    user.id
-                    for user, _, _ in rows
-                    if user.id in descendant_ids and user.id_role in {settings.lead_economist_role_id, settings.economist_role_id}
-                }
-                if id_parent not in allowed_parent_ids:
-                    raise Forbidden("Выбранный руководитель вне разрешенной зоны управления")
+            visible_user_ids = await UnitHierarchyService(self._users).get_visible_user_ids(
+                current_user=current_user,
+            )
+            if visible_user_ids is not None and id_parent not in visible_user_ids:
+                raise Forbidden("Выбранный руководитель вне разрешенной зоны управления")
         if await self._users.exists(user_id):
             raise Conflict("Пользователь уже существует")
 
@@ -684,6 +641,9 @@ class UserListItem:
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    units_count: int = 0
+    managers_count: int = 0
+    subordinates_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -786,55 +746,41 @@ class UserQueryService:
         if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
             return None
 
-        rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-            role_ids=[
-                settings.project_manager_role_id,
-                settings.lead_economist_role_id,
-                settings.economist_role_id,
-                settings.operator_role_id,
-            ],
-        )
-        subordinate_ids = _collect_descendant_user_ids(
-            manager_user_id=current_user.user_id,
-            rows=rows,
-        )
-        # Managers also command employees placed below them in the unit hierarchy,
-        # even when they are not direct descendants in the ``users.id_parent`` chain.
-        unit_subordinate_ids = await DepartmentScopeService(
-            self._users
-        ).resolve_descendant_unit_scope_owner_ids_for_user(user_id=current_user.user_id)
-        subordinate_ids.update(unit_subordinate_ids)
-        return subordinate_ids
+        hierarchy = UnitHierarchyService(self._users)
+        return set(await hierarchy.get_subordinate_user_ids(user_id=current_user.user_id))
 
     async def _resolve_internal_staff_scope_user_ids(
         self,
         *,
         current_user: CurrentUser,
     ) -> set[str]:
-        if current_user.role_id == settings.project_manager_role_id:
-            return set(
-                await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
-                    current_user=current_user,
+        visible_ids = await UnitHierarchyService(self._users).get_visible_user_ids(
+            current_user=current_user,
+        )
+        if visible_ids is None:
+            return set()
+        return visible_ids
+
+    async def _apply_hierarchy_counts(self, items: list[UserListItem]) -> list[UserListItem]:
+        if not items:
+            return items
+
+        hierarchy = UnitHierarchyService(self._users)
+        counts_by_user_id = await hierarchy.get_hierarchy_counts_by_user_ids(
+            user_ids=[item.user_id for item in items],
+        )
+        result: list[UserListItem] = []
+        for item in items:
+            counts = counts_by_user_id.get(item.user_id, HierarchyCounts(0, 0, 0))
+            result.append(
+                replace(
+                    item,
+                    units_count=counts.units_count,
+                    managers_count=counts.managers_count,
+                    subordinates_count=counts.subordinates_count,
                 )
             )
-
-        if current_user.role_id in {
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
-            if current_user.permissions & get_department_permission_codes():
-                return set(
-                    await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
-                        current_user=current_user,
-                    )
-                )
-            return set(
-                await StaffAccessScopeService(self._users).resolve_module_owner_ids(
-                    current_user=current_user,
-                )
-            )
-
-        return set()
+        return result
 
     async def _ensure_accessible_subordinate(
         self,
@@ -888,7 +834,7 @@ class UserQueryService:
                 role_ids=sorted(scoped_internal_role_ids),
             )
             visible_scope_ids = await self._resolve_internal_staff_scope_user_ids(current_user=current_user)
-            return [
+            items = [
                 UserListItem(
                     user_id=user.id,
                     role_id=user.id_role,
@@ -901,6 +847,7 @@ class UserQueryService:
                 for user, profile, _ in rows
                 if user.id in visible_scope_ids and user.id_role in allowed_role_ids
             ]
+            return await self._apply_hierarchy_counts(items)
 
         if role_id == settings.contractor_role_id:
             rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
@@ -926,7 +873,7 @@ class UserQueryService:
             ]
 
         rows = await self._users.list_users_with_profiles(role_id=role_id)
-        return [
+        items = [
             UserListItem(
                 user_id=user.id,
                 role_id=user.id_role,
@@ -938,6 +885,7 @@ class UserQueryService:
             )
             for user, profile in rows
         ]
+        return await self._apply_hierarchy_counts(items)
 
     async def list_manager_candidates(
         self,
@@ -967,52 +915,21 @@ class UserQueryService:
         if not role_rule.parent_allowed:
             return []
 
+        hierarchy = UnitHierarchyService(self._users)
         rows = await self._users.list_by_role_ids_with_profiles_and_roles(
             role_ids=list(role_rule.allowed_parent_role_ids),
         )
         rows = [row for row in rows if row[0].status == "active"]
 
-        if current_user.role_id in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
-            hierarchy_rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
-            )
-            hierarchy_rows = [row for row in hierarchy_rows if row[0].status == "active"]
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=hierarchy_rows,
-            )
-            allowed_scope_ids = {current_user.user_id} | descendant_ids
-            if current_user.role_id == settings.economist_role_id:
-                cursor_id = current_user.user_id
-                visited: set[str] = set()
-                while cursor_id is not None and cursor_id not in visited:
-                    visited.add(cursor_id)
-                    cursor_user = await self._users.get_by_id(cursor_id)
-                    if cursor_user is None:
-                        break
-                    if cursor_user.status == "active":
-                        allowed_scope_ids.add(cursor_user.id)
-                    cursor_id = cursor_user.id_parent
-            rows = [row for row in rows if row[0].id in allowed_scope_ids]
+        visible_user_ids = await hierarchy.get_visible_user_ids(current_user=current_user)
+        if visible_user_ids is not None:
+            rows = [row for row in rows if row[0].id in visible_user_ids]
 
         if target_user_id is not None:
-            rows_for_cycle = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
-            )
-            rows_for_cycle = [row for row in rows_for_cycle if row[0].status == "active"]
-            target_descendants = _collect_descendant_user_ids(
-                manager_user_id=target_user_id,
-                rows=rows_for_cycle,
-            )
-            rows = [
-                row
-                for row in rows
-                if row[0].id != target_user_id and row[0].id not in target_descendants
-            ]
+            unit_based_manager_ids = set(await hierarchy.get_manager_user_ids(user_id=target_user_id))
+            if unit_based_manager_ids:
+                rows = [row for row in rows if row[0].id in unit_based_manager_ids]
+            rows = [row for row in rows if row[0].id != target_user_id]
 
         return [
             UserListItem(
@@ -1065,6 +982,7 @@ class UserQueryService:
             settings.lead_economist_role_id,
             settings.project_manager_role_id,
         }:
+            hierarchy = UnitHierarchyService(self._users)
             if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN):
                 scoped_owner_ids = set(
                     await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
@@ -1072,16 +990,11 @@ class UserQueryService:
                     )
                 )
             else:
-                scoped_owner_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
+                scoped_owner_ids = set(
+                    await hierarchy.get_subordinate_user_ids(
+                        user_id=current_user.user_id,
+                    )
                 )
-                # Also surface employees placed below the manager in the unit
-                # hierarchy (not only direct ``users.id_parent`` descendants).
-                unit_subordinate_ids = await DepartmentScopeService(
-                    self._users
-                ).resolve_descendant_unit_scope_owner_ids_for_user(user_id=current_user.user_id)
-                scoped_owner_ids.update(unit_subordinate_ids)
             rows = [
                 row for row in rows
                 if row[0].id in scoped_owner_ids
@@ -1653,8 +1566,6 @@ class UserRoleService:
         role_rule = _hierarchy_rule_for_role(role_id=role_id)
         if not role_rule.parent_allowed:
             await self._users.update_parent(user, None)
-        elif user.id_parent is None and role_rule.parent_required:
-            raise Conflict(_manager_required_error(role_id=role_id))
         elif user.id_parent is not None:
             manager_user = await self._users.get_by_id(user.id_parent)
             if manager_user is None:
@@ -1680,6 +1591,8 @@ class UserRoleService:
 
 
 class UserManagerService:
+    """Legacy service: updates users.id_parent. Business scope uses unit hierarchy."""
+
     def __init__(self, users: UserRepository):
         self._users = users
 
@@ -1718,8 +1631,6 @@ class UserManagerService:
             raise Conflict(_manager_disallowed_error(role_id=user.id_role))
 
         if manager_user_id is None:
-            if role_rule.parent_required:
-                raise Conflict(_manager_required_error(role_id=user.id_role))
             await self._users.update_parent(user, None)
             return UserManagerUpdateResult(user_id=user.id, manager_user_id=None)
 
@@ -1746,16 +1657,8 @@ class UserManagerService:
         if manager_user.id not in allowed_manager_ids:
             raise Forbidden("Выбранный руководитель вне разрешенной зоны управления")
 
-        would_create_cycle = await _is_descendant_user(
-            self._users,
-            ancestor_user_id=user.id,
-            target_user_id=manager_user.id,
-        )
-        if would_create_cycle:
-            raise Conflict("Нельзя назначить руководителя: это создаст цикл в иерархии")
-
         await self._users.update_parent(user, manager_user.id)
-        return UserManagerUpdateResult(user_id=user.id, manager_user_id=user.id_parent or manager_user.id)
+        return UserManagerUpdateResult(user_id=user.id, manager_user_id=manager_user.id)
 
 
 class UserStatusService:

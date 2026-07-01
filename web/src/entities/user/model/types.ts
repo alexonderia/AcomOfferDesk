@@ -14,5 +14,8 @@ export type UserListItem = {
   company_mail: string | null;
   address: string | null;
   note: string | null;
+  units_count: number;
+  managers_count: number;
+  subordinates_count: number;
   actions: UserActions;
 };

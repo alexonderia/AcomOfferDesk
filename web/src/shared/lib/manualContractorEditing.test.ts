@@ -23,6 +23,9 @@ const buildUser = (overrides: Partial<UserListItem> = {}): UserListItem => ({
   company_mail: 'office@example.com',
   address: 'Москва',
   note: 'Тест',
+  units_count: 0,
+  managers_count: 0,
+  subordinates_count: 0,
   actions: {
     view_profile: true,
     update_status: true,

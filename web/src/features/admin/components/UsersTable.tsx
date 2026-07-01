@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
-import { type ReactNode, MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
@@ -28,7 +28,6 @@ import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodO
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
-import { getUnitsTree, type UnitMember, type UnitNode } from '@shared/api/units';
 import { getUserHierarchy, type UserHierarchy } from '@shared/api/users/getUserHierarchy';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
@@ -353,143 +352,200 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
   );
 };
 
-const HierarchySummaryTile = ({
-  accentColor,
-  label,
-  value,
-}: {
-  accentColor: string;
-  label: string;
-  value: number;
-}) => (
-  <Stack
-    spacing={0.35}
-    sx={{
-      minWidth: 0,
-      borderRadius: 1.5,
-      border: '1px solid',
-      borderColor: alpha(accentColor, 0.2),
-      backgroundColor: alpha(accentColor, 0.06),
-      px: 1.2,
-      py: 1,
-    }}
-  >
-    <Typography sx={{ fontSize: 24, fontWeight: 800, lineHeight: 1, color: accentColor }}>
-      {value}
-    </Typography>
-    <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-      {label}
-    </Typography>
-  </Stack>
-);
+const hierarchyKindLabel: Record<'manager' | 'self' | 'subordinate', string> = {
+  manager: 'Руководитель',
+  self: 'Вы',
+  subordinate: 'Подчинённый',
+};
 
-const HierarchySectionCard = ({
-  accentColor,
-  children,
-  count,
-  emptyLabel,
-  title,
+const HierarchyPersonLine = ({
+  kind,
+  name,
+  roleName,
 }: {
-  accentColor: string;
-  children: ReactNode;
-  count: number;
-  emptyLabel: string;
-  title: string;
-}) => (
-  <Stack
-    spacing={0.9}
-    sx={{
-      minWidth: 0,
-      border: '1px solid',
-      borderColor: alpha(accentColor, 0.18),
-      borderRadius: 1.75,
-      p: 1.2,
-      backgroundColor: alpha(accentColor, 0.045),
-    }}
-  >
-    <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
-      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
-        {title}
-      </Typography>
-      <Box
-        component="span"
+  kind: 'manager' | 'self' | 'subordinate';
+  name: string;
+  roleName: string;
+}) => {
+  const theme = useTheme();
+  const accent =
+    kind === 'manager'
+      ? theme.palette.success.main
+      : kind === 'self'
+        ? theme.palette.primary.main
+        : theme.palette.info.main;
+
+  return (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      sx={{
+        minWidth: 0,
+        py: 0.65,
+        px: 1,
+        borderRadius: 1,
+        bgcolor: kind === 'self' ? alpha(accent, 0.08) : 'transparent',
+        border: kind === 'self' ? `1px solid ${alpha(accent, 0.2)}` : '1px solid transparent',
+      }}
+    >
+      <Typography
+        variant="caption"
         sx={{
           flexShrink: 0,
-          borderRadius: 999,
-          backgroundColor: alpha(accentColor, 0.12),
-          color: accentColor,
-          px: 0.8,
-          py: 0.25,
-          fontSize: 11,
-          fontWeight: 800,
-          lineHeight: 1,
+          width: 88,
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '0.03em',
+          textTransform: 'uppercase',
+          color: accent,
         }}
       >
-        {count}
+        {hierarchyKindLabel[kind]}
+      </Typography>
+      <Box sx={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, bgcolor: accent }} />
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography
+          variant="body2"
+          sx={{
+            fontWeight: kind === 'self' ? 600 : 500,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+          title={name}
+        >
+          {name}
+        </Typography>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}
+          title={roleName}
+        >
+          {roleName}
+        </Typography>
       </Box>
     </Stack>
-    {count > 0 ? children : (
-      <Typography variant="body2" color="text.secondary">
-        {emptyLabel}
-      </Typography>
-    )}
-  </Stack>
-);
+  );
+};
 
-const HierarchyEntryCard = ({
-  accentColor,
-  badge,
-  subtitle,
-  title,
-}: {
-  accentColor: string;
-  badge?: string;
-  subtitle?: string;
-  title: string;
-}) => (
-  <Stack
-    spacing={0.5}
-    sx={{
-      minWidth: 0,
-      borderRadius: 1.4,
-      border: '1px solid',
-      borderColor: alpha(accentColor, 0.14),
-      backgroundColor: 'background.paper',
-      px: 1,
-      py: 0.95,
-    }}
-  >
-    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-      <Typography variant="body2" sx={{ minWidth: 0, fontWeight: 700, overflowWrap: 'anywhere' }}>
-        {title}
+const UserHierarchyTree = ({ hierarchy }: { hierarchy: UserHierarchy }) => {
+  const theme = useTheme();
+
+  if (hierarchy.units.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        Сотрудник не состоит в объединениях.
       </Typography>
-      {badge ? (
-        <Box
-          component="span"
-          sx={{
-            flexShrink: 0,
-            borderRadius: 999,
-            backgroundColor: alpha(accentColor, 0.1),
-            color: accentColor,
-            px: 0.75,
-            py: 0.2,
-            fontSize: 10.5,
-            fontWeight: 800,
-            lineHeight: 1.1,
-            textAlign: 'center',
-          }}
-        >
-          {badge}
-        </Box>
-      ) : null}
+    );
+  }
+
+  const userName = hierarchy.user.fullName ?? hierarchy.user.userId;
+
+  return (
+    <Stack spacing={1}>
+      {hierarchy.units.map((unit) => {
+        const managers = hierarchy.managers.filter((manager) => manager.sourceUnitId === unit.unitId);
+        const subordinates = hierarchy.subordinates.filter((subordinate) => subordinate.sourceUnitId === unit.unitId);
+
+        return (
+          <Box
+            key={unit.unitId}
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1.5,
+              overflow: 'hidden',
+              backgroundColor: 'background.paper',
+            }}
+          >
+            <Box
+              sx={{
+                px: 1.25,
+                py: 0.75,
+                bgcolor: alpha(theme.palette.text.primary, 0.03),
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{ fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'text.secondary' }}
+              >
+                {unit.name}
+              </Typography>
+            </Box>
+            <Stack spacing={0} sx={{ py: 0.35 }}>
+              {managers.map((manager) => (
+                <HierarchyPersonLine
+                  key={`${manager.userId}-${manager.sourceUnitId}`}
+                  kind="manager"
+                  name={manager.fullName ?? manager.userId}
+                  roleName={manager.roleName}
+                />
+              ))}
+              <HierarchyPersonLine kind="self" name={userName} roleName={hierarchy.user.roleName} />
+              {subordinates.length > 0 ? (
+                <Box sx={{ position: 'relative', ml: 1.5 }}>
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      left: 0,
+                      top: -8,
+                      width: 2,
+                      height: 8,
+                      bgcolor: alpha(theme.palette.divider, 1),
+                    }}
+                  />
+                  <Box
+                    sx={{
+                      pl: 1.25,
+                      borderLeft: `2px solid ${alpha(theme.palette.divider, 1)}`,
+                    }}
+                  >
+                    {subordinates.map((subordinate, index) => (
+                      <Box key={`${subordinate.userId}-${subordinate.sourceUnitId}`} sx={{ position: 'relative' }}>
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            left: -20,
+                            top: 14,
+                            width: 18,
+                            height: 2,
+                            bgcolor: alpha(theme.palette.divider, 1),
+                          }}
+                        />
+                        {index === subordinates.length - 1 ? (
+                          <Box
+                            sx={{
+                              position: 'absolute',
+                              left: -2,
+                              top: 16,
+                              bottom: 0,
+                              width: 4,
+                              bgcolor: 'background.paper',
+                              zIndex: 1,
+                            }}
+                          />
+                        ) : null}
+                        <HierarchyPersonLine
+                          kind="subordinate"
+                          name={subordinate.fullName ?? subordinate.userId}
+                          roleName={subordinate.roleName}
+                        />
+                      </Box>
+                    ))}
+                  </Box>
+                </Box>
+              ) : null}
+            </Stack>
+          </Box>
+        );
+      })}
     </Stack>
-    {subtitle ? (
-      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-        {subtitle}
-      </Typography>
-    ) : null}
-  </Stack>
-);
+  );
+};
 
 type ContractorMobileCardProps = {
   row: UserListItem;
@@ -750,32 +806,6 @@ const delegationGroupTitles: Record<string, string> = {
   plans: 'Планы',
 };
 
-const managerRoleNameById: Record<number, string> = {
-  [ROLE.PROJECT_MANAGER]: 'РП',
-  [ROLE.LEAD_ECONOMIST]: 'ВЭ',
-  [ROLE.ECONOMIST]: 'Экономист',
-};
-
-const formatUnitManager = (member: UnitMember): string => {
-  const roleLabel = member.role_name || managerRoleNameById[member.role_id] || `Роль ${member.role_id}`;
-  return `${roleLabel} — ${member.full_name ?? member.user_id} (${member.user_id})`;
-};
-
-const sortUnitManagers = (members: UnitMember[]): UnitMember[] =>
-  [...members].sort((a, b) => {
-    if (a.role_id !== b.role_id) {
-      return a.role_id - b.role_id;
-    }
-    return (a.full_name ?? a.user_id).localeCompare(b.full_name ?? b.user_id, 'ru');
-  });
-
-type UnitSubdivisionGroup = {
-  rootId: number;
-  rootName: string;
-  isDirectRootMember: boolean;
-  unions: Array<{ unitId: number; name: string; managers: UnitMember[] }>;
-};
-
 const PROJECT_MANAGER_STATUS_TARGET_ROLES: number[] = [
   ROLE.PROJECT_MANAGER,
   ROLE.LEAD_ECONOMIST,
@@ -822,8 +852,6 @@ export const UsersTable = ({
   const [userHierarchy, setUserHierarchy] = useState<UserHierarchy | null>(null);
   const [userHierarchyError, setUserHierarchyError] = useState<string | null>(null);
   const [isLoadingUserHierarchy, setIsLoadingUserHierarchy] = useState(false);
-  const [unitsTree, setUnitsTree] = useState<UnitNode[] | null>(null);
-  const unitsTreeRequestedRef = useRef(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
   const [manualContractorDraft, setManualContractorDraft] = useState<ManualContractorDraft>(() => ({
     login: '',
@@ -852,7 +880,6 @@ export const UsersTable = ({
   const { session } = useAuth();
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const lastDelegationToastRef = useRef<string | null>(null);
-  const theme = useTheme();
 
   const {
     register,
@@ -1008,120 +1035,6 @@ export const UsersTable = ({
       isCancelled = true;
     };
   }, [selectedUser?.user_id, shouldLoadDepartmentDelegations]);
-
-  useEffect(() => {
-    if (!shouldLoadDepartmentDelegations || unitsTreeRequestedRef.current) {
-      return;
-    }
-    unitsTreeRequestedRef.current = true;
-    void getUnitsTree()
-      .then((items) => setUnitsTree(items))
-      .catch(() => setUnitsTree([]));
-  }, [shouldLoadDepartmentDelegations]);
-
-  const unitSubdivisionGroups = useMemo<UnitSubdivisionGroup[]>(() => {
-    if (!selectedUser || !unitsTree) {
-      return [];
-    }
-
-    const nodeById = new Map<number, UnitNode>();
-    const parentById = new Map<number, number | null>();
-    const indexNode = (node: UnitNode, parentId: number | null) => {
-      nodeById.set(node.unit_id, node);
-      parentById.set(node.unit_id, parentId);
-      node.children.forEach((child) => indexNode(child, node.unit_id));
-    };
-    unitsTree.forEach((node) => indexNode(node, null));
-
-    const chainToRoot = (unitId: number): number[] => {
-      const chain: number[] = [];
-      const seen = new Set<number>();
-      let current: number | null = unitId;
-      while (current != null && !seen.has(current)) {
-        seen.add(current);
-        chain.push(current);
-        current = parentById.get(current) ?? null;
-      }
-      return chain;
-    };
-
-    const membershipUnitIds: number[] = [];
-    nodeById.forEach((node, unitId) => {
-      if (node.members.some((member) => member.user_id === selectedUser.user_id)) {
-        membershipUnitIds.push(unitId);
-      }
-    });
-
-    // Непосредственный руководитель = участники объединения на один уровень выше
-    // (родительского), исключая самого сотрудника.
-    const managersOneLevelUp = (unitId: number): UnitMember[] => {
-      const parentId = parentById.get(unitId) ?? null;
-      if (parentId == null) {
-        return [];
-      }
-      const parentNode = nodeById.get(parentId);
-      if (!parentNode) {
-        return [];
-      }
-      return parentNode.members.filter((member) => member.user_id !== selectedUser.user_id);
-    };
-
-    type UnionAccumulator = { name: string; managersById: Map<string, UnitMember> };
-    const groupsByRoot = new Map<
-      number,
-      { isDirectRootMember: boolean; unions: Map<number, UnionAccumulator> }
-    >();
-
-    membershipUnitIds.forEach((unitId) => {
-      const chain = chainToRoot(unitId);
-      const rootId = chain[chain.length - 1];
-      let group = groupsByRoot.get(rootId);
-      if (!group) {
-        group = { isDirectRootMember: false, unions: new Map<number, UnionAccumulator>() };
-        groupsByRoot.set(rootId, group);
-      }
-      if (unitId === rootId) {
-        group.isDirectRootMember = true;
-        return;
-      }
-      const unionId = chain[chain.length - 2];
-      const unionNode = nodeById.get(unionId);
-      if (!unionNode) {
-        return;
-      }
-      let union = group.unions.get(unionId);
-      if (!union) {
-        union = { name: unionNode.name, managersById: new Map<string, UnitMember>() };
-        group.unions.set(unionId, union);
-      }
-      managersOneLevelUp(unitId).forEach((manager) => {
-        union!.managersById.set(manager.user_id, manager);
-      });
-    });
-
-    const groups: UnitSubdivisionGroup[] = [];
-    groupsByRoot.forEach((group, rootId) => {
-      const rootNode = nodeById.get(rootId);
-      if (!rootNode) {
-        return;
-      }
-      const unions = Array.from(group.unions.entries())
-        .map(([unitId, union]) => ({
-          unitId,
-          name: union.name,
-          managers: sortUnitManagers(Array.from(union.managersById.values())),
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-      groups.push({
-        rootId,
-        rootName: rootNode.name,
-        isDirectRootMember: group.isDirectRootMember,
-        unions,
-      });
-    });
-
-    return groups.sort((a, b) => a.rootName.localeCompare(b.rootName, 'ru'));
-  }, [selectedUser, unitsTree]);
 
   const shouldLoadContractorDelegations = Boolean(
     selectedUser
@@ -1784,101 +1697,7 @@ export const UsersTable = ({
                     ) : null}
 
                     {userHierarchy ? (
-                      <Stack spacing={1.2}>
-                        <Box
-                          sx={{
-                            display: 'grid',
-                            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
-                            gap: 1,
-                          }}
-                        >
-                          <HierarchySummaryTile
-                            accentColor={theme.palette.primary.main}
-                            label="Объединения"
-                            value={userHierarchy.units.length}
-                          />
-                          <HierarchySummaryTile
-                            accentColor={theme.palette.success.main}
-                            label="Руководители"
-                            value={userHierarchy.managers.length}
-                          />
-                          <HierarchySummaryTile
-                            accentColor={theme.palette.info.main}
-                            label="Подчинённые"
-                            value={userHierarchy.subordinates.length}
-                          />
-                        </Box>
-
-                        <Box
-                          sx={{
-                            display: 'grid',
-                            gridTemplateColumns: { xs: '1fr', lg: 'repeat(3, minmax(0, 1fr))' },
-                            gap: 1.2,
-                          }}
-                        >
-                          <HierarchySectionCard
-                            accentColor={theme.palette.primary.main}
-                            count={userHierarchy.units.length}
-                            emptyLabel="Сотрудник не состоит в объединениях."
-                            title="Объединения"
-                          >
-                            {userHierarchy.units.length > 0 ? (
-                              <Stack spacing={0.7}>
-                                {userHierarchy.units.map((unit) => (
-                                  <HierarchyEntryCard
-                                    key={unit.unitId}
-                                    accentColor={theme.palette.primary.main}
-                                    title={unit.name}
-                                    subtitle={unit.parentUnitId === null ? 'Корневое объединение' : 'Вложенное объединение'}
-                                  />
-                                ))}
-                              </Stack>
-                            ) : null}
-                          </HierarchySectionCard>
-
-                          <HierarchySectionCard
-                            accentColor={theme.palette.success.main}
-                            count={userHierarchy.managers.length}
-                            emptyLabel="Руководители не найдены."
-                            title="Руководители"
-                          >
-                            {userHierarchy.managers.length > 0 ? (
-                              <Stack spacing={0.7}>
-                                {userHierarchy.managers.map((manager) => (
-                                  <HierarchyEntryCard
-                                    key={`${manager.userId}-${manager.sourceUnitId}`}
-                                    accentColor={theme.palette.success.main}
-                                    badge={manager.sourceUnitName}
-                                    subtitle={`${manager.userId} · ${manager.roleName}`}
-                                    title={manager.fullName ?? manager.userId}
-                                  />
-                                ))}
-                              </Stack>
-                            ) : null}
-                          </HierarchySectionCard>
-
-                          <HierarchySectionCard
-                            accentColor={theme.palette.info.main}
-                            count={userHierarchy.subordinates.length}
-                            emptyLabel="Подчинённые не найдены."
-                            title="Подчинённые"
-                          >
-                            {userHierarchy.subordinates.length > 0 ? (
-                              <Stack spacing={0.7}>
-                                {userHierarchy.subordinates.map((subordinate) => (
-                                  <HierarchyEntryCard
-                                    key={`${subordinate.userId}-${subordinate.sourceUnitId}`}
-                                    accentColor={theme.palette.info.main}
-                                    badge={subordinate.sourceUnitName}
-                                    subtitle={`${subordinate.userId} · ${subordinate.roleName}`}
-                                    title={subordinate.fullName ?? subordinate.userId}
-                                  />
-                                ))}
-                              </Stack>
-                            ) : null}
-                          </HierarchySectionCard>
-                        </Box>
-                      </Stack>
+                      <UserHierarchyTree hierarchy={userHierarchy} />
                     ) : null}
                   </Stack>
                 </SourceSection>
@@ -1944,62 +1763,6 @@ export const UsersTable = ({
                         />
                       }
                     />
-                  </Stack>
-                ) : null}
-
-                {!userHierarchy && unitSubdivisionGroups.length > 0 ? (
-                  <Stack
-                    spacing={1.2}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 1,
-                      p: { xs: 1.4, sm: 1.8 },
-                      backgroundColor: 'background.paper'
-                    }}
-                  >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                      Руководитель по объединениям
-                    </Typography>
-                    <Stack spacing={1.4}>
-                      {unitSubdivisionGroups.map((group) => (
-                        <Box key={group.rootId}>
-                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                            {group.rootName}
-                          </Typography>
-                          {group.unions.length > 0 ? (
-                            <Stack spacing={0.6} sx={{ mt: 0.6, pl: 1.4 }}>
-                              {group.unions.map((union) => (
-                                <Box key={union.unitId}>
-                                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                    {union.name}
-                                  </Typography>
-                                  {union.managers.length > 0 ? (
-                                    union.managers.map((manager) => (
-                                      <Typography
-                                        key={manager.user_id}
-                                        variant="body2"
-                                        color="text.secondary"
-                                      >
-                                        {`Руководитель: ${formatUnitManager(manager)}`}
-                                      </Typography>
-                                    ))
-                                  ) : (
-                                    <Typography variant="body2" color="text.secondary">
-                                      Руководитель: нет
-                                    </Typography>
-                                  )}
-                                </Box>
-                              ))}
-                            </Stack>
-                          ) : group.isDirectRootMember ? (
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3 }}>
-                              Состоит в подразделении напрямую (верхний уровень)
-                            </Typography>
-                          ) : null}
-                        </Box>
-                      ))}
-                    </Stack>
                   </Stack>
                 ) : null}
 

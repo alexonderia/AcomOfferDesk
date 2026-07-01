@@ -341,11 +341,7 @@ class UserActionBuilder:
             }
         ):
             can_update_status = can_update_status and can_manage_subordinate_role
-        can_update_manager = (
-            UserPolicy.can_update_user_manager(current_user)
-            and can_manage_subordinate_role
-            and can_update_manager_target_role
-        )
+        can_update_manager = False  # legacy users.id_parent; UI uses unit hierarchy
         if (
             UserActionBuilder._requires_hierarchy_management(current_user)
             and is_hierarchy_subordinate is not True
@@ -404,11 +400,7 @@ class UserActionBuilder:
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
-            can_update_manager=(
-                UserPolicy.can_update_user_manager(current_user)
-                and can_manage_subordinate_target
-                and can_update_manager_target_role
-            ),
+            can_update_manager=False,  # legacy users.id_parent; UI uses unit hierarchy
             can_manage_subordinate_unavailability=can_manage_subordinate,
         )
 

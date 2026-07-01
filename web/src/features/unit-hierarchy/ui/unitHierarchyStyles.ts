@@ -47,9 +47,15 @@ export const outlinedIconButtonSx = {
   },
 } as const;
 
+export const orgNodeLayout = {
+  cardWidth: 332,
+  childGap: 26,
+  connectorHeight: 20,
+} as const;
+
 export const orgNodeCardSx = {
-  width: 332,
-  maxWidth: 'min(332px, calc(100vw - 40px))',
+  width: orgNodeLayout.cardWidth,
+  maxWidth: `min(${orgNodeLayout.cardWidth}px, calc(100vw - 40px))`,
   borderRadius: 2.5,
   border: `1px solid ${alpha(hierarchyPageColors.cardBorder, 0.98)}`,
   backgroundColor: '#ffffff',

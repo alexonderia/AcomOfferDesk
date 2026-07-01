@@ -10,7 +10,6 @@ import { listContractors } from '@shared/api/contractors/listContractors';
 import type { ContractorListItem } from '@shared/api/contractors/listContractors';
 import { registerUser } from '@shared/api/auth/registerUser';
 import { createManualContractor } from '@shared/api/users/createManualContractor';
-import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { getUsers } from '@shared/api/users/getUsers';
 import { hasAnyPermission, hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
@@ -31,7 +30,6 @@ const schema = z
     mail: z.string().optional(),
     full_name: z.string().optional(),
     phone: z.string().optional(),
-    id_parent: z.string().optional(),
     company_name: z.string().optional(),
     inn: z.string().optional(),
     company_phone: z.string().optional(),
@@ -168,13 +166,6 @@ const schema = z
       });
     }
 
-    if ((data.role_id === ROLE.ECONOMIST || data.role_id === ROLE.LEAD_ECONOMIST) && !data.id_parent?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Выберите руководителя',
-        path: ['id_parent']
-      });
-    }
   });
 
 export type AdminUserFormValues = z.infer<typeof schema>;
@@ -203,9 +194,6 @@ export const useAdminPage = () => {
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const loadUsersRequestIdRef = useRef(0);
-  const [economistAndLeadManagers, setEconomistAndLeadManagers] = useState<UserListItem[]>([]);
-  const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
-  const [projectManagerRoleManagers, setProjectManagerRoleManagers] = useState<UserListItem[]>([]);
 
   const baseCreateRoleIds = useMemo(() => {
     const roleIds: number[] = [];
@@ -287,7 +275,6 @@ export const useAdminPage = () => {
       mail: '',
       full_name: '',
       phone: '',
-      id_parent: '',
       company_name: '',
       inn: '',
       company_phone: '',
@@ -299,21 +286,7 @@ export const useAdminPage = () => {
 
   const { watch, setValue, reset } = form;
   const selectedRoleId = watch('role_id');
-  const selectedParentId = watch('id_parent');
   const isContractorRole = selectedRoleId === ROLE.CONTRACTOR;
-  const requiresParent = selectedRoleId === ROLE.ECONOMIST || selectedRoleId === ROLE.LEAD_ECONOMIST;
-  const managerOptions = useMemo(() => {
-    if (selectedRoleId === ROLE.PROJECT_MANAGER) {
-      return projectManagerRoleManagers;
-    }
-    if (selectedRoleId === ROLE.ECONOMIST) {
-      return economistAndLeadManagers;
-    }
-    if (selectedRoleId === ROLE.LEAD_ECONOMIST) {
-      return projectManagerManagers;
-    }
-    return [];
-  }, [economistAndLeadManagers, projectManagerManagers, projectManagerRoleManagers, selectedRoleId]);
 
   const handleTabChange = (value: UserTab) => {
     setActiveTab(value);
@@ -345,41 +318,6 @@ export const useAdminPage = () => {
       setActiveTab(resolveUserTabFromParam(searchParams.get('users_tab')));
     }
   }, [isLeadLike, searchParams]);
-
-  const loadManagers = useCallback(async () => {
-    const [economistManagersResult, leadEconomistManagersResult, projectManagerRoleManagersResult] = await Promise.allSettled([
-      getManagerCandidates(ROLE.ECONOMIST),
-      getManagerCandidates(ROLE.LEAD_ECONOMIST),
-      getManagerCandidates(ROLE.PROJECT_MANAGER),
-    ]);
-
-    setEconomistAndLeadManagers(
-      economistManagersResult.status === 'fulfilled' ? economistManagersResult.value.items : []
-    );
-    setProjectManagerManagers(
-      leadEconomistManagersResult.status === 'fulfilled' ? leadEconomistManagersResult.value.items : []
-    );
-    setProjectManagerRoleManagers(
-      projectManagerRoleManagersResult.status === 'fulfilled'
-        ? projectManagerRoleManagersResult.value.items
-        : []
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!isDialogOpen) return;
-    void loadManagers();
-  }, [isDialogOpen, loadManagers]);
-
-  useEffect(() => {
-    if (selectedParentId && !managerOptions.some((item) => item.user_id === selectedParentId)) {
-      setValue('id_parent', '');
-      return;
-    }
-    if (!requiresParent && selectedRoleId !== ROLE.PROJECT_MANAGER) {
-      setValue('id_parent', '');
-    }
-  }, [managerOptions, requiresParent, selectedParentId, selectedRoleId, setValue]);
 
   const loadUsers = useCallback(async () => {
     const requestId = loadUsersRequestIdRef.current + 1;
@@ -436,7 +374,6 @@ export const useAdminPage = () => {
       mail: '',
       full_name: '',
       phone: '',
-      id_parent: '',
       company_name: '',
       inn: '',
       company_phone: '',
@@ -494,14 +431,13 @@ export const useAdminPage = () => {
           mail: values.mail?.trim() || undefined,
           full_name: values.full_name?.trim() || undefined,
           phone: values.phone?.trim() || undefined,
-          id_parent: values.id_parent?.trim() || undefined
         });
 
         showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
       }
 
       resetForm();
-      await Promise.all([loadUsers(), loadManagers()]);
+      await loadUsers();
     } catch (error) {
       showErrorToast(
         error instanceof Error
@@ -535,8 +471,6 @@ export const useAdminPage = () => {
     canCreateManualContractor,
     canOpenCreateDialog,
     isContractorRole,
-    requiresParent,
-    managerOptions,
     loadUsers,
     handleClose,
     onSubmit,

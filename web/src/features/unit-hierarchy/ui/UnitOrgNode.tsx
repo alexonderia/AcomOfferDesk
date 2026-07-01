@@ -16,6 +16,7 @@ import {
   connectorLineSx,
   hierarchyPageColors,
   orgNodeCardSx,
+  orgNodeLayout,
   outlinedIconButtonSx,
 } from './unitHierarchyStyles';
 
@@ -73,6 +74,86 @@ export const UnitOrgNode = ({
     />
   );
 
+  const childCount = unit.children.length;
+  const rowWidth = childCount > 0
+    ? childCount * orgNodeLayout.cardWidth + (childCount - 1) * orgNodeLayout.childGap
+    : 0;
+  const stemHeight = orgNodeLayout.connectorHeight;
+
+  const renderChildrenRow = () => {
+    if (childCount === 0) {
+      return null;
+    }
+
+    if (childCount === 1) {
+      return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Box sx={{ ...connectorLineSx, width: '2px', height: `${stemHeight}px` }} />
+          {renderChildNode(unit.children[0]!)}
+        </Box>
+      );
+    }
+
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <Box
+          sx={{
+            position: 'relative',
+            width: rowWidth,
+            height: `${stemHeight}px`,
+          }}
+        >
+          <Box
+            sx={{
+              ...connectorLineSx,
+              position: 'absolute',
+              top: 0,
+              left: orgNodeLayout.cardWidth / 2,
+              right: orgNodeLayout.cardWidth / 2,
+              height: '2px',
+            }}
+          />
+          {unit.children.map((child, index) => (
+            <Box
+              key={child.unit_id}
+              sx={{
+                ...connectorLineSx,
+                position: 'absolute',
+                top: 0,
+                left: orgNodeLayout.cardWidth / 2 + index * (orgNodeLayout.cardWidth + orgNodeLayout.childGap),
+                width: '2px',
+                height: `${stemHeight}px`,
+                transform: 'translateX(-50%)',
+              }}
+            />
+          ))}
+        </Box>
+        <Box
+          sx={{
+            display: 'flex',
+            gap: `${orgNodeLayout.childGap}px`,
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+          }}
+        >
+          {unit.children.map((child) => (
+            <Box
+              key={child.unit_id}
+              sx={{
+                width: orgNodeLayout.cardWidth,
+                flex: `0 0 ${orgNodeLayout.cardWidth}px`,
+                display: 'flex',
+                justifyContent: 'center',
+              }}
+            >
+              {renderChildNode(child)}
+            </Box>
+          ))}
+        </Box>
+      </Box>
+    );
+  };
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
       <Box
@@ -105,7 +186,7 @@ export const UnitOrgNode = ({
                 sx={{
                   color: hierarchyPageColors.textPrimary,
                   fontSize: 15,
-                  fontWeight: 700,
+                  fontWeight: 600,
                   lineHeight: 1.24,
                   overflowWrap: 'anywhere',
                 }}
@@ -173,70 +254,54 @@ export const UnitOrgNode = ({
 
       {(canCreateChild || hasChildren) ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-          <Box sx={{ ...connectorLineSx, width: '2px', height: '20px', mt: '-1px' }} />
+          <Box
+            sx={{
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            <Box sx={{ ...connectorLineSx, width: '2px', height: `${stemHeight}px` }} />
 
-          {canCreateChild ? (
-            <>
-              <Tooltip title="Создать дочернюю группу">
-                <IconButton
-                  aria-label={`Создать дочернюю группу в ${unit.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenCreateChildDialog?.(unit);
-                  }}
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    bgcolor: 'primary.main',
-                    color: '#ffffff',
-                    boxShadow: hierarchyPageColors.shadow,
-                    '&:hover': { bgcolor: 'primary.dark' },
-                  }}
-                >
-                  <AddRoundedIcon sx={{ fontSize: 20 }} />
-                </IconButton>
-              </Tooltip>
-              {hasChildren ? <Box sx={{ ...connectorLineSx, width: '2px', height: '20px', mb: '-1px' }} /> : null}
-            </>
-          ) : null}
+            {canCreateChild ? (
+              <Box
+                sx={{
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  zIndex: 1,
+                }}
+              >
+                <Tooltip title="Создать дочернюю группу">
+                  <IconButton
+                    aria-label={`Создать дочернюю группу в ${unit.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenCreateChildDialog?.(unit);
+                    }}
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      bgcolor: 'primary.main',
+                      color: '#ffffff',
+                      boxShadow: hierarchyPageColors.shadow,
+                      border: '3px solid #ffffff',
+                      '&:hover': { bgcolor: 'primary.dark' },
+                    }}
+                  >
+                    <AddRoundedIcon sx={{ fontSize: 20 }} />
+                  </IconButton>
+                </Tooltip>
+                {hasChildren ? (
+                  <Box sx={{ ...connectorLineSx, width: '2px', height: `${stemHeight}px` }} />
+                ) : null}
+              </Box>
+            ) : null}
+          </Box>
 
-          {hasChildren ? (
-            unit.children.length === 1 ? (
-            renderChildNode(unit.children[0]!)
-          ) : (
-            <Box sx={{ display: 'flex', gap: 2.2, alignItems: 'flex-start', justifyContent: 'center', width: 'max-content' }}>
-              {unit.children.map((child, index) => {
-                const isFirst = index === 0;
-                const isLast = index === unit.children.length - 1;
-
-                return (
-                  <Box key={child.unit_id} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
-                    <Box sx={{ position: 'relative', width: '100%', height: '20px', minWidth: 220 }}>
-                      {!isFirst ? (
-                        <Box sx={{ ...connectorLineSx, position: 'absolute', top: 0, left: 0, right: '50%', height: '2px' }} />
-                      ) : null}
-                      {!isLast ? (
-                        <Box sx={{ ...connectorLineSx, position: 'absolute', top: 0, left: '50%', right: 0, height: '2px' }} />
-                      ) : null}
-                      <Box
-                        sx={{
-                          ...connectorLineSx,
-                          position: 'absolute',
-                          top: 0,
-                          left: '50%',
-                          width: '2px',
-                          height: '21px',
-                          transform: 'translateX(-50%)',
-                        }}
-                      />
-                    </Box>
-                    {renderChildNode(child)}
-                  </Box>
-                );
-              })}
-            </Box>
-          )
-          ) : null}
+          {renderChildrenRow()}
         </Box>
       ) : null}
     </Box>

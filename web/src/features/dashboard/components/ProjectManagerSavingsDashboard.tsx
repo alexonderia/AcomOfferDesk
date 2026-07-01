@@ -193,7 +193,7 @@ const SummaryListCard = ({
               <Typography variant="caption" color="text.secondary">
                 {title}
               </Typography>
-              <Typography variant="h5" fontWeight={800} color={valueColor}>
+              <Typography variant="h5" fontWeight={600} color={valueColor}>
                 {value}
               </Typography>
             </Box>
@@ -809,7 +809,7 @@ export const ProjectManagerSavingsDashboard = () => {
         alignItems={{ xs: 'stretch', xl: 'center' }}
       >
         <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-          <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1.1, fontSize: { xs: 25, md: 26 } }}>
+          <Typography variant="h5" fontWeight={600} sx={{ lineHeight: 1.1, fontSize: { xs: 25, md: 26 } }}>
             Экономия
           </Typography>
         </Stack>

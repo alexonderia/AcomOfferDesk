@@ -41,6 +41,22 @@ class _UsersRepo:
             user_id: SimpleNamespace(id=user_id, full_name=user_id, phone=None, mail=f"{user_id}@example.com")
             for user_id in self._users
         }
+        self._units = [
+            (1, "Департамент A", None),
+            (2, "Отдел X", 1),
+            (3, "Группа X1", 2),
+            (10, "Департамент B", None),
+        ]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("eco-1", 2),
+            ("lead-2", 3),
+            ("eco-2", 3),
+            ("eco-3", 3),
+            ("operator-1", 3),
+            ("pm-2", 10),
+        ]
 
     async def get_by_id(self, user_id: str):
         return self._users.get(user_id)
@@ -75,6 +91,16 @@ class _UsersRepo:
             rows.append((user, self._profiles.get(user.id), role))
         return rows
 
+    async def list_by_ids_with_profiles_and_roles(self, *, user_ids: list[str]):
+        rows = []
+        for user_id in user_ids:
+            user = self._users.get(user_id)
+            if user is None:
+                continue
+            role = await self.get_role_by_id(user.id_role)
+            rows.append((user, self._profiles.get(user.id), role))
+        return rows
+
     async def list_users_with_profiles(self, *, role_id: int | None = None):
         rows = []
         for user in self._users.values():
@@ -97,6 +123,15 @@ class _UsersRepo:
             for user in self._users.values()
             if user.status == "active"
         ]
+
+    async def list_active_units(self):
+        return [(unit_id, parent_id) for unit_id, _name, parent_id in self._units]
+
+    async def list_active_unit_details(self):
+        return list(self._units)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 class _ProfilesRepo:
@@ -297,7 +332,7 @@ def test_superadmin_cannot_create_project_manager_with_lead_as_manager(
     assert response.status_code == 409
 
 
-def test_superadmin_cannot_create_lead_without_manager(
+def test_superadmin_can_create_lead_without_legacy_manager(
     test_client,
     monkeypatch,
     set_uow,
@@ -322,7 +357,7 @@ def test_superadmin_cannot_create_lead_without_manager(
         },
     )
 
-    assert response.status_code == 409
+    assert response.status_code == 200
 
 
 def test_superadmin_can_create_lead_with_lead_manager(
@@ -478,7 +513,7 @@ def test_project_manager_can_update_subordinate_manager(
     assert response.json()["data"]["manager_user_id"] == "lead-1"
 
 
-def test_project_manager_can_remove_project_manager_manager(
+def test_project_manager_cannot_remove_legacy_manager_outside_unit_scope(
     test_client,
     set_uow,
     set_current_user,
@@ -494,11 +529,10 @@ def test_project_manager_can_remove_project_manager_manager(
 
     response = test_client.patch("/api/v1/users/pm-2/manager", json={"manager_user_id": None})
 
-    assert response.status_code == 200
-    assert response.json()["data"]["manager_user_id"] is None
+    assert response.status_code == 403
 
 
-def test_project_manager_cannot_remove_lead_manager(
+def test_project_manager_can_remove_lead_legacy_manager_inside_unit_scope(
     test_client,
     set_uow,
     set_current_user,
@@ -514,7 +548,8 @@ def test_project_manager_cannot_remove_lead_manager(
 
     response = test_client.patch("/api/v1/users/lead-1/manager", json={"manager_user_id": None})
 
-    assert response.status_code == 409
+    assert response.status_code == 200
+    assert response.json()["data"]["manager_user_id"] is None
 
 
 def test_project_manager_cannot_assign_project_manager_to_economist_directly(
@@ -625,6 +660,54 @@ def test_manager_candidates_follow_new_matrix_and_exclude_self_and_descendants(
     assert {"pm-1", "pm-2", "lead-1", "lead-2"}.issuperset(lead_candidate_ids)
     assert "pm-1" not in eco_candidate_ids
     assert {"lead-1", "lead-2", "eco-2", "eco-3"}.issuperset(eco_candidate_ids)
+
+
+def test_me_hierarchy_endpoint_returns_unit_based_and_legacy_data(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    set_uow(_UsersUow())
+    current_user = make_current_user(
+        user_id="eco-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.USERS_READ},
+    )
+    set_current_user(current_user)
+
+    response = test_client.get("/api/v1/users/me/hierarchy")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["user"]["user_id"] == "eco-1"
+    assert payload["units"]
+    assert payload["legacy_hierarchy"]["legacy_manager"]["user_id"] == "lead-1"
+    assert payload["legacy_hierarchy"]["note"]
+
+
+def test_user_hierarchy_endpoint_honors_visibility_scope(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    set_uow(_UsersUow())
+    economist = make_current_user(
+        user_id="eco-1",
+        role_id=settings.economist_role_id,
+        permissions={PermissionCodes.USERS_READ},
+    )
+    set_current_user(economist)
+
+    allowed_response = test_client.get("/api/v1/users/eco-2/hierarchy")
+    forbidden_response = test_client.get("/api/v1/users/pm-2/hierarchy")
+
+    assert allowed_response.status_code == 200
+    allowed_payload = allowed_response.json()["data"]
+    assert allowed_payload["user"]["user_id"] == "eco-2"
+    assert allowed_payload["managers"]
+    assert forbidden_response.status_code == 403
 
 
 def test_anonymous_user_gets_401_for_users_endpoint(test_client, api_app):

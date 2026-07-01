@@ -1,4 +1,5 @@
 import {
+  Autocomplete,
   Box,
   Button,
   Dialog,
@@ -55,11 +56,14 @@ export const AdminPageView = () => {
     userTabs,
     getRoleLabel,
     canOpenCreateDialog,
+    canAssignUnitOnCreate,
     isContractorRole,
+    isLoadingUnitOptions,
     loadUsers,
     handleClose,
     onSubmit,
-    form
+    form,
+    unitOptions,
   } = useAdminPage();
 
   const {
@@ -71,6 +75,7 @@ export const AdminPageView = () => {
   } = form;
 
   const selectedRoleId = watch('role_id');
+  const selectedUnitId = watch('unit_id');
   const loginValue = watch('login');
   const mailValue = watch('mail');
   const companyNameValue = watch('company_name');
@@ -100,6 +105,7 @@ export const AdminPageView = () => {
   const isCompanyNameFieldValid = hasValue(companyNameValue) && !errors.company_name;
   const isInnFieldValid = hasValue(innValue) && !errors.inn;
   const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
+  const selectedUnitOption = unitOptions.find((option) => option.unitId === selectedUnitId) ?? null;
 
   useToastMessageEffect({ message: usersError });
 
@@ -318,6 +324,37 @@ export const AdminPageView = () => {
                     }}
                     sx={inputFieldSx}
                   />
+
+                  {canAssignUnitOnCreate && unitOptions.length > 0 ? (
+                    <>
+                      <Typography sx={sectionTitleSx}>
+                        Объединение
+                      </Typography>
+                      <Autocomplete
+                        loading={isLoadingUnitOptions}
+                        options={unitOptions}
+                        value={selectedUnitOption}
+                        onChange={(_event, value) => {
+                          setValue('unit_id', value?.unitId ?? null, {
+                            shouldDirty: true,
+                            shouldTouch: true,
+                            shouldValidate: true,
+                          });
+                        }}
+                        getOptionLabel={(option) => option.label}
+                        isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Объединение"
+                            placeholder="Выберите объединение"
+                            helperText="Необязательно. Можно назначить сразу при создании."
+                            sx={inputFieldSx}
+                          />
+                        )}
+                      />
+                    </>
+                  ) : null}
                 </>
               )}
 

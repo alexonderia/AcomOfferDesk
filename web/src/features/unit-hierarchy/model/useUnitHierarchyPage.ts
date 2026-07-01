@@ -15,6 +15,7 @@ import {
   type UnitMember,
   type UnitNode,
 } from '@shared/api/units';
+import { buildUnitOptions } from '@shared/lib/hierarchy/buildUnitOptions';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 type UnitDialogMode = 'create-root' | 'create-child' | 'edit' | null;
@@ -165,15 +166,6 @@ const buildDeletePreviewTree = (tree: UnitNode[], unitId: number): UnitNode[] =>
 
   return clonedTree;
 };
-
-const buildUnitOptions = (nodes: UnitNode[], path: string[] = []): Array<{ unitId: number; label: string }> =>
-  nodes.flatMap((unit) => {
-    const nextPath = [...path, unit.name];
-    return [
-      { unitId: unit.unit_id, label: nextPath.join(' / ') },
-      ...buildUnitOptions(unit.children, nextPath),
-    ];
-  });
 
 export const useUnitHierarchyPage = () => {
   const { session } = useAuth();

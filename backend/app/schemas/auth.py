@@ -47,6 +47,7 @@ class RegisterUserRequest(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     phone: str | None = Field(default=None, min_length=1, max_length=255)
     mail: str | None = Field(default=None, min_length=1, max_length=255)
+    unit_id: int | None = Field(default=None, ge=1)
 
     @field_validator("password")
     @classmethod

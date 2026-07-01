@@ -68,6 +68,7 @@ from app.services.registration_admin_notify import (
     schedule_registration_review_required_notification,
 )
 from app.services.users import UserRegistrationService
+from app.services.units import UnitService
 
 router = APIRouter()
 
@@ -690,6 +691,8 @@ async def register_user(
 ) -> RegisterUserResponse:
     UserPolicy.ensure_can_register_user(current_user)
     async with uow:
+        if payload.unit_id is not None:
+            UserPolicy.ensure_can_manage_unit_members(current_user)
         service = UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts)
         user = await service.register_user(
             current_user,
@@ -701,6 +704,13 @@ async def register_user(
             phone=payload.phone.strip() if payload.phone else None,
             mail=payload.mail.strip() if payload.mail else None,
         )
+        if payload.unit_id is not None:
+            unit_service = UnitService(uow.units, uow.users)
+            await unit_service.add_member(
+                current_user=current_user,
+                unit_id=payload.unit_id,
+                user_id=user.id,
+            )
     return RegisterUserResponse(
         data={
             "user_id": user.id,

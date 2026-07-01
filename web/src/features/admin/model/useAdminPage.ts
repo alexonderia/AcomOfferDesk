@@ -11,9 +11,11 @@ import type { ContractorListItem } from '@shared/api/contractors/listContractors
 import { registerUser } from '@shared/api/auth/registerUser';
 import { createManualContractor } from '@shared/api/users/createManualContractor';
 import { getUsers } from '@shared/api/users/getUsers';
+import { getUnitsTree } from '@shared/api/units';
 import { hasAnyPermission, hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { isValidRuPhone } from '@shared/lib/phone';
+import { buildUnitOptions, type UnitOption } from '@shared/lib/hierarchy/buildUnitOptions';
 import { addUserButtonSx, employeePersonLabels, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
 import { getScopedCreateRoleIds, resolveUserTabFromParam } from './helpers';
 import { useSystemToasts } from '@shared/ui/toasts';
@@ -35,7 +37,8 @@ const schema = z
     company_phone: z.string().optional(),
     company_mail: z.string().optional(),
     address: z.string().optional(),
-    note: z.string().optional()
+    note: z.string().optional(),
+    unit_id: z.number().nullable().optional(),
   })
   .superRefine((data, ctx) => {
     const isContractor = data.role_id === ROLE.CONTRACTOR;
@@ -180,6 +183,8 @@ export const useAdminPage = () => {
   const isAdmin = session?.roleId === ROLE.ADMIN;
   const canCreateManualContractor = hasPermission(session, 'contractors.manual.create');
   const canCreateUser = hasPermission(session, 'users.create');
+  const canAssignUnitOnCreate = hasPermission(session, 'units.members.manage')
+    && hasPermission(session, 'units.read');
   const canUpdateRoleAny = hasPermission(session, 'users.role.update_any');
   const canUpdateRoleEconomy = hasPermission(session, 'users.role.update_economy');
   const canUpdateStatus = hasPermission(session, 'users.status.update');
@@ -193,6 +198,8 @@ export const useAdminPage = () => {
   const [contractors, setContractors] = useState<ContractorListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
+  const [isLoadingUnitOptions, setIsLoadingUnitOptions] = useState(false);
   const loadUsersRequestIdRef = useRef(0);
 
   const baseCreateRoleIds = useMemo(() => {
@@ -280,7 +287,8 @@ export const useAdminPage = () => {
       company_phone: '',
       company_mail: '',
       address: '',
-      note: ''
+      note: '',
+      unit_id: null,
     }
   });
 
@@ -296,6 +304,36 @@ export const useAdminPage = () => {
       return next;
     }, { replace: true });
   };
+
+  useEffect(() => {
+    if (!isDialogOpen || !canAssignUnitOnCreate) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIsLoadingUnitOptions(true);
+
+    void getUnitsTree()
+      .then((tree) => {
+        if (!cancelled) {
+          setUnitOptions(buildUnitOptions(tree));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUnitOptions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingUnitOptions(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canAssignUnitOnCreate, isDialogOpen]);
 
   useEffect(() => {
     if (!roleOptions.length) {
@@ -379,7 +417,8 @@ export const useAdminPage = () => {
       company_phone: '',
       company_mail: '',
       address: '',
-      note: ''
+      note: '',
+      unit_id: null,
     });
   }, [preferredCreateRoleId, reset]);
 
@@ -431,6 +470,7 @@ export const useAdminPage = () => {
           mail: values.mail?.trim() || undefined,
           full_name: values.full_name?.trim() || undefined,
           phone: values.phone?.trim() || undefined,
+          unit_id: values.unit_id ?? undefined,
         });
 
         showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
@@ -469,12 +509,15 @@ export const useAdminPage = () => {
     getRoleLabel,
     canCreateUser,
     canCreateManualContractor,
+    canAssignUnitOnCreate,
     canOpenCreateDialog,
     isContractorRole,
+    isLoadingUnitOptions,
     loadUsers,
     handleClose,
     onSubmit,
     form,
+    unitOptions,
     addUserButtonSx
   };
 };

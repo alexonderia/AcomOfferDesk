@@ -881,7 +881,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                           }}
                         >
                           <Stack direction="row" spacing={0.5} alignItems="center">
-                            <Typography fontWeight={600} sx={{ fontSize: { xs: 14, sm: 15 } }}>
+                            <Typography fontWeight={600} sx={{ fontSize: { xs: 14, sm: 14 } }}>
                               {item.label}
                             </Typography>
                             <InfoTooltip title={item.description} iconSize={16} />

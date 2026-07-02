@@ -17,5 +17,6 @@
 - `login/template.ftl` — общий layout;
 - `login/login.ftl` — вход;
 - `login/register.ftl` — contractor registration;
+- `resources/css/typography.css` — общие токены шрифтов с web-приложением;
 - `resources/css/acom-offerdesk.css` — визуальные токены и стили;
 - `messages/messages.properties` — словарь базовых подписей.

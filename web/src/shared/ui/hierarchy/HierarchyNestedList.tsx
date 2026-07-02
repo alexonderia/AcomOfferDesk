@@ -64,7 +64,7 @@ export const HierarchyListDivider = ({ label }: HierarchyListDividerProps) => (
         <Box
           component="span"
           sx={{
-            fontSize: 10,
+            fontSize: 12,
             fontWeight: 600,
             letterSpacing: '0.04em',
             textTransform: 'uppercase',

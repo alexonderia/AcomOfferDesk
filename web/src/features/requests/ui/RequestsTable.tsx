@@ -186,7 +186,7 @@ const ContractorOffersPreview = ({ offers }: ContractorOffersPreviewProps) => {
                             <Typography
                                 component="span"
                                 sx={{
-                                    fontSize: 13,
+                                    fontSize: 14,
                                     fontWeight: 600,
                                     color: neutralColor,
                                     lineHeight: 1.15,
@@ -398,7 +398,7 @@ const RequestMobileCard = ({
                             </Typography>
                             <ExpandMoreRounded
                                 sx={{
-                                    fontSize: 22,
+                                    fontSize: 20,
                                     transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
                                     transition: 'transform 0.28s ease'
                                 }}
@@ -420,7 +420,7 @@ const RequestMobileCard = ({
                                             sx={{
                                                 minWidth: 0,
                                                 flex: '0 0 44%',
-                                                fontSize: 11,
+                                                fontSize: 12,
                                                 fontWeight: 600,
                                                 color: 'text.secondary',
                                                 textTransform: 'uppercase',
@@ -463,7 +463,7 @@ const RequestMobileCard = ({
                                                 sx={{
                                                     minWidth: 0,
                                                     flex: 1,
-                                                    fontSize: 15,
+                                                    fontSize: 14,
                                                     color: detail.value === '-' ? 'text.secondary' : 'text.primary',
                                                     whiteSpace: 'normal',
                                                     wordBreak: 'break-word'
@@ -493,7 +493,7 @@ const RequestMobileCard = ({
                     <Typography
                         sx={{
                             minWidth: 0,
-                            fontSize: 15,
+                            fontSize: 14,
                             color: 'text.secondary',
                             textAlign: 'right',
                             whiteSpace: 'nowrap',

@@ -137,10 +137,9 @@ export const SuperadminSidebarHeader = ({
       <Stack sx={{ height: '100%' }}>
         <Stack direction="row" alignItems="center" justifyContent={collapsed ? 'center' : 'space-between'} sx={{ minHeight: 44, mb: 1.8 }}>
           <Typography
+            variant="h5"
             title={collapsed ? undefined : brandText}
             sx={{
-              fontSize: 22,
-              fontWeight: 700,
               lineHeight: 1.1,
               minWidth: 0,
               overflow: 'hidden',

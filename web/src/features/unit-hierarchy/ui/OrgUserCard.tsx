@@ -48,7 +48,7 @@ export const OrgUserCard = ({
             <Typography
               sx={{
                 color: isPlaceholder ? hierarchyPageColors.softPink : hierarchyPageColors.textPrimary,
-                fontSize: 12.2,
+                fontSize: 12,
                 fontWeight: 700,
                 lineHeight: 1.2,
                 overflowWrap: 'anywhere',
@@ -71,7 +71,7 @@ export const OrgUserCard = ({
           variant="body2"
           sx={{
             color: hierarchyPageColors.textPrimary,
-            fontSize: 11,
+            fontSize: 12,
             lineHeight: 1.22,
           }}
         >
@@ -82,7 +82,7 @@ export const OrgUserCard = ({
           variant="caption"
           sx={{
             color: alpha(hierarchyPageColors.textSecondary, 0.84),
-            fontSize: 9.8,
+            fontSize: 12,
             lineHeight: 1.2,
           }}
         >
@@ -104,7 +104,7 @@ export const OrgUserCard = ({
               variant="caption"
               sx={{
                 color: alpha(hierarchyPageColors.textSecondary, 0.92),
-                fontSize: 10,
+                fontSize: 12,
               }}
             >
               {statusLabelByCode[member.status] ?? member.status}
@@ -115,7 +115,7 @@ export const OrgUserCard = ({
             variant="caption"
             sx={{
               color: alpha(hierarchyPageColors.textSecondary, 0.72),
-              fontSize: 10,
+              fontSize: 12,
             }}
           >
             {member.user_id}

@@ -3,6 +3,7 @@ import type { Theme } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import { DatePickerField } from './DatePickerField';
 import { formatDate } from '@shared/lib/formatters';
+import { themeTokens } from '@shared/theme/tokens';
 
 const detailFieldSx = {
   width: { xs: '100%', sm: 142 },
@@ -13,7 +14,7 @@ const detailFieldSx = {
   '& .MuiOutlinedInput-input': {
     px: 1.1,
     py: 0.6,
-    fontSize: 14
+    fontSize: themeTokens.typography.body2FontSize
   }
 } as const;
 
@@ -21,7 +22,6 @@ const detailValueTextSx = {
   justifySelf: { xs: 'stretch', sm: 'end' },
   textAlign: { xs: 'left', sm: 'right' },
   fontWeight: 500,
-  fontSize: 14,
   lineHeight: 1.3
 } as const;
 
@@ -137,12 +137,12 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
         '& .MuiInputBase-input': {
           px: 1.1,
           py: 0.6,
-          fontSize: 14
+          fontSize: themeTokens.typography.body2FontSize
         }
       }}
     />
   ) : (
-    <Typography sx={detailValueTextSx}>{formatDate(deadlineAt)}</Typography>
+    <Typography variant="body2" sx={detailValueTextSx}>{formatDate(deadlineAt)}</Typography>
   );
 
   const initialAmountField = isEditMode && canEditRequest && onInitialAmountChange ? (
@@ -154,7 +154,7 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
       sx={detailFieldSx}
     />
   ) : (
-    <Typography sx={detailValueTextSx}>{initialAmountText || '-'}</Typography>
+    <Typography variant="body2" sx={detailValueTextSx}>{initialAmountText || '-'}</Typography>
   );
 
   const finalAmountField = isEditMode && canEditRequest && onFinalAmountChange ? (
@@ -166,7 +166,7 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
       sx={detailFieldSx}
     />
   ) : (
-    <Typography sx={detailValueTextSx}>{finalAmountText || '-'}</Typography>
+    <Typography variant="body2" sx={detailValueTextSx}>{finalAmountText || '-'}</Typography>
   );
 
   return (
@@ -187,22 +187,22 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
         >
           <DetailRow
             label="ФИО"
-            value={<Typography sx={detailValueTextSx}>{responsibleContact?.fullName || '-'}</Typography>}
+            value={<Typography variant="body2" sx={detailValueTextSx}>{responsibleContact?.fullName || '-'}</Typography>}
           />
           <DetailRow
             label="Телефон"
-            value={<Typography sx={detailValueTextSx}>{responsibleContact?.phone || '-'}</Typography>}
+            value={<Typography variant="body2" sx={detailValueTextSx}>{responsibleContact?.phone || '-'}</Typography>}
           />
           <DetailRow
             label="E-mail"
-            value={<Typography sx={detailValueTextSx}>{responsibleContact?.mail || '-'}</Typography>}
+            value={<Typography variant="body2" sx={detailValueTextSx}>{responsibleContact?.mail || '-'}</Typography>}
             divider={false}
           />
         </Box>
       ) : null}
       <Box sx={(theme) => panelSx(theme)}>
-        <DetailRow label="Создана" value={<Typography sx={detailValueTextSx}>{formatDate(createdAt)}</Typography>} />
-        <DetailRow label="Закрыта" value={<Typography sx={detailValueTextSx}>{formatDate(closedAt)}</Typography>} />
+        <DetailRow label="Создана" value={<Typography variant="body2" sx={detailValueTextSx}>{formatDate(createdAt)}</Typography>} />
+        <DetailRow label="Закрыта" value={<Typography variant="body2" sx={detailValueTextSx}>{formatDate(closedAt)}</Typography>} />
         <DetailRow
           label="Дедлайн сбора КП"
           value={deadlineField}

@@ -319,7 +319,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -334,7 +334,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -485,7 +485,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -500,7 +500,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -568,7 +568,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -583,7 +583,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',

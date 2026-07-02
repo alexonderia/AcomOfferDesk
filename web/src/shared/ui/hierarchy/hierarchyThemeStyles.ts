@@ -1,4 +1,5 @@
 import { alpha, type Theme } from '@mui/material/styles';
+import { themeTokens } from '@shared/theme/tokens';
 import type { HierarchyPersonTone } from './hierarchyPersonUtils';
 
 export const HIERARCHY_LIST_INDENT_PX = 20;
@@ -146,7 +147,7 @@ export const getHierarchyAvatarSx = (
   return ({
   width: 36,
   height: 36,
-  fontSize: 13,
+  fontSize: themeTokens.typography.body2FontSize,
   fontWeight: 700,
   bgcolor: highlight
     ? alpha(toneColor, 0.16)

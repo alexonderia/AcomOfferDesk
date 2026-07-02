@@ -142,7 +142,7 @@ export const PeopleTree = ({
       {hideHeader ? null : (
         <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
           <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{title}</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{title}</Typography>
             {headerAction}
           </Stack>
           {members.length > 0 ? (
@@ -191,7 +191,7 @@ export const PeopleFlatList = ({
       {hideHeader ? null : (
         <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
           <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{title}</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{title}</Typography>
             {headerAction}
           </Stack>
           {members.length > 0 ? (

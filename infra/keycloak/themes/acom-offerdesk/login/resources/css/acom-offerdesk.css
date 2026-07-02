@@ -1,5 +1,4 @@
 :root {
-  --aod-font-family: "Inter", "Segoe UI", sans-serif;
   --aod-primary: #2f6fd6;
   --aod-primary-dark: #245bb5;
   --aod-primary-light: #e7f0ff;
@@ -27,7 +26,23 @@ body {
   min-height: 100%;
   margin: 0;
   font-family: var(--aod-font-family);
+  font-size: var(--aod-font-body1);
   color: var(--aod-text);
+}
+
+body#keycloak-bg.aod-body,
+body#keycloak-bg.aod-body :where(
+  .pf-v5-c-form__label-text,
+  .pf-v5-c-check__label,
+  .pf-v5-c-helper-text__item-text,
+  .pf-v5-c-button,
+  .pf-v5-c-form-control,
+  input,
+  select,
+  textarea,
+  button
+) {
+  font-family: var(--aod-font-family);
 }
 
 html.login-pf,
@@ -86,9 +101,9 @@ body#keycloak-bg.aod-body {
 
 .aod-card__title {
   margin: 0;
-  font-size: 30px;
-  line-height: 1.15;
-  font-weight: 700;
+  font-size: var(--aod-font-h5);
+  line-height: 1.25;
+  font-weight: var(--aod-font-weight-bold);
   color: var(--aod-text);
 }
 
@@ -100,7 +115,7 @@ body#keycloak-bg.aod-body {
 .aod-helper-note,
 .aod-alert__content {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--aod-font-body2);
   line-height: 1.55;
   color: var(--aod-text-muted);
 }
@@ -116,7 +131,7 @@ body#keycloak-bg.aod-body {
   border: 1px solid var(--aod-border);
   background: var(--aod-surface);
   color: var(--aod-text-muted);
-  font-size: 13px;
+  font-size: var(--aod-font-caption);
 }
 
 .aod-locale-switch select {
@@ -137,7 +152,7 @@ body#keycloak-bg.aod-body {
   border-radius: 999px;
   background: var(--aod-primary-light);
   color: var(--aod-text-muted);
-  font-size: 13px;
+  font-size: var(--aod-font-caption);
 }
 
 .aod-required-hint__mark {
@@ -159,7 +174,7 @@ body#keycloak-bg.aod-body {
 .aod-status-card__title,
 .aod-social-block__title {
   margin: 0 0 6px;
-  font-size: 14px;
+  font-size: var(--aod-font-body2);
   font-weight: 700;
   color: var(--aod-text);
 }
@@ -203,7 +218,7 @@ body#keycloak-bg.aod-body {
   border-radius: 999px;
   background: rgba(47, 111, 214, 0.12);
   color: var(--aod-primary);
-  font-size: 13px;
+  font-size: var(--aod-font-caption);
   font-weight: 700;
 }
 
@@ -223,7 +238,8 @@ body#keycloak-bg.aod-body {
 .aod-card .pf-v5-c-form__label-text,
 .aod-card .pf-v5-c-check__label {
   color: var(--aod-text);
-  font-weight: 600;
+  font-size: var(--aod-font-body2);
+  font-weight: var(--aod-font-weight-semibold);
 }
 
 .aod-card .pf-v5-c-form__label {
@@ -247,7 +263,7 @@ body#keycloak-bg.aod-body {
 .aod-card .pf-v5-c-form__label-required::before {
   content: "!";
   color: var(--aod-warning);
-  font-size: 12px;
+  font-size: var(--aod-font-caption);
   font-weight: 700;
   line-height: 1;
 }
@@ -268,7 +284,7 @@ body#keycloak-bg.aod-body {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--aod-font-caption);
   font-weight: 700;
   line-height: 1;
   flex: 0 0 18px;
@@ -396,7 +412,7 @@ body#keycloak-bg.aod-body {
 }
 
 .aod-card .pf-v5-c-helper-text__item-text {
-  font-size: 13px;
+  font-size: var(--aod-font-caption);
   line-height: 1.45;
 }
 
@@ -427,7 +443,7 @@ body#keycloak-bg.aod-body {
   padding: 0 20px;
   border-radius: var(--aod-control-radius);
   border: none;
-  font-size: 15px;
+  font-size: var(--aod-font-button);
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
@@ -533,7 +549,7 @@ body#keycloak-bg.aod-body {
   border: none;
   background: transparent;
   color: var(--aod-primary);
-  font-size: 14px;
+  font-size: var(--aod-font-body2);
   font-weight: 500;
   text-decoration: none;
   box-shadow: none;
@@ -552,7 +568,7 @@ body#keycloak-bg.aod-body {
 .aod-card__meta {
   margin-top: 18px;
   color: var(--aod-text-muted);
-  font-size: 13px;
+  font-size: var(--aod-font-caption);
   text-align: center;
   display: flex;
   align-items: center;
@@ -571,7 +587,7 @@ body#keycloak-bg.aod-body {
   border: 1px solid var(--aod-border);
   background: #fff;
   color: var(--aod-text);
-  font-size: 13px;
+  font-size: var(--aod-font-caption);
   font-weight: 600;
   cursor: pointer;
   transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
@@ -592,7 +608,7 @@ body#keycloak-bg.aod-body {
   justify-content: center;
   background: var(--aod-primary-light);
   color: var(--aod-primary);
-  font-size: 12px;
+  font-size: var(--aod-font-caption);
   font-weight: 700;
 }
 
@@ -637,7 +653,7 @@ body#keycloak-bg.aod-body {
 
 .aod-guide-modal__title {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--aod-font-h2);
   line-height: 1.2;
   color: var(--aod-text);
 }
@@ -650,7 +666,7 @@ body#keycloak-bg.aod-body {
   border-radius: 999px;
   background: #fff;
   color: var(--aod-text-muted);
-  font-size: 20px;
+  font-size: var(--aod-font-h5);
   line-height: 1;
   cursor: pointer;
 }
@@ -667,7 +683,7 @@ body#keycloak-bg.aod-body {
   border: 1px solid var(--aod-border);
   background: #f8fbff;
   color: var(--aod-text-muted);
-  font-size: 14px;
+  font-size: var(--aod-font-body2);
   line-height: 1.55;
 }
 
@@ -687,7 +703,7 @@ body#keycloak-bg.aod-body {
   cursor: pointer;
   list-style: none;
   padding: 12px 14px;
-  font-size: 15px;
+  font-size: var(--aod-font-button);
   font-weight: 700;
   color: var(--aod-text);
   background: #fbfdff;
@@ -714,7 +730,7 @@ body#keycloak-bg.aod-body {
 }
 
 .aod-guide-section__list li {
-  font-size: 14px;
+  font-size: var(--aod-font-body2);
   line-height: 1.5;
   color: var(--aod-text-muted);
 }
@@ -753,13 +769,13 @@ body#keycloak-bg.aod-body {
 
 .aod-app-footer__text {
   color: var(--aod-text-muted);
-  font-size: 12.5px;
+  font-size: var(--aod-font-caption);
   font-weight: 500;
 }
 
 .aod-app-footer__brand {
   text-align: center;
-  font-size: 14px;
+  font-size: var(--aod-font-body2);
   font-weight: 550;
   letter-spacing: 0.1px;
   color: var(--aod-text);
@@ -794,7 +810,7 @@ body#keycloak-bg.aod-body {
 
 @media (max-width: 640px) {
   .aod-app-footer__text {
-    font-size: 12px;
+    font-size: var(--aod-font-caption);
   }
 }
 
@@ -817,7 +833,7 @@ body#keycloak-bg.aod-body {
   }
 
   .aod-card__title {
-    font-size: 26px;
+    font-size: var(--aod-font-h5);
   }
 
   .aod-guide-modal__panel {
@@ -825,7 +841,7 @@ body#keycloak-bg.aod-body {
   }
 
   .aod-guide-modal__title {
-    font-size: 21px;
+    font-size: var(--aod-font-h5);
   }
 
   .aod-app-footer {

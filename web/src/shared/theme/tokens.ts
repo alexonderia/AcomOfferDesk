@@ -50,10 +50,21 @@ export const themeTokens = {
     surfacePadding: 8
   },
   typography: {
+    // Keep in sync with infra/keycloak/themes/acom-offerdesk/login/resources/css/typography.css
     fontFamily: '"Inter", "Segoe UI", sans-serif',
+    bodyFontSize: 16,
+    body2FontSize: 14,
+    captionFontSize: 12,
     buttonFontSize: 16,
     buttonFontWeight: 600,
-    bodyFontSize: 16
+    h1FontSize: 32,
+    h2FontSize: 24,
+    h3FontSize: 20,
+    h4FontSize: 20,
+    h5FontSize: 20,
+    h6FontSize: 18,
+    subtitle1FontSize: 16,
+    subtitle2FontSize: 14
   },
   button: {
     minHeight: 44,

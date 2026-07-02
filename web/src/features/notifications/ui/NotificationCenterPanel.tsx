@@ -84,7 +84,7 @@ export const NotificationCenterPanel = ({
             showNavigationIcons={false}
             disabled={!hasUnread || isMarkAllPending}
             onClick={onMarkAll}
-            sx={{ minHeight: 32, px: 1.4, fontSize: 13, textTransform: 'none' }}
+            sx={{ minHeight: 32, px: 1.4, fontSize: 14, textTransform: 'none' }}
           >
             Прочитать все
           </ActionButton>

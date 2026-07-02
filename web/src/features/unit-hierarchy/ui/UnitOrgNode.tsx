@@ -185,7 +185,7 @@ export const UnitOrgNode = ({
               <Typography
                 sx={{
                   color: hierarchyPageColors.textPrimary,
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: 600,
                   lineHeight: 1.24,
                   overflowWrap: 'anywhere',

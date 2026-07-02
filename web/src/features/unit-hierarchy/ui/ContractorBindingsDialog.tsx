@@ -316,7 +316,7 @@ export const ContractorBindingsDialog = ({
                       <TableRow key={row.userId} hover sx={{ verticalAlign: 'top' }}>
                         <TableCell sx={{ minWidth: 220 }}>
                           <Stack spacing={0.1}>
-                            <Typography sx={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                            <Typography sx={{ fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>
                               {login}
                             </Typography>
                             <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>

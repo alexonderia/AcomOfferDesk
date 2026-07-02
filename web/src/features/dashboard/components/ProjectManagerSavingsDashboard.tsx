@@ -809,7 +809,7 @@ export const ProjectManagerSavingsDashboard = () => {
         alignItems={{ xs: 'stretch', xl: 'center' }}
       >
         <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-          <Typography variant="h5" fontWeight={600} sx={{ lineHeight: 1.1, fontSize: { xs: 25, md: 26 } }}>
+          <Typography variant="h5" fontWeight={600} sx={{ lineHeight: 1.1, fontSize: { xs: 24, md: 24 } }}>
             Экономия
           </Typography>
         </Stack>

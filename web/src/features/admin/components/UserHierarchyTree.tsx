@@ -80,7 +80,7 @@ export const UserHierarchyTree = ({
                   borderColor: alpha(theme.palette.primary.main, 0.12),
                 }}
               >
-                <Typography sx={{ fontSize: 14.5, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>
                   {unit.name}
                 </Typography>
                 {departmentName !== unit.name ? (

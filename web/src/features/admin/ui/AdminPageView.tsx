@@ -18,6 +18,7 @@ import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel'
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { formatRuPhone } from '@shared/lib/phone';
 import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
+import { sectionTitleSx } from '@shared/theme/sectionTitleSx';
 import { useToastMessageEffect } from '@shared/ui/toasts';
 import { employeePersonLabels, type UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
@@ -28,14 +29,6 @@ const inputFieldSx = {
     backgroundColor: 'background.paper'
   }
 };
-
-const sectionTitleSx = {
-  fontSize: 13,
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: 0.4,
-  color: 'text.secondary'
-} as const;
 
 export const AdminPageView = () => {
   const {

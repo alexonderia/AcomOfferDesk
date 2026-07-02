@@ -48,6 +48,7 @@
             <link href="${url.resourcesPath}/${style}" rel="stylesheet" />
         </#list>
     </#if>
+    <link href="${url.resourcesPath}/css/typography.css?v=${properties.aodAssetVersion!'dev'}" rel="stylesheet" />
     <link href="${url.resourcesPath}/css/acom-offerdesk.css?v=${properties.aodAssetVersion!'dev'}" rel="stylesheet" />
     <script type="importmap">
         {

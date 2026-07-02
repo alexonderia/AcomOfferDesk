@@ -382,7 +382,7 @@ const OfferMobileCard = ({
               </Typography>
               <ExpandMoreRounded
                 sx={{
-                  fontSize: 22,
+                  fontSize: 20,
                   transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
                   transition: 'transform 0.26s ease'
                 }}
@@ -400,7 +400,7 @@ const OfferMobileCard = ({
                     sx={{
                       minWidth: 0,
                       flex: '0 0 44%',
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 600,
                       color: 'text.secondary',
                       textTransform: 'uppercase',

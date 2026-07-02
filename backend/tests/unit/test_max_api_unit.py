@@ -18,6 +18,7 @@ from app.services.max_start import MaxStartResult
 @pytest.fixture
 def max_api_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "max_bot_enabled", True)
+    monkeypatch.setattr(settings, "bot_api_shared_secret", None)
 
     class DummyUow:
         max_users = None

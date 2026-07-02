@@ -72,9 +72,21 @@ def _current_user(*, user_id: str, role_id: int, permissions: frozenset[str] | N
     )
 
 
+class _PeerModuleUsersRepo(_UsersRepo):
+    def __init__(self) -> None:
+        super().__init__()
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("lead-2", 3),
+            ("eco-1", 2),
+            ("eco-2", 2),
+        ]
+
+
 @pytest.mark.asyncio
 async def test_peer_economist_can_view_but_cannot_manage_adjacent_module_request():
-    service = StaffAccessScopeService(_UsersRepo())
+    service = StaffAccessScopeService(_PeerModuleUsersRepo())
     current_user = _current_user(user_id="eco-1", role_id=settings.economist_role_id)
 
     assert await service.can_view_request_owner(

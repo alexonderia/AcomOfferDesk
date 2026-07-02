@@ -19,6 +19,8 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
     users_repo = AsyncMock()
     users_repo.find_matching_contractor_user_ids = AsyncMock(return_value=["contractor-existing"])
     users_repo.get_role_by_id = AsyncMock(return_value=SimpleNamespace(role="Контрагент"))
+    users_repo.list_active_units = AsyncMock(return_value=[(101, None)])
+    users_repo.list_active_unit_memberships = AsyncMock(return_value=[("economist-1", 101)])
 
     units_repo = AsyncMock()
     units_repo.list_user_root_unit_ids = AsyncMock(return_value=[101])

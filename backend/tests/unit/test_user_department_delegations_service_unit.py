@@ -10,6 +10,14 @@ from app.services.user_department_delegations import UserDepartmentDelegationsSe
 
 class _UsersRepo:
     def __init__(self) -> None:
+        self._units = [(1, None), (2, 1), (10, None), (11, 10)]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("eco-1", 2),
+            ("pm-2", 10),
+            ("lead-2", 11),
+        ]
         self._users = {
             "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, status="active"),
             "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active"),
@@ -23,6 +31,12 @@ class _UsersRepo:
 
     async def list_active_user_parent_pairs(self):
         return [(item.id, item.id_parent) for item in self._users.values() if item.status == "active"]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 class _ProfilesRepo:

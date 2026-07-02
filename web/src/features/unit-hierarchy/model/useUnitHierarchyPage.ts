@@ -310,23 +310,34 @@ export const useUnitHierarchyPage = () => {
         return;
       }
 
-      if (!preserveSelection || selectedDepartmentId === null || !findUnitById(nextDepartments, selectedDepartmentId)) {
-        setSelectedDepartmentId(nextDepartments[0]!.unit_id);
-      }
+      setSelectedDepartmentId((previousDepartmentId) => {
+        if (
+          !preserveSelection
+          || previousDepartmentId === null
+          || !findUnitById(nextDepartments, previousDepartmentId)
+        ) {
+          return nextDepartments[0]!.unit_id;
+        }
+        return previousDepartmentId;
+      });
 
-      if (selectedEditorUnitId !== null && !findUnitById(nextTree, selectedEditorUnitId)) {
-        setSelectedEditorUnitId(null);
-      }
+      setSelectedEditorUnitId((previousEditorUnitId) => (
+        previousEditorUnitId !== null && !findUnitById(nextTree, previousEditorUnitId)
+          ? null
+          : previousEditorUnitId
+      ));
 
-      if (activeUnitDetailsId !== null && !findUnitById(nextTree, activeUnitDetailsId)) {
-        setActiveUnitDetailsId(null);
-      }
+      setActiveUnitDetailsId((previousDetailsUnitId) => (
+        previousDetailsUnitId !== null && !findUnitById(nextTree, previousDetailsUnitId)
+          ? null
+          : previousDetailsUnitId
+      ));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить иерархию подразделений');
     } finally {
       setIsLoading(false);
     }
-  }, [activeUnitDetailsId, loadUnassignedUsers, selectedDepartmentId, selectedEditorUnitId]);
+  }, [loadUnassignedUsers]);
 
   useEffect(() => {
     void loadTree(false);

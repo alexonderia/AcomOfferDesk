@@ -231,6 +231,18 @@ class UnitService:
         if self._is_superadmin(current_user):
             return rows
 
+        if current_user.role_id == settings.admin_role_id:
+            # Admins manage units only inside their department, but may assign any
+            # internal employee to those units, including staff from other roots.
+            return [
+                row
+                for row in rows
+                if row[0].id_role not in {
+                    settings.contractor_role_id,
+                    settings.superadmin_role_id,
+                }
+            ]
+
         visible_user_ids = await UnitHierarchyService(self._users).get_visible_user_ids(
             current_user=current_user,
         )

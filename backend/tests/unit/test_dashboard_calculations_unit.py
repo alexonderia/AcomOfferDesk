@@ -306,14 +306,45 @@ async def test_get_request_stats_for_selected_plan_uses_attached_plan_ids(make_c
     root = _make_plan_tree_node(plan_id=1, user_id="lead-1", children=[child])
 
     class _UsersRepo:
+        _units = [(1, None), (2, 1), (3, 2)]
+        _memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("econ-1", 3),
+        ]
+
         async def get_by_id(self, user_id: str):
             if user_id == "lead-1":
-                return SimpleNamespace(id="lead-1", id_parent="pm-1")
+                return SimpleNamespace(
+                    id="lead-1",
+                    id_role=settings.lead_economist_role_id,
+                    id_parent="pm-1",
+                )
             if user_id == "econ-1":
-                return SimpleNamespace(id="econ-1", id_parent="lead-1")
+                return SimpleNamespace(
+                    id="econ-1",
+                    id_role=settings.economist_role_id,
+                    id_parent="lead-1",
+                )
             if user_id == "pm-1":
-                return SimpleNamespace(id="pm-1", id_parent=None)
+                return SimpleNamespace(
+                    id="pm-1",
+                    id_role=settings.project_manager_role_id,
+                    id_parent=None,
+                )
             return None
+
+        async def list_active_user_parent_pairs(self):
+            return [
+                ("lead-1", "pm-1"),
+                ("econ-1", "lead-1"),
+            ]
+
+        async def list_active_units(self):
+            return list(self._units)
+
+        async def list_active_unit_memberships(self):
+            return list(self._memberships)
 
     service = PlanService(
         plans=SimpleNamespace(),
@@ -357,6 +388,13 @@ async def test_get_request_stats_for_selected_plan_uses_attached_plan_ids(make_c
 
 class _PlanUsersRepo:
     def __init__(self) -> None:
+        self._units = [(1, None), (2, 1), (3, 2)]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("econ-1", 3),
+            ("econ-2", 3),
+        ]
         self._users = {
             "pm-1": SimpleNamespace(
                 id="pm-1",
@@ -389,6 +427,12 @@ class _PlanUsersRepo:
             ("econ-1", "lead-1"),
             ("econ-2", "lead-1"),
         ]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 @pytest.mark.asyncio

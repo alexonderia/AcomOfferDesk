@@ -394,7 +394,7 @@ def test_user_action_builder_hierarchy_subordinate_can_manage_status_and_role(ma
 
     assert actions.can_update_status is True
     assert actions.can_update_role is True
-    assert actions.can_update_manager is True
+    assert actions.can_update_manager is False
 
 
 def test_user_action_builder_admin_can_update_contractor_status_with_users_status_update(make_current_user):
@@ -543,5 +543,5 @@ def test_user_action_builder_internal_manager_can_manage_subordinate(make_curren
 
     assert actions.can_view_profile is True
     assert actions.can_update_status is True
-    assert actions.can_update_manager is True
+    assert actions.can_update_manager is False
     assert actions.can_manage_subordinate_unavailability is True

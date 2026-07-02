@@ -173,6 +173,7 @@ def test_security_officer_role_has_only_expected_permissions() -> None:
         {
             PermissionCodes.PROFILE_MANAGE_OWN,
             PermissionCodes.FEEDBACK_CREATE,
+            PermissionCodes.UNITS_READ,
             PermissionCodes.CONTRACTORS_READ,
             PermissionCodes.CONTRACTORS_PROFILE_READ,
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
@@ -180,7 +181,7 @@ def test_security_officer_role_has_only_expected_permissions() -> None:
     )
 
 
-def test_units_permissions_are_granted_only_to_superadmin_and_admin() -> None:
+def test_units_permissions_are_granted_to_hierarchy_roles_for_subtree_management() -> None:
     role_map = get_role_permissions_map()
     unit_permissions = {
         PermissionCodes.UNITS_READ,
@@ -196,8 +197,19 @@ def test_units_permissions_are_granted_only_to_superadmin_and_admin() -> None:
         settings.project_manager_role_id,
         settings.lead_economist_role_id,
         settings.economist_role_id,
-        settings.operator_role_id,
-        settings.contractor_role_id,
-        settings.security_officer_role_id,
     ):
-        assert unit_permissions.isdisjoint(role_map[role_id])
+        assert unit_permissions.issubset(role_map[role_id])
+
+    assert {PermissionCodes.UNITS_READ}.issubset(role_map[settings.operator_role_id])
+    assert unit_permissions.isdisjoint(role_map[settings.operator_role_id] - {PermissionCodes.UNITS_READ})
+    assert unit_permissions.isdisjoint(role_map[settings.contractor_role_id])
+
+    assert role_map[settings.security_officer_role_id] == {
+        PermissionCodes.UNITS_READ,
+    } | {
+        PermissionCodes.PROFILE_MANAGE_OWN,
+        PermissionCodes.FEEDBACK_CREATE,
+        PermissionCodes.CONTRACTORS_READ,
+        PermissionCodes.CONTRACTORS_PROFILE_READ,
+        PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+    }

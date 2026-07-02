@@ -314,7 +314,7 @@ async def test_admin_can_list_available_users_without_target_unit(service_contex
         search="econ",
     )
 
-    assert [row.user_id for row in rows] == ["econ-1"]
+    assert [row.user_id for row in rows] == ["econ-1", "econ-2"]
 
 
 @pytest.mark.asyncio
@@ -332,7 +332,7 @@ async def test_available_users_exclude_contractors(service_context, make_current
 
 
 @pytest.mark.asyncio
-async def test_admin_available_users_are_scoped_to_own_department_and_exclude_superadmin(
+async def test_admin_available_users_include_staff_from_other_departments(
     service_context,
     make_current_user,
 ) -> None:
@@ -379,8 +379,49 @@ async def test_admin_available_users_are_scoped_to_own_department_and_exclude_su
 
     visible_ids = [row.user_id for row in rows]
     assert "econ-1" in visible_ids
-    assert "pm-foreign" not in visible_ids
+    assert "pm-foreign" in visible_ids
     assert "superadmin-1" not in visible_ids
+
+
+@pytest.mark.asyncio
+async def test_admin_can_assign_staff_from_other_department(service_context, make_current_user) -> None:
+    service_context.users.users["pm-foreign"] = User(
+        id="pm-foreign",
+        id_role=settings.project_manager_role_id,
+        id_parent=None,
+        status="active",
+    )
+    service_context.units.profiles["pm-foreign"] = Profile(
+        id="pm-foreign",
+        full_name="РП вне департамента",
+        phone=None,
+        mail=None,
+    )
+    service_context.units.units[4] = Unit(
+        id=4,
+        name="Департамент B",
+        id_parent=None,
+        is_active=True,
+        id_created_by_user="superadmin-1",
+    )
+    service_context.units.members[(4, "pm-foreign")] = UnitMember(
+        id_unit=4,
+        id_user="pm-foreign",
+        id_assigned_by_user="superadmin-1",
+        is_active=True,
+    )
+
+    await service_context.service.add_member(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+        ),
+        unit_id=2,
+        user_id="pm-foreign",
+    )
+
+    assert service_context.units.members[(2, "pm-foreign")].is_active is True
 
 
 @pytest.mark.asyncio

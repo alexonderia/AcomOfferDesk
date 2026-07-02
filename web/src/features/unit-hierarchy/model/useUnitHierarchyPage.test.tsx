@@ -296,13 +296,14 @@ describe('useUnitHierarchyPage', () => {
     expect(deleteUnitMock).toHaveBeenCalledWith(2, true);
     expect(showSuccessToastMock).toHaveBeenCalledWith('Объединение удалено');
   });
-  it('builds move targets from the member unit root instead of the currently selected department', async () => {
-    getUnitsTreeMock.mockResolvedValueOnce(multiDepartmentTreeResponse);
+  it('builds move targets from all manageable units except the source unit', async () => {
+    getUnitsTreeMock.mockResolvedValue(multiDepartmentTreeResponse);
 
     const { result } = renderHook(() => useUnitHierarchyPage());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.selectedDepartment?.name).toBe('Финансы');
+    expect(result.current.departments).toHaveLength(2);
 
     const module2 = result.current.departments[1]!.children[0]!;
     const member = module2.members[0]!;
@@ -312,6 +313,8 @@ describe('useUnitHierarchyPage', () => {
     });
 
     expect(result.current.moveUnitOptions).toEqual([
+      { unitId: 1, label: 'Финансы' },
+      { unitId: 2, label: 'Финансы / Проект А' },
       { unitId: 10, label: 'АО' },
       { unitId: 12, label: 'АО / Модуль 2.1' },
       { unitId: 13, label: 'АО / Модуль 2.1 / Модуль 2.1.1' },

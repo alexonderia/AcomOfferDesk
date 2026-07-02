@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import settings
-from app.domain.exceptions import Conflict
+from app.domain.exceptions import Conflict, Forbidden
 from app.models.orm_models import Profile, Role, Unit, UnitMember, User
 from app.services.units import UnitService
 
@@ -314,7 +314,7 @@ async def test_admin_can_list_available_users_without_target_unit(service_contex
         search="econ",
     )
 
-    assert [row.user_id for row in rows] == ["econ-1", "econ-2"]
+    assert [row.user_id for row in rows] == ["econ-1"]
 
 
 @pytest.mark.asyncio
@@ -329,6 +329,58 @@ async def test_available_users_exclude_contractors(service_context, make_current
     )
 
     assert "contractor-1" not in [row.user_id for row in rows]
+
+
+@pytest.mark.asyncio
+async def test_admin_available_users_are_scoped_to_own_department_and_exclude_superadmin(
+    service_context,
+    make_current_user,
+) -> None:
+    service_context.users.users["pm-foreign"] = User(
+        id="pm-foreign",
+        id_role=settings.project_manager_role_id,
+        id_parent=None,
+        status="active",
+    )
+    service_context.units.profiles["pm-foreign"] = Profile(
+        id="pm-foreign",
+        full_name="РП вне департамента",
+        phone=None,
+        mail=None,
+    )
+    service_context.units.units[4] = Unit(
+        id=4,
+        name="Департамент B",
+        id_parent=None,
+        is_active=True,
+        id_created_by_user="superadmin-1",
+    )
+    service_context.units.members[(4, "pm-foreign")] = UnitMember(
+        id_unit=4,
+        id_user="pm-foreign",
+        id_assigned_by_user="superadmin-1",
+        is_active=True,
+    )
+    service_context.units.members[(1, "superadmin-1")] = UnitMember(
+        id_unit=1,
+        id_user="superadmin-1",
+        id_assigned_by_user="superadmin-1",
+        is_active=True,
+    )
+
+    rows = await service_context.service.list_available_users_for_unit(
+        current_user=make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+        ),
+        unit_id=None,
+    )
+
+    visible_ids = [row.user_id for row in rows]
+    assert "econ-1" in visible_ids
+    assert "pm-foreign" not in visible_ids
+    assert "superadmin-1" not in visible_ids
 
 
 @pytest.mark.asyncio
@@ -363,6 +415,41 @@ async def test_add_member_rejects_contractors(service_context, make_current_user
 
 
 @pytest.mark.asyncio
+async def test_admin_cannot_add_superadmin_to_unit(service_context, make_current_user) -> None:
+    with pytest.raises(Forbidden, match="Суперадмина нельзя привязывать"):
+        await service_context.service.add_member(
+            current_user=make_current_user(
+                user_id="admin-1",
+                role_id=settings.admin_role_id,
+                permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+            ),
+            unit_id=1,
+            user_id="superadmin-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_remove_superadmin_from_unit(service_context, make_current_user) -> None:
+    service_context.units.members[(1, "superadmin-1")] = UnitMember(
+        id_unit=1,
+        id_user="superadmin-1",
+        id_assigned_by_user="superadmin-1",
+        is_active=True,
+    )
+
+    with pytest.raises(Forbidden, match="Суперадмина нельзя привязывать"):
+        await service_context.service.remove_member(
+            current_user=make_current_user(
+                user_id="admin-1",
+                role_id=settings.admin_role_id,
+                permissions={"units.create", "units.read", "units.update", "units.members.manage"},
+            ),
+            unit_id=1,
+            user_id="superadmin-1",
+        )
+
+
+@pytest.mark.asyncio
 async def test_get_tree_returns_units_with_members(service_context, make_current_user) -> None:
     tree = await service_context.service.get_tree(
         current_user=make_current_user(
@@ -386,6 +473,12 @@ async def test_get_tree_for_user_hierarchy_returns_all_assigned_department_roots
     service_context,
     make_current_user,
 ) -> None:
+    service_context.units.members[(1, "pm-1")] = UnitMember(
+        id_unit=1,
+        id_user="pm-1",
+        id_assigned_by_user="superadmin-1",
+        is_active=True,
+    )
     service_context.units.units[4] = Unit(
         id=4,
         name="Департамент B",
@@ -605,3 +698,54 @@ async def test_delete_unit_reassigns_direct_members_and_children_to_parent(servi
     assert service_context.units.members[(2, "econ-1")].is_active is False
     assert service_context.units.members[(1, "econ-1")].is_active is True
     assert service_context.units.members[(3, "econ-2")].is_active is True
+
+
+@pytest.mark.asyncio
+async def test_lead_economist_can_manage_own_subtree(service_context, make_current_user) -> None:
+    service_context.units.members[(2, "lead-1")] = UnitMember(
+        id_unit=2,
+        id_user="lead-1",
+        id_assigned_by_user="admin-1",
+        is_active=True,
+    )
+    lead_user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={"units.read", "units.create", "units.update", "units.members.manage"},
+    )
+
+    created = await service_context.service.create_unit(
+        current_user=lead_user,
+        name="Подгруппа",
+        id_parent=2,
+    )
+    assert created.name == "Подгруппа"
+
+    tree = await service_context.service.get_tree(current_user=lead_user)
+    project_node = next(node for node in tree[0].children if node.unit_id == 2)
+    module_node = next(child for child in project_node.children if child.unit_id == 3)
+    assert project_node.actions.can_manage_members is True
+    assert module_node.actions.can_manage_members is True
+    assert tree[0].actions.can_manage_members is False
+
+
+@pytest.mark.asyncio
+async def test_lead_economist_cannot_manage_outside_subtree(service_context, make_current_user) -> None:
+    service_context.units.members[(2, "lead-1")] = UnitMember(
+        id_unit=2,
+        id_user="lead-1",
+        id_assigned_by_user="admin-1",
+        is_active=True,
+    )
+    lead_user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={"units.read", "units.create", "units.update", "units.members.manage"},
+    )
+
+    with pytest.raises(Forbidden):
+        await service_context.service.create_unit(
+            current_user=lead_user,
+            name="Чужая ветка",
+            id_parent=1,
+        )

@@ -139,6 +139,11 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
         PermissionCodes.DASHBOARD_PLANS_READ,
         PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
     }
+    subtree_units_manage_permissions = {
+        PermissionCodes.UNITS_CREATE,
+        PermissionCodes.UNITS_UPDATE,
+        PermissionCodes.UNITS_MEMBERS_MANAGE,
+    }
     contractor_permissions = {
         PermissionCodes.PROFILE_MANAGE_OWN,
         PermissionCodes.COMPANY_CONTACTS_MANAGE_OWN,
@@ -209,6 +214,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
             }
+            | subtree_units_manage_permissions
             | {PermissionCodes.UNAVAILABILITY_MANAGE_OWN}
         ),
         settings.lead_economist_role_id: frozenset(
@@ -216,6 +222,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | internal_request_read_permissions
             | internal_request_manage_permissions
             | management_permissions
+            | subtree_units_manage_permissions
             | {
                 PermissionCodes.UNITS_READ,
                 PermissionCodes.CONTRACTORS_READ,
@@ -254,6 +261,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_MANUAL_CREATE,
                 PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
             }
+            | subtree_units_manage_permissions
         ),
         settings.security_officer_role_id: frozenset(
             common_permissions

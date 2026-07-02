@@ -268,6 +268,66 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.queryByLabelText('Открыть контрагентов объединения Проект А')).not.toBeInTheDocument();
   });
 
+  it('toggles department member preview grouped by categories', () => {
+    const viewState = buildViewState();
+    const departmentWithMembers = structuredClone(baseDepartment);
+    departmentWithMembers.children[0].members.push(
+      {
+        user_id: 'pm-1',
+        full_name: 'Руководитель проекта 1',
+        role_id: 4,
+        role_name: 'Руководитель Проекта',
+        status: 'active',
+      },
+      {
+        user_id: 'lead-1',
+        full_name: 'Ведущий экономист 1',
+        role_id: 5,
+        role_name: 'Ведущий экономист',
+        status: 'active',
+      },
+      {
+        user_id: 'operator-1',
+        full_name: 'Оператор 1',
+        role_id: 7,
+        role_name: 'Оператор',
+        status: 'active',
+      },
+      {
+        user_id: 'contractor-1',
+        full_name: 'Контрагент 1',
+        role_id: 3,
+        role_name: 'Контрагент',
+        status: 'active',
+      },
+    );
+    viewState.tree = [departmentWithMembers];
+    viewState.departments = [departmentWithMembers];
+    viewState.selectedDepartment = departmentWithMembers;
+    viewState.findRootUnitForUnit = vi.fn(() => departmentWithMembers);
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Подразделение для просмотра' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Финансовый блок' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать состав подразделения' }));
+
+    expect(screen.getByText('Экономисты (РП, ВЭ, Э)')).toBeInTheDocument();
+    expect(screen.getAllByText('Другие сотрудники').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Контрагенты').length).toBeGreaterThan(0);
+    expect(screen.getByText('Руководитель проекта 1')).toBeInTheDocument();
+    expect(screen.getByText('Ведущий экономист 1')).toBeInTheDocument();
+    expect(screen.getByText('Экономист 1')).toBeInTheDocument();
+    expect(screen.getByText('Оператор 1')).toBeInTheDocument();
+    expect(screen.getByText('Контрагент 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать объединения подразделения' }));
+
+    expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
+  });
+
   it('hides unassigned employees block for read-only users', () => {
     const viewState = buildViewState();
     viewState.canManageUnitMembers = false;

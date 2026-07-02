@@ -13,6 +13,15 @@ from app.repositories.users import UserRepository
 from app.services.unit_hierarchy import UnitHierarchyService
 
 
+_HIERARCHY_MANAGE_ROLE_IDS = frozenset(
+    {
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+        settings.economist_role_id,
+    }
+)
+
+
 def _utcnow_naive() -> datetime:
     return datetime.utcnow()
 
@@ -88,6 +97,46 @@ class UnitService:
             return set()
         return set(await self._units.list_user_root_unit_ids(user_id=current_user.user_id))
 
+    def _uses_hierarchy_scoped_management(self, current_user: CurrentUser) -> bool:
+        return current_user.role_id in _HIERARCHY_MANAGE_ROLE_IDS
+
+    async def _get_hierarchy_manageable_unit_ids(self, *, current_user: CurrentUser) -> set[int]:
+        if not self._uses_hierarchy_scoped_management(current_user):
+            return set()
+        return await UnitHierarchyService(self._users).get_registration_assignable_unit_ids(
+            user_id=current_user.user_id,
+        )
+
+    async def _can_manage_unit_for_user(self, *, current_user: CurrentUser, unit: Unit) -> bool:
+        if not unit.is_active:
+            return False
+        if self._is_superadmin(current_user):
+            return True
+        if current_user.role_id == settings.admin_role_id:
+            manageable_root_ids = await self._list_manageable_root_ids(current_user=current_user)
+            root_unit_id = await self._resolve_root_unit_id(unit=unit)
+            return root_unit_id in manageable_root_ids
+        if self._uses_hierarchy_scoped_management(current_user):
+            manageable_unit_ids = await self._get_hierarchy_manageable_unit_ids(current_user=current_user)
+            return int(unit.id) in manageable_unit_ids
+        return False
+
+    async def _ensure_member_assignable_by_current_user(
+        self,
+        *,
+        current_user: CurrentUser,
+        user_id: str,
+    ) -> None:
+        if self._is_superadmin(current_user) or current_user.role_id == settings.admin_role_id:
+            return
+        if not self._uses_hierarchy_scoped_management(current_user):
+            return
+        visible_user_ids = await UnitHierarchyService(self._users).get_visible_user_ids(
+            current_user=current_user,
+        )
+        if visible_user_ids is not None and user_id not in visible_user_ids:
+            raise Forbidden("Недостаточно прав для управления этим сотрудником")
+
     async def _resolve_root_unit_id(self, *, unit: Unit) -> int:
         cursor = unit
         visited: set[int] = set()
@@ -135,16 +184,10 @@ class UnitService:
             raise Forbidden("Недостаточно прав для просмотра этого подразделения")
         return readable_root_ids
 
-    async def _ensure_manage_access(self, *, current_user: CurrentUser, unit: Unit) -> set[int]:
-        manageable_root_ids = await self._list_manageable_root_ids(current_user=current_user)
-        if self._is_superadmin(current_user):
-            return manageable_root_ids
-        if current_user.role_id != settings.admin_role_id:
-            raise Forbidden("Недостаточно прав для управления подразделением")
-        root_unit_id = await self._resolve_root_unit_id(unit=unit)
-        if root_unit_id not in manageable_root_ids:
-            raise Forbidden("Недостаточно прав для управления этим подразделением")
-        return manageable_root_ids
+    async def _ensure_manage_access(self, *, current_user: CurrentUser, unit: Unit) -> None:
+        if await self._can_manage_unit_for_user(current_user=current_user, unit=unit):
+            return
+        raise Forbidden("Недостаточно прав для управления этим подразделением")
 
     async def _ensure_unique_name(
         self,
@@ -178,6 +221,34 @@ class UnitService:
             role_name=role.role,
             status=user.status,
         )
+
+    async def _filter_available_internal_rows_for_current_user(
+        self,
+        *,
+        current_user: CurrentUser,
+        rows: list[tuple],
+    ) -> list[tuple]:
+        if self._is_superadmin(current_user):
+            return rows
+
+        visible_user_ids = await UnitHierarchyService(self._users).get_visible_user_ids(
+            current_user=current_user,
+        )
+        return [
+            row
+            for row in rows
+            if row[0].id in visible_user_ids
+            and row[0].id_role not in {
+                settings.contractor_role_id,
+                settings.superadmin_role_id,
+            }
+        ]
+
+    def _ensure_non_superadmin_binding_target(self, *, current_user: CurrentUser, user: User) -> None:
+        if self._is_superadmin(current_user):
+            return
+        if user.id_role == settings.superadmin_role_id:
+            raise Forbidden("Суперадмина нельзя привязывать к юнитам или убирать из них")
 
     def _build_recommended_hierarchy_node_state(
         self,
@@ -305,22 +376,8 @@ class UnitService:
         for unit_id, unit_rows in member_rows_by_unit.items():
             members_by_unit[unit_id] = await self._build_member_states(rows=unit_rows)
 
-        manageable_root_ids = await self._list_manageable_root_ids(current_user=current_user)
-        root_cache: dict[int, int] = {}
-
         async def _can_manage_unit(unit: Unit) -> bool:
-            if not unit.is_active:
-                return False
-            if self._is_superadmin(current_user):
-                return True
-            if current_user.role_id != settings.admin_role_id:
-                return False
-            unit_id = int(unit.id)
-            root_id = root_cache.get(unit_id)
-            if root_id is None:
-                root_id = await self._resolve_root_unit_id(unit=unit)
-                root_cache[unit_id] = root_id
-            return root_id in manageable_root_ids
+            return await self._can_manage_unit_for_user(current_user=current_user, unit=unit)
 
         async def _build_node(unit: Unit) -> UnitNodeState:
             unit_id = int(unit.id)
@@ -616,6 +673,43 @@ class UnitService:
             membership.id_assigned_by_user = assigned_by_user_id
             membership.updated_at = _utcnow_naive()
 
+    async def _registration_assignable_unit_ids(self, *, current_user: CurrentUser) -> set[int]:
+        return await UnitHierarchyService(self._users).get_registration_assignable_unit_ids(
+            user_id=current_user.user_id,
+        )
+
+    async def add_member_on_registration(
+        self,
+        *,
+        current_user: CurrentUser,
+        unit_id: int,
+        user_id: str,
+    ) -> None:
+        UserPolicy.ensure_can_register_user(current_user)
+        unit = await self._units.get_by_id(unit_id)
+        if unit is None:
+            raise NotFound("Юнит не найден")
+        if not unit.is_active:
+            raise Conflict("Нельзя добавлять сотрудников в неактивный юнит")
+
+        allowed_unit_ids = await self._registration_assignable_unit_ids(current_user=current_user)
+        if int(unit_id) not in allowed_unit_ids:
+            raise Forbidden("Нельзя назначить пользователя в выбранное объединение")
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("Пользователь не найден")
+        self._ensure_non_superadmin_binding_target(current_user=current_user, user=user)
+        if user.id_role == settings.contractor_role_id:
+            raise Conflict("Контрагентов нельзя назначать в юниты через создание сотрудника")
+
+        await self._ensure_active_membership(
+            unit_id=unit_id,
+            user_id=user_id,
+            assigned_by_user_id=current_user.user_id,
+        )
+        await self._units.flush()
+
     async def add_member(
         self,
         *,
@@ -634,8 +728,10 @@ class UnitService:
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise NotFound("Пользователь не найден")
+        self._ensure_non_superadmin_binding_target(current_user=current_user, user=user)
         if user.id_role == settings.contractor_role_id:
             raise Conflict("Контрагентов нельзя назначать в юниты через редактор сотрудников")
+        await self._ensure_member_assignable_by_current_user(current_user=current_user, user_id=user_id)
 
         membership = await self._units.get_member(unit_id=unit_id, user_id=user_id)
         if membership is not None and membership.is_active:
@@ -680,6 +776,12 @@ class UnitService:
         membership = await self._units.get_member(unit_id=unit_id, user_id=user_id)
         if membership is None or not membership.is_active:
             raise NotFound("Участник юнита не найден")
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("Пользователь не найден")
+        self._ensure_non_superadmin_binding_target(current_user=current_user, user=user)
+        await self._ensure_member_assignable_by_current_user(current_user=current_user, user_id=user_id)
 
         membership.is_active = False
         membership.updated_at = _utcnow_naive()
@@ -751,12 +853,23 @@ class UnitService:
         UserPolicy.ensure_can_manage_unit_members(current_user)
         if unit_id is None:
             if not self._is_superadmin(current_user):
-                if current_user.role_id != settings.admin_role_id:
-                    raise Forbidden("Недостаточно прав для подбора сотрудников")
-                manageable_root_ids = await self._list_manageable_root_ids(current_user=current_user)
-                if not manageable_root_ids:
+                if current_user.role_id == settings.admin_role_id:
+                    manageable_root_ids = await self._list_manageable_root_ids(current_user=current_user)
+                    if not manageable_root_ids:
+                        raise Forbidden("Недостаточно прав для подбора сотрудников")
+                elif self._uses_hierarchy_scoped_management(current_user):
+                    manageable_unit_ids = await self._get_hierarchy_manageable_unit_ids(
+                        current_user=current_user,
+                    )
+                    if not manageable_unit_ids:
+                        raise Forbidden("Недостаточно прав для подбора сотрудников")
+                else:
                     raise Forbidden("Недостаточно прав для подбора сотрудников")
             rows = await self._units.list_available_users_for_unit(unit_id=None, search=search)
+            rows = await self._filter_available_internal_rows_for_current_user(
+                current_user=current_user,
+                rows=rows,
+            )
             return [
                 self._build_available_user_state(user=user, profile=profile, role=role)
                 for user, profile, role in rows
@@ -769,6 +882,10 @@ class UnitService:
             raise Conflict("Для неактивного юнита нельзя подбирать сотрудников")
         await self._ensure_manage_access(current_user=current_user, unit=unit)
         rows = await self._units.list_available_users_for_unit(unit_id=unit_id, search=search)
+        rows = await self._filter_available_internal_rows_for_current_user(
+            current_user=current_user,
+            rows=rows,
+        )
         return [
             self._build_available_user_state(user=user, profile=profile, role=role)
             for user, profile, role in rows
@@ -785,6 +902,10 @@ class UnitService:
         rows = await self._units.list_unassigned_users(
             contractor_role_id=settings.contractor_role_id,
             search=search,
+        )
+        rows = await self._filter_available_internal_rows_for_current_user(
+            current_user=current_user,
+            rows=rows,
         )
         return [
             self._build_available_user_state(user=user, profile=profile, role=role)

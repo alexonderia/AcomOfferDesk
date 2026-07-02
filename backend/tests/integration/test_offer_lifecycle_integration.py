@@ -107,6 +107,26 @@ class _OfferRepo:
 
 class _NoopUsersRepo:
     def __init__(self) -> None:
+        self._units = [
+            (1, None),
+            (2, 1),
+            (3, 1),
+        ]
+        self._unit_details = [
+            (1, "Department A", None),
+            (2, "Lead 1 Module", 1),
+            (3, "Lead 2 Module", 1),
+        ]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("econ-1", 2),
+            ("owner-1", 2),
+            ("lead-2", 3),
+            ("econ-2", 3),
+            ("contractor-1", 1),
+            ("contractor-2", 1),
+        ]
         self._users = {
             "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, tg_user_id=None),
             "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
@@ -130,6 +150,15 @@ class _NoopUsersRepo:
             ("econ-1", "lead-1"),
             ("econ-2", "lead-2"),
         ]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_details(self):
+        return list(self._unit_details)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
     async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int):
         _ = (user_id, contractor_role_id)
@@ -215,6 +244,7 @@ class _OfferLifecycleUow:
         self.profiles = _NoopProfilesRepo()
         self.company_contacts = _NoopCompanyContactsRepo()
         self.users = _NoopUsersRepo()
+        self.units = object()
         self.user_status_periods = None
         self.feedback = None
         self.tg_users = None

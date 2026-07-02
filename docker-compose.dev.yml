@@ -46,7 +46,7 @@ services:
       - project_net
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.6.1
     container_name: cloudflared
     command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://gateway:80"]
     profiles:

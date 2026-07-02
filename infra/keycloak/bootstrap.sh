@@ -458,6 +458,9 @@ offers.contractor_info.read
 chat.read
 files.download
 units.read
+units.create
+units.update
+units.members.manage
 users.read
 contractors.read
 contractors.profile.read
@@ -503,6 +506,9 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 units.read
+units.create
+units.update
+units.members.manage
 users.read
 contractors.read
 contractors.profile.read
@@ -554,6 +560,9 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 units.read
+units.create
+units.update
+units.members.manage
 users.read
 contractors.read
 contractors.profile.read

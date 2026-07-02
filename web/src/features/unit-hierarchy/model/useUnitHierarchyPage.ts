@@ -15,7 +15,7 @@ import {
   type UnitMember,
   type UnitNode,
 } from '@shared/api/units';
-import { buildUnitOptions } from '@shared/lib/hierarchy/buildUnitOptions';
+import { buildManageableUnitOptions, buildUnitOptions } from '@shared/lib/hierarchy/buildUnitOptions';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 type UnitDialogMode = 'create-root' | 'create-child' | 'edit' | null;
@@ -242,28 +242,20 @@ export const useUnitHierarchyPage = () => {
     [selectedDepartment]
   );
 
-  const moveMemberRootUnit = useMemo(() => {
-    if (!moveMemberState) {
-      return null;
-    }
-
-    return findRootUnitForUnit(tree, moveMemberState.fromUnit.unit_id);
-  }, [moveMemberState, tree]);
-
   const moveUnitOptions = useMemo(() => {
-    if (!moveMemberState || !moveMemberRootUnit) {
+    if (!moveMemberState) {
       return [];
     }
 
-    return buildUnitOptions([moveMemberRootUnit])
+    return buildManageableUnitOptions(tree)
       .filter((option) => option.unitId !== moveMemberState.fromUnit.unit_id)
       .map((option) => ({
         unitId: option.unitId,
         label: option.label,
       }));
-  }, [moveMemberRootUnit, moveMemberState]);
+  }, [moveMemberState, tree]);
 
-  const assignUnitOptions = useMemo(() => buildUnitOptions(tree), [tree]);
+  const assignUnitOptions = useMemo(() => buildManageableUnitOptions(tree), [tree]);
 
   const activeUnitParent = useMemo(
     () => (activeUnitDetails ? findParentUnit(tree, activeUnitDetails.unit_id) : null),
@@ -276,13 +268,13 @@ export const useUnitHierarchyPage = () => {
   );
 
   const editableParentOptions = useMemo(() => {
-    if (unitDialogState.mode !== 'edit' || !unitDialogState.unit || !selectedDepartment) {
+    if (unitDialogState.mode !== 'edit' || !unitDialogState.unit) {
       return [];
     }
 
     const blockedIds = collectDescendantUnitIds(unitDialogState.unit);
-    return buildUnitOptions([selectedDepartment]).filter((option) => !blockedIds.has(option.unitId));
-  }, [selectedDepartment, unitDialogState]);
+    return buildManageableUnitOptions(tree).filter((option) => !blockedIds.has(option.unitId));
+  }, [tree, unitDialogState]);
 
   const loadUnassignedUsers = useCallback(async () => {
     if (!canManageUnitMembers) {

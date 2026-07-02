@@ -180,6 +180,32 @@ describe('useAdminPage', () => {
     ]);
   });
 
+  it('loads unit options for lead economist without units.members.manage', async () => {
+    useAuthMock.mockReturnValue({
+      session: {
+        roleId: ROLE.LEAD_ECONOMIST,
+        permissions: ['users.create', 'users.read', 'units.read'],
+      },
+    });
+
+    const { result } = renderHook(() => useAdminPage(), { wrapper });
+
+    await waitFor(() => expect(result.current.activeTab).toBe('economists'));
+
+    act(() => {
+      result.current.openCreateDialog();
+    });
+
+    await waitFor(() => expect(getUnitsTreeMock).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.unitOptions).toEqual([
+      { unitId: 1, label: 'АО' },
+      { unitId: 2, label: 'АО / Модуль 1' },
+    ]));
+    expect(result.current.canShowUnitOnCreate).toBe(true);
+    expect(result.current.canAssignUnitOnCreate).toBe(false);
+    expect(result.current.form.getValues('unit_id')).toBe(2);
+  });
+
   it('passes selected unit when creating an employee', async () => {
     registerUserMock.mockResolvedValue({
       data: {
@@ -195,6 +221,11 @@ describe('useAdminPage', () => {
 
     act(() => {
       result.current.handleTabChange('economists');
+    });
+
+    await waitFor(() => expect(result.current.activeTab).toBe('economists'));
+
+    act(() => {
       result.current.openCreateDialog();
     });
 

@@ -50,6 +50,7 @@ export const AdminPageView = () => {
     getRoleLabel,
     canOpenCreateDialog,
     canAssignUnitOnCreate,
+    canShowUnitOnCreate,
     isContractorRole,
     isLoadingUnitOptions,
     loadUsers,
@@ -318,7 +319,7 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
 
-                  {canAssignUnitOnCreate && unitOptions.length > 0 ? (
+                  {canShowUnitOnCreate && unitOptions.length > 0 ? (
                     <>
                       <Typography sx={sectionTitleSx}>
                         Объединение
@@ -341,7 +342,11 @@ export const AdminPageView = () => {
                             {...params}
                             label="Объединение"
                             placeholder="Выберите объединение"
-                            helperText="Необязательно. Можно назначить сразу при создании."
+                            helperText={
+                              canAssignUnitOnCreate
+                                ? 'Необязательно. Можно назначить сразу при создании.'
+                                : 'По умолчанию выбрано ваше подразделение. Можно изменить перед созданием.'
+                            }
                             sx={inputFieldSx}
                           />
                         )}

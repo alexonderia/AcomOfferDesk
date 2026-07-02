@@ -1,8 +1,9 @@
-import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined';
+﻿import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined';
+import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import HandshakeOutlinedIcon from '@mui/icons-material/HandshakeOutlined';
 import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
@@ -43,6 +44,7 @@ import { UnitOrgChart } from './UnitOrgChart';
 import {
   hierarchyCanvasBackground,
   hierarchyPageColors,
+  outlinedActionIconButtonSx,
   orgNodeCardSx,
   outlinedIconButtonSx,
   sectionCardSx,
@@ -82,6 +84,7 @@ type OverviewUnitCard = {
 };
 
 type OverviewMemberView = 'staff' | 'contractors';
+type DepartmentPreviewMode = 'units' | 'members';
 
 const UnitFormDialog = ({
   isSaving,
@@ -169,6 +172,33 @@ const collectUniqueMembers = (unit: UnitNode, includeContractors: boolean) => {
   return [...byUserId.values()];
 };
 
+const collectDepartmentRootOnlyStaff = (department: UnitNode): UnitMember[] => {
+  const childUserIds = new Set<string>();
+  department.children.forEach((child) => {
+    collectUniqueMembers(child, false).forEach((member) => {
+      childUserIds.add(member.user_id);
+    });
+  });
+
+  return department.members.filter(
+    (member) => member.role_id !== ROLE.CONTRACTOR && !childUserIds.has(member.user_id),
+  );
+};
+
+const collectOverviewStaffCount = (
+  departments: UnitNode[],
+  overviewCards: OverviewUnitCard[],
+  unassignedCount: number,
+) => {
+  const cardStaffCount = overviewCards.reduce((sum, card) => sum + card.totalStaff, 0);
+  const rootOnlyStaffCount = departments.reduce(
+    (sum, department) => sum + collectDepartmentRootOnlyStaff(department).length,
+    0,
+  );
+
+  return cardStaffCount + rootOnlyStaffCount + unassignedCount;
+};
+
 const countUnits = (unit: UnitNode): number =>
   1 + unit.children.reduce((sum, child) => sum + countUnits(child), 0);
 
@@ -244,6 +274,12 @@ const buildOverviewUnitCards = (department: UnitNode, normalizedQuery: string): 
 const sumVisibleMembers = (cards: OverviewUnitCard[], key: 'visibleStaff' | 'visibleContractors') =>
   cards.reduce((sum, card) => sum + card[key].length, 0);
 
+const economistRoleIds = new Set<number>([
+  ROLE.PROJECT_MANAGER,
+  ROLE.LEAD_ECONOMIST,
+  ROLE.ECONOMIST,
+]);
+
 const UnitStatTile = ({
   color,
   label,
@@ -289,10 +325,45 @@ const UnitStatRow = ({
   </Stack>
 );
 
+const DepartmentMemberSections = ({
+  economists,
+  contractors,
+  otherStaff,
+  searchApplied,
+}: {
+  economists: UnitMember[];
+  contractors: UnitMember[];
+  otherStaff: UnitMember[];
+  searchApplied: boolean;
+}) => {
+  const emptySuffix = searchApplied ? ' по заданному поиску' : '';
+
+  return (
+    <Stack spacing={1.2}>
+      <PeopleFlatList
+        emptyLabel={`Экономисты${emptySuffix} не найдены.`}
+        members={economists}
+        readonly
+        title="Экономисты (РП, ВЭ, Э)"
+      />
+      <PeopleFlatList
+        emptyLabel={`Другие сотрудники${emptySuffix} не найдены.`}
+        members={otherStaff}
+        readonly
+        title="Другие сотрудники"
+      />
+      <PeopleFlatList
+        emptyLabel={`Контрагенты${emptySuffix} не найдены.`}
+        members={contractors}
+        readonly
+        title="Контрагенты"
+      />
+    </Stack>
+  );
+};
+
 const compactOverviewActionButtonSx = {
-  ...outlinedIconButtonSx,
-  width: 36,
-  height: 36,
+  ...outlinedActionIconButtonSx,
 } as const;
 
 const CompactUnitActions = ({
@@ -310,19 +381,24 @@ const CompactUnitActions = ({
   size?: 'small' | 'medium';
   unitName: string;
 }) => {
-  const isSmall = size === 'small';
+  const iconSize = size === 'small' ? 42 : 44;
 
   return (
     <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center">
-      <Button
-        size={size}
-        variant="outlined"
-        startIcon={<LanOutlinedIcon sx={{ fontSize: 16 }} />}
-        onClick={onOpenSchema}
-        sx={{ minHeight: isSmall ? 38 : 42, borderRadius: isSmall ? 1.5 : 1.75, px: isSmall ? 1.6 : 2 }}
-      >
-        Схема
-      </Button>
+      <Tooltip title="Схема">
+        <IconButton
+          size="small"
+          aria-label={`Открыть схему объединения ${unitName}`}
+          onClick={onOpenSchema}
+          sx={{
+            ...compactOverviewActionButtonSx,
+            width: iconSize,
+            height: iconSize,
+          }}
+        >
+          <LanOutlinedIcon sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Tooltip>
       {showContractorsButton && canManageMembers ? (
         <Tooltip title="Контрагенты">
           <IconButton
@@ -336,6 +412,39 @@ const CompactUnitActions = ({
         </Tooltip>
       ) : null}
     </Stack>
+  );
+};
+
+const DepartmentPreviewModeButton = ({
+  value,
+  onClick,
+}: {
+  value: DepartmentPreviewMode;
+  onClick: () => void;
+}) => {
+  const isMembersView = value === 'members';
+
+  return (
+    <Tooltip title={isMembersView ? 'Объединения подразделения' : 'Состав подразделения'}>
+      <IconButton
+        size="small"
+        aria-label={isMembersView ? 'Показать объединения подразделения' : 'Показать состав подразделения'}
+        onClick={onClick}
+        sx={{
+          ...outlinedActionIconButtonSx,
+          color: isMembersView ? '#ffffff' : hierarchyPageColors.softBlue,
+          backgroundColor: isMembersView ? hierarchyPageColors.softBlue : '#ffffff',
+          '&:hover': {
+            borderColor: hierarchyPageColors.softBlue,
+            backgroundColor: isMembersView
+              ? alpha(hierarchyPageColors.softBlue, 0.9)
+              : alpha(hierarchyPageColors.softBlue, 0.08),
+          },
+        }}
+      >
+        <GroupsOutlinedIcon sx={{ fontSize: 18 }} />
+      </IconButton>
+    </Tooltip>
   );
 };
 
@@ -724,6 +833,7 @@ export const UnitHierarchyPageView = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOverviewUnitId, setSelectedOverviewUnitId] = useState<number | null>(null);
   const [selectedOverviewMemberView, setSelectedOverviewMemberView] = useState<OverviewMemberView>('staff');
+  const [departmentPreviewMode, setDepartmentPreviewMode] = useState<DepartmentPreviewMode>('units');
   const [editorViewMode, setEditorViewMode] = useState<'schema' | 'list'>('schema');
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
@@ -811,31 +921,64 @@ export const UnitHierarchyPageView = () => {
     return groups;
   }, [overviewCards]);
 
+  const unassignedMembers = useMemo<UnitMember[]>(
+    () => (unassignedUsers ?? [])
+      .map((user) => ({
+        user_id: user.user_id,
+        full_name: user.full_name,
+        role_id: user.role_id,
+        role_name: user.role_name,
+        status: user.status,
+        id_parent_user: null,
+      }))
+      .filter((member) => matchesMemberQuery(member, normalizedQuery)),
+    [normalizedQuery, unassignedUsers]
+  );
+
   const overviewScopeSummary = useMemo(() => {
     if (departmentScope === 'all') {
       return {
         leafCount: overviewCards.length,
-        staffCount: scopedDepartments.reduce((sum, department) => sum + collectUniqueMembers(department, false).length, 0),
+        staffCount: collectOverviewStaffCount(scopedDepartments, overviewCards, unassignedMembers.length),
         title: 'Все подразделения',
       };
     }
 
     return {
       leafCount: scopedDepartment?.children.length ?? 0,
-      staffCount: selectedDepartmentView?.totalStaff ?? 0,
+      staffCount: (selectedDepartmentView?.totalStaff ?? 0) + unassignedMembers.length,
       title: scopedDepartment?.name ?? 'Подразделение',
     };
-  }, [departmentScope, overviewCards.length, scopedDepartment, scopedDepartments, selectedDepartmentView]);
+  }, [departmentScope, overviewCards, scopedDepartment, scopedDepartments, selectedDepartmentView, unassignedMembers.length]);
+
+  const selectedOverviewRootOnlyStaff = useMemo(
+    () => (selectedOverviewCard ? collectDepartmentRootOnlyStaff(selectedOverviewCard.department) : []),
+    [selectedOverviewCard],
+  );
 
   const selectedOverviewVisibleMembers = selectedOverviewMemberView === 'staff'
     ? selectedOverviewCard?.visibleStaff ?? []
     : selectedOverviewCard?.visibleContractors ?? [];
+
+  const departmentEconomists = useMemo(
+    () => (selectedDepartmentView?.visibleStaff ?? []).filter((member) => economistRoleIds.has(member.role_id)),
+    [selectedDepartmentView]
+  );
+  const departmentOtherStaff = useMemo(
+    () => (selectedDepartmentView?.visibleStaff ?? []).filter((member) => !economistRoleIds.has(member.role_id)),
+    [selectedDepartmentView]
+  );
+  const departmentVisibleContractors = selectedDepartmentView?.visibleContractors ?? [];
 
   useEffect(() => {
     if (departmentScope !== 'all' && !departments.some((department) => department.unit_id === departmentScope)) {
       setDepartmentScope('all');
     }
   }, [departmentScope, departments]);
+
+  useEffect(() => {
+    setDepartmentPreviewMode('units');
+  }, [scopedDepartment?.unit_id]);
 
   useEffect(() => {
     if (overviewCards.length === 0) {
@@ -858,20 +1001,6 @@ export const UnitHierarchyPageView = () => {
   const detailContractors = useMemo(
     () => (activeUnitDetails?.members ?? []).filter((member) => member.role_id === ROLE.CONTRACTOR),
     [activeUnitDetails]
-  );
-
-  const unassignedMembers = useMemo<UnitMember[]>(
-    () => (unassignedUsers ?? [])
-      .map((user) => ({
-        user_id: user.user_id,
-        full_name: user.full_name,
-        role_id: user.role_id,
-        role_name: user.role_name,
-        status: user.status,
-        id_parent_user: null,
-      }))
-      .filter((member) => matchesMemberQuery(member, normalizedQuery)),
-    [normalizedQuery, unassignedUsers]
   );
 
   const editorDepartment = editorRootUnit ? findRootUnitForUnit(editorRootUnit.unit_id) : null;
@@ -984,7 +1113,7 @@ export const UnitHierarchyPageView = () => {
         {canCreateRootUnit ? (
           <Button
             variant="contained"
-            startIcon={<ApartmentOutlinedIcon />}
+            startIcon={<AddRoundedIcon />}
             onClick={openCreateRootDialog}
             sx={{
               minHeight: 44,
@@ -1125,14 +1254,20 @@ export const UnitHierarchyPageView = () => {
                   </Box>
 
                   {departmentScope !== 'all' && selectedDepartmentView ? (
-                    <CompactUnitActions
-                      canManageMembers={selectedDepartmentView.department.actions.canManageMembers}
-                      onManageContractors={() => openContractorDialog(selectedDepartmentView.department)}
-                      onOpenSchema={() => openUnitEditor(selectedDepartmentView.department)}
-                      showContractorsButton
-                      size="medium"
-                      unitName={selectedDepartmentView.department.name}
-                    />
+                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center">
+                      <CompactUnitActions
+                        canManageMembers={selectedDepartmentView.department.actions.canManageMembers}
+                        onManageContractors={() => openContractorDialog(selectedDepartmentView.department)}
+                        onOpenSchema={() => openUnitEditor(selectedDepartmentView.department)}
+                        showContractorsButton
+                        size="medium"
+                        unitName={selectedDepartmentView.department.name}
+                      />
+                      <DepartmentPreviewModeButton
+                        value={departmentPreviewMode}
+                        onClick={() => setDepartmentPreviewMode((current) => current === 'members' ? 'units' : 'members')}
+                      />
+                    </Stack>
                   ) : null}
                 </Stack>
 
@@ -1212,6 +1347,27 @@ export const UnitHierarchyPageView = () => {
                                   </Typography>
                                 </Box>
                                 <Stack spacing={0.75} sx={{ mt: 0.6, pl: 0.4 }}>
+                                  {collectDepartmentRootOnlyStaff(group.department).length > 0 ? (
+                                    <Box
+                                      sx={{
+                                        borderRadius: 1.5,
+                                        border: `1px dashed ${alpha(hierarchyPageColors.canvasBorder, 0.95)}`,
+                                        px: 1,
+                                        py: 0.85,
+                                      }}
+                                    >
+                                      <Typography sx={{ fontSize: 12, fontWeight: 600, color: hierarchyPageColors.textSecondary, mb: 0.6 }}>
+                                        На уровне {group.department.name}
+                                      </Typography>
+                                      <PeopleFlatList
+                                        emptyLabel=""
+                                        hideHeader
+                                        members={collectDepartmentRootOnlyStaff(group.department)}
+                                        readonly
+                                        title=""
+                                      />
+                                    </Box>
+                                  ) : null}
                                   {group.cards.map((card) => (
                                     <UnitListRow
                                       key={card.unit.unit_id}
@@ -1252,9 +1408,43 @@ export const UnitHierarchyPageView = () => {
                   </Box>
 
                   <Stack spacing={1} sx={{ minWidth: 0 }}>
+
                     <Card variant="outlined" sx={{ ...sectionCardSx, overflow: 'hidden' }}>
                       <CardContent sx={{ p: 1.1, '&:last-child': { pb: 1.1 } }}>
-                        {selectedOverviewCard ? (
+                        {departmentPreviewMode === 'members' && selectedDepartmentView ? (
+                          <Stack spacing={1.15}>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography sx={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                                Состав подразделения
+                              </Typography>
+                              <Typography sx={{ fontSize: 12, color: hierarchyPageColors.textSecondary, overflowWrap: 'anywhere' }}>
+                                {selectedDepartmentView.department.name}
+                              </Typography>
+                            </Box>
+
+                            <Stack direction="row" spacing={0.7} useFlexGap flexWrap="wrap">
+                              <UnitStatTile color={hierarchyPageColors.softTeal} label="Экономисты" value={departmentEconomists.length} />
+                              <UnitStatTile color={hierarchyPageColors.softBlue} label="Другие сотрудники" value={departmentOtherStaff.length} />
+                              <UnitStatTile color={hierarchyPageColors.softPink} label="Контрагенты" value={departmentVisibleContractors.length} />
+                            </Stack>
+                            <Divider />
+
+                            <Box
+                              sx={{
+                                maxHeight: { xs: 'none', xl: 488 },
+                                overflowY: 'auto',
+                                pr: 0.2,
+                              }}
+                            >
+                              <DepartmentMemberSections
+                                contractors={departmentVisibleContractors}
+                                economists={departmentEconomists}
+                                otherStaff={departmentOtherStaff}
+                                searchApplied={Boolean(normalizedQuery)}
+                              />
+                            </Box>
+                          </Stack>
+                        ) : selectedOverviewCard ? (
                           <Stack spacing={1.15}>
                             <Stack
                               direction={{ xs: 'column', sm: 'row' }}
@@ -1284,6 +1474,28 @@ export const UnitHierarchyPageView = () => {
                               staffCount={selectedOverviewCard.totalStaff}
                             />
                             <Divider />
+
+                            {selectedOverviewRootOnlyStaff.length > 0 ? (
+                              <Box
+                                sx={{
+                                  borderRadius: 1.5,
+                                  border: `1px dashed ${alpha(hierarchyPageColors.canvasBorder, 0.95)}`,
+                                  px: 1,
+                                  py: 0.85,
+                                }}
+                              >
+                                <Typography sx={{ fontSize: 12, fontWeight: 600, color: hierarchyPageColors.textSecondary, mb: 0.6 }}>
+                                  На уровне {selectedOverviewCard.department.name}
+                                </Typography>
+                                <PeopleFlatList
+                                  emptyLabel=""
+                                  hideHeader
+                                  members={selectedOverviewRootOnlyStaff}
+                                  readonly
+                                  title=""
+                                />
+                              </Box>
+                            ) : null}
 
                             <Box
                               sx={{
@@ -1695,3 +1907,5 @@ export const UnitHierarchyPageView = () => {
     </Box>
   );
 };
+
+

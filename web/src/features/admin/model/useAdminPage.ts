@@ -185,6 +185,7 @@ export const useAdminPage = () => {
   const canCreateUser = hasPermission(session, 'users.create');
   const canAssignUnitOnCreate = hasPermission(session, 'units.members.manage')
     && hasPermission(session, 'units.read');
+  const canShowUnitOnCreate = canCreateUser && hasPermission(session, 'units.read');
   const canUpdateRoleAny = hasPermission(session, 'users.role.update_any');
   const canUpdateRoleEconomy = hasPermission(session, 'users.role.update_economy');
   const canUpdateStatus = hasPermission(session, 'users.status.update');
@@ -306,7 +307,7 @@ export const useAdminPage = () => {
   };
 
   useEffect(() => {
-    if (!isDialogOpen || !canAssignUnitOnCreate) {
+    if (!isDialogOpen || !canShowUnitOnCreate || selectedRoleId === ROLE.CONTRACTOR) {
       return undefined;
     }
 
@@ -315,8 +316,20 @@ export const useAdminPage = () => {
 
     void getUnitsTree()
       .then((tree) => {
-        if (!cancelled) {
-          setUnitOptions(buildUnitOptions(tree));
+        if (cancelled) {
+          return;
+        }
+        const options = buildUnitOptions(tree);
+        setUnitOptions(options);
+        if (isLeadLike && options.length > 0) {
+          const defaultOption = options.reduce((best, option) =>
+            option.label.split(' / ').length >= best.label.split(' / ').length ? option : best
+          );
+          setValue('unit_id', defaultOption.unitId, {
+            shouldDirty: false,
+            shouldTouch: false,
+            shouldValidate: true,
+          });
         }
       })
       .catch(() => {
@@ -333,7 +346,7 @@ export const useAdminPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [canAssignUnitOnCreate, isDialogOpen]);
+  }, [canShowUnitOnCreate, isDialogOpen, isLeadLike, selectedRoleId, setValue]);
 
   useEffect(() => {
     if (!roleOptions.length) {
@@ -510,6 +523,7 @@ export const useAdminPage = () => {
     canCreateUser,
     canCreateManualContractor,
     canAssignUnitOnCreate,
+    canShowUnitOnCreate,
     canOpenCreateDialog,
     isContractorRole,
     isLoadingUnitOptions,

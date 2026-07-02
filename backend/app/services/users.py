@@ -741,10 +741,6 @@ class UserQueryService:
             settings.economist_role_id,
         }:
             return None
-        if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
-            return None
-        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
-            return None
 
         hierarchy = UnitHierarchyService(self._users)
         return set(await hierarchy.get_subordinate_user_ids(user_id=current_user.user_id))
@@ -800,12 +796,6 @@ class UserQueryService:
         if subordinate.id == current_user.user_id:
             raise Forbidden("Вы можете управлять данными только своих подчиненных")
 
-        if (
-            has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY)
-            or has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL)
-        ):
-            return
-
         is_subordinate = await self._is_descendant(
             manager_user_id=current_user.user_id,
             subordinate_user_id=subordinate.id,
@@ -846,6 +836,32 @@ class UserQueryService:
                 )
                 for user, profile, _ in rows
                 if user.id in visible_scope_ids and user.id_role in allowed_role_ids
+            ]
+            return await self._apply_hierarchy_counts(items)
+
+        if current_user.role_id == settings.admin_role_id and role_id != settings.contractor_role_id:
+            visible_scope_ids = await UnitHierarchyService(self._users).get_visible_user_ids(
+                current_user=current_user,
+            )
+            rows = await self._users.list_users_with_profiles(role_id=role_id)
+            items = [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile in rows
+                if (
+                    visible_scope_ids is None or user.id in visible_scope_ids
+                )
+                and user.id_role not in {
+                    settings.contractor_role_id,
+                    settings.superadmin_role_id,
+                }
             ]
             return await self._apply_hierarchy_counts(items)
 
@@ -950,6 +966,7 @@ class UserQueryService:
         rows = await self._users.list_users_with_profiles(role_id=settings.economist_role_id)
         visible_scope_ids: set[str] | None = None
         if current_user.role_id in {
+            settings.admin_role_id,
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
@@ -995,6 +1012,7 @@ class UserQueryService:
                         user_id=current_user.user_id,
                     )
                 )
+                scoped_owner_ids.add(current_user.user_id)
             rows = [
                 row for row in rows
                 if row[0].id in scoped_owner_ids
@@ -1631,6 +1649,7 @@ class UserManagerService:
             raise Conflict(_manager_disallowed_error(role_id=user.id_role))
 
         if manager_user_id is None:
+            # legacy only: users.id_parent is not used for business access checks
             await self._users.update_parent(user, None)
             return UserManagerUpdateResult(user_id=user.id, manager_user_id=None)
 
@@ -1657,6 +1676,7 @@ class UserManagerService:
         if manager_user.id not in allowed_manager_ids:
             raise Forbidden("Выбранный руководитель вне разрешенной зоны управления")
 
+        # legacy only: users.id_parent is not used for business access checks
         await self._users.update_parent(user, manager_user.id)
         return UserManagerUpdateResult(user_id=user.id, manager_user_id=manager_user.id)
 

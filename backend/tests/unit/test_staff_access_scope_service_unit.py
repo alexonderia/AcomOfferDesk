@@ -73,7 +73,7 @@ def _current_user(*, user_id: str, role_id: int, permissions: frozenset[str] | N
 
 
 @pytest.mark.asyncio
-async def test_peer_economist_can_view_and_manage_adjacent_module_request():
+async def test_peer_economist_can_view_but_cannot_manage_adjacent_module_request():
     service = StaffAccessScopeService(_UsersRepo())
     current_user = _current_user(user_id="eco-1", role_id=settings.economist_role_id)
 
@@ -85,11 +85,11 @@ async def test_peer_economist_can_view_and_manage_adjacent_module_request():
         current_user=current_user,
         request_owner_user_id="eco-2",
     )
-    assert await service.is_hierarchy_manager_of(
+    assert not await service.is_hierarchy_manager_of(
         current_user=current_user,
         request_owner_user_id="eco-2",
     )
-    assert await service.can_send_chat_for_request(
+    assert not await service.can_send_chat_for_request(
         current_user=current_user,
         request_owner_user_id="eco-2",
     )

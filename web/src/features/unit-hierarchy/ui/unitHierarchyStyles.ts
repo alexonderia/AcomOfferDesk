@@ -47,6 +47,29 @@ export const outlinedIconButtonSx = {
   },
 } as const;
 
+export const outlinedActionButtonSx = {
+  minHeight: 42,
+  borderRadius: 1.75,
+  px: 2,
+  fontSize: 14,
+  fontWeight: 600,
+  borderColor: alpha(hierarchyPageColors.softBlue, 0.45),
+  color: hierarchyPageColors.softBlue,
+  backgroundColor: '#ffffff',
+  transition: 'border-color 0.16s ease, background-color 0.16s ease',
+  '&:hover': {
+    borderColor: hierarchyPageColors.softBlue,
+    backgroundColor: alpha(hierarchyPageColors.softBlue, 0.08),
+  },
+} as const;
+
+export const outlinedActionIconButtonSx = {
+  ...outlinedIconButtonSx,
+  width: 42,
+  height: 42,
+  borderRadius: 1.75,
+} as const;
+
 export const orgNodeLayout = {
   cardWidth: 332,
   childGap: 26,
@@ -152,4 +175,3 @@ export const groupMembersForOrgChart = (members: UnitMember[]): MemberGroup => {
 
   return groups;
 };
-

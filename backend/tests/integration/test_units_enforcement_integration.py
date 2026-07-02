@@ -20,6 +20,13 @@ class _UnitsRepo:
                 is_active=True,
                 updated_at=None,
             ),
+            (1, "econ-1"): SimpleNamespace(
+                id_unit=1,
+                id_user="econ-1",
+                id_assigned_by_user="admin-1",
+                is_active=True,
+                updated_at=None,
+            ),
         }
 
     async def add(self, unit) -> None:
@@ -155,6 +162,35 @@ class _UnitsUow:
         self.units.bind_directory(self.users._users, profiles, roles)
         self.users._profiles = profiles
         self.users._roles = roles
+
+        async def list_active_units():
+            return [
+                (int(unit.id), int(unit.id_parent) if unit.id_parent is not None else None)
+                for unit in self.units._units.values()
+                if unit.is_active
+            ]
+
+        async def list_active_unit_details():
+            return [
+                (
+                    int(unit.id),
+                    unit.name,
+                    int(unit.id_parent) if unit.id_parent is not None else None,
+                )
+                for unit in self.units._units.values()
+                if unit.is_active
+            ]
+
+        async def list_active_unit_memberships():
+            return [
+                (member.id_user, int(member.id_unit))
+                for member in self.units._members.values()
+                if member.is_active and self.units._units[int(member.id_unit)].is_active
+            ]
+
+        self.users.list_active_units = list_active_units
+        self.users.list_active_unit_details = list_active_unit_details
+        self.users.list_active_unit_memberships = list_active_unit_memberships
 
     async def __aenter__(self):
         return self

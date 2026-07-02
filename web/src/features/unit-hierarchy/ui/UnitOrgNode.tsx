@@ -19,6 +19,7 @@ import {
   orgNodeLayout,
   outlinedIconButtonSx,
 } from './unitHierarchyStyles';
+import { buildChildrenRowLayout, measureUnitSubtreeWidth } from './orgNodeLayoutUtils';
 
 type UnitOrgNodeProps = {
   depth: number;
@@ -75,10 +76,8 @@ export const UnitOrgNode = ({
   );
 
   const childCount = unit.children.length;
-  const rowWidth = childCount > 0
-    ? childCount * orgNodeLayout.cardWidth + (childCount - 1) * orgNodeLayout.childGap
-    : 0;
   const stemHeight = orgNodeLayout.connectorHeight;
+  const subtreeWidth = measureUnitSubtreeWidth(unit);
 
   const renderChildrenRow = () => {
     if (childCount === 0) {
@@ -86,16 +85,23 @@ export const UnitOrgNode = ({
     }
 
     if (childCount === 1) {
+      const childWidth = measureUnitSubtreeWidth(unit.children[0]!);
       return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: subtreeWidth }}>
           <Box sx={{ ...connectorLineSx, width: '2px', height: `${stemHeight}px` }} />
-          {renderChildNode(unit.children[0]!)}
+          <Box sx={{ width: childWidth, display: 'flex', justifyContent: 'center' }}>
+            {renderChildNode(unit.children[0]!)}
+          </Box>
         </Box>
       );
     }
 
+    const { childCenters, childWidths, rowWidth } = buildChildrenRowLayout(unit.children);
+    const firstCenter = childCenters[0] ?? 0;
+    const lastCenter = childCenters[childCenters.length - 1] ?? 0;
+
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: subtreeWidth }}>
         <Box
           sx={{
             position: 'relative',
@@ -108,8 +114,8 @@ export const UnitOrgNode = ({
               ...connectorLineSx,
               position: 'absolute',
               top: 0,
-              left: orgNodeLayout.cardWidth / 2,
-              right: orgNodeLayout.cardWidth / 2,
+              left: firstCenter,
+              width: Math.max(0, lastCenter - firstCenter),
               height: '2px',
             }}
           />
@@ -120,7 +126,7 @@ export const UnitOrgNode = ({
                 ...connectorLineSx,
                 position: 'absolute',
                 top: 0,
-                left: orgNodeLayout.cardWidth / 2 + index * (orgNodeLayout.cardWidth + orgNodeLayout.childGap),
+                left: childCenters[index],
                 width: '2px',
                 height: `${stemHeight}px`,
                 transform: 'translateX(-50%)',
@@ -134,14 +140,15 @@ export const UnitOrgNode = ({
             gap: `${orgNodeLayout.childGap}px`,
             alignItems: 'flex-start',
             justifyContent: 'center',
+            width: rowWidth,
           }}
         >
-          {unit.children.map((child) => (
+          {unit.children.map((child, index) => (
             <Box
               key={child.unit_id}
               sx={{
-                width: orgNodeLayout.cardWidth,
-                flex: `0 0 ${orgNodeLayout.cardWidth}px`,
+                width: childWidths[index],
+                flex: `0 0 ${childWidths[index]}px`,
                 display: 'flex',
                 justifyContent: 'center',
               }}
@@ -155,7 +162,7 @@ export const UnitOrgNode = ({
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 'max-content' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: subtreeWidth }}>
       <Box
         role={canOpenUnitDetails ? 'button' : undefined}
         aria-label={canOpenUnitDetails ? `Открыть состав объединения ${unit.name}` : undefined}

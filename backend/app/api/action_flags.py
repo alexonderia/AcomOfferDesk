@@ -280,17 +280,11 @@ class ChatActionBuilder:
 class UserActionBuilder:
     @staticmethod
     def _requires_hierarchy_management(current_user: CurrentUser) -> bool:
-        if current_user.role_id not in {
+        return current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
-        }:
-            return False
-        if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
-            return False
-        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
-            return False
-        return True
+        }
 
     @staticmethod
     def build_list_item(

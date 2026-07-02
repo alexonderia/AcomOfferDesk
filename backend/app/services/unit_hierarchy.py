@@ -158,6 +158,29 @@ class _HierarchyGraph:
     def subtree_unit_ids_for_user(self, user_id: str) -> set[int]:
         return self.descendant_unit_ids(self.units_by_user.get(user_id, set()), include_self=True)
 
+    def management_seed_unit_ids_for_user(self, user_id: str) -> set[int]:
+        """Return the most specific assigned units used for management scope.
+
+        If a user is assigned both to an ancestor unit and to a deeper descendant,
+        the ancestor assignment does not expand management to sibling branches.
+        """
+        direct_unit_ids = {int(unit_id) for unit_id in self.units_by_user.get(user_id, set())}
+        if len(direct_unit_ids) <= 1:
+            return direct_unit_ids
+
+        effective_unit_ids: set[int] = set()
+        for candidate_unit_id in direct_unit_ids:
+            has_assigned_descendant = False
+            for assigned_unit_id in direct_unit_ids:
+                if assigned_unit_id == candidate_unit_id:
+                    continue
+                if candidate_unit_id in self.ancestor_unit_ids(assigned_unit_id):
+                    has_assigned_descendant = True
+                    break
+            if not has_assigned_descendant:
+                effective_unit_ids.add(candidate_unit_id)
+        return effective_unit_ids
+
     def module_scope_unit_ids_for_user(self, user_id: str) -> set[int]:
         direct_unit_ids = self.units_by_user.get(user_id, set())
         if not direct_unit_ids:
@@ -210,6 +233,23 @@ class UnitHierarchyService:
             return []
         return sorted(graph.users_for_units(graph.module_scope_unit_ids_for_user(user_id)))
 
+    async def get_management_seed_unit_ids(self, *, user_id: str) -> set[int]:
+        graph = await self._get_graph()
+        if graph is None:
+            return set()
+        return graph.management_seed_unit_ids_for_user(user_id)
+
+    async def get_registration_assignable_unit_ids(self, *, user_id: str) -> set[int]:
+        graph = await self._get_graph()
+        if graph is None:
+            return set()
+        allowed_unit_ids: set[int] = set()
+        for seed_unit_id in graph.management_seed_unit_ids_for_user(user_id):
+            allowed_unit_ids.update(
+                graph.descendant_unit_ids([seed_unit_id], include_self=True),
+            )
+        return allowed_unit_ids
+
     async def get_manager_user_ids(self, *, user_id: str) -> list[str]:
         relations = await self.get_user_managers(user_id=user_id)
         return [item.user_id for item in relations]
@@ -246,8 +286,27 @@ class UnitHierarchyService:
         return subordinate_user_id in set(subordinate_ids)
 
     async def get_visible_user_ids(self, *, current_user: CurrentUser) -> set[str] | None:
-        if current_user.role_id in {settings.superadmin_role_id, settings.admin_role_id}:
+        if current_user.role_id == settings.superadmin_role_id:
             return None
+
+        if current_user.role_id == settings.admin_role_id:
+            graph = await self._get_graph()
+            visible_ids: set[str] = {current_user.user_id}
+            if graph is not None:
+                department_user_ids = graph.users_for_units(
+                    graph.department_scope_unit_ids_for_user(current_user.user_id)
+                )
+                for user_id in department_user_ids:
+                    brief = await self._ensure_user_brief(user_id=user_id, graph=graph)
+                    if brief is None or brief.role_id == settings.superadmin_role_id:
+                        continue
+                    visible_ids.add(user_id)
+            visible_ids.update(
+                await self._list_active_user_ids_by_role_ids(
+                    role_ids={settings.contractor_role_id},
+                )
+            )
+            return visible_ids
 
         visible_ids: set[str] = {current_user.user_id}
         if current_user.role_id == settings.project_manager_role_id:
@@ -273,6 +332,34 @@ class UnitHierarchyService:
         if visible_ids is None:
             return True
         return target_user_id in visible_ids
+
+    async def _list_active_user_ids_by_role_ids(self, *, role_ids: set[int]) -> set[str]:
+        normalized_role_ids = sorted({int(role_id) for role_id in role_ids})
+        if not normalized_role_ids:
+            return set()
+
+        list_by_role_ids = getattr(self._users, "list_by_role_ids_with_profiles_and_roles", None)
+        if callable(list_by_role_ids):
+            rows = await list_by_role_ids(role_ids=normalized_role_ids)
+            return {
+                str(user.id)
+                for user, _profile, _role in rows
+                if getattr(user, "status", "active") == "active"
+            }
+
+        list_users_with_profiles = getattr(self._users, "list_users_with_profiles", None)
+        if callable(list_users_with_profiles):
+            user_ids: set[str] = set()
+            for role_id in normalized_role_ids:
+                rows = await list_users_with_profiles(role_id=role_id)
+                user_ids.update(
+                    str(user.id)
+                    for user, _profile in rows
+                    if getattr(user, "status", "active") == "active"
+                )
+            return user_ids
+
+        return set()
 
     async def get_user_units(self, *, user_id: str) -> list[HierarchyUnitBrief]:
         graph = await self._get_graph()
@@ -364,7 +451,7 @@ class UnitHierarchyService:
             return []
 
         relations: dict[str, tuple[int, HierarchyRelationBrief]] = {}
-        for unit_id in graph.units_by_user.get(user_id, set()):
+        for unit_id in graph.management_seed_unit_ids_for_user(user_id):
             for subordinate_user_id in graph.members_by_unit.get(unit_id, set()):
                 if subordinate_user_id == user_id:
                     continue
@@ -467,11 +554,13 @@ class UnitHierarchyService:
             )
 
         manager_brief: HierarchyUserBrief | None = None
+        # legacy only: users.id_parent is not used for business access checks
         manager_user_id = getattr(user, "id_parent", None)
         if manager_user_id:
             manager_brief = await self._ensure_user_brief(user_id=manager_user_id, graph=graph)
 
         subordinate_ids: list[str] = []
+        # legacy only: users.id_parent is not used for business access checks
         list_subordinates = getattr(self._users, "list_subordinates_with_profiles", None)
         if callable(list_subordinates):
             subordinate_ids = [item.id for item, _profile in await list_subordinates(manager_user_id=user_id)]

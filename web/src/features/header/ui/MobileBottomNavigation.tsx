@@ -309,7 +309,7 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
                 >
                   {getHeaderNavigationIcon(item.key)}
                 </Box>
-                <Typography sx={{ fontSize: 11, lineHeight: 1.1, fontWeight: isActive ? 600 : 500 }}>
+                <Typography sx={{ fontSize: 12, lineHeight: 1.1, fontWeight: isActive ? 600 : 500 }}>
                   {item.label}
                 </Typography>
               </Box>

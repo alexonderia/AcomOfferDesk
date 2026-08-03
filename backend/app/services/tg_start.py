@@ -10,6 +10,7 @@ from app.models.orm_models import TgUser
 from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
+from app.services.contractor_units import ContractorUnitService
 from app.services.tg_registration_links import build_keycloak_registration_link, create_tg_registration_token
 
 
@@ -46,7 +47,11 @@ class TgStartService:
 
         linked_user = await self._users.get_by_tg_user_id(tg_id)
         if linked_user and linked_user.id_role == settings.contractor_role_id and linked_user.status == "active" and tg_user.status == "approved":
-            open_requests = await self._requests.list_open_for_contractor(contractor_user_id=linked_user.id)
+            open_requests = await ContractorUnitService(users=self._users).filter_rows_by_request_owner_scope(
+                contractor_user_id=linked_user.id,
+                rows=await self._requests.list_open_for_contractor(contractor_user_id=linked_user.id),
+                owner_user_id_getter=lambda request: request.id_user,
+            )
             request_items = [
                 TgOpenRequestItem(
                     request_id=request.id,

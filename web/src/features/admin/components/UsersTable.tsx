@@ -26,10 +26,12 @@ import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
-import { updateUserManager } from '@shared/api/users/updateUserManager';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
-import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
+import { getUserHierarchy, type UserHierarchy } from '@shared/api/users/getUserHierarchy';
+import { getUserHierarchyUnitsTree } from '@shared/api/users/getUserHierarchyUnitsTree';
+import type { UnitNode } from '@shared/api/units';
+import { UserHierarchyTree } from './UserHierarchyTree';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
 import {
@@ -116,6 +118,9 @@ type UserRow = {
   id_role: number;
   role: string;
   status: StatusFormValues['user_status'];
+  units_count: number;
+  managers_count: number;
+  subordinates_count: number;
 };
 
 const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
@@ -201,7 +206,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
     { key: 'mail', label: 'E-mail', value: row.mail },
     ...(canViewRoleIds ? [{ key: 'role_id', label: 'ID роли', value: String(row.id_role) }] : []),
     { key: 'role', label: 'Роль', value: row.role },
-    { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] }
+    { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] },
   ];
 
   const handleToggleExpand = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -314,7 +319,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -329,7 +334,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -480,7 +485,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -495,7 +500,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -563,7 +568,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -578,7 +583,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -607,12 +612,6 @@ const delegationGroupTitles: Record<string, string> = {
   chats: 'Чаты',
   dashboard: 'Аналитика',
   plans: 'Планы',
-};
-
-const managerRoleNameById: Record<number, string> = {
-  [ROLE.PROJECT_MANAGER]: 'РП',
-  [ROLE.LEAD_ECONOMIST]: 'ВЭ',
-  [ROLE.ECONOMIST]: 'Экономист',
 };
 
 const PROJECT_MANAGER_STATUS_TARGET_ROLES: number[] = [
@@ -658,10 +657,10 @@ export const UsersTable = ({
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
   const [subordinateError, setSubordinateError] = useState<string | null>(null);
-  const [managerOptions, setManagerOptions] = useState<UserListItem[]>([]);
-  const [managerError, setManagerError] = useState<string | null>(null);
-  const [managerUserId, setManagerUserId] = useState('');
-  const [isUpdatingManager, setIsUpdatingManager] = useState(false);
+  const [userHierarchy, setUserHierarchy] = useState<UserHierarchy | null>(null);
+  const [userHierarchyUnitsTree, setUserHierarchyUnitsTree] = useState<UnitNode[]>([]);
+  const [userHierarchyError, setUserHierarchyError] = useState<string | null>(null);
+  const [isLoadingUserHierarchy, setIsLoadingUserHierarchy] = useState(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
   const [manualContractorDraft, setManualContractorDraft] = useState<ManualContractorDraft>(() => ({
     login: '',
@@ -735,10 +734,6 @@ export const UsersTable = ({
   }, [subordinateProfile, resetSubordinateUnavailability]);
 
   useEffect(() => {
-    setManagerUserId(selectedUser?.id_parent ?? '');
-  }, [selectedUser?.id_parent]);
-
-  useEffect(() => {
     if (!selectedUser) {
       return;
     }
@@ -801,34 +796,6 @@ export const UsersTable = ({
     setManualContractorPassword(value);
   };
 
-  useEffect(() => {
-    if (!selectedUser?.actions.update_manager) {
-      setManagerOptions([]);
-      setManagerError(null);
-      return;
-    }
-
-    let isCancelled = false;
-    setManagerError(null);
-    void getManagerCandidates(selectedUser.role_id, selectedUser.user_id)
-      .then((result) => {
-        if (!isCancelled) {
-          setManagerOptions(result.items);
-          setManagerError(null);
-        }
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          setManagerOptions([]);
-          setManagerError(error instanceof Error ? error.message : 'Не удалось загрузить список руководителей');
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedUser?.actions.update_manager, selectedUser?.role_id, selectedUser?.user_id]);
-
   const shouldLoadDepartmentDelegations = Boolean(
     selectedUser
     && !isContractorsTab
@@ -877,22 +844,6 @@ export const UsersTable = ({
       isCancelled = true;
     };
   }, [selectedUser?.user_id, shouldLoadDepartmentDelegations]);
-
-  const availableManagerOptions = useMemo(() => {
-    if (!selectedUser) {
-      return [];
-    }
-    return managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id);
-  }, [managerOptions, selectedUser]);
-
-  const canShowManagerSection = Boolean(
-    selectedUser?.actions.update_manager
-    && !managerError
-    && (
-      availableManagerOptions.length > 0
-      || selectedUser.role_id === ROLE.PROJECT_MANAGER
-    ),
-  );
 
   const shouldLoadContractorDelegations = Boolean(
     selectedUser
@@ -949,7 +900,10 @@ export const UsersTable = ({
         mail: user.mail ?? '—',
         id_role: user.role_id,
         role: getRoleLabel(user.role_id),
-        status: normalizeUserStatus(user.status)
+        status: normalizeUserStatus(user.status),
+        units_count: user.units_count,
+        managers_count: user.managers_count,
+        subordinates_count: user.subordinates_count
       })),
     [getRoleLabel, users]
   );
@@ -1085,32 +1039,6 @@ export const UsersTable = ({
 
     return allowedRoleOptions;
   }, [allowedRoleOptions, canUpdateRole, users]);
-
-  const handleManagerUpdate = async () => {
-    const canBeWithoutManager = selectedUser?.role_id === ROLE.PROJECT_MANAGER;
-    if (
-      !selectedUser
-      || (managerUserId === '' && !canBeWithoutManager)
-      || managerUserId === (selectedUser.id_parent ?? '')
-    ) {
-      return;
-    }
-
-    setManagerError(null);
-    setIsUpdatingManager(true);
-    try {
-      await updateUserManager(selectedUser.user_id, {
-        manager_user_id: managerUserId || null,
-      });
-      await onStatusUpdated();
-      setSelectedUser(null);
-      setSubordinateProfile(null);
-    } catch (error) {
-      setManagerError(error instanceof Error ? error.message : 'Не удалось обновить руководителя');
-    } finally {
-      setIsUpdatingManager(false);
-    }
-  };
 
   const handleManualContractorSave = async () => {
     if (!selectedUser || !selectedUser.actions.manage_manual_contractor) {
@@ -1259,10 +1187,29 @@ export const UsersTable = ({
     setSelectedUser(clickedUser);
     setSubordinateProfile(null);
     setSubordinateError(null);
-    setManagerOptions([]);
-    setManagerError(null);
-    setManagerUserId(clickedUser.id_parent ?? '');
+    setUserHierarchy(null);
+    setUserHierarchyUnitsTree([]);
+    setUserHierarchyError(null);
+    setIsLoadingUserHierarchy(true);
     setOpenSubordinateUnavailability(false);
+
+    void Promise.all([
+      getUserHierarchy(clickedUser.user_id),
+      getUserHierarchyUnitsTree(clickedUser.user_id),
+    ])
+      .then(([state, unitsTree]) => {
+        setUserHierarchy(state);
+        setUserHierarchyUnitsTree(unitsTree);
+        setUserHierarchyError(null);
+      })
+      .catch((error) => {
+        setUserHierarchy(null);
+        setUserHierarchyUnitsTree([]);
+        setUserHierarchyError(error instanceof Error ? error.message : 'Не удалось загрузить иерархию сотрудника');
+      })
+      .finally(() => {
+        setIsLoadingUserHierarchy(false);
+      });
 
     if (!clickedUser.actions.view_profile || !subordinateProfileRoleIds.has(clickedUser.role_id)) {
       return;
@@ -1540,6 +1487,36 @@ export const UsersTable = ({
                   </Stack>
                 </Box>
 
+                <SourceSection title="Иерархия по объединениям" source="units">
+                  <Stack spacing={1.2}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+                        gap: 1.2
+                      }}
+                    >
+                      <InfoRow label="Объединения" value={selectedUser.units_count} />
+                      <InfoRow label="Руководители" value={selectedUser.managers_count} />
+                      <InfoRow label="Подчинённые" value={selectedUser.subordinates_count} />
+                    </Box>
+
+                    {isLoadingUserHierarchy ? (
+                      <Typography variant="body2" color="text.secondary">
+                        Загружаем связи сотрудника...
+                      </Typography>
+                    ) : null}
+
+                    {userHierarchyError ? (
+                      <Alert severity="warning">{userHierarchyError}</Alert>
+                    ) : null}
+
+                    {userHierarchy ? (
+                      <UserHierarchyTree hierarchy={userHierarchy} unitsTree={userHierarchyUnitsTree} />
+                    ) : null}
+                  </Stack>
+                </SourceSection>
+
                 {subordinateProfile ? (
                   <Stack spacing={1.2}>
                     {subordinateError ? <Alert severity="warning">{subordinateError}</Alert> : null}
@@ -1601,64 +1578,6 @@ export const UsersTable = ({
                         />
                       }
                     />
-                  </Stack>
-                ) : null}
-
-                {canShowManagerSection && selectedUser ? (
-                  <Stack
-                    spacing={1.2}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 1,
-                      p: { xs: 1.4, sm: 1.8 },
-                      backgroundColor: 'background.paper'
-                    }}
-                  >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                      Смена руководителя
-                    </Typography>
-                    <TextField
-                      select
-                      size="small"
-                      label="Новый руководитель"
-                      value={managerUserId}
-                      onChange={(event) => setManagerUserId(event.target.value)}
-                      disabled={isUpdatingManager}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 1,
-                          backgroundColor: 'background.paper'
-                        }
-                      }}
-                    >
-                      {selectedUser.role_id === ROLE.PROJECT_MANAGER ? (
-                        <MenuItem value="">
-                          Без руководителя
-                        </MenuItem>
-                      ) : null}
-                      {availableManagerOptions.map((manager) => (
-                          <MenuItem key={manager.user_id} value={manager.user_id}>
-                            {manager.full_name
-                              ? `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
-                              : `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.user_id}`}
-                          </MenuItem>
-                        ))}
-                    </TextField>
-                    <Stack direction="row" justifyContent="flex-end">
-                      <Button
-                        variant="outlined"
-                        onClick={() => void handleManagerUpdate()}
-                        disabled={
-                          (managerUserId === '' && selectedUser.role_id !== ROLE.PROJECT_MANAGER)
-                          || managerUserId === (selectedUser.id_parent ?? '')
-                          || isUpdatingManager
-                        }
-                        sx={{ borderRadius: 1, textTransform: 'none' }}
-                      >
-                        {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
-                      </Button>
-                    </Stack>
                   </Stack>
                 ) : null}
 

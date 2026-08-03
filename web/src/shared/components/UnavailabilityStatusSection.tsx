@@ -120,7 +120,7 @@ export const UnavailabilityStatusSection = ({
         <Stack spacing={1}>
           <Typography
             sx={{
-              fontSize: 17,
+              fontSize: 18,
               lineHeight: '22px',
               fontWeight: 400,
               color: '#44597b'
@@ -182,7 +182,7 @@ export const UnavailabilityStatusSection = ({
                 <StatusChip width={136}>
                   <Typography
                     sx={{
-                      fontSize: 11,
+                      fontSize: 12,
                       lineHeight: 1,
                       fontWeight: 500,
                       whiteSpace: 'nowrap',
@@ -196,7 +196,7 @@ export const UnavailabilityStatusSection = ({
                 <StatusChip width={136}>
                   <Typography
                     sx={{
-                      fontSize: 11,
+                      fontSize: 12,
                       lineHeight: 1,
                       fontWeight: 500,
                       whiteSpace: 'nowrap',
@@ -250,7 +250,7 @@ export const UnavailabilityStatusSection = ({
           <Stack spacing={0.25}>
             <Typography
               sx={{
-                fontSize: 17,
+                fontSize: 18,
                 lineHeight: '22px',
                 fontWeight: 400,
                 color: '#44597b'
@@ -313,7 +313,7 @@ export const UnavailabilityStatusSection = ({
             <Typography
               sx={{
                 px: 0.5,
-                fontSize: 13,
+                fontSize: 14,
                 lineHeight: '20px',
                 color: '#7a8caa'
               }}

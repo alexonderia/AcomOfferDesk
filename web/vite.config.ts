@@ -17,6 +17,7 @@ export default defineConfig({
       "@entities": path.resolve(__dirname, "src/entities"),
       "@shared": path.resolve(__dirname, "src/shared"),
       "@features": path.resolve(__dirname, "src/features"),
+      "@design-tokens": path.resolve(__dirname, "../infra/keycloak/themes/acom-offerdesk/login/resources/css"),
     },
   },
   build: {

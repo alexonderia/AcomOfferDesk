@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { CssBaseline, ThemeProvider } from '@mui/material';
+import '@design-tokens/typography.css';
 import { App } from '@app/App';
 import { appTheme } from '@shared/theme/appTheme';
 import { BrowserRouter } from 'react-router-dom';

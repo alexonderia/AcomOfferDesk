@@ -67,7 +67,9 @@ from app.services.registration_admin_notify import (
     notify_new_user_registration,
     schedule_registration_review_required_notification,
 )
+from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.users import UserRegistrationService
+from app.services.units import UnitService
 
 router = APIRouter()
 
@@ -701,6 +703,29 @@ async def register_user(
             phone=payload.phone.strip() if payload.phone else None,
             mail=payload.mail.strip() if payload.mail else None,
         )
+        unit_service = UnitService(uow.units, uow.users)
+        if payload.unit_id is not None:
+            if UserPolicy.can_manage_unit_members(current_user):
+                await unit_service.add_member(
+                    current_user=current_user,
+                    unit_id=payload.unit_id,
+                    user_id=user.id,
+                )
+            else:
+                await unit_service.add_member_on_registration(
+                    current_user=current_user,
+                    unit_id=payload.unit_id,
+                    user_id=user.id,
+                )
+        else:
+            hierarchy = UnitHierarchyService(uow.users)
+            seed_unit_ids = await hierarchy.get_management_seed_unit_ids(user_id=current_user.user_id)
+            for seed_unit_id in sorted(seed_unit_ids):
+                await unit_service.add_member_on_registration(
+                    current_user=current_user,
+                    unit_id=seed_unit_id,
+                    user_id=user.id,
+                )
     return RegisterUserResponse(
         data={
             "user_id": user.id,

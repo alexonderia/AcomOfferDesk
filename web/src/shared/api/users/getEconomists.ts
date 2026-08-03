@@ -47,6 +47,9 @@ export const getEconomists = async (): Promise<GetEconomistsResult> => {
       company_mail: null,
       address: null,
       note: null,
+      units_count: 0,
+      managers_count: 0,
+      subordinates_count: 0,
       actions: normalizeUserActions(item.actions)
     }))
   };

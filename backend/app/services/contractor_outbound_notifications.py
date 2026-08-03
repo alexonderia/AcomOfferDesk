@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.infrastructure.email.email_templates.contractor_event_email import build_contractor_event_email_payload
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
+from app.services.contractor_units import ContractorUnitService
 from app.services.max_notifications import (
     notify_offer_updated as notify_max_offer_updated,
     notify_request_deadline_changed as notify_max_request_deadline_changed,
@@ -144,15 +145,28 @@ async def notify_contractors_with_offers_about_request(
     new_status: str | None = None,
 ) -> None:
     async with UnitOfWork() as uow:
-        if uow.offers is None or uow.user_contact_channels is None or uow.user_notification_preferences is None:
+        if (
+            uow.offers is None
+            or uow.requests is None
+            or uow.users is None
+            or uow.user_contact_channels is None
+            or uow.user_notification_preferences is None
+        ):
             return
 
+        request = await uow.requests.get_by_id(request_id=request_id)
+        if request is None:
+            return
         contractor_user_ids = await uow.offers.list_contractor_user_ids_for_request(
             request_id=request_id,
             contractor_role_id=settings.contractor_role_id,
         )
         if actor_user_id is not None:
             contractor_user_ids = [user_id for user_id in contractor_user_ids if user_id != actor_user_id]
+        contractor_user_ids = await ContractorUnitService(users=uow.users).filter_contractor_user_ids_for_request_owner(
+            contractor_user_ids=contractor_user_ids,
+            request_owner_user_id=request.id_user,
+        )
         if not contractor_user_ids:
             return
 

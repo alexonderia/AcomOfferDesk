@@ -330,6 +330,29 @@ def test_user_action_builder_hierarchy_peer_cannot_manage_status_or_role(make_cu
     assert actions.can_update_manager is False
 
 
+def test_user_action_builder_profile_manage_any_does_not_allow_status_for_non_subordinate_economist(
+    make_current_user,
+):
+    lead_economist = make_current_user(
+        user_id="le-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.USERS_STATUS_UPDATE,
+            PermissionCodes.PROFILE_MANAGE_ANY,
+        },
+    )
+
+    actions = UserActionBuilder.build_list_item(
+        lead_economist,
+        target_user_id="eco-peer-1",
+        target_role_id=settings.economist_role_id,
+        is_hierarchy_subordinate=False,
+    )
+
+    assert actions.can_update_status is False
+    assert actions.can_view_profile is True
+
+
 def test_user_action_builder_profile_manage_any_does_not_allow_lead_status_for_lead_economist(make_current_user):
     lead_economist = make_current_user(
         user_id="le-1",
@@ -371,7 +394,7 @@ def test_user_action_builder_hierarchy_subordinate_can_manage_status_and_role(ma
 
     assert actions.can_update_status is True
     assert actions.can_update_role is True
-    assert actions.can_update_manager is True
+    assert actions.can_update_manager is False
 
 
 def test_user_action_builder_admin_can_update_contractor_status_with_users_status_update(make_current_user):
@@ -520,5 +543,5 @@ def test_user_action_builder_internal_manager_can_manage_subordinate(make_curren
 
     assert actions.can_view_profile is True
     assert actions.can_update_status is True
-    assert actions.can_update_manager is True
+    assert actions.can_update_manager is False
     assert actions.can_manage_subordinate_unavailability is True

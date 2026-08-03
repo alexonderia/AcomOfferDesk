@@ -14,6 +14,10 @@ class PermissionCodes:
     USERS_LOGIN_UPDATE = "users.login.update"
     USERS_PASSWORD_UPDATE = "users.password.update"
     USERS_MANAGER_UPDATE = "users.manager.update"
+    UNITS_READ = "units.read"
+    UNITS_CREATE = "units.create"
+    UNITS_UPDATE = "units.update"
+    UNITS_MEMBERS_MANAGE = "units.members.manage"
     PROFILE_MANAGE_OWN = "profile.manage_own"
     PROFILE_MANAGE_ANY = "profile.manage_any"
     COMPANY_CONTACTS_MANAGE_OWN = "company_contacts.manage_own"
@@ -135,6 +139,11 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
         PermissionCodes.DASHBOARD_PLANS_READ,
         PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
     }
+    subtree_units_manage_permissions = {
+        PermissionCodes.UNITS_CREATE,
+        PermissionCodes.UNITS_UPDATE,
+        PermissionCodes.UNITS_MEMBERS_MANAGE,
+    }
     contractor_permissions = {
         PermissionCodes.PROFILE_MANAGE_OWN,
         PermissionCodes.COMPANY_CONTACTS_MANAGE_OWN,
@@ -173,6 +182,10 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_ROLE_UPDATE_ANY,
                 PermissionCodes.USERS_LOGIN_UPDATE,
                 PermissionCodes.USERS_PASSWORD_UPDATE,
+                PermissionCodes.UNITS_READ,
+                PermissionCodes.UNITS_CREATE,
+                PermissionCodes.UNITS_UPDATE,
+                PermissionCodes.UNITS_MEMBERS_MANAGE,
                 PermissionCodes.PROFILE_MANAGE_ANY,
                 PermissionCodes.COMPANY_CONTACTS_MANAGE_ANY,
                 PermissionCodes.CONTRACTORS_MANUAL_CREATE,
@@ -184,6 +197,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             common_permissions
             | internal_request_read_permissions
             | {
+                PermissionCodes.UNITS_READ,
                 PermissionCodes.USERS_READ,
                 PermissionCodes.CONTRACTORS_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_READ,
@@ -200,6 +214,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
             }
+            | subtree_units_manage_permissions
             | {PermissionCodes.UNAVAILABILITY_MANAGE_OWN}
         ),
         settings.lead_economist_role_id: frozenset(
@@ -207,7 +222,9 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | internal_request_read_permissions
             | internal_request_manage_permissions
             | management_permissions
+            | subtree_units_manage_permissions
             | {
+                PermissionCodes.UNITS_READ,
                 PermissionCodes.CONTRACTORS_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.NORMATIVE_FILES_MANAGE,
@@ -228,6 +245,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | internal_request_read_permissions
             | internal_request_manage_permissions
             | {
+                PermissionCodes.UNITS_READ,
                 PermissionCodes.USERS_READ,
                 PermissionCodes.CONTRACTORS_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_READ,
@@ -243,10 +261,12 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_MANUAL_CREATE,
                 PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
             }
+            | subtree_units_manage_permissions
         ),
         settings.security_officer_role_id: frozenset(
             common_permissions
             | {
+                PermissionCodes.UNITS_READ,
                 PermissionCodes.CONTRACTORS_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
@@ -256,6 +276,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             common_permissions
             | {
                 PermissionCodes.PROFILE_MANAGE_OWN,
+                PermissionCodes.UNITS_READ,
                 PermissionCodes.REQUESTS_READ,
                 PermissionCodes.REQUESTS_CREATE,
                 PermissionCodes.REQUESTS_UPDATE,

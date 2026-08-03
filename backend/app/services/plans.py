@@ -19,6 +19,7 @@ from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.services.unit_hierarchy import UnitHierarchyService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 MONTH_PERIOD_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -171,6 +172,7 @@ class PlanService:
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
         self._staff_scope = StaffAccessScopeService(users)
+        self._hierarchy = UnitHierarchyService(users)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -246,7 +248,7 @@ class PlanService:
             raise NotFound("Parent plan not found")
         self._ensure_plan_is_open(parent_plan)
         await self._ensure_can_manage_node(current_user=current_user, plan_owner_user_id=parent_plan.id_user)
-        await self._ensure_owner_has_direct_subordinates(parent_plan.id_user)
+        await self._ensure_owner_has_subordinates(parent_plan.id_user)
         await self._ensure_available_amount(parent_plan=parent_plan, requested_amount=normalized_amount)
 
         child_period_start, child_period_end = self._resolve_child_period_bounds(
@@ -260,8 +262,11 @@ class PlanService:
             child_user = await self._users.get_by_id(child_user_id)
             if child_user is None:
                 raise NotFound("Child user not found")
-            if child_user.id_parent != parent_plan.id_user:
-                raise Forbidden("Subplan assignee must be a direct subordinate of parent plan owner")
+            if not await self._hierarchy.is_manager_of(
+                manager_user_id=parent_plan.id_user,
+                subordinate_user_id=child_user.id,
+            ):
+                raise Forbidden("Subplan assignee must belong to the plan owner's unit hierarchy")
             target_user_id = child_user.id
             target_parent_snapshot = parent_plan.id_user
         normalized_name = normalize_plan_name(name)
@@ -324,13 +329,16 @@ class PlanService:
             raise NotFound("Parent plan not found")
         self._ensure_plan_is_open(parent_plan)
         await self._ensure_can_manage_node(current_user=current_user, plan_owner_user_id=parent_plan.id_user)
-        await self._ensure_owner_has_direct_subordinates(parent_plan.id_user)
+        await self._ensure_owner_has_subordinates(parent_plan.id_user)
 
         child_user = await self._users.get_by_id(child_user_id)
         if child_user is None:
             raise NotFound("Child user not found")
-        if child_user.id_parent != parent_plan.id_user:
-            raise Forbidden("Plan can be delegated only to direct subordinate")
+        if not await self._hierarchy.is_manager_of(
+            manager_user_id=parent_plan.id_user,
+            subordinate_user_id=child_user.id,
+        ):
+            raise Forbidden("Plan can be delegated only inside the owner's unit hierarchy")
 
         await self._ensure_available_amount(parent_plan=parent_plan, requested_amount=normalized_amount)
 
@@ -934,26 +942,16 @@ class PlanService:
                 "full_name": (profile.full_name if profile else None),
                 "role_name": role.role,
                 "role_id": user.id_role,
-                "id_parent": user.id_parent,
             }
             for user, profile, role in users_rows
         }
-        parent_pairs = await self._users.list_active_user_parent_pairs()
-        for user_id, parent_id in parent_pairs:
-            if user_id not in user_meta_by_id:
-                user_meta_by_id[user_id] = {
-                    "full_name": None,
-                    "role_name": None,
-                    "role_id": None,
-                    "id_parent": parent_id,
-                }
+        manageable_owner_ids = await self._resolve_manageable_owner_ids_for_plan_scope(
+            current_user=current_user,
+            candidate_owner_ids={plan.id_user for plan in open_user_plans},
+        )
         options: list[PlanOption] = []
         for plan in open_user_plans:
-            if not self._can_manage_node_sync(
-                current_user=current_user,
-                plan_owner_user_id=plan.id_user,
-                user_meta_by_id=user_meta_by_id,
-            ):
+            if plan.id_user not in manageable_owner_ids:
                 continue
             user_meta = user_meta_by_id.get(plan.id_user, {})
             options.append(
@@ -983,10 +981,7 @@ class PlanService:
             raise NotFound("Parent plan not found")
 
         await self._ensure_can_manage_node(current_user=current_user, plan_owner_user_id=parent_plan.id_user)
-        subordinates = await self._users.list_direct_subordinates_with_profiles_and_roles(
-            manager_user_id=parent_plan.id_user,
-            include_inactive=False,
-        )
+        subordinates = await self._hierarchy.get_user_subordinates(user_id=parent_plan.id_user)
         if not subordinates:
             return []
 
@@ -998,13 +993,17 @@ class PlanService:
 
         return [
             PlanDelegateCandidate(
-                user_id=user.id,
-                full_name=(profile.full_name if profile else None),
-                role_name=role.role,
-                has_plan_for_period=user.id in delegated_by_user,
-                existing_plan_id=delegated_by_user[user.id].id if user.id in delegated_by_user else None,
+                user_id=subordinate.user_id,
+                full_name=subordinate.full_name,
+                role_name=subordinate.role_name,
+                has_plan_for_period=subordinate.user_id in delegated_by_user,
+                existing_plan_id=(
+                    delegated_by_user[subordinate.user_id].id
+                    if subordinate.user_id in delegated_by_user
+                    else None
+                ),
             )
-            for user, profile, role in subordinates
+            for subordinate in subordinates
         ]
 
     async def _summary_from_tree(
@@ -1164,20 +1163,17 @@ class PlanService:
                 "full_name": (profile.full_name if profile else None),
                 "role_name": role.role,
                 "role_id": user.id_role,
-                "id_parent": user.id_parent,
             }
             for user, profile, role in users_rows
         }
-        parent_pairs = await self._users.list_active_user_parent_pairs()
-        for user_id, parent_id in parent_pairs:
-            if user_id not in user_meta_by_id:
-                user_meta_by_id[user_id] = {
-                    "full_name": None,
-                    "role_name": None,
-                    "role_id": None,
-                    "id_parent": parent_id,
-                }
-        managers_with_subordinates = {parent_id for _, parent_id in parent_pairs if parent_id}
+        owner_ids = {plan.id_user for plan in subtree_plans}
+        manageable_owner_ids = await self._resolve_manageable_owner_ids_for_plan_scope(
+            current_user=current_user,
+            candidate_owner_ids=owner_ids,
+        )
+        subordinate_counts_by_user_id = await self._resolve_subordinate_counts_by_user_ids(
+            user_ids=owner_ids,
+        )
 
         distribution_by_plan_id = await self._plans.fetch_distribution_by_plan_ids(plan_ids=[plan.id for plan in subtree_plans])
         self_fact_by_plan_id = await self._plans.aggregate_active_request_facts_by_plan_ids(plan_ids=[plan.id for plan in subtree_plans])
@@ -1202,7 +1198,8 @@ class PlanService:
                 in_progress_count_by_user_id=in_progress_count_by_user_id,
                 period_fact_by_plan_id=period_fact_by_plan_id,
                 user_meta_by_id=user_meta_by_id,
-                managers_with_subordinates=managers_with_subordinates,
+                manageable_owner_ids=manageable_owner_ids,
+                subordinate_counts_by_user_id=subordinate_counts_by_user_id,
                 current_user=current_user,
             )
             for root_plan in root_plans
@@ -1218,7 +1215,8 @@ class PlanService:
         in_progress_count_by_user_id: dict[str, int],
         period_fact_by_plan_id: dict[int, Decimal],
         user_meta_by_id: dict[str, dict[str, str | int | None]],
-        managers_with_subordinates: set[str],
+        manageable_owner_ids: set[str],
+        subordinate_counts_by_user_id: dict[str, int],
         current_user: CurrentUser,
     ) -> PlanTreeNode:
         child_plans = by_parent_plan_id.get(plan.id, [])
@@ -1231,7 +1229,8 @@ class PlanService:
                 in_progress_count_by_user_id=in_progress_count_by_user_id,
                 period_fact_by_plan_id=period_fact_by_plan_id,
                 user_meta_by_id=user_meta_by_id,
-                managers_with_subordinates=managers_with_subordinates,
+                manageable_owner_ids=manageable_owner_ids,
+                subordinate_counts_by_user_id=subordinate_counts_by_user_id,
                 current_user=current_user,
             )
             for child in child_plans
@@ -1274,13 +1273,9 @@ class PlanService:
         period_progress_percent = percent(period_fact_amount, plan_total)
 
         user_meta = user_meta_by_id.get(plan.id_user, {})
-        can_manage = self._can_manage_node_sync(
-            current_user=current_user,
-            plan_owner_user_id=plan.id_user,
-            user_meta_by_id=user_meta_by_id,
-        )
+        can_manage = plan.id_user in manageable_owner_ids
         is_closed = self._is_plan_closed(plan)
-        has_subordinates = plan.id_user in managers_with_subordinates
+        has_subordinates = subordinate_counts_by_user_id.get(plan.id_user, 0) > 0
         can_create_subplan = can_manage and has_subordinates and not is_closed
         can_delegate = can_manage and has_subordinates and not is_closed
         can_delete = (
@@ -1469,11 +1464,8 @@ class PlanService:
         if self._is_plan_closed(plan):
             raise Conflict("Plan is closed and cannot be modified")
 
-    async def _ensure_owner_has_direct_subordinates(self, owner_user_id: str) -> None:
-        children = await self._users.list_direct_subordinates_with_profiles_and_roles(
-            manager_user_id=owner_user_id,
-            include_inactive=False,
-        )
+    async def _ensure_owner_has_subordinates(self, owner_user_id: str) -> None:
+        children = await self._hierarchy.get_subordinate_user_ids(user_id=owner_user_id)
         if not children:
             raise Conflict("Plan split and delegation are available only for users with subordinates")
 
@@ -1492,9 +1484,15 @@ class PlanService:
             return
         if current_user.role_id == settings.superadmin_role_id:
             return
-        if await self._is_ancestor_or_self(
-            ancestor_user_id=current_user.user_id,
-            target_user_id=requested_root_user_id,
+        if requested_root_user_id == current_user.user_id:
+            return
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        } and await self._hierarchy.is_manager_of(
+            manager_user_id=current_user.user_id,
+            subordinate_user_id=requested_root_user_id,
         ):
             return
         if current_user.role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
@@ -1511,51 +1509,12 @@ class PlanService:
             return
         if current_user.role_id == settings.superadmin_role_id:
             return
-        allowed = await self._is_ancestor_or_self(
-            ancestor_user_id=current_user.user_id,
-            target_user_id=plan_owner_user_id,
+        allowed = plan_owner_user_id == current_user.user_id or await self._hierarchy.is_manager_of(
+            manager_user_id=current_user.user_id,
+            subordinate_user_id=plan_owner_user_id,
         )
         if not allowed:
             raise Forbidden("You cannot manage plans outside your hierarchy")
-
-    async def _is_ancestor_or_self(self, *, ancestor_user_id: str, target_user_id: str) -> bool:
-        cursor_id: str | None = target_user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            if cursor_id == ancestor_user_id:
-                return True
-            visited.add(cursor_id)
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                return False
-            cursor_id = cursor_user.id_parent
-        return False
-
-    def _can_manage_node_sync(
-        self,
-        *,
-        current_user: CurrentUser,
-        plan_owner_user_id: str,
-        user_meta_by_id: dict[str, dict[str, str | int | None]],
-    ) -> bool:
-        if has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_MANAGE):
-            if self._is_user_inside_department_scope_sync(
-                current_user=current_user,
-                target_user_id=plan_owner_user_id,
-                user_meta_by_id=user_meta_by_id,
-            ):
-                return True
-        if current_user.role_id == settings.superadmin_role_id:
-            return True
-        cursor_id: str | None = plan_owner_user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            if cursor_id == current_user.user_id:
-                return True
-            visited.add(cursor_id)
-            user_meta = user_meta_by_id.get(cursor_id)
-            cursor_id = user_meta.get("id_parent") if user_meta else None
-        return False
 
     def _ensure_can_access_plans(self, current_user: CurrentUser) -> None:
         if has_permission(current_user, PermissionCodes.DASHBOARD_PLANS_READ):
@@ -1606,45 +1565,45 @@ class PlanService:
         )
         return target_user_id in set(owner_ids)
 
-    def _is_user_inside_department_scope_sync(
+    async def _resolve_manageable_owner_ids_for_plan_scope(
         self,
         *,
         current_user: CurrentUser,
-        target_user_id: str,
-        user_meta_by_id: dict[str, dict[str, str | int | None]],
-    ) -> bool:
-        department_root = self._resolve_department_root_user_id_sync(
-            current_user=current_user,
-            user_meta_by_id=user_meta_by_id,
-        )
-        if department_root is None:
-            return False
-        cursor_id: str | None = target_user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            if cursor_id == department_root:
-                return True
-            visited.add(cursor_id)
-            user_meta = user_meta_by_id.get(cursor_id)
-            cursor_id = user_meta.get("id_parent") if user_meta else None
-        return False
+        candidate_owner_ids: set[str],
+    ) -> set[str]:
+        if not candidate_owner_ids:
+            return set()
+        if current_user.role_id == settings.superadmin_role_id:
+            return set(candidate_owner_ids)
 
-    def _resolve_department_root_user_id_sync(
+        manageable_owner_ids: set[str] = set()
+        if current_user.user_id in candidate_owner_ids:
+            manageable_owner_ids.add(current_user.user_id)
+
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_PLANS_MANAGE):
+            department_owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
+                current_user=current_user,
+            )
+            manageable_owner_ids.update(candidate_owner_ids & set(department_owner_ids))
+
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            subordinate_owner_ids = await self._hierarchy.get_subordinate_user_ids(
+                user_id=current_user.user_id,
+            )
+            manageable_owner_ids.update(candidate_owner_ids & set(subordinate_owner_ids))
+
+        return manageable_owner_ids
+
+    async def _resolve_subordinate_counts_by_user_ids(
         self,
         *,
-        current_user: CurrentUser,
-        user_meta_by_id: dict[str, dict[str, str | int | None]],
-    ) -> str | None:
-        if current_user.role_id == settings.project_manager_role_id:
-            return current_user.user_id
-        cursor_id: str | None = current_user.user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            visited.add(cursor_id)
-            user_meta = user_meta_by_id.get(cursor_id)
-            if user_meta is None:
-                return None
-            if user_meta.get("role_id") == settings.project_manager_role_id:
-                return cursor_id
-            cursor_id = user_meta.get("id_parent")
-        return None
+        user_ids: set[str],
+    ) -> dict[str, int]:
+        result: dict[str, int] = {}
+        for user_id in user_ids:
+            result[user_id] = len(await self._hierarchy.get_subordinate_user_ids(user_id=user_id))
+        return result

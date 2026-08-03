@@ -18,6 +18,7 @@ import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField'
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { useSystemToasts } from '@shared/ui/toasts';
+import { sectionTitleSx } from '@shared/theme/sectionTitleSx';
 
 type ContractorCreateDialogProps = {
   open: boolean;
@@ -148,7 +149,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
             void handleSubmit(handleCreate)();
           }}
         >
-          <Box sx={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'text.secondary' }}>
+          <Box sx={sectionTitleSx}>
             Данные для регистрации
           </Box>
           <ValidatedTextField

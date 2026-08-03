@@ -150,7 +150,7 @@ export const DatePickerField = ({
           '& .MuiInputBase-input': {
             cursor: 'pointer',
             fontWeight: 500,
-            fontSize: 15,
+            fontSize: 14,
             py: 1,
           },
           '& .MuiInputAdornment-root': {

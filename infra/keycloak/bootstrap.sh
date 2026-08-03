@@ -280,6 +280,10 @@ users.role.update_economy
 users.login.update
 users.password.update
 users.manager.update
+units.read
+units.create
+units.update
+units.members.manage
 profile.manage_own
 profile.manage_any
 company_contacts.manage_own
@@ -411,6 +415,10 @@ users.status.update
 users.role.update_any
 users.login.update
 users.password.update
+units.read
+units.create
+units.update
+units.members.manage
 profile.manage_any
 company_contacts.manage_any
 contractors.manual.create
@@ -449,6 +457,10 @@ offers.workspace.read
 offers.contractor_info.read
 chat.read
 files.download
+units.read
+units.create
+units.update
+units.members.manage
 users.read
 contractors.read
 contractors.profile.read
@@ -493,6 +505,10 @@ chat.message.send
 chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
+units.read
+units.create
+units.update
+units.members.manage
 users.read
 contractors.read
 contractors.profile.read
@@ -543,6 +559,10 @@ chat.message.send
 chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
+units.read
+units.create
+units.update
+units.members.manage
 users.read
 contractors.read
 contractors.profile.read
@@ -562,6 +582,7 @@ EOF
 ROLE_APP_OPERATOR=$(cat <<'EOF'
 profile.manage_own
 feedback.create
+units.read
 requests.read
 requests.create
 requests.update
@@ -576,6 +597,7 @@ EOF
 ROLE_APP_SECURITY_OFFICER=$(cat <<'EOF'
 profile.manage_own
 feedback.create
+units.read
 contractors.read
 contractors.profile.read
 contractors.profile.status.update

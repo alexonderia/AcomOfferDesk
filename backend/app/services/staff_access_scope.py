@@ -6,35 +6,25 @@ from app.domain.authorization import has_permission
 from app.domain.permissions import PermissionCodes
 from app.repositories.users import UserRepository
 from app.services.department_scope import DepartmentScopeService
+from app.services.unit_hierarchy import UnitHierarchyService
 
 
 class StaffAccessScopeService:
-    """Business scope for internal staff: department visibility vs hierarchy management."""
+    """Business scope for internal staff based on unit membership."""
 
     def __init__(self, users: UserRepository):
         self._users = users
         self._department_scope = DepartmentScopeService(users)
+        self._hierarchy = UnitHierarchyService(users)
 
     async def resolve_module_root_user_id(self, *, user_id: str, role_id: int) -> str:
-        if role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
-            cursor_id: str | None = user_id
-            visited: set[str] = set()
-            fallback_lead_id: str | None = None
-            while cursor_id is not None and cursor_id not in visited:
-                visited.add(cursor_id)
-                cursor_user = await self._users.get_by_id(cursor_id)
-                if cursor_user is None:
-                    break
-                if cursor_user.id_role == settings.lead_economist_role_id:
-                    fallback_lead_id = cursor_user.id
-                    parent_user = await self._users.get_by_id(cursor_user.id_parent) if cursor_user.id_parent else None
-                    if parent_user is not None and parent_user.id_role == settings.project_manager_role_id:
-                        return cursor_user.id
-                cursor_id = cursor_user.id_parent
-            if fallback_lead_id is not None:
-                return fallback_lead_id
+        if role_id not in {settings.lead_economist_role_id, settings.economist_role_id}:
             return user_id
 
+        managers = await self._hierarchy.get_user_managers(user_id=user_id)
+        for manager in managers:
+            if manager.role_id == settings.lead_economist_role_id:
+                return manager.user_id
         return user_id
 
     async def resolve_module_owner_ids(self, *, current_user: CurrentUser) -> list[str]:
@@ -44,11 +34,16 @@ class StaffAccessScopeService:
             settings.economist_role_id,
         }:
             return []
-        module_root_user_id = await self.resolve_module_root_user_id(
-            user_id=current_user.user_id,
-            role_id=current_user.role_id,
-        )
-        return await self._department_scope.resolve_subtree_owner_ids(root_user_id=module_root_user_id)
+        return await self._hierarchy.get_module_scope_user_ids(user_id=current_user.user_id)
+
+    async def resolve_unit_management_owner_ids(self, *, current_user: CurrentUser) -> list[str]:
+        if current_user.role_id not in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            return []
+        return await self._hierarchy.get_subordinate_user_ids(user_id=current_user.user_id)
 
     async def can_view_request_owner(
         self,
@@ -66,10 +61,15 @@ class StaffAccessScopeService:
             return False
         if request_owner_user_id == current_user.user_id:
             return True
-        return await self._department_scope.is_user_in_current_user_department(
+        if await self._department_scope.is_user_in_current_user_department(
             current_user=current_user,
             target_user_id=request_owner_user_id,
-        )
+        ):
+            return True
+        visible_user_ids = await self._hierarchy.get_visible_user_ids(current_user=current_user)
+        if visible_user_ids is None:
+            return True
+        return request_owner_user_id in visible_user_ids
 
     async def can_manage_request_owner(
         self,
@@ -110,18 +110,8 @@ class StaffAccessScopeService:
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            if callable(getattr(self._users, "list_active_user_parent_pairs", None)):
-                hierarchy_owner_ids = await self._department_scope.resolve_subtree_owner_ids(
-                    root_user_id=current_user.user_id,
-                )
-                manageable_owner_ids.update(candidate_owner_ids & set(hierarchy_owner_ids))
-            else:
-                for owner_user_id in candidate_owner_ids:
-                    if await self._is_inside_hierarchy_management_scope(
-                        current_user=current_user,
-                        request_owner_user_id=owner_user_id,
-                    ):
-                        manageable_owner_ids.add(owner_user_id)
+            subordinate_owner_ids = await self.resolve_unit_management_owner_ids(current_user=current_user)
+            manageable_owner_ids.update(candidate_owner_ids & set(subordinate_owner_ids))
 
         return manageable_owner_ids
 
@@ -131,9 +121,19 @@ class StaffAccessScopeService:
         current_user: CurrentUser,
         request_owner_user_id: str,
     ) -> bool:
-        return await self._is_inside_hierarchy_management_scope(
-            current_user=current_user,
-            request_owner_user_id=request_owner_user_id,
+        if request_owner_user_id == current_user.user_id:
+            return True
+        if current_user.role_id == settings.superadmin_role_id:
+            return True
+        if current_user.role_id not in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            return False
+        return await self._hierarchy.is_manager_of(
+            manager_user_id=current_user.user_id,
+            subordinate_user_id=request_owner_user_id,
         )
 
     async def can_view_chat_for_request(
@@ -159,46 +159,7 @@ class StaffAccessScopeService:
         current_user: CurrentUser,
         request_owner_user_id: str,
     ) -> bool:
-        return await self._is_inside_hierarchy_management_scope(
+        return await self.is_hierarchy_manager_of(
             current_user=current_user,
             request_owner_user_id=request_owner_user_id,
         )
-
-    async def _is_inside_hierarchy_management_scope(
-        self,
-        *,
-        current_user: CurrentUser,
-        request_owner_user_id: str,
-    ) -> bool:
-        if request_owner_user_id == current_user.user_id:
-            return True
-        if current_user.role_id == settings.superadmin_role_id:
-            return True
-        if current_user.role_id not in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
-            return False
-        return await self._is_descendant(
-            ancestor_user_id=current_user.user_id,
-            target_user_id=request_owner_user_id,
-        )
-
-    async def _is_descendant(
-        self,
-        *,
-        ancestor_user_id: str,
-        target_user_id: str,
-    ) -> bool:
-        cursor_id: str | None = target_user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            if cursor_id == ancestor_user_id:
-                return True
-            visited.add(cursor_id)
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                return False
-            cursor_id = cursor_user.id_parent
-        return False

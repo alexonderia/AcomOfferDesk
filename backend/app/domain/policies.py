@@ -204,6 +204,16 @@ class UserPolicy:
         raise Forbidden("Недостаточно прав для изменения статуса профиля контрагента")
 
     @staticmethod
+    def can_manage_contractor_unit_bindings(current_user: CurrentUser) -> bool:
+        return UserPolicy.can_update_contractor_profile_status(current_user)
+
+    @staticmethod
+    def ensure_can_manage_contractor_unit_bindings(current_user: CurrentUser) -> None:
+        if UserPolicy.can_manage_contractor_unit_bindings(current_user):
+            return
+        raise Forbidden("Недостаточно прав для изменения привязок контрагента к подразделениям")
+
+    @staticmethod
     def can_update_user_role(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY) or has_permission(
             current_user,
@@ -226,6 +236,54 @@ class UserPolicy:
             current_user,
             PermissionCodes.USERS_MANAGER_UPDATE,
             message="Только руководитель проекта, ведущий экономист и экономист могут обновлять руководителя пользователя",
+        )
+
+    @staticmethod
+    def can_read_units(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_READ)
+
+    @staticmethod
+    def ensure_can_read_units(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_READ,
+            message="Недостаточно прав для просмотра иерархии подразделений",
+        )
+
+    @staticmethod
+    def can_create_units(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_CREATE)
+
+    @staticmethod
+    def ensure_can_create_units(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_CREATE,
+            message="Недостаточно прав для создания подразделения",
+        )
+
+    @staticmethod
+    def can_update_units(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_UPDATE)
+
+    @staticmethod
+    def ensure_can_update_units(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_UPDATE,
+            message="Недостаточно прав для изменения подразделения",
+        )
+
+    @staticmethod
+    def can_manage_unit_members(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.UNITS_MEMBERS_MANAGE)
+
+    @staticmethod
+    def ensure_can_manage_unit_members(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.UNITS_MEMBERS_MANAGE,
+            message="Недостаточно прав для управления участниками подразделения",
         )
 
     @staticmethod

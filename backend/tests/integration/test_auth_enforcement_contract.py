@@ -95,6 +95,14 @@ class _RequestsRepo:
         _ = (contractor_user_id, file_id)
         return False
 
+    async def get_open_request_identity_by_request_file_id(self, *, file_id: int):
+        _ = file_id
+        return None
+
+    async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
+        _ = (request_id, contractor_user_id)
+        return False
+
     async def get_request_owner_id_by_request_file_id(self, *, file_id: int) -> str | None:
         _ = file_id
         return "owner-1"
@@ -119,6 +127,17 @@ class _OffersRepo:
 
 
 class _UsersRepo:
+    def __init__(self) -> None:
+        self._units = [(1, None), (2, 1)]
+        self._unit_details = [
+            (1, "Department A", None),
+            (2, "Lead 1 Module", 1),
+        ]
+        self._memberships = [
+            ("lead-1", 2),
+            ("owner-1", 2),
+        ]
+
     async def get_by_id(self, user_id: str):
         users = {
             "owner-1": SimpleNamespace(id="owner-1", id_role=settings.economist_role_id, id_parent="lead-1"),
@@ -128,6 +147,15 @@ class _UsersRepo:
 
     async def list_active_user_parent_pairs(self):
         return [("owner-1", "lead-1")]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_details(self):
+        return list(self._unit_details)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 def _build_guard_app() -> FastAPI:

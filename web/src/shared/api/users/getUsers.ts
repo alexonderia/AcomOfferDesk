@@ -20,9 +20,13 @@ type UsersRow = {
   company_mail?: string | null;
   address?: string | null;
   note?: string | null;
+  units_count?: number;
+  managers_count?: number;
+  subordinates_count?: number;
   actions?: {
     can_view_profile?: boolean;
     can_update_status?: boolean;
+    can_manage_contractor_unit_bindings?: boolean;
     can_update_role?: boolean;
     can_update_manager?: boolean;
     can_manage_subordinate_unavailability?: boolean;
@@ -84,6 +88,9 @@ const normalizeUserItem = (item: UsersRow): UserListItem => {
     company_mail: companyMail,
     address: item.address ?? company?.address ?? null,
     note: item.note ?? company?.note ?? null,
+    units_count: item.units_count ?? 0,
+    managers_count: item.managers_count ?? 0,
+    subordinates_count: item.subordinates_count ?? 0,
     actions: normalizeUserActions(item.actions)
   };
 };

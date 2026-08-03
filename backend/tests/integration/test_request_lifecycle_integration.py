@@ -76,6 +76,39 @@ class _OffersRepo:
 class _UsersRepo:
     def __init__(self, users_by_id: dict[str, SimpleNamespace] | None = None) -> None:
         self._users_by_id = users_by_id or {}
+        self._units: list[tuple[int, int | None]] = []
+        self._unit_details: list[tuple[int, str, int | None]] = []
+        self._memberships: list[tuple[str, int]] = []
+
+        user_ids = set(self._users_by_id)
+        if {"pm-1", "lead-1", "lead-2"} & user_ids:
+            self._units = [(1, None), (2, 1), (3, 1)]
+            self._unit_details = [
+                (1, "Department A", None),
+                (2, "Lead 1 Module", 1),
+                (3, "Lead 2 Module", 1),
+            ]
+            if "pm-1" in user_ids:
+                self._memberships.append(("pm-1", 1))
+            if "lead-1" in user_ids:
+                self._memberships.append(("lead-1", 2))
+            if "lead-2" in user_ids:
+                self._memberships.append(("lead-2", 3))
+            if "econ-1" in user_ids:
+                self._memberships.append(("econ-1", 2))
+            if "econ-2" in user_ids:
+                self._memberships.append(("econ-2", 3))
+            if "owner-1" in user_ids:
+                self._memberships.append(("owner-1", 2))
+            if "user-1" in user_ids:
+                self._memberships.append(("user-1", 1))
+            if "contractor-1" in user_ids:
+                self._memberships.append(("contractor-1", 1))
+        elif user_ids:
+            self._units = [(1, None)]
+            self._unit_details = [(1, "Department A", None)]
+            for user_id in sorted(user_ids):
+                self._memberships.append((user_id, 1))
 
     async def get_by_id(self, user_id: str):
         return self._users_by_id.get(user_id)
@@ -85,6 +118,15 @@ class _UsersRepo:
             (user.id, user.id_parent)
             for user in self._users_by_id.values()
         ]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_details(self):
+        return list(self._unit_details)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 class _UserStatusPeriodsRepo:
@@ -176,7 +218,24 @@ class _ContractorViewUow:
         self.files = object()
         self.messages = object()
         self.company_contacts = object()
-        self.users = object()
+        self.users = _UsersRepo(
+            users_by_id={
+                "pm-1": SimpleNamespace(id="pm-1", id_parent=None, id_role=settings.project_manager_role_id),
+                "lead-1": SimpleNamespace(id="lead-1", id_parent="pm-1", id_role=settings.lead_economist_role_id),
+                "owner-1": SimpleNamespace(id="owner-1", id_parent="lead-1", id_role=settings.economist_role_id),
+                "contractor-1": SimpleNamespace(
+                    id="contractor-1",
+                    id_parent=None,
+                    id_role=settings.contractor_role_id,
+                ),
+                "user-1": SimpleNamespace(
+                    id="user-1",
+                    id_parent=None,
+                    id_role=settings.contractor_role_id,
+                ),
+            }
+        )
+        self.units = object()
         self.user_contact_channels = _NullUserContactChannelsRepo()
         self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
 

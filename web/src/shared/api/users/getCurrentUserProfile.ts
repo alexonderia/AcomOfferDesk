@@ -18,6 +18,7 @@ type ProfilePayload = {
   mail_company?: string | null;
   address?: string | null;
   note?: string | null;
+  department_name?: string | null;
   permissions?: string[];
   keycloak_roles?: string[];
   app_roles?: string[];
@@ -86,6 +87,7 @@ export type CurrentUserProfile = {
   fullName: string | null;
   phone: string | null;
   mail: string | null;
+  departmentName: string | null;
   company: {
     companyName: string | null;
     inn: string | null;
@@ -174,6 +176,7 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
     fullName: data.full_name ?? profiles?.full_name ?? null,
     phone: data.phone ?? profiles?.phone ?? null,
     mail: data.mail ?? profiles?.mail ?? null,
+    departmentName: data.department_name ?? null,
     company: {
       companyName: data.company_name ?? companyContacts?.company_name ?? null,
       inn: data.inn ?? companyContacts?.inn ?? null,
@@ -251,7 +254,7 @@ export const getRegistrationCurrentUserProfile = async (): Promise<CurrentUserPr
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me/registration-profile',
     { method: 'GET' },
-    'РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё РґР°РЅРЅС‹С… СЂРµРіРёСЃС‚СЂР°С†РёРё'
+    'Ошибка загрузки данных регистрации'
   );
 
   return mapCurrentUserProfile(response);
@@ -313,7 +316,7 @@ export const updateMyRegistrationProfile = async (payload: UpdateProfilePayload)
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me/registration-profile',
     { method: 'PATCH', body: JSON.stringify(payload) },
-    'РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РґР°РЅРЅС‹С… СЂРµРіРёСЃС‚СЂР°С†РёРё'
+    'Ошибка обновления данных регистрации'
   );
 
   return mapCurrentUserProfile(response);
@@ -335,7 +338,7 @@ export const updateMyRegistrationCompanyContacts = async (
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me/registration-company-contacts',
     { method: 'PATCH', body: JSON.stringify(payload) },
-    'РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РґР°РЅРЅС‹С… РµРіРёСЃС‚СЂР°С†РёРё'
+    'Ошибка обновления данных компании при регистрации'
   );
 
   return mapCurrentUserProfile(response);

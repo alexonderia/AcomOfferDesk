@@ -118,7 +118,7 @@ export const SourceSection = ({
             borderColor: 'divider',
             backgroundColor: 'background.default',
             color: 'text.secondary',
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: 700,
             letterSpacing: '0.03em',
           }}

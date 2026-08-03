@@ -17,6 +17,8 @@ from app.models.orm_models import (
     Role,
     TgUser,
     EconomyPlan,
+    Unit,
+    UnitMember,
     User,
     UserStatusPeriod,
 )
@@ -322,6 +324,60 @@ class UserRepository:
             users.append(user)
         return users
 
+    async def find_matching_contractor_user_ids(
+        self,
+        *,
+        contractor_role_id: int,
+        full_name: str | None = None,
+        email: str | None = None,
+        inn: str | None = None,
+        company_name: str | None = None,
+    ) -> list[str]:
+        match_clauses = []
+        normalized_full_name = (full_name or "").strip().lower()
+        if normalized_full_name:
+            match_clauses.append(
+                func.lower(func.coalesce(Profile.full_name, "")) == normalized_full_name
+            )
+        normalized_email = (email or "").strip().lower()
+        if normalized_email:
+            match_clauses.append(
+                or_(
+                    func.lower(func.coalesce(Profile.mail, "")) == normalized_email,
+                    func.lower(func.coalesce(CompanyContact.mail, "")) == normalized_email,
+                )
+            )
+        normalized_inn = (inn or "").strip()
+        if normalized_inn:
+            match_clauses.append(CompanyContact.inn == normalized_inn)
+        normalized_company_name = (company_name or "").strip().lower()
+        if normalized_company_name:
+            match_clauses.append(
+                func.lower(func.coalesce(CompanyContact.company_name, "")) == normalized_company_name
+            )
+        if not match_clauses:
+            return []
+
+        stmt = (
+            select(User.id)
+            .outerjoin(Profile, Profile.id == User.id)
+            .outerjoin(CompanyContact, CompanyContact.id == User.id)
+            .where(
+                User.id_role == contractor_role_id,
+                or_(*match_clauses),
+            )
+            .order_by(User.created_at.asc(), User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        seen_user_ids: set[str] = set()
+        matched_user_ids: list[str] = []
+        for user_id in result.scalars().all():
+            if user_id in seen_user_ids:
+                continue
+            seen_user_ids.add(user_id)
+            matched_user_ids.append(user_id)
+        return matched_user_ids
+
     async def add(self, user: User) -> None:
         self._session.add(user)
 
@@ -503,6 +559,38 @@ class UserRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.all())
+
+    async def list_active_units(self) -> list[tuple[int, int | None]]:
+        """Active units as (unit_id, parent_unit_id) pairs for org-scope resolution."""
+        stmt = select(Unit.id, Unit.id_parent).where(Unit.is_active.is_(True))
+        result = await self._session.execute(stmt)
+        return [
+            (int(unit_id), int(parent_id) if parent_id is not None else None)
+            for unit_id, parent_id in result.all()
+        ]
+
+    async def list_active_unit_details(self) -> list[tuple[int, str, int | None]]:
+        """Active units as (unit_id, unit_name, parent_unit_id) tuples."""
+        stmt = (
+            select(Unit.id, Unit.name, Unit.id_parent)
+            .where(Unit.is_active.is_(True))
+            .order_by(Unit.id_parent.asc().nullsfirst(), Unit.name.asc(), Unit.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [
+            (int(unit_id), str(name), int(parent_id) if parent_id is not None else None)
+            for unit_id, name, parent_id in result.all()
+        ]
+
+    async def list_active_unit_memberships(self) -> list[tuple[str, int]]:
+        """Active unit memberships (in active units) as (user_id, unit_id) pairs."""
+        stmt = (
+            select(UnitMember.id_user, UnitMember.id_unit)
+            .join(Unit, Unit.id == UnitMember.id_unit)
+            .where(UnitMember.is_active.is_(True), Unit.is_active.is_(True))
+        )
+        result = await self._session.execute(stmt)
+        return [(str(user_id), int(unit_id)) for user_id, unit_id in result.all()]
 
     async def list_staff_with_profiles_and_roles_for_dashboard(
         self,
@@ -695,6 +783,36 @@ class UserRepository:
             stmt = stmt.where(User.id.not_in(exclude_user_ids))
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_active_approved_contractor_tg_recipients(
+        self,
+        *,
+        contractor_role_id: int,
+        exclude_user_ids: list[str] | None = None,
+    ) -> list[tuple[str, int]]:
+        stmt = (
+            select(User.id, cast(UserAuthAccount.external_subject_id, BigInteger))
+            .join(UserAuthAccount, User.id == UserAuthAccount.id_user)
+            .join(
+                UserContactChannel,
+                and_(
+                    UserContactChannel.id_user == User.id,
+                    UserContactChannel.channel_type == "telegram",
+                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
+                    UserContactChannel.is_active.is_(True),
+                    UserContactChannel.is_verified.is_(True),
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(UserAuthAccount.provider == "telegram")
+            .where(UserAuthAccount.is_active.is_(True))
+            .order_by(User.id.asc())
+        )
+        if exclude_user_ids:
+            stmt = stmt.where(User.id.not_in(exclude_user_ids))
+        result = await self._session.execute(stmt)
+        return [(str(user_id), int(tg_id)) for user_id, tg_id in result.all()]
 
     async def list_active_tg_user_ids(self) -> list[int]:
         stmt = (

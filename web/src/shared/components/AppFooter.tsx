@@ -151,7 +151,7 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
                 gridColumn: 1,
                 gridRow: 1,
                 fontWeight: 650,
-                fontSize: { xs: 18, sm: 17 },
+                fontSize: { xs: 18, sm: 18 },
                 lineHeight: 1.1
               }}
             >
@@ -160,7 +160,7 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ gridColumn: 1, gridRow: 2, fontWeight: 500, fontSize: 12.5 }}
+              sx={{ gridColumn: 1, gridRow: 2, fontWeight: 500, fontSize: 12 }}
             >
               {CREATED_BY_LABEL}
             </Typography>
@@ -228,7 +228,7 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
                 </Link>
               </Stack>
             </Stack>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 12.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 12 }}>
               {CREATED_BY_LABEL}
             </Typography>
           </Stack>
@@ -248,7 +248,7 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
                   color="text.secondary"
                   sx={{
                     fontWeight: 500,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     textAlign: 'left',
                     whiteSpace: 'nowrap'
                   }}
@@ -282,7 +282,7 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
                   color="text.secondary"
                   sx={{
                     fontWeight: 500,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     textAlign: 'right',
                     whiteSpace: 'nowrap'
                   }}

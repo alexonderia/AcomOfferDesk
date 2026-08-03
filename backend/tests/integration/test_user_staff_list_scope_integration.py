@@ -83,6 +83,23 @@ class _ScopedUsersRepo:
             )
             for user_id in self._users
         }
+        self._units = [
+            (1, None),
+            (2, 1),
+            (3, 1),
+            (10, None),
+        ]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("eco-1", 2),
+            ("eco-2", 2),
+            ("operator-1", 2),
+            ("lead-2", 3),
+            ("eco-3", 3),
+            ("operator-2", 3),
+            ("admin-1", 1),
+        ]
 
     async def get_by_id(self, user_id: str):
         return self._users.get(user_id)
@@ -110,6 +127,25 @@ class _ScopedUsersRepo:
             for user in self._users.values()
             if user.status == "active"
         ]
+
+    async def list_active_units(self):
+        return [
+            (int(unit_id), int(parent_id) if parent_id is not None else None)
+            for unit_id, parent_id in self._units
+        ]
+
+    async def list_active_unit_details(self):
+        return [
+            (
+                int(unit_id),
+                f"unit-{unit_id}",
+                int(parent_id) if parent_id is not None else None,
+            )
+            for unit_id, parent_id in self._units
+        ]
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
     async def list_contractors(self, *, contractor_role_id: int):
         return [

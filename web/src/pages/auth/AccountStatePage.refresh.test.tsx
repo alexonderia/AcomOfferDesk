@@ -23,6 +23,7 @@ vi.mock('@shared/api/users/getCurrentUserProfile', () => ({
 }));
 
 vi.mock('@shared/ui/toasts', () => ({
+  useToastMessageEffect: vi.fn(),
   useSystemToasts: () => ({
     showErrorToast: showErrorToastMock,
     showSuccessToast: showSuccessToastMock,
@@ -70,6 +71,7 @@ const profileResponse = {
   actions: {
     view_profile: false,
     update_status: false,
+    manage_contractor_unit_bindings: false,
     update_role: false,
     update_manager: false,
     manage_manual_contractor: false,

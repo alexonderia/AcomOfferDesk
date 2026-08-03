@@ -109,7 +109,8 @@ services:
 
   web:
     build:
-      context: ./web
+      context: .
+      dockerfile: web/Dockerfile
     container_name: web
     restart: unless-stopped
     depends_on:

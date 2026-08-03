@@ -2,12 +2,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import SaveOutlined from '@mui/icons-material/SaveOutlined';
 import {
+  Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
+  FormControlLabel,
+  FormGroup,
   InputBase,
   MenuItem,
+  Select,
   Stack,
   TextField,
   Tooltip,
@@ -31,10 +36,16 @@ import {
   type ContractorEditField,
 } from '@features/contractors/hooks/useContractorTableEditing';
 import type { ContractorListItem } from '@shared/api/contractors/listContractors';
+import {
+  getContractorRootUnits,
+  type ContractorRootUnitsResult,
+} from '@shared/api/contractors/getContractorRootUnits';
 import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
+import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { ContractorMobileCard } from './ContractorMobileCard';
+import { ContractorUnitsCell } from './ContractorUnitsCell';
 import { ContractorEditableFieldFrame, ContractorReadOnlyFieldFrame } from './contractorFieldValidation';
 import {
   ContractorStatusPill,
@@ -52,6 +63,7 @@ type StatusFormValues = z.infer<typeof statusSchema>;
 
 const VIEW_COLUMN_IDS = [
   'status',
+  'units',
   'login',
   'full_name',
   'phone',
@@ -85,6 +97,9 @@ const toUserListItem = (row: ContractorListItem): UserListItem => ({
   company_mail: row.companyMail,
   address: row.address,
   note: row.note,
+  units_count: 0,
+  managers_count: 0,
+  subordinates_count: 0,
   actions: row.actions,
 });
 
@@ -125,6 +140,11 @@ export const ContractorsListView = ({
   const [isEditMode, setIsEditMode] = useState(false);
   const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([...VIEW_COLUMN_IDS]);
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
+  const [selectedUserRootUnits, setSelectedUserRootUnits] = useState<ContractorRootUnitsResult | null>(null);
+  const [rootUnitDraftById, setRootUnitDraftById] = useState<Record<number, boolean>>({});
+  const [isLoadingRootUnits, setIsLoadingRootUnits] = useState(false);
+  const [isSavingRootUnits, setIsSavingRootUnits] = useState(false);
+  const [rootUnitsError, setRootUnitsError] = useState<string | null>(null);
   const [expandedContractorCardsById, setExpandedContractorCardsById] = useState<
     Record<string, { contact: boolean; company: boolean }>
   >({});
@@ -162,10 +182,64 @@ export const ContractorsListView = ({
     reset({ user_status: normalizeUserStatus(selectedUser.status) });
   }, [reset, selectedUser]);
 
+  useEffect(() => {
+    if (!selectedUser) {
+      setSelectedUserRootUnits(null);
+      setRootUnitDraftById({});
+      setRootUnitsError(null);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsLoadingRootUnits(true);
+    setRootUnitsError(null);
+
+    void getContractorRootUnits(selectedUser.user_id)
+      .then((result) => {
+        if (isCancelled) {
+          return;
+        }
+        setSelectedUserRootUnits(result);
+        setRootUnitDraftById(
+          Object.fromEntries(result.items.map((item) => [item.unitId, item.isBound])),
+        );
+      })
+      .catch((error) => {
+        if (isCancelled) {
+          return;
+        }
+        setSelectedUserRootUnits(null);
+        setRootUnitDraftById({});
+        setRootUnitsError(
+          error instanceof Error ? error.message : 'Не удалось загрузить привязки к подразделениям',
+        );
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingRootUnits(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedUser]);
+
   const canEditContractorData = useMemo(
     () => contractors.some((row) => row.actions.manage_manual_contractor),
     [contractors],
   );
+
+  const manageableRootUnitIds = useMemo(
+    () => selectedUserRootUnits?.items.filter((item) => item.canManage).map((item) => item.unitId) ?? [],
+    [selectedUserRootUnits],
+  );
+
+  const hasRootUnitChanges = useMemo(() => (
+    selectedUserRootUnits?.items.some(
+      (item) => item.canManage && rootUnitDraftById[item.unitId] !== item.isBound,
+    ) ?? false
+  ), [rootUnitDraftById, selectedUserRootUnits]);
 
   useEffect(() => {
     setVisibleColumnIds(isEditMode ? [...ALL_COLUMN_IDS] : [...VIEW_COLUMN_IDS]);
@@ -205,6 +279,32 @@ export const ContractorsListView = ({
     }
     return <ContractorReadOnlyFieldFrame locked>{content}</ContractorReadOnlyFieldFrame>;
   }, [isEditMode]);
+
+  const renderStatusField = useCallback((row: ContractorListItem) => {
+    const draft = getDraft(row);
+    const value = (draft.status as string | undefined) ?? getFieldValue(row, 'status');
+    const dirty = isFieldDirty(row, 'status', draft);
+
+    return (
+      <ContractorEditableFieldFrame dirty={dirty}>
+        <Select
+          value={value}
+          onChange={(event) => updateDraftValue(row, 'status', event.target.value)}
+          disabled={isSaving}
+          variant="standard"
+          disableUnderline
+          aria-label={`${row.userId}-status`}
+          inputProps={{ 'aria-label': `${row.userId}-status` }}
+          sx={{ width: '100%', fontSize: 14 }}
+        >
+          <MenuItem value="review">На проверке</MenuItem>
+          <MenuItem value="active">Активен</MenuItem>
+          <MenuItem value="inactive">Неактивен</MenuItem>
+          <MenuItem value="blacklist">В черном списке</MenuItem>
+        </Select>
+      </ContractorEditableFieldFrame>
+    );
+  }, [getDraft, getFieldValue, isFieldDirty, isSaving, updateDraftValue]);
 
   const renderEditableField = useCallback((
     row: ContractorListItem,
@@ -261,11 +361,21 @@ export const ContractorsListView = ({
         getFilterValue: (row) => statusLabelForFilter(row.status),
         getSearchValue: (row) => statusLabelForFilter(row.status),
         getSortValue: (row) => statusLabelForFilter(row.status),
-        renderCell: (row) => (
-          isEditMode
-            ? renderLockedCell(<ContractorStatusPill value={row.status} />)
-            : <ContractorStatusPill value={row.status} />
-        ),
+        renderCell: (row) => {
+          if (!isEditMode) {
+            return <ContractorStatusPill value={row.status} />;
+          }
+          return row.actions.update_status
+            ? renderStatusField(row)
+            : renderLockedCell(<ContractorStatusPill value={row.status} />);
+        },
+      },
+      {
+        id: 'units',
+        header: 'Подразделения',
+        minWidth: 190,
+        sortable: false,
+        renderCell: (row) => <ContractorUnitsCell contractor={row} onSaved={onStatusUpdated} />,
       },
       {
         id: 'login',
@@ -370,11 +480,48 @@ export const ContractorsListView = ({
         renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions, isEditMode, renderEditableField, renderLockedCell],
+    [contractorStatusFilterOptions, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField],
   );
 
   const openContractorDetails = (row: ContractorListItem) => {
     setSelectedUser(toUserListItem(row));
+  };
+
+  const handleRootUnitToggle = (unitId: number, checked: boolean) => {
+    setRootUnitDraftById((prev) => ({
+      ...prev,
+      [unitId]: checked,
+    }));
+  };
+
+  const handleSaveRootUnits = async () => {
+    if (!selectedUser || !selectedUserRootUnits) {
+      return;
+    }
+
+    try {
+      setIsSavingRootUnits(true);
+      setRootUnitsError(null);
+      const updated = await updateContractorRootUnits(
+        selectedUser.user_id,
+        manageableRootUnitIds.filter((unitId) => Boolean(rootUnitDraftById[unitId])),
+      );
+      setSelectedUserRootUnits(updated);
+      setRootUnitDraftById(
+        Object.fromEntries(updated.items.map((item) => [item.unitId, item.isBound])),
+      );
+      showSystemToast({
+        severity: 'success',
+        message: 'Привязки к подразделениям сохранены.',
+      });
+      await onStatusUpdated();
+    } catch (error) {
+      setRootUnitsError(
+        error instanceof Error ? error.message : 'Не удалось сохранить привязки к подразделениям',
+      );
+    } finally {
+      setIsSavingRootUnits(false);
+    }
   };
 
   const handleStatusSubmit = async (values: StatusFormValues) => {
@@ -612,6 +759,44 @@ export const ContractorsListView = ({
                         <InfoRow label="Адрес" value={selectedUser.address} />
                       </Box>
                       <InfoRow label="Примечание" value={selectedUser.note} />
+                    </Stack>
+                  </SourceSection>
+
+                  <SourceSection title="Подразделения" source="units">
+                    <Stack spacing={1.2}>
+                      {isLoadingRootUnits ? (
+                        <Typography color="text.secondary">Загрузка привязок...</Typography>
+                      ) : null}
+                      {!isLoadingRootUnits && selectedUserRootUnits ? (
+                        <FormGroup>
+                          {selectedUserRootUnits.items.map((item) => (
+                            <FormControlLabel
+                              key={`${selectedUser.user_id}-${item.unitId}`}
+                              control={(
+                                <Checkbox
+                                  checked={Boolean(rootUnitDraftById[item.unitId])}
+                                  disabled={!item.canManage || isSavingRootUnits}
+                                  onChange={(event) => handleRootUnitToggle(item.unitId, event.target.checked)}
+                                />
+                              )}
+                              label={item.unitName}
+                            />
+                          ))}
+                        </FormGroup>
+                      ) : null}
+                      {rootUnitsError ? <Alert severity="error">{rootUnitsError}</Alert> : null}
+                      {selectedUser.actions.manage_contractor_unit_bindings && selectedUserRootUnits?.canManage ? (
+                        <Stack direction="row" justifyContent="flex-end">
+                          <Button
+                            variant="outlined"
+                            onClick={() => void handleSaveRootUnits()}
+                            disabled={isSavingRootUnits || !hasRootUnitChanges}
+                            sx={{ borderRadius: 1, textTransform: 'none' }}
+                          >
+                            {isSavingRootUnits ? 'Сохранение...' : 'Сохранить привязки'}
+                          </Button>
+                        </Stack>
+                      ) : null}
                     </Stack>
                   </SourceSection>
                 </Stack>

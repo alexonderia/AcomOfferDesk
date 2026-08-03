@@ -1,5 +1,5 @@
 import {
-  Alert,
+  Autocomplete,
   Box,
   Button,
   Dialog,
@@ -11,35 +11,17 @@ import {
   Typography,
   type SelectChangeEvent
 } from '@mui/material';
-import { alpha, type Theme } from '@mui/material/styles';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
 import { ROLE } from '@shared/constants/roles';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { formatRuPhone } from '@shared/lib/phone';
+import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
+import { sectionTitleSx } from '@shared/theme/sectionTitleSx';
+import { useToastMessageEffect } from '@shared/ui/toasts';
 import { employeePersonLabels, type UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
-
-const dialogPaperSx = (theme: Theme) => ({
-  borderRadius: 2,
-  px: { xs: 2.5, sm: 3.5 },
-  py: { xs: 3, sm: 3.5 },
-  backgroundColor: theme.palette.background.default,
-  maxHeight: 'min(760px, calc(100vh - 32px))',
-  overflow: 'hidden',
-  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
-});
-
-const dialogContentSx = {
-  p: 0,
-  overflowX: 'hidden',
-  overflowY: 'auto',
-  scrollbarWidth: 'none',
-  '&::-webkit-scrollbar': {
-    display: 'none'
-  }
-};
 
 const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
@@ -47,20 +29,6 @@ const inputFieldSx = {
     backgroundColor: 'background.paper'
   }
 };
-
-const roleNameById: Record<number, string> = {
-  [ROLE.PROJECT_MANAGER]: 'РП',
-  [ROLE.LEAD_ECONOMIST]: 'ВЭ',
-  [ROLE.ECONOMIST]: 'Экономист',
-};
-
-const sectionTitleSx = {
-  fontSize: 13,
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: 0.4,
-  color: 'text.secondary'
-} as const;
 
 export const AdminPageView = () => {
   const {
@@ -81,13 +49,15 @@ export const AdminPageView = () => {
     userTabs,
     getRoleLabel,
     canOpenCreateDialog,
+    canAssignUnitOnCreate,
+    canShowUnitOnCreate,
     isContractorRole,
-    requiresParent,
-    managerOptions,
+    isLoadingUnitOptions,
     loadUsers,
     handleClose,
     onSubmit,
-    form
+    form,
+    unitOptions,
   } = useAdminPage();
 
   const {
@@ -99,14 +69,13 @@ export const AdminPageView = () => {
   } = form;
 
   const selectedRoleId = watch('role_id');
+  const selectedUnitId = watch('unit_id');
   const loginValue = watch('login');
   const mailValue = watch('mail');
-  const parentIdValue = watch('id_parent');
   const companyNameValue = watch('company_name');
   const innValue = watch('inn');
   const companyPhoneValue = watch('company_phone');
   const isEmployeesTab = activeTab !== 'contractors';
-
   const handleRoleSelectChange = (event: SelectChangeEvent<UserTab>) => {
     handleTabChange(event.target.value as UserTab);
   };
@@ -130,7 +99,9 @@ export const AdminPageView = () => {
   const isCompanyNameFieldValid = hasValue(companyNameValue) && !errors.company_name;
   const isInnFieldValid = hasValue(innValue) && !errors.inn;
   const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
-  const isParentFieldValid = hasValue(parentIdValue) && !errors.id_parent;
+  const selectedUnitOption = unitOptions.find((option) => option.unitId === selectedUnitId) ?? null;
+
+  useToastMessageEffect({ message: usersError });
 
   return (
     <Stack spacing={2}>
@@ -148,9 +119,6 @@ export const AdminPageView = () => {
           </Select>
         </Stack>
       ) : null}
-
-      {usersError ? <Alert severity="error">{usersError}</Alert> : null}
-
       {activeTab === 'contractors' ? (
         <ContractorsListView
           contractors={contractors}
@@ -351,41 +319,39 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
 
-                  {selectedRoleId === ROLE.PROJECT_MANAGER || requiresParent ? (
-                    <TextField
-                      label={
-                        requiresParent
-                          ? (
-                            <RequiredFieldLabel
-                              label={
-                                selectedRoleId === ROLE.ECONOMIST
-                                  ? 'Руководитель (ведущий экономист или экономист)'
-                                  : 'Руководитель (руководитель проекта или ведущий экономист)'
-                              }
-                              isValid={isParentFieldValid}
-                            />
-                          )
-                          : 'Руководитель (руководитель проекта)'
-                      }
-                      select
-                      error={Boolean(getFieldError('id_parent'))}
-                      helperText={getFieldError('id_parent') ?? (managerOptions.length ? '' : 'Нет доступных руководителей')}
-                      {...register('id_parent')}
-                      sx={inputFieldSx}
-                    >
-                      {!requiresParent ? (
-                        <MenuItem value="">
-                          Без руководителя
-                        </MenuItem>
-                      ) : null}
-                      {managerOptions.map((manager) => (
-                        <MenuItem key={manager.user_id} value={manager.user_id}>
-                          {manager.full_name
-                            ? `${roleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
-                            : `${roleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.user_id}`}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+                  {canShowUnitOnCreate && unitOptions.length > 0 ? (
+                    <>
+                      <Typography sx={sectionTitleSx}>
+                        Объединение
+                      </Typography>
+                      <Autocomplete
+                        loading={isLoadingUnitOptions}
+                        options={unitOptions}
+                        value={selectedUnitOption}
+                        onChange={(_event, value) => {
+                          setValue('unit_id', value?.unitId ?? null, {
+                            shouldDirty: true,
+                            shouldTouch: true,
+                            shouldValidate: true,
+                          });
+                        }}
+                        getOptionLabel={(option) => option.label}
+                        isOptionEqualToValue={(option, value) => option.unitId === value.unitId}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Объединение"
+                            placeholder="Выберите объединение"
+                            helperText={
+                              canAssignUnitOnCreate
+                                ? 'Необязательно. Можно назначить сразу при создании.'
+                                : 'По умолчанию выбрано ваше подразделение. Можно изменить перед созданием.'
+                            }
+                            sx={inputFieldSx}
+                          />
+                        )}
+                      />
+                    </>
                   ) : null}
                 </>
               )}

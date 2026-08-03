@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Conflict, NotFound
 from app.domain.policies import UserPolicy
 from app.repositories.profiles import ProfileRepository
+from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
+from app.services.contractor_units import ContractorRootUnitBindingsState, ContractorUnitService
 from app.services.users import UserStatusService, UserStatusUpdateResult
 
 
@@ -29,6 +31,7 @@ class ContractorListItemResult:
     created_at: str | None
     updated_at: str | None
     registration_source: str
+    root_unit_bindings: ContractorRootUnitBindingsState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,9 +63,11 @@ class ContractorService:
         self,
         users: UserRepository,
         profiles: ProfileRepository,
+        units: UnitRepository | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
+        self._units = units
 
     async def list_contractors(
         self,
@@ -107,6 +112,16 @@ class ContractorService:
             )
             for user, profile, company, tg_user, max_user_id in rows
         ]
+        if self._units is not None and items:
+            bindings_by_user = await self._contractor_unit_service().list_bindings_for_users(
+                current_user=current_user,
+                contractor_user_ids=[item.user_id for item in items],
+            )
+            if bindings_by_user:
+                items = [
+                    replace(item, root_unit_bindings=bindings_by_user.get(item.user_id))
+                    for item in items
+                ]
         return ContractorListResult(
             items=items,
             total=total,
@@ -160,4 +175,33 @@ class ContractorService:
             user_status=user_status,
             tg_status=None,
             contractor_only=True,
+        )
+
+    def _contractor_unit_service(self) -> ContractorUnitService:
+        if self._units is None:
+            raise RuntimeError("Contractor unit service requires unit repository")
+        return ContractorUnitService(users=self._users, units=self._units)
+
+    async def get_contractor_root_unit_bindings(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_id: str,
+    ) -> ContractorRootUnitBindingsState:
+        return await self._contractor_unit_service().list_bindings(
+            current_user=current_user,
+            contractor_user_id=contractor_id,
+        )
+
+    async def update_contractor_root_unit_bindings(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_id: str,
+        root_unit_ids: set[int],
+    ) -> ContractorRootUnitBindingsState:
+        return await self._contractor_unit_service().update_bindings(
+            current_user=current_user,
+            contractor_user_id=contractor_id,
+            root_unit_ids=root_unit_ids,
         )

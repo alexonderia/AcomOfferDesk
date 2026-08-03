@@ -21,6 +21,20 @@ def test_keycloak_bootstrap_admin_app_role_does_not_gain_contractor_read_permiss
     members = manifest['app.admin']
     assert 'contractors.read' not in members
     assert 'contractors.profile.read' not in members
+    assert 'units.read' in members
+    assert 'units.create' in members
+    assert 'units.update' in members
+    assert 'units.members.manage' in members
+
+
+def test_keycloak_bootstrap_project_manager_app_role_gets_subtree_units_management() -> None:
+    manifest = load_app_role_members()
+
+    members = manifest["app.project_manager"]
+    assert "units.read" in members
+    assert "units.create" in members
+    assert "units.update" in members
+    assert "units.members.manage" in members
 
 
 def test_keycloak_bootstrap_security_officer_app_role_contains_only_expected_permissions() -> None:
@@ -30,6 +44,7 @@ def test_keycloak_bootstrap_security_officer_app_role_contains_only_expected_per
         {
             "profile.manage_own",
             "feedback.create",
+            "units.read",
             "contractors.read",
             "contractors.profile.read",
             "contractors.profile.status.update",

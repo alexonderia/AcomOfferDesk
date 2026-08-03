@@ -36,7 +36,7 @@ const fieldSx = {
   },
   '& .MuiInputBase-input': {
     fontWeight: 500,
-    fontSize: 15,
+    fontSize: 14,
   },
   '& .MuiFormHelperText-root': {
     ml: 0.5,

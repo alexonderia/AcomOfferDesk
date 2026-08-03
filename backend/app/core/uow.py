@@ -24,6 +24,7 @@ from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.user_notification_preferences import UserNotificationPreferenceRepository
+from app.repositories.units import UnitRepository
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class UnitOfWork:
         self.user_contact_channels: UserContactChannelRepository | None = None
         self.user_notification_preferences: UserNotificationPreferenceRepository | None = None
         self.economy_plans: EconomyPlanRepository | None = None
+        self.units: UnitRepository | None = None
         self._after_commit_hooks: list[Callable[[], Awaitable[None]]] = []
 
     async def __aenter__(self) -> "UnitOfWork":
@@ -71,6 +73,7 @@ class UnitOfWork:
         self.user_contact_channels = UserContactChannelRepository(self.session)
         self.user_notification_preferences = UserNotificationPreferenceRepository(self.session)
         self.economy_plans = EconomyPlanRepository(self.session)
+        self.units = UnitRepository(self.session)
         self._after_commit_hooks = []
         return self
 

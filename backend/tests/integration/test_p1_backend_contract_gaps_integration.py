@@ -273,6 +273,16 @@ class _DownloadRequestsRepo:
         _ = (contractor_user_id, file_id)
         return self.linked
 
+    async def get_open_request_identity_by_request_file_id(self, *, file_id: int):
+        _ = file_id
+        if not self.linked:
+            return None
+        return ("77", self.owner_user_id or "owner-1")
+
+    async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
+        _ = (request_id, contractor_user_id)
+        return False
+
     async def get_request_owner_id_by_request_file_id(self, *, file_id: int) -> str | None:
         _ = file_id
         return self.owner_user_id
@@ -332,14 +342,67 @@ class _DownloadUow:
 
 class _DownloadUsersRepo:
     def __init__(self, *, users=None, parent_pairs=None) -> None:
-        self._users = users or {}
+        self._users = users or {
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None),
+        }
         self._parent_pairs = parent_pairs or []
+        self._units = [(1, None), (2, 1)]
+        self._unit_details = [
+            (1, "Department A", None),
+            (2, "Lead 1 Module", 1),
+        ]
+        self._memberships: list[tuple[str, int]] = []
+        user_ids = set(self._users)
+        if "pm-1" in user_ids:
+            self._memberships.append(("pm-1", 1))
+        if "lead-1" in user_ids:
+            self._memberships.append(("lead-1", 2))
+        if "owner-1" in user_ids:
+            self._memberships.append(("owner-1", 2))
+        if "contractor-1" in user_ids:
+            self._memberships.append(("contractor-1", 1))
+        if "lead-2" in user_ids:
+            self._units.append((3, 1))
+            self._unit_details.append((3, "Lead 2 Module", 1))
+            self._memberships.append(("lead-2", 3))
+        if "owner-2" in user_ids:
+            if all(unit_id != 3 for unit_id, _parent_id in self._units):
+                self._units.append((3, 1))
+                self._unit_details.append((3, "Lead 2 Module", 1))
+            self._memberships.append(("owner-2", 3))
+        if "econ-1" in user_ids and ("econ-1", 2) not in self._memberships:
+            self._memberships.append(("econ-1", 2))
+        if "outside-1" in user_ids:
+            self._units.extend([(10, None), (11, 10)])
+            self._unit_details.extend(
+                [
+                    (10, "Department B", None),
+                    (11, "Other Lead Module", 10),
+                ]
+            )
+            self._memberships.append(("outside-1", 11))
+        if "other-lead" in user_ids and ("other-lead", 11) not in self._memberships:
+            self._memberships.append(("other-lead", 11))
+        if "pm-2" in user_ids and ("pm-2", 10) not in self._memberships:
+            self._memberships.append(("pm-2", 10))
 
     async def get_by_id(self, user_id: str):
         return self._users.get(user_id)
 
     async def list_active_user_parent_pairs(self):
         return self._parent_pairs
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_details(self):
+        return list(self._unit_details)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 class _OfferFilesOffersRepo:
@@ -370,6 +433,16 @@ class _OfferFilesRequestsRepo:
 class _OfferFilesUsersRepo:
     def __init__(self, *, users=None) -> None:
         self._users = users or {}
+        self._units = [(1, None), (2, 1)]
+        self._unit_details = [
+            (1, "Department A", None),
+            (2, "Lead 1 Module", 1),
+        ]
+        self._memberships = [
+            ("owner-1", 2),
+            ("contractor-1", 1),
+            ("other-contractor", 1),
+        ]
 
     async def get_by_id(self, user_id: str | None = None, **kwargs):
         resolved_user_id = user_id or kwargs["user_id"]
@@ -386,12 +459,28 @@ class _OfferFilesUsersRepo:
         _ = (user_id, contractor_role_id)
         return None
 
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_details(self):
+        return list(self._unit_details)
+
+    async def list_active_unit_memberships(self):
+        memberships = list(self._memberships)
+        for user_id, user in self._users.items():
+            if getattr(user, "id_role", None) == settings.contractor_role_id and (user_id, 1) not in memberships:
+                memberships.append((user_id, 1))
+            if user_id == "owner-1" and (user_id, 2) not in memberships:
+                memberships.append((user_id, 2))
+        return memberships
+
 
 class _OfferFilesUow:
     def __init__(self, *, offers_repo=None, users_repo=None) -> None:
         self.offers = offers_repo or _OfferFilesOffersRepo()
         self.requests = _OfferFilesRequestsRepo()
         self.users = users_repo or _OfferFilesUsersRepo()
+        self.units = object()
         self.files = object()
         self.chats = object()
         self.messages = object()
@@ -456,12 +545,13 @@ class _ManualEmailNotifications:
         self,
         profiles,
         requests,
+        users=None,
         files=None,
         *,
         notification_preferences=None,
         after_commit_hook_registrar=None,
     ) -> None:
-        _ = (profiles, requests, files, notification_preferences, after_commit_hook_registrar)
+        _ = (profiles, requests, users, files, notification_preferences, after_commit_hook_registrar)
         self.calls: list[dict] = []
 
     async def notify_request_to_additional_emails(
@@ -1648,6 +1738,7 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
     def _factory(
         profiles,
         requests,
+        users,
         files=None,
         *,
         notification_preferences=None,
@@ -1657,6 +1748,7 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
         fake_notifications = _ManualEmailNotifications(
             profiles,
             requests,
+            users,
             files,
             notification_preferences=notification_preferences,
             after_commit_hook_registrar=after_commit_hook_registrar,

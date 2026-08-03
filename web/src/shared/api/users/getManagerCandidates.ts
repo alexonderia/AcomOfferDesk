@@ -41,9 +41,13 @@ const normalizeUserItem = (item: UsersRow): UserListItem => ({
   company_mail: null,
   address: null,
   note: null,
+  units_count: 0,
+  managers_count: 0,
+  subordinates_count: 0,
   actions: normalizeUserActions(item.actions)
 });
 
+/** @deprecated Легаси: иерархия users.id_parent. На сайте не используется — только оргструктура (юниты). */
 export const getManagerCandidates = async (
   targetRoleId: number,
   targetUserId?: string

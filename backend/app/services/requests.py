@@ -20,8 +20,10 @@ from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.email_notifications import EmailNotificationService
+from app.services.contractor_units import ContractorUnitService
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
+from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.files import FileService, PreparedUpload
 from app.services.notifications import NotificationService
 from app.services.contractor_outbound_notifications import (
@@ -241,6 +243,9 @@ class RequestService:
         self._department_scope = DepartmentScopeService(users)
         self._staff_scope = StaffAccessScopeService(users)
 
+    def _contractor_unit_service(self) -> ContractorUnitService:
+        return ContractorUnitService(users=self._users)
+
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
             return False
@@ -344,11 +349,24 @@ class RequestService:
             contractor_user_ids=normalized_hidden_contractor_ids,
         )
 
+        visible_contractor_user_ids = await self._contractor_unit_service().filter_contractor_user_ids_for_request_owner(
+            contractor_user_ids=await self._requests.list_active_keycloak_visible_contractor_user_ids(
+                request_id=request.id,
+                contractor_role_id=settings.contractor_role_id,
+            ),
+            request_owner_user_id=request.id_user,
+        )
+
         if settings.telegram_legacy_enabled:
-            tg_ids = await self._users.list_active_approved_contractor_tg_ids(
+            tg_recipients = await self._users.list_active_approved_contractor_tg_recipients(
                 contractor_role_id=settings.contractor_role_id,
                 exclude_user_ids=normalized_hidden_contractor_ids,
             )
+            tg_ids = [
+                tg_id
+                for contractor_user_id, tg_id in tg_recipients
+                if contractor_user_id in set(visible_contractor_user_ids)
+            ]
             await notify_new_request(
                 tg_ids=tg_ids,
                 request_id=request.id,
@@ -363,6 +381,8 @@ class RequestService:
             )
             max_user_ids: list[str] = []
             for contractor_user_id, max_user_id in max_recipients:
+                if contractor_user_id not in set(visible_contractor_user_ids):
+                    continue
                 if self._notification_preferences is not None:
                     is_enabled = await self._notification_preferences.is_channel_enabled(
                         user_id=contractor_user_id,
@@ -686,19 +706,12 @@ class RequestService:
             )
 
     async def _is_descendant(self, *, ancestor_user_id: str, target_user_id: str) -> bool:
-        cursor_id: str | None = target_user_id
-        visited: set[str] = set()
-
-        while cursor_id is not None and cursor_id not in visited:
-            visited.add(cursor_id)
-            if cursor_id == ancestor_user_id:
-                return True
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                return False
-            cursor_id = cursor_user.id_parent
-
-        return False
+        if ancestor_user_id == target_user_id:
+            return True
+        return await UnitHierarchyService(self._users).is_manager_of(
+            manager_user_id=ancestor_user_id,
+            subordinate_user_id=target_user_id,
+        )
 
     async def _ensure_plan_assignment_allowed(
         self,
@@ -929,7 +942,11 @@ class RequestService:
 
     async def list_open_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.ensure_can_view_open_requests(current_user)
-        rows = await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id)
+        rows = await self._contractor_unit_service().filter_rows_by_request_owner_scope(
+            contractor_user_id=current_user.user_id,
+            rows=await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id),
+            owner_user_id_getter=lambda row: row[0].id_user,
+        )
         latest_offers_by_request_id = {
             offer.id_request: offer
             for offer in await self._offers.list_latest_contractor_offers_by_request_ids(
@@ -962,7 +979,11 @@ class RequestService:
 
     async def list_offered_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.ensure_can_view_offered_requests(current_user)
-        rows = await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id)
+        rows = await self._contractor_unit_service().filter_rows_by_request_owner_scope(
+            contractor_user_id=current_user.user_id,
+            rows=await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id),
+            owner_user_id_getter=lambda row: row[0].id_user,
+        )
 
         grouped: dict[str, OpenRequestListItem] = {}
         request_offer_ids: dict[str, set[int]] = {}
@@ -1139,24 +1160,36 @@ class RequestService:
         if current_user.role_id == settings.operator_role_id:
             # Operator sees only own requests that are still unassigned (owner role is operator).
             return [current_user.user_id]
+
+        # Project manager: the whole root-unit department (подразделение) they belong to,
+        # combined with their hierarchy department subtree as a base (which deliberately stops
+        # at any nested project manager, who owns a separate subdivision).
+        if current_user.role_id == settings.project_manager_role_id:
+            owners: set[str] = {current_user.user_id}
+            owners.update(
+                await self._department_scope.resolve_department_owner_ids_for_current_user(
+                    current_user=current_user,
+                )
+            )
+            return list(owners)
+
         if current_user.role_id in {
-            settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            department_owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
-                current_user=current_user,
+            owners = {current_user.user_id}
+            owners.update(
+                await self._department_scope.resolve_unit_scope_owner_ids_for_user(
+                    user_id=current_user.user_id,
+                )
             )
-            if department_owner_ids:
-                return department_owner_ids
-
-            # Fallback for broken or incomplete hierarchy links.
-            if current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}:
-                return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=current_user.user_id)
-            lead_root_user_id = await self._resolve_lead_economist_scope_root_user_id(
-                current_user_id=current_user.user_id,
-            )
-            return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=lead_root_user_id)
+            if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ):
+                owners.update(
+                    await self._department_scope.resolve_department_owner_ids_for_current_user(
+                        current_user=current_user,
+                    )
+                )
+            return list(owners)
         # Non-hierarchy roles must not receive implicit global request visibility.
         return []
 
@@ -1388,9 +1421,11 @@ class RequestService:
             ):
                 raise Forbidden("Request is outside your management scope")
             if new_owner_user_id != current_user.user_id:
-                is_subordinate = await self._is_descendant(
-                    ancestor_user_id=current_user.user_id,
-                    target_user_id=new_owner_user_id,
+                # New owner must stay inside the current user's unit-based
+                # management contour.
+                is_subordinate = await self._is_inside_hierarchy_management_scope(
+                    current_user=current_user,
+                    request_owner_user_id=new_owner_user_id,
                 )
                 if not is_subordinate:
                     raise Forbidden("Owner must be current user or current user's subordinate")
@@ -1418,39 +1453,4 @@ class RequestService:
             current_user=current_user,
         )
         return target_user_id in set(department_user_ids)
-
-    async def _resolve_lead_economist_scope_root_user_id(self, *, current_user_id: str) -> str:
-        cursor_id: str | None = current_user_id
-        visited: set[str] = set()
-
-        while cursor_id is not None and cursor_id not in visited:
-            visited.add(cursor_id)
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                break
-            if cursor_user.id_role == settings.lead_economist_role_id:
-                return cursor_user.id
-            cursor_id = cursor_user.id_parent
-
-        return current_user_id
-
-    async def _resolve_visible_owner_ids_for_hierarchy_root(self, *, root_user_id: str) -> list[str]:
-        rows = await self._users.list_active_user_parent_pairs()
-        children_by_parent: dict[str, list[str]] = {}
-        for user_id, parent_id in rows:
-            if parent_id is None:
-                continue
-            children_by_parent.setdefault(parent_id, []).append(user_id)
-
-        visible: set[str] = {root_user_id}
-        queue: list[str] = [root_user_id]
-        while queue:
-            manager_id = queue.pop()
-            for child_id in children_by_parent.get(manager_id, []):
-                if child_id in visible:
-                    continue
-                visible.add(child_id)
-                queue.append(child_id)
-
-        return list(visible)
 

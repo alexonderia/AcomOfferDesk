@@ -60,11 +60,11 @@ export const StatusPill = ({ label, tone, icon, iconOnly = false }: StatusPillPr
       {!iconOnly ? (
         <Typography
           component="span"
+          variant="body2"
           sx={{
             minWidth: 0,
             maxWidth: '100%',
             display: 'block',
-            fontSize: 13,
             fontWeight: 600,
             color,
             lineHeight: 1.15,

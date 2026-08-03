@@ -27,6 +27,9 @@ class UserListItemSchema(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    units_count: int = 0
+    managers_count: int = 0
+    subordinates_count: int = 0
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
@@ -79,6 +82,44 @@ class UserManagerUpdateData(BaseModel):
 
 class UserManagerUpdateResponse(BaseModel):
     data: UserManagerUpdateData
+
+
+class HierarchyUserBriefSchema(BaseModel):
+    user_id: str
+    full_name: str | None = None
+    role_id: int
+    role_name: str
+    status: str
+
+
+class HierarchyUnitBriefSchema(BaseModel):
+    unit_id: int
+    name: str
+    id_parent: int | None = None
+
+
+class HierarchyRelationBriefSchema(HierarchyUserBriefSchema):
+    source_unit_id: int
+    source_unit_name: str
+
+
+class LegacyHierarchyData(BaseModel):
+    legacy_manager: HierarchyUserBriefSchema | None = None
+    legacy_subordinates: list[HierarchyUserBriefSchema] = Field(default_factory=list)
+    is_business_source: bool = False
+    note: str
+
+
+class UserHierarchyData(BaseModel):
+    user: HierarchyUserBriefSchema
+    units: list[HierarchyUnitBriefSchema] = Field(default_factory=list)
+    managers: list[HierarchyRelationBriefSchema] = Field(default_factory=list)
+    subordinates: list[HierarchyRelationBriefSchema] = Field(default_factory=list)
+    legacy_hierarchy: LegacyHierarchyData
+
+
+class UserHierarchyResponse(BaseModel):
+    data: UserHierarchyData
 
 
 class UserStatusUpdateRequest(BaseModel):
@@ -149,6 +190,7 @@ class MeData(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    department_name: str | None = None
     permissions: list[str] = Field(default_factory=list)
     keycloak_roles: list[str] = Field(default_factory=list)
     app_roles: list[str] = Field(default_factory=list)

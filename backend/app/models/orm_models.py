@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     ForeignKey,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     SmallInteger,
     Text,
     TIMESTAMP,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, query_expression, relationship
@@ -99,6 +101,69 @@ class CompanyContact(Base):
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="company_contact")
+
+
+class Unit(Base):
+    __tablename__ = "units"
+    __table_args__ = (
+        UniqueConstraint("id_parent", "name", name="units_parent_name_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    id_parent: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("units.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    id_created_by_user: Mapped[str | None] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    parent: Mapped[Optional["Unit"]] = relationship(
+        "Unit",
+        remote_side="Unit.id",
+        back_populates="children",
+    )
+    children: Mapped[list["Unit"]] = relationship(
+        "Unit",
+        back_populates="parent",
+    )
+    members: Mapped[list["UnitMember"]] = relationship(
+        "UnitMember",
+        back_populates="unit",
+        cascade="all, delete-orphan",
+    )
+
+
+class UnitMember(Base):
+    __tablename__ = "unit_members"
+
+    id_unit: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("units.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    id_user: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    id_assigned_by_user: Mapped[str | None] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    unit: Mapped[Unit] = relationship("Unit", back_populates="members")
 
 
 class StorageObject(Base):

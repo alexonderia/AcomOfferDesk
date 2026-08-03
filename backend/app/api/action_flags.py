@@ -280,17 +280,11 @@ class ChatActionBuilder:
 class UserActionBuilder:
     @staticmethod
     def _requires_hierarchy_management(current_user: CurrentUser) -> bool:
-        if current_user.role_id not in {
+        return current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
-        }:
-            return False
-        if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
-            return False
-        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
-            return False
-        return True
+        }
 
     @staticmethod
     def build_list_item(
@@ -341,11 +335,7 @@ class UserActionBuilder:
             }
         ):
             can_update_status = can_update_status and can_manage_subordinate_role
-        can_update_manager = (
-            UserPolicy.can_update_user_manager(current_user)
-            and can_manage_subordinate_role
-            and can_update_manager_target_role
-        )
+        can_update_manager = False  # legacy users.id_parent; UI uses unit hierarchy
         if (
             UserActionBuilder._requires_hierarchy_management(current_user)
             and is_hierarchy_subordinate is not True
@@ -357,6 +347,10 @@ class UserActionBuilder:
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
+            can_manage_contractor_unit_bindings=(
+                UserPolicy.can_manage_contractor_unit_bindings(current_user)
+                and target_role_id == settings.contractor_role_id
+            ),
             can_update_role=can_update_role,
             can_update_manager=can_update_manager,
             can_manage_manual_contractor=(
@@ -400,11 +394,7 @@ class UserActionBuilder:
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
-            can_update_manager=(
-                UserPolicy.can_update_user_manager(current_user)
-                and can_manage_subordinate_target
-                and can_update_manager_target_role
-            ),
+            can_update_manager=False,  # legacy users.id_parent; UI uses unit hierarchy
             can_manage_subordinate_unavailability=can_manage_subordinate,
         )
 
@@ -426,6 +416,7 @@ class ContractorActionBuilder:
         return UserActionsSchema(
             can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
             can_update_status=can_update_status,
+            can_manage_contractor_unit_bindings=UserPolicy.can_manage_contractor_unit_bindings(current_user),
             can_manage_manual_contractor=can_manage_manual_contractor,
         )
 

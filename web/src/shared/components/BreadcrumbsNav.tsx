@@ -4,6 +4,7 @@ import ButtonBase from '@mui/material/ButtonBase';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import type { ReactNode } from 'react';
+import { themeTokens } from '@shared/theme/tokens';
 
 export type BreadcrumbItem = {
   key: string;
@@ -42,10 +43,10 @@ export const BreadcrumbsNav = ({ items, trailing }: BreadcrumbsNavProps) => {
             return (
               <Typography
                 key={item.key}
+                variant="h5"
                 sx={{
                   color: isLast ? 'text.primary' : 'text.secondary',
                   fontWeight: isLast ? 600 : 500,
-                  fontSize: 20,
                   lineHeight: 1.25,
                   maxWidth: 320,
                   whiteSpace: 'nowrap',
@@ -67,7 +68,7 @@ export const BreadcrumbsNav = ({ items, trailing }: BreadcrumbsNavProps) => {
                 px: 0.4,
                 py: 0.1,
                 color: 'text.secondary',
-                fontSize: 20,
+                fontSize: themeTokens.typography.h5FontSize,
                 lineHeight: 1.25,
                 fontWeight: 500,
                 maxWidth: 320,

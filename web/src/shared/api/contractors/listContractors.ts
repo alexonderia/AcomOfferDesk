@@ -1,5 +1,6 @@
 import { fetchJson } from '../client';
 import { normalizeUserActions, type UserActions } from '../mappers';
+import type { ContractorRootUnitsResult } from './getContractorRootUnits';
 
 export type ContractorListItem = {
   userId: string;
@@ -19,6 +20,7 @@ export type ContractorListItem = {
   updatedAt: string | null;
   registrationSource: string | null;
   actions: UserActions;
+  rootUnits: ContractorRootUnitsResult | null;
 };
 
 export type ContractorListQuery = {
@@ -57,8 +59,19 @@ type ContractorListItemPayload = {
   actions?: {
     can_view_profile?: boolean;
     can_update_status?: boolean;
+    can_manage_contractor_unit_bindings?: boolean;
     can_manage_manual_contractor?: boolean;
   };
+  root_unit_bindings?: {
+    contractor_user_id: string;
+    can_manage?: boolean;
+    items?: Array<{
+      unit_id: number;
+      unit_name: string;
+      is_bound: boolean;
+      can_manage?: boolean;
+    }>;
+  } | null;
 };
 
 type ContractorListResponse = {
@@ -88,6 +101,18 @@ const mapItem = (payload: ContractorListItemPayload): ContractorListItem => ({
   updatedAt: payload.updated_at ?? null,
   registrationSource: payload.registration_source ?? null,
   actions: normalizeUserActions(payload.actions),
+  rootUnits: payload.root_unit_bindings
+    ? {
+        contractorUserId: payload.root_unit_bindings.contractor_user_id,
+        canManage: Boolean(payload.root_unit_bindings.can_manage),
+        items: (payload.root_unit_bindings.items ?? []).map((item) => ({
+          unitId: item.unit_id,
+          unitName: item.unit_name,
+          isBound: Boolean(item.is_bound),
+          canManage: Boolean(item.can_manage),
+        })),
+      }
+    : null,
 });
 
 const buildQueryString = (query: ContractorListQuery = {}) => {

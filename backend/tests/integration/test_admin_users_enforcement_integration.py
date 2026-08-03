@@ -26,17 +26,17 @@ class _UsersRepo:
     def __init__(self) -> None:
         self._session = object()
         self._users: dict[str, SimpleNamespace] = {
-            "superadmin-1": SimpleNamespace(id="superadmin-1", id_role=settings.superadmin_role_id, id_parent=None, status="active", tg_user_id=None),
-            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, status="active", tg_user_id=None),
-            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent="pm-1", status="active", tg_user_id=None),
-            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active", tg_user_id=None),
-            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="lead-1", status="active", tg_user_id=None),
-            "eco-1": SimpleNamespace(id="eco-1", id_role=settings.economist_role_id, id_parent="lead-1", status="active", tg_user_id=None),
-            "eco-2": SimpleNamespace(id="eco-2", id_role=settings.economist_role_id, id_parent="eco-1", status="active", tg_user_id=None),
-            "eco-3": SimpleNamespace(id="eco-3", id_role=settings.economist_role_id, id_parent="lead-2", status="active", tg_user_id=None),
-            "operator-1": SimpleNamespace(id="operator-1", id_role=settings.operator_role_id, id_parent="lead-1", status="active", tg_user_id=None),
-            "admin-1": SimpleNamespace(id="admin-1", id_role=settings.admin_role_id, id_parent=None, status="active", tg_user_id=None),
-            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, status="active", tg_user_id=None),
+            "superadmin-1": SimpleNamespace(id="superadmin-1", id_role=settings.superadmin_role_id, id_parent=None, status="active"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, status="active"),
+            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent="pm-1", status="active"),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active"),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="lead-1", status="active"),
+            "eco-1": SimpleNamespace(id="eco-1", id_role=settings.economist_role_id, id_parent="lead-1", status="active"),
+            "eco-2": SimpleNamespace(id="eco-2", id_role=settings.economist_role_id, id_parent="eco-1", status="active"),
+            "eco-3": SimpleNamespace(id="eco-3", id_role=settings.economist_role_id, id_parent="lead-2", status="active"),
+            "operator-1": SimpleNamespace(id="operator-1", id_role=settings.operator_role_id, id_parent="lead-1", status="active"),
+            "admin-1": SimpleNamespace(id="admin-1", id_role=settings.admin_role_id, id_parent=None, status="active"),
+            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, status="active"),
         }
         self._profiles: dict[str, SimpleNamespace] = {
             user_id: SimpleNamespace(id=user_id, full_name=user_id, phone=None, mail=f"{user_id}@example.com")
@@ -218,8 +218,6 @@ class _UsersUow:
         self.units = _UnitsRepo(self.users)
         self.profiles = _ProfilesRepo(self.users)
         self.user_auth_accounts = _UserAuthAccountsRepo()
-        self.tg_users = object()
-        self.max_users = None
         self.user_status_periods = _UserStatusPeriodsRepo()
         self.company_contacts = object()
         self.user_contact_channels = _NullUserContactChannelsRepo()

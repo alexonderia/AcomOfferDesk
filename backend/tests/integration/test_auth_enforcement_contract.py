@@ -453,7 +453,7 @@ def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_
     assert first_response.status_code == 200
     assert second_response.status_code == 200
     assert [item["to_email"] for item in outbox] == ["new@example.com"]
-    assert outbox[0]["recipient_context"] == {"user_login": "contractor-1", "tg_id": None}
+    assert outbox[0]["recipient_context"] == {"user_login": "contractor-1"}
     assert "https://acom.example/verify-email?token=" in outbox[0]["text"]
 
 
@@ -545,20 +545,6 @@ def test_verify_email_rejects_expired_token(test_client, set_uow):
     response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
 
     assert response.status_code == 401
-
-
-def test_verify_email_rejects_tg_registration_token_for_profile_flow(test_client, set_uow):
-    set_uow(_EmailVerificationUow(_EmailVerificationProfilesRepo({"contractor-1": "old@example.com"})))
-    token = asyncio.run(
-        EmailVerificationTokenCodec(
-            secret=settings.email_verification_secret,
-            ttl_seconds=settings.email_verification_ttl_seconds,
-        ).create_tg_registration_token(tg_id=123, email="tg@example.com")
-    )
-
-    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
-
-    assert response.status_code == 403
 
 
 def test_verify_email_rejects_token_email_already_used_by_another_user(test_client, set_uow):

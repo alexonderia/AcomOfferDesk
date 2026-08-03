@@ -32,8 +32,6 @@ from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Conflict, Forbidden, Unauthorized
 from app.domain.policies import UserPolicy
-from app.models.auth_models import UserAuthAccount
-from app.repositories.telegram_compat import telegram_subject_value
 from app.schemas.auth import (
     LoginResponse,
     RegisterUserRequest,
@@ -50,23 +48,7 @@ from app.services.keycloak_oidc import (
 )
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.contractor_email_notifications import notify_registration_completed_email
-from app.services.max_notifications import notify_registration_completed as notify_max_registration_completed
-from app.services.max_account_linking import link_max_account
-from app.services.max_registration_links import (
-    MaxRegistrationLinkExpiredError,
-    MaxRegistrationLinkInvalidError,
-    resolve_max_registration_token,
-)
-from app.services.tg_registration_links import (
-    TgRegistrationLinkExpiredError,
-    TgRegistrationLinkInvalidError,
-    resolve_tg_registration_token,
-)
-from app.services.registration_admin_notify import (
-    RegistrationNotifyContext,
-    notify_new_user_registration,
-    schedule_registration_review_required_notification,
-)
+from app.services.registration_admin_notify import schedule_registration_review_required_notification
 from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.users import UserRegistrationService
 from app.services.units import UnitService
@@ -161,61 +143,6 @@ def _build_login_error_redirect(base_url: str, *, reason: str) -> RedirectRespon
 
 def _onboarding_state(status_value: str) -> str | None:
     return None if status_value == "active" else status_value
-
-
-async def _link_telegram_registration_context(
-    *,
-    uow: UnitOfWork,
-    user_id: str,
-    tg_id: int,
-) -> None:
-    subject = telegram_subject_value(tg_id)
-    linked_user = await uow.users.get_by_tg_user_id(tg_id)
-    if linked_user is not None and linked_user.id != user_id:
-        raise Conflict("Telegram account is already linked to another user")
-
-    telegram_account = await uow.user_auth_accounts.get_by_user_provider(
-        user_id=user_id,
-        provider="telegram",
-        include_inactive=True,
-    )
-    if telegram_account is None:
-        await uow.user_auth_accounts.add(
-            UserAuthAccount(
-                id_user=user_id,
-                provider="telegram",
-                external_subject_id=subject,
-                external_username=None,
-                external_email=None,
-                is_active=True,
-            )
-        )
-    else:
-        telegram_account.external_subject_id = subject
-        telegram_account.is_active = True
-
-    await uow.user_contact_channels.upsert_channel(
-        user_id=user_id,
-        channel_type="telegram",
-        channel_value=subject,
-        is_verified=False,
-        is_primary=True,
-    )
-
-
-async def _link_max_registration_context(
-    *,
-    uow: UnitOfWork,
-    user_id: str,
-    max_user_id: str,
-) -> None:
-    await link_max_account(
-        user_auth_accounts=uow.user_auth_accounts,
-        user_contact_channels=uow.user_contact_channels,
-        user_id=user_id,
-        max_user_id=max_user_id,
-        is_verified=True,
-    )
 
 
 def _build_auth_response(
@@ -347,8 +274,6 @@ async def begin_keycloak_login(
 async def begin_keycloak_registration(
     request: Request,
     next_path: str | None = Query(default="/account"),
-    tg_token: str | None = Query(default=None),
-    max_token: str | None = Query(default=None),
     invite_token: str | None = Query(default=None),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RedirectResponse:
@@ -357,101 +282,37 @@ async def begin_keycloak_registration(
 
     redirect_uri = f"{_resolve_oidc_public_base_url(request)}/api/v1/auth/callback"
     web_base = _extract_base_url_from_redirect_uri(redirect_uri)
-    tg_registration_id: int | None = None
-    max_registration_id: str | None = None
     registration_email: str | None = None
 
-    token_count = sum(1 for value in (tg_token, max_token, invite_token) if value)
-    if token_count != 1:
+    if not invite_token:
         return RedirectResponse(
             url=_build_registration_link_status_url(web_base, reason="invalid"),
             status_code=status.HTTP_302_FOUND,
         )
 
-    if tg_token:
-        if not settings.telegram_legacy_enabled:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        try:
-            tg_registration_id = await resolve_tg_registration_token(tg_token)
-        except TgRegistrationLinkExpiredError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="expired"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        except TgRegistrationLinkInvalidError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-
-        async with uow:
-            linked_user = await uow.users.get_by_tg_user_id(tg_registration_id)
-        if linked_user is not None:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="already_registered"),
-                status_code=status.HTTP_302_FOUND,
-            )
-    elif max_token:
-        if not settings.max_bot_enabled:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        try:
-            max_registration_id = await resolve_max_registration_token(max_token)
-        except MaxRegistrationLinkExpiredError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="expired"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        except MaxRegistrationLinkInvalidError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-
-        async with uow:
-            conflicting_binding = await uow.user_auth_accounts.get_conflicting_subject(
-                provider="max",
-                subject=max_registration_id,
-            )
-        if conflicting_binding is not None:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="already_registered"),
-                status_code=status.HTTP_302_FOUND,
-            )
-    elif invite_token:
-        invite_codec = RegistrationInviteTokenCodec(
-            secret=settings.email_verification_secret,
-            ttl_seconds=settings.tg_register_ttl_seconds,
+    invite_codec = RegistrationInviteTokenCodec(
+        secret=settings.email_verification_secret,
+        ttl_seconds=settings.registration_invite_ttl_seconds,
+    )
+    try:
+        invite_claims = invite_codec.parse_token(invite_token)
+    except RegistrationInviteTokenExpiredError:
+        return RedirectResponse(
+            url=_build_registration_link_status_url(web_base, reason="expired"),
+            status_code=status.HTTP_302_FOUND,
         )
-        try:
-            invite_claims = invite_codec.parse_token(invite_token)
-        except RegistrationInviteTokenExpiredError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="expired"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        except RegistrationInviteTokenInvalidError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-
-        registration_email = invite_claims.email
-        async with uow:
-            existing_users = await uow.users.list_by_email(email=registration_email)
-        if existing_users:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="already_registered"),
-                status_code=status.HTTP_302_FOUND,
-            )
-    else:
+    except RegistrationInviteTokenInvalidError:
         return RedirectResponse(
             url=_build_registration_link_status_url(web_base, reason="invalid"),
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    registration_email = invite_claims.email
+    async with uow:
+        existing_users = await uow.users.list_by_email(email=registration_email)
+    if existing_users:
+        return RedirectResponse(
+            url=_build_registration_link_status_url(web_base, reason="already_registered"),
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -459,8 +320,6 @@ async def begin_keycloak_registration(
         next_path=next_path,
         flow="register",
         redirect_uri=redirect_uri,
-        tg_registration_id=tg_registration_id,
-        max_registration_id=max_registration_id,
         registration_email=registration_email,
     )
     response = RedirectResponse(
@@ -540,24 +399,6 @@ async def keycloak_callback(
                 allow_user_creation=claims.flow == "register",
             )
             if claims.flow == "register" and getattr(synced, "created_local_user", False):
-                role = await uow.users.get_role_by_id(synced.user.id_role)
-                full_name: str | None = token_claims.full_name
-                if uow.profiles is not None:
-                    profile = await uow.profiles.get_by_id(synced.user.id)
-                    if profile is not None and (profile.full_name or "").strip():
-                        full_name = profile.full_name
-                await notify_new_user_registration(
-                    RegistrationNotifyContext(
-                        source="oidc_invite",
-                        user_id=synced.user.id,
-                        role_id=synced.user.id_role,
-                        role_name=role.role if role else None,
-                        status=synced.user.status,
-                        full_name=full_name,
-                        email=token_claims.email,
-                        keycloak_subject=token_claims.subject,
-                    )
-                )
                 if synced.user.id_role == settings.contractor_role_id and synced.user.status == "review":
                     schedule_registration_review_required_notification(
                         after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
@@ -572,30 +413,8 @@ async def keycloak_callback(
                         to_email=registration_email,
                         recipient_user_id=synced.user.id,
                     )
-            if claims.tg_registration_id is not None:
-                if not settings.telegram_legacy_enabled:
-                    raise Forbidden("Telegram legacy authentication is disabled")
-                await _link_telegram_registration_context(
-                    uow=uow,
-                    user_id=synced.user.id,
-                    tg_id=claims.tg_registration_id,
-                )
-            if claims.max_registration_id is not None:
-                if not settings.max_bot_enabled:
-                    raise Forbidden("MAX authentication is disabled")
-                await _link_max_registration_context(
-                    uow=uow,
-                    user_id=synced.user.id,
-                    max_user_id=claims.max_registration_id,
-                )
-                if claims.flow == "register":
-                    await notify_max_registration_completed(claims.max_registration_id)
     except (Forbidden, Conflict) as exc:
-        if (
-            claims.tg_registration_id is not None
-            or claims.max_registration_id is not None
-            or claims.registration_email is not None
-        ):
+        if claims.registration_email is not None:
             reason = "already_registered" if isinstance(exc, Conflict) else "invalid"
             response = RedirectResponse(
                 url=_build_registration_link_status_url(web_base, reason=reason),
@@ -677,11 +496,6 @@ async def logout(request: Request, response: Response) -> Response:
     clear_keycloak_refresh_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
-
-
-@router.post("/auth/tg/exchange", deprecated=True)
-async def tg_exchange_disabled() -> dict[str, str]:
-    raise Forbidden("Telegram legacy authentication is disabled")
 
 
 @router.post("/users/register", response_model=RegisterUserResponse)

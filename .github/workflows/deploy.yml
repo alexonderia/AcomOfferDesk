@@ -155,7 +155,6 @@ jobs:
                 echo "${key}=${value}" >>"$APP_ENV_FILE"
               fi
             }
-            # MAX_BOT_ENABLED — только в backend/.env на VPS; деплой не перезаписывает (токен и флаг уже настроены вручную).
             ensure_runtime_flag FILE_GUARD_ENABLED true
 
             # Infra: no --force-recreate — Docker can return "No such container" mid-recreate

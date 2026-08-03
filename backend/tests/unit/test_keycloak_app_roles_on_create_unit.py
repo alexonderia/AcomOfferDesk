@@ -56,9 +56,7 @@ async def test_create_manual_contractor_syncs_keycloak_app_contractor_role(monke
 
 
 @pytest.mark.asyncio
-async def test_create_manual_contractor_notify_does_not_use_missing_full_name(monkeypatch):
-    notify_mock = AsyncMock()
-    monkeypatch.setattr(users_module, "notify_new_user_registration", notify_mock)
+async def test_create_manual_contractor_allows_missing_full_name(monkeypatch):
     monkeypatch.setattr(users_module, "_bind_keycloak_account", AsyncMock())
     monkeypatch.setattr(users_module, "_sync_keycloak_role_after_bind", AsyncMock())
 
@@ -94,8 +92,4 @@ async def test_create_manual_contractor_notify_does_not_use_missing_full_name(mo
         ),
     )
 
-    notify_mock.assert_awaited_once()
-    ctx = notify_mock.await_args.args[0]
-    assert ctx.source == "manual_contractor"
-    assert ctx.full_name is None
-    assert ctx.company_name == company
+    assert company

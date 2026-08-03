@@ -30,9 +30,6 @@ from app.services.contractor_outbound_notifications import (
     RequestEventKind,
     notify_contractors_with_offers_about_request,
 )
-from app.services.max_notifications import notify_new_request as notify_max_new_request
-from app.services.tg_notifications import notify_new_request, notify_request_status_changed
-from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 PARTNER_CARD_NORMATIVE_ID = 1
@@ -224,7 +221,6 @@ class RequestService:
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
         notifications: NotificationService | None = None,
-        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
@@ -237,7 +233,6 @@ class RequestService:
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
         self._notifications = notifications
-        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
@@ -348,56 +343,6 @@ class RequestService:
             request_id=request.id,
             contractor_user_ids=normalized_hidden_contractor_ids,
         )
-
-        visible_contractor_user_ids = await self._contractor_unit_service().filter_contractor_user_ids_for_request_owner(
-            contractor_user_ids=await self._requests.list_active_keycloak_visible_contractor_user_ids(
-                request_id=request.id,
-                contractor_role_id=settings.contractor_role_id,
-            ),
-            request_owner_user_id=request.id_user,
-        )
-
-        if settings.telegram_legacy_enabled:
-            tg_recipients = await self._users.list_active_approved_contractor_tg_recipients(
-                contractor_role_id=settings.contractor_role_id,
-                exclude_user_ids=normalized_hidden_contractor_ids,
-            )
-            tg_ids = [
-                tg_id
-                for contractor_user_id, tg_id in tg_recipients
-                if contractor_user_id in set(visible_contractor_user_ids)
-            ]
-            await notify_new_request(
-                tg_ids=tg_ids,
-                request_id=request.id,
-                description=description,
-                deadline_at=deadline_at,
-            )
-
-        if settings.max_bot_enabled:
-            max_recipients = await self._users.list_active_approved_contractor_max_recipients(
-                contractor_role_id=settings.contractor_role_id,
-                exclude_user_ids=normalized_hidden_contractor_ids,
-            )
-            max_user_ids: list[str] = []
-            for contractor_user_id, max_user_id in max_recipients:
-                if contractor_user_id not in set(visible_contractor_user_ids):
-                    continue
-                if self._notification_preferences is not None:
-                    is_enabled = await self._notification_preferences.is_channel_enabled(
-                        user_id=contractor_user_id,
-                        channel_type="max",
-                        notification_type="request",
-                    )
-                    if not is_enabled:
-                        continue
-                max_user_ids.append(max_user_id)
-            await notify_max_new_request(
-                max_user_ids=max_user_ids,
-                request_id=request.id,
-                description=description,
-                deadline_at=deadline_at,
-            )
 
         if self._email_notifications is not None:
             await self._email_notifications.notify_new_request(
@@ -583,18 +528,6 @@ class RequestService:
                 closed_at=closed_at,
                 chosen_offer_id=chosen_offer_id,
             )
-            if status_changed and settings.telegram_legacy_enabled:
-                tg_ids = await self._offers.list_contractor_tg_ids_for_request(
-                    request_id=request.id,
-                    contractor_role_id=settings.contractor_role_id,
-                )
-                for tg_id in tg_ids:
-                    await notify_request_status_changed(
-                        tg_id=tg_id,
-                        request_id=request.id,
-                        previous_status=previous_status,
-                        new_status=data.status,
-                    )
             if status_changed:
                 self._schedule_contractor_request_outbound(
                     request_id=request.id,

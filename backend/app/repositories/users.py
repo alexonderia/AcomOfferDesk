@@ -193,6 +193,19 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def has_legacy_messenger_account(self, *, user_id: str) -> bool:
+        stmt = (
+            select(UserAuthAccount.id)
+            .where(
+                UserAuthAccount.id_user == user_id,
+                UserAuthAccount.provider.in_(("telegram", "max")),
+                UserAuthAccount.is_active.is_(True),
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def get_role_by_id(self, role_id: int) -> Role | None:
         result = await self._session.execute(select(Role).where(Role.id == role_id))
         return result.scalar_one_or_none()

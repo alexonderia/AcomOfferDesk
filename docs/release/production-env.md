@@ -44,7 +44,6 @@ curl -fsSL https://app.example.com/iam/realms/acom-offerdesk/.well-known/openid-
 | `REFRESH_TOKEN_SECRET` | backend | отдельная подпись refresh-токена | опционально/рекомендуется | 64+ случайных символов | да (сбросит сессии) | backend |
 | `EMAIL_VERIFICATION_SECRET` | backend | подпись токенов верификации email | да | 32+ случайных символов | да (старые ссылки станут недействительны) | backend |
 | `EMAIL_REPLY_SECRET` / `REPLY_EMAIL_TOKEN_SECRET` | backend/worker | подпись reply-токенов | да, если включён reply flow | 32+ случайных символов | да (старые ссылки станут недействительны) | backend, notifications_worker |
-| `TG_LINK_SECRET` | backend/tg legacy | подпись tg link-токенов | опционально (обязательно только при включённом legacy tg) | 32+ случайных символов | да | backend, tg_bot |
 | `RABBITMQ_DEFAULT_USER` | rabbitmq | логин брокера | да | уникальный, не default | да | rabbitmq + зависимые сервисы |
 | `RABBITMQ_DEFAULT_PASS` | rabbitmq | пароль брокера | да | сильный случайный пароль | да | rabbitmq + зависимые сервисы |
 | `RABBITMQ_URL` | backend/worker | URL подключения AMQP | да | должен соответствовать реальным creds брокера | да | backend, notifications_worker |
@@ -55,10 +54,7 @@ curl -fsSL https://app.example.com/iam/realms/acom-offerdesk/.well-known/openid-
 | `EMAIL_APP_PASSWORD` | backend/worker | пароль приложения для SMTP | да | пароль приложения от провайдера | да | backend, notifications_worker |
 | `SMTP_HOST` / `SMTP_PORT` / SMTP creds | backend/worker/keycloak | исходящая почта | да | TLS endpoint + валидная auth | да | backend, notifications_worker, keycloak |
 | `IMAP_HOST` / `IMAP_PORT` / IMAP creds | backend/worker | mailbox polling | опционально | выделенный read account | да | backend, notifications_worker |
-| `MAX_BOT_TOKEN` | max_bot | токен MAX Bot API | да (при `MAX_BOT_ENABLED=true`) | токен от платформы MAX | да | max_bot, notifications_worker |
-| `BOT_API_SHARED_SECRET` | backend, max_bot, tg_bot | shared secret для inter-service bot → backend вызовов | да (при включённом max_bot или tg_bot) | 32+ случайных символов | да (обновить во всех сервисах одновременно) | backend, max_bot, tg_bot |
 | `FILE_GUARD_REQUIRE_ANTIVIRUS` | file_guard | требовать антивирус при старте и проверке | опционально (рекомендуется `true` в prod) | `true`/`false` | n/a | file_guard |
-| `MAX_LINK_SECRET` | backend | подпись токенов привязки MAX-аккаунта | да (при `MAX_BOT_ENABLED=true`) | 32+ случайных символов | да (старые ссылки привязки станут недействительны) | backend |
 
 ## Конфигурационные переменные (не секреты)
 

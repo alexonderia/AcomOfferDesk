@@ -20,7 +20,6 @@ class _UsersRepo:
                 id_role=settings.contractor_role_id,
                 id_parent=None,
                 status="review",
-                tg_user_id=None,
                 created_at=None,
                 updated_at=None,
             ),
@@ -29,7 +28,6 @@ class _UsersRepo:
                 id_role=settings.economist_role_id,
                 id_parent=None,
                 status="active",
-                tg_user_id=None,
                 created_at=None,
                 updated_at=None,
             ),
@@ -38,7 +36,6 @@ class _UsersRepo:
                 id_role=settings.admin_role_id,
                 id_parent=None,
                 status="active",
-                tg_user_id=None,
                 created_at=None,
                 updated_at=None,
             ),
@@ -65,6 +62,10 @@ class _UsersRepo:
     async def exists(self, user_id: str) -> bool:
         return user_id in self._users
 
+    async def has_legacy_messenger_account(self, *, user_id: str) -> bool:
+        _ = user_id
+        return False
+
     async def add(self, user) -> None:
         self._users[user.id] = user
 
@@ -88,7 +89,7 @@ class _UsersRepo:
                 self._profiles.get(user.id),
                 self._companies.get(user.id),
                 None,
-                "max-42" if user.id == "contractor-1" else None,
+                None,
             )
             for user in self._users.values()
             if user.id_role == contractor_role_id
@@ -172,12 +173,6 @@ class _UserAuthAccountsRepo:
         _ = row
 
 
-class _TgUsersRepo:
-    async def get_by_id(self, user_id: str):
-        _ = user_id
-        return None
-
-
 @pytest.mark.asyncio
 async def test_security_officer_can_list_and_read_contractors(make_current_user):
     users_repo = _UsersRepo()
@@ -225,7 +220,7 @@ async def test_security_officer_can_filter_contractors_table(make_current_user):
     assert result.total == 1
     assert result.limit == 10
     assert result.offset == 0
-    assert result.items[0].registration_source == "manual"
+    assert result.items[0].is_manual is True
     assert result.items[0].created_at is None
 
 
@@ -240,7 +235,7 @@ async def test_security_officer_can_change_contractor_status_via_contractor_serv
     service = ContractorService(users_repo, profiles_repo)
     status_service = AsyncMock()
     status_service.update_statuses = AsyncMock(
-        return_value=UserStatusUpdateResult(user_id="contractor-1", user_status="active", tg_user_id=None, tg_status=None),
+        return_value=UserStatusUpdateResult(user_id="contractor-1", user_status="active"),
     )
     current_user = make_current_user(
         user_id="security-1",
@@ -266,7 +261,7 @@ async def test_security_officer_can_change_contractor_status_via_contractor_serv
 async def test_security_officer_can_update_only_contractor_status(make_current_user, monkeypatch):
     users_repo = _UsersRepo()
     profiles_repo = _ProfilesRepo(users_repo)
-    service = UserStatusService(users_repo, _TgUsersRepo(), profiles_repo)
+    service = UserStatusService(users_repo, profiles_repo)
     async def _fake_notify_contractor_status_changed_email(*, to_email: str, user_status: str, recipient_user_id: str, initiator_user_id: str) -> bool:
         _ = (to_email, user_status, recipient_user_id, initiator_user_id)
         return True
@@ -288,7 +283,6 @@ async def test_security_officer_can_update_only_contractor_status(make_current_u
         current_user=current_user,
         user_id="contractor-1",
         user_status="active",
-        tg_status=None,
         contractor_only=True,
     )
 
@@ -300,7 +294,6 @@ async def test_security_officer_can_update_only_contractor_status(make_current_u
             current_user=current_user,
             user_id="economist-1",
             user_status="inactive",
-            tg_status=None,
             contractor_only=True,
         )
 
@@ -329,12 +322,8 @@ async def test_superadmin_can_create_security_officer_but_admin_cannot(make_curr
     async def _fake_sync_keycloak_app_role_for_user(*args, **kwargs) -> None:
         _ = (args, kwargs)
 
-    async def _fake_notify_new_user_registration(ctx) -> None:
-        _ = ctx
-
     monkeypatch.setattr(users_module.KeycloakAdminService, "ensure_user", _fake_ensure_user)
     monkeypatch.setattr(users_module, "sync_keycloak_app_role_for_user", _fake_sync_keycloak_app_role_for_user)
-    monkeypatch.setattr(users_module, "notify_new_user_registration", _fake_notify_new_user_registration)
 
     superadmin = make_current_user(
         user_id="root-1",

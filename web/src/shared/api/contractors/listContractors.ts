@@ -4,7 +4,6 @@ import type { ContractorRootUnitsResult } from './getContractorRootUnits';
 
 export type ContractorListItem = {
   userId: string;
-  maxUserId: string | null;
   roleId: number;
   status: string;
   fullName: string | null;
@@ -18,7 +17,6 @@ export type ContractorListItem = {
   note: string | null;
   createdAt: string | null;
   updatedAt: string | null;
-  registrationSource: string | null;
   actions: UserActions;
   rootUnits: ContractorRootUnitsResult | null;
 };
@@ -41,7 +39,6 @@ export type ContractorListResult = {
 
 type ContractorListItemPayload = {
   user_id: string;
-  max_user_id?: string | null;
   role_id: number;
   status: string;
   full_name?: string | null;
@@ -55,7 +52,6 @@ type ContractorListItemPayload = {
   note?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
-  registration_source?: string | null;
   actions?: {
     can_view_profile?: boolean;
     can_update_status?: boolean;
@@ -85,7 +81,6 @@ type ContractorListResponse = {
 
 const mapItem = (payload: ContractorListItemPayload): ContractorListItem => ({
   userId: payload.user_id,
-  maxUserId: payload.max_user_id ?? null,
   roleId: payload.role_id,
   status: payload.status,
   fullName: payload.full_name ?? null,
@@ -99,7 +94,6 @@ const mapItem = (payload: ContractorListItemPayload): ContractorListItem => ({
   note: payload.note ?? null,
   createdAt: payload.created_at ?? null,
   updatedAt: payload.updated_at ?? null,
-  registrationSource: payload.registration_source ?? null,
   actions: normalizeUserActions(payload.actions),
   rootUnits: payload.root_unit_bindings
     ? {

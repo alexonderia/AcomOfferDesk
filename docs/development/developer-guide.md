@@ -24,10 +24,8 @@
 ```text
 backend/               Backend API и бизнес-логика
 web/                   Frontend SPA
-notifications_worker/  Фоновая отправка уведомлений (email + MAX push)
-max_bot/               MAX messenger bot (активный)
+notifications_worker/  Фоновая отправка email-уведомлений
 file_guard/            Сервис безопасности файлов (MIME/signature/AV checks)
-tg_bot/                Legacy Telegram-интеграция (выключена по умолчанию)
 infra/keycloak/        Конфигурация и bootstrap Keycloak
 deploy/order_database/ Снимок Flyway V*.sql для деплоя на VPS (синхронизировать с alexonderia/order_database)
 docs/                  Документация
@@ -69,7 +67,6 @@ Backend в основном организован по схеме:
 - `backend/app/api/v1/notifications.py`
 - `backend/app/api/v1/normative_files.py`
 - `backend/app/api/v1/plans.py`
-- `backend/app/api/v1/max.py`
 - `backend/app/api/v1/dashboard.py`
 - `backend/app/api/v1/ws.py`
 - `backend/app/api/dependencies.py`

@@ -1,11 +1,9 @@
 ﻿import { Box, Link, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import bitrixLogo from '@shared/assets/bitrix24-logo.png';
-import maxLogo from '@shared/assets/max-logo-2025.png';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 
 const BITRIX_LINK = 'https://team.alabuga.ru/company/structure.php?set_filter_structure=Y&structure_UF_DEPARTMENT=8304&filter=Y&set_filter=Y';
-const MAX_CONTACT_LINK = 'https://max.ru/u/f9LHodD0cOIA4s2RhH3dW5NoCLRn88NF67UYfQe_rOnnM6Y1a7VW_vOUt5I';
 
 const iconLinkSx = {
   width: 34,
@@ -48,9 +46,7 @@ const compactIconImageSx = {
 };
 
 const CREATED_BY_LABEL = 'Created by "Цифровизация проектных задач"';
-const SUPPORT_LABEL = 'По вопросам системы писать сюда';
 const BITRIX_ARIA_LABEL = 'Перейти в Битрикс';
-const MAX_ARIA_LABEL = 'Открыть MAX';
 
 type AppFooterProps = {
   compact?: boolean;
@@ -178,9 +174,6 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
               <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={compactIconLinkSx}>
                 <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={compactIconImageSx} />
               </Link>
-              <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={compactIconLinkSx}>
-                <Box component="img" src={maxLogo} alt="MAX" sx={compactIconImageSx} />
-              </Link>
             </Stack>
           </Box>
         </Box>
@@ -222,9 +215,6 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
               <Stack direction="row" spacing={0.8}>
                 <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={compactIconLinkSx}>
                   <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={compactIconImageSx} />
-                </Link>
-                <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={compactIconLinkSx}>
-                  <Box component="img" src={maxLogo} alt="MAX" sx={compactIconImageSx} />
                 </Link>
               </Stack>
             </Stack>
@@ -275,25 +265,7 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
               AcomOfferDesk
             </Typography>
 
-            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-              <Stack direction="row" alignItems="center" spacing={1.1} useFlexGap flexWrap="nowrap" justifyContent="flex-end">
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{
-                    fontWeight: 500,
-                    fontSize: 12,
-                    textAlign: 'right',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {SUPPORT_LABEL}
-                </Typography>
-                <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={iconLinkSx}>
-                  <Box component="img" src={maxLogo} alt="MAX" sx={iconImageSx} />
-                </Link>
-              </Stack>
-            </Box>
+            <Box sx={{ flex: 1 }} />
           </Stack>
         )}
       </Box>

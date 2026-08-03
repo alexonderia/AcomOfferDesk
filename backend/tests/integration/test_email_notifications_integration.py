@@ -92,19 +92,6 @@ class _FakeUsersRepo:
     async def get_by_id(self, user_id: str):
         return SimpleNamespace(id=user_id, id_role=settings.contractor_role_id)
 
-    async def list_active_approved_contractor_tg_ids(self, *, contractor_role_id: int, exclude_user_ids: list[str]):
-        _ = (contractor_role_id, exclude_user_ids)
-        return []
-
-    async def list_active_approved_contractor_max_recipients(
-        self,
-        *,
-        contractor_role_id: int,
-        exclude_user_ids: list[str],
-    ):
-        _ = (contractor_role_id, exclude_user_ids)
-        return []
-
     async def list_active_user_parent_pairs(self):
         return []
 
@@ -127,10 +114,6 @@ class _FakeUsersRepo:
 
 
 class _FakeOffersRepo:
-    async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int):
-        _ = (request_id, contractor_role_id)
-        return []
-
     async def get_by_id(self, *, offer_id: int):
         _ = offer_id
         return None
@@ -259,7 +242,6 @@ class _FakeUsersRepoForSendUseCase(_FakeUsersRepo):
 
 @pytest.mark.asyncio
 async def test_create_request_triggers_email_notification_event(make_current_user, monkeypatch):
-    monkeypatch.setattr(settings, "telegram_legacy_enabled", False)
     requests_repo = _FakeRequestRepoForCreate()
     email_notifications = _FakeEmailNotificationService()
     service = RequestService(
@@ -369,7 +351,7 @@ async def test_manual_request_email_notification_does_not_swallow_internal_type_
 async def test_send_use_case_generates_verified_and_invite_email_events(monkeypatch):
     monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
     monkeypatch.setattr(settings, "email_verification_secret", "verify-secret")
-    monkeypatch.setattr(settings, "tg_register_ttl_seconds", 3600)
+    monkeypatch.setattr(settings, "registration_invite_ttl_seconds", 3600)
     monkeypatch.setattr(settings, "reply_email_ttl_seconds", 1800)
     monkeypatch.setattr(settings, "public_backend_base_url", "https://api.acom.example")
 

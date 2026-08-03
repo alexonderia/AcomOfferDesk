@@ -276,7 +276,6 @@ class _RequestLifecycleUow:
         self.messages = None
         self.company_contacts = None
         self.feedback = None
-        self.tg_users = None
         self.user_auth_accounts = None
         self.user_contact_channels = None
         self.user_notification_preferences = None

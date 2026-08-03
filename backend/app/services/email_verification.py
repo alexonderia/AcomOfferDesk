@@ -11,7 +11,6 @@ from app.infrastructure.email.email_templates.verification_email import build_ve
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
 from app.repositories.profiles import ProfileRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
-from app.services.tg_registration_links import build_keycloak_registration_link
 
 
 class EmailVerificationService:
@@ -65,21 +64,10 @@ class EmailVerificationService:
         await self._send_verification_email(
             email=normalized_email,
             verification_link=verification_link,
-            recipient_context={"user_login": user_id, "tg_id": None},
+            recipient_context={"user_login": user_id},
         )
         self._request_locks[lock_key] = now_ts + settings.email_verification_ttl_seconds
         return "sent"
-
-    async def request_tg_registration_verification(self, *, tg_id: int, email: str, tg_token: str) -> None:
-        normalized_email = email.strip()
-        if await self._profiles.exists_by_mail(email=normalized_email):
-            raise Conflict("Эта электронная почта уже используется")
-        verification_link = build_keycloak_registration_link(token=tg_token)
-        await self._send_verification_email(
-            email=normalized_email,
-            verification_link=verification_link,
-            recipient_context=None,
-        )
 
     async def confirm_profile_verification(self, *, token: str) -> bool:
         claims = await self._token_codec.parse_token(token)

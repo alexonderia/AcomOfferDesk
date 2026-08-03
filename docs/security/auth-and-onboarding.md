@@ -117,7 +117,7 @@
 
 ## 3) Registration flows
 
-- Invite/email и Telegram-legacy потоки продолжают идти через callback backend.
+- Регистрация по email-приглашению продолжает идти через callback backend.
 - Внешняя ссылка не создает полноценную сессию напрямую без OIDC flow.
 - Для новых contractor backend может создавать локальный аккаунт со `status=review`.
 

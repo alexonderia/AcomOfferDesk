@@ -93,7 +93,6 @@ def test_request_registration_payload_contains_registration_link_and_fallback_te
         request_id=77,
         description=None,
         deadline_at=_deadline(),
-        tg_bot_url="https://t.me/acom_bot?start=1",
         registration_url=registration_url,
         registration_ttl_seconds=3600,
         contact=contact,
@@ -109,7 +108,6 @@ def test_request_registration_payload_contains_registration_link_and_fallback_te
     assert "Срок действия ссылки: 1 ч." in payload.text_content
     assert "Перейти к регистрации" in payload.html_content
     assert "Если удобнее, вы можете связаться с контактным лицом напрямую" in payload.html_content
-    assert "Открыть legacy Telegram-бот" in payload.html_content
     assert "None" not in payload.text_content
     assert "undefined" not in payload.text_content.lower()
 

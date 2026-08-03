@@ -14,8 +14,6 @@ from app.services.users import UserStatusService
 
 @pytest.mark.asyncio
 async def test_review_contractor_activation_syncs_keycloak_app_role_and_logs_out_sessions(monkeypatch):
-    monkeypatch.setattr(settings, "telegram_legacy_enabled", False)
-
     sync_mock = AsyncMock()
     monkeypatch.setattr(users_module, "sync_keycloak_app_role_for_user", sync_mock)
     monkeypatch.setattr(users_module, "notify_contractor_status_changed_email", AsyncMock(return_value=False))
@@ -24,7 +22,6 @@ async def test_review_contractor_activation_syncs_keycloak_app_role_and_logs_out
         id="contractor-1",
         id_role=settings.contractor_role_id,
         status="review",
-        tg_user_id=None,
     )
     users_repo = AsyncMock()
     users_repo.get_by_id = AsyncMock(return_value=user)
@@ -47,7 +44,6 @@ async def test_review_contractor_activation_syncs_keycloak_app_role_and_logs_out
 
     service = UserStatusService(
         users=users_repo,
-        tg_users=AsyncMock(),
         profiles=profiles_repo,
         user_auth_accounts=user_auth_accounts,
         keycloak_admin=keycloak_admin,
@@ -62,7 +58,6 @@ async def test_review_contractor_activation_syncs_keycloak_app_role_and_logs_out
         ),
         user_id="contractor-1",
         user_status="active",
-        tg_status=None,
     )
 
     assert result.user_status == "active"
@@ -74,8 +69,6 @@ async def test_review_contractor_activation_syncs_keycloak_app_role_and_logs_out
 
 @pytest.mark.asyncio
 async def test_review_contractor_activation_without_keycloak_link_skips_role_sync(monkeypatch):
-    monkeypatch.setattr(settings, "telegram_legacy_enabled", False)
-
     sync_mock = AsyncMock()
     monkeypatch.setattr(users_module, "sync_keycloak_app_role_for_user", sync_mock)
     monkeypatch.setattr(users_module, "notify_contractor_status_changed_email", AsyncMock(return_value=False))
@@ -84,7 +77,6 @@ async def test_review_contractor_activation_without_keycloak_link_skips_role_syn
         id="contractor-2",
         id_role=settings.contractor_role_id,
         status="review",
-        tg_user_id=None,
     )
     users_repo = AsyncMock()
     users_repo.get_by_id = AsyncMock(return_value=user)
@@ -96,7 +88,6 @@ async def test_review_contractor_activation_without_keycloak_link_skips_role_syn
 
     service = UserStatusService(
         users=users_repo,
-        tg_users=AsyncMock(),
         profiles=AsyncMock(get_by_id=AsyncMock(return_value=SimpleNamespace(mail="contractor2@example.com"))),
         user_auth_accounts=AsyncMock(get_by_user_provider=AsyncMock(return_value=None)),
         keycloak_admin=AsyncMock(),
@@ -111,7 +102,6 @@ async def test_review_contractor_activation_without_keycloak_link_skips_role_syn
         ),
         user_id="contractor-2",
         user_status="active",
-        tg_status=None,
     )
 
     assert result.user_status == "active"

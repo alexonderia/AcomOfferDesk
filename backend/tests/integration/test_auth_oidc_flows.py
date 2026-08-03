@@ -301,7 +301,7 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
     set_uow(_NoExistingEmailUow())
     invite_codec = RegistrationInviteTokenCodec(
         secret=settings.email_verification_secret,
-        ttl_seconds=settings.tg_register_ttl_seconds,
+        ttl_seconds=settings.registration_invite_ttl_seconds,
     )
     invite_token = invite_codec.create_token(email="new-contractor@example.com")
     observed: dict[str, object] = {}
@@ -338,10 +338,6 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
         observed["decoded_token"] = token
         return _build_keycloak_claims(subject="kc-invite", email="new-contractor@example.com")
 
-    async def _fake_notify_new_user_registration(*args, **kwargs):
-        observed["registration_notify_args"] = args
-        observed["registration_notify_kwargs"] = kwargs
-
     def _fake_schedule_registration_review_required_notification(**kwargs):
         observed["review_notification_kwargs"] = kwargs
         return True
@@ -368,7 +364,6 @@ def test_invite_registration_callback_success_creates_review_identity_and_redire
     monkeypatch.setattr(auth_api, "exchange_code_for_tokens", _fake_exchange_code_for_tokens)
     monkeypatch.setattr(auth_api, "decode_keycloak_access_token", _fake_decode_keycloak_access_token)
     monkeypatch.setattr(auth_api, "IdentitySyncService", _FakeIdentitySyncService)
-    monkeypatch.setattr(auth_api, "notify_new_user_registration", _fake_notify_new_user_registration)
     monkeypatch.setattr(auth_api, "notify_registration_completed_email", _fake_notify_registration_completed_email)
     monkeypatch.setattr(
         auth_api,

@@ -3,7 +3,6 @@ import type { ContractorListItem } from '@shared/api/contractors/listContractors
 
 export const mapUserListItemToContractorListItem = (user: UserListItem): ContractorListItem => ({
   userId: user.user_id,
-  maxUserId: null,
   roleId: user.role_id,
   status: user.status,
   fullName: user.full_name,
@@ -17,7 +16,6 @@ export const mapUserListItemToContractorListItem = (user: UserListItem): Contrac
   note: user.note,
   createdAt: null,
   updatedAt: null,
-  registrationSource: null,
   actions: user.actions,
   rootUnits: null,
 });

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 import logging
 
 from fastapi import Depends, Header
@@ -9,7 +8,7 @@ from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser, build_current_user_from_keycloak
 from app.domain.authorization import require_permission as enforce_permission
-from app.domain.exceptions import Forbidden, Unauthorized
+from app.domain.exceptions import Unauthorized
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import decode_keycloak_access_token
 
@@ -81,28 +80,6 @@ async def get_current_user(
 
     async with uow:
         return await _get_current_user_from_keycloak_token(token, uow=uow)
-
-
-async def require_bot_api_secret(
-    x_bot_api_secret: str | None = Header(default=None, alias="X-Bot-Api-Secret"),
-) -> None:
-    """Authenticate machine-to-machine bot calls (MAX/TG → backend).
-
-    These endpoints return request data keyed by messenger id and must never be
-    reachable unauthenticated through the public gateway. Trusted bots send the
-    shared secret in the ``X-Bot-Api-Secret`` header.
-    """
-
-    configured = (settings.bot_api_shared_secret or "").strip()
-    if configured:
-        provided = (x_bot_api_secret or "").strip()
-        if not provided or not hmac.compare_digest(provided, configured):
-            raise Forbidden("Доступ запрещён")
-        return
-
-    # No secret configured: fail-closed in production, allow local dev/test flows.
-    if settings.app_env == "production":
-        raise Forbidden("Доступ запрещён")
 
 
 def require_permission(permission: str):

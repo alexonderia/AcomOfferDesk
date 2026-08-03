@@ -22,7 +22,6 @@ async def test_update_manual_contractor_creates_missing_company_contacts(monkeyp
     user = SimpleNamespace(
         id="contractor-no-company",
         id_role=settings.contractor_role_id,
-        tg_user_id=None,
     )
     profile = SimpleNamespace(
         id="contractor-no-company",
@@ -37,6 +36,7 @@ async def test_update_manual_contractor_creates_missing_company_contacts(monkeyp
 
     users_repo = AsyncMock()
     users_repo.get_by_id = AsyncMock(return_value=user)
+    users_repo.has_legacy_messenger_account = AsyncMock(return_value=False)
 
     profiles_repo = AsyncMock()
     profiles_repo.get_by_id = AsyncMock(return_value=profile)

@@ -13,9 +13,6 @@ from app.services.users import ManualContractorCreateInput, ManualContractorServ
 
 @pytest.mark.asyncio
 async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_root_unit(monkeypatch):
-    notify_mock = AsyncMock()
-    monkeypatch.setattr(users_module, "notify_new_user_registration", notify_mock)
-
     users_repo = AsyncMock()
     users_repo.find_matching_contractor_user_ids = AsyncMock(return_value=["contractor-existing"])
     users_repo.get_role_by_id = AsyncMock(return_value=SimpleNamespace(role="Контрагент"))
@@ -60,5 +57,4 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
     added_membership = units_repo.add_member.await_args.args[0]
     assert added_membership.id_unit == 101
     assert added_membership.id_user == "contractor-existing"
-    notify_mock.assert_not_awaited()
     users_repo.add.assert_not_awaited()

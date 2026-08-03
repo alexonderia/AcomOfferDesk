@@ -42,8 +42,7 @@
 - `keycloak`: OIDC/IAM;
 - `rabbitmq`: очередь для уведомлений;
 - `minio`: S3-совместимое файловое хранилище;
-- `notifications_worker`: обработчик email/legacy notification events;
-- `tg_bot`: legacy Telegram-модуль, по умолчанию отключён;
+- `notifications_worker`: обработчик email notification events;
 - `order_database`: внешняя PostgreSQL БД в отдельном репозитории/контуре.
 
 Важные текущие риски:
@@ -388,7 +387,6 @@ Readiness должен проверять минимум:
 - `web`: `npm ci`, `npm run lint`, `npm run build`;
 - `backend`: dependency install, import check, unit/integration tests;
 - `notifications_worker`: dependency install, import/smoke check;
-- `tg_bot`: тесты только если legacy включается или меняется;
 - Docker build check для основных образов.
 
 Что поправить в текущем подходе:

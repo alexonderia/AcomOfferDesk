@@ -1,169 +1,45 @@
-# Notifications Worker (`/notifications_worker`)
+# Notifications Worker
 
-## Граница ответственности документа
+`notifications_worker` is the asynchronous email-delivery process for AcomOfferDesk.
 
-Этот README описывает код и контракт уведомлений воркера.
-Единый источник правды по окружениям/запуску:
-- `docs/operations/environments.md`
+It connects to RabbitMQ, binds the durable queue `notify.email` to exchange `app.events` with routing key `email.send`, and delivers messages through SMTP. Delivery results are published back as `email.delivery.succeeded` or `email.delivery.failed` events.
 
-`notifications_worker` - отдельный процесс, который доставляет уведомления, отправляя письма (и опционально legacy Telegram- или MAX-сообщения) на основе событий из RabbitMQ.
-
-Это вынесенный асинхронный слой: тяжелая внешняя доставка (SMTP / Telegram HTTP API) не выполняется в request/response потоке backend.
-
-## Роль модуля в системе
-
-В runtime воркер используется для доставки уведомлений, которые backend публикует в очередь:
-
-- email-уведомления для событий бизнес-доменов (например, по заявкам/офертам);
-- legacy Telegram-уведомления для отката/совместимости (обычно выключены);
-- MAX push-уведомления, если включен `MAX_BOT_ENABLED`.
-
-## Что делает воркер (high-level)
-
-1. Подключается к RabbitMQ по `RABBITMQ_URL`.
-2. Создает/подписывается на exchange `app.events`.
-3. Потребляет очереди:
-   - `notify.email` по routing key `email.send`;
-   - `notify.tg` по routing key `telegram.send` (только если включен `LEGACY_TELEGRAM_ENABLED`);
-   - `notify.max` по routing key `max.send` (только если включен `MAX_BOT_ENABLED`).
-4. Для каждого сообщения:
-   - распаковывает JSON payload;
-   - вызывает `send_email(payload)`, `send_tg(payload)` или `send_max(payload)`.
-
-## Где лежит код
+## Runtime
 
 ```text
-notifications_worker/
-  app/
-    main.py          # подключение к RabbitMQ и subscribe на очереди
-    consumers.py     # обработчик входящих сообщений (routing по routing_key)
-    email_sender.py  # SMTP-отправка email с дедупликацией и анти-spam кулдауном
-    tg_sender.py     # legacy Telegram отправка через Telegram Bot API
-    max_sender.py    # MAX push через MAX Bot API
-  requirements.txt
-  Dockerfile
+backend -> app.events / email.send -> notify.email -> notifications_worker -> SMTP
+                                              \-> email delivery result event
 ```
 
-## Контракт событий (payload) для email
+The worker does not handle in-app or WebSocket delivery; those remain backend responsibilities.
 
-Backend публикует email через `shared.broker.EXCHANGE` и `shared.broker.RK_EMAIL`.
+## Main files
 
-Ожидаемый payload для очереди email (`notify.email`) включает поля:
+```text
+app/main.py             RabbitMQ connection and email queue binding
+app/consumers.py        Email payload validation and dispatch
+app/email_sender.py     SMTP delivery, deduplication, and cooldown
+app/result_publisher.py Delivery-result publication
+```
 
-- `to_email`: получатель
-- `subject`: тема
-- `text_content`: plain text контент
-- `html_content`: html контент (опционально)
-- `attachments`: список вложений (опционально)
-  - `filename`
-  - `mime_type`
-  - `content_base64`
-- `reply_token`: токен для Reply-To адреса (опционально)
-- `recipient_context`: контекст получателя для логов (опционально)
-  - обычно `user_login`, `tg_id`
-- `from_address`: SMTP from
-- `from_name`: SMTP from display name
+## Environment
 
-Источник payload:
-- backend `SMTPEmailService.send_email()` публикует сообщение в RabbitMQ c `routing_key=RK_EMAIL`.
-
-## Очереди и routing keys
-
-Константы брокера находятся в `shared/broker.py` и используются и backend, и воркером:
-
-- exchange: `app.events`
-- очередь email: `notify.email`
-- routing key email: `email.send`
-- очередь legacy telegram: `notify.tg` (rollback compatibility)
-- routing key telegram: `telegram.send` (legacy)
-- очередь MAX: `notify.max`
-- routing key MAX: `max.send`
-
-## ENV-переменные воркера
-
-### RabbitMQ
-
-- `RABBITMQ_URL` (default: `amqp://guest:guest@rabbitmq:5672/`)
-
-### Включение legacy Telegram
-
-- `LEGACY_TELEGRAM_ENABLED` (default: `false`)
-
-Если выключен, воркер подписывается только на email очередь и legacy Telegram события пропускает.
-
-### MAX push
-
-- `MAX_BOT_ENABLED` (default: `false`)
-- `MAX_BOT_TOKEN` — токен бота MAX (обязателен для доставки)
-- `MAX_API_BASE_URL` (default: `https://platform-api.max.ru`)
-
-Если выключен, воркер не подписывается на очередь `notify.max`.
-
-Ожидаемый payload для MAX (`notify.max`):
-
-- `user_id`: MAX user id (строка)
-- `text`: текст сообщения
-- `button_text` / `button_url`: опциональная inline-кнопка-ссылка
-
-### SMTP email
-
+- `RABBITMQ_URL`
 - `SMTP_HOST`
-- `SMTP_PORT` (default: `465`)
-- `SMTP_SECURITY` (default: `auto`)
-  - `auto`: `465 -> ssl`, `587 -> starttls`, other ports -> plain SMTP
-  - `ssl`: implicit TLS (SMTPS)
-  - `starttls`: SMTP + TLS upgrade via STARTTLS
-  - `none`: plain SMTP without TLS
-- `EMAIL_ADDRESS` (логин для SMTP)
-- `EMAIL_APP_PASSWORD` (пароль/токен приложения)
-- `EMAIL_FROM_NAME` (default: `AcomOfferDesk`, display name)
+- `SMTP_PORT`
+- `SMTP_SECURITY`
+- `EMAIL_ADDRESS`
+- `EMAIL_APP_PASSWORD`
+- `EMAIL_FROM_NAME`
+- `EMAIL_DEDUP_TTL_SECONDS`
+- `EMAIL_SPAM_COOLDOWN_SECONDS`
 
-Если SMTP env vars не настроены, воркер логирует предупреждение и пропускает отправку email.
+## Checks
 
-### Анти-спам и дедупликация
+From the repository root:
 
-- `EMAIL_DEDUP_TTL_SECONDS` (default: `120`)
-  - дедуп по “fingerprint” payload в окне TTL
-- `EMAIL_SPAM_COOLDOWN_SECONDS` (default: `600`, min: 60)
-  - кулдаун адреса при SMTP подозрении на spam
-
-## Реакция воркера на ошибки
-
-- При ошибках SMTP:
-  - если ошибка распознается как suspected spam (SMTP 554 + сигналы), адрес блокируется на кулдаун;
-  - в остальных случаях “fingerprint” очищается, логируется исключение.
-- Повторная доставка:
-  - обработчик сообщения использует `message.process(requeue=False)`, то есть при падении сообщения оно не requeue-ится повторно “мягко”.
-
-## Как локально запускать
-
-Рекомендуется запускать воркер в составе root runtime:
-
-```bash
-docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build notifications_worker
+```powershell
+$env:PYTHONPATH='.;notifications_worker'
+.\.venv\Scripts\python.exe -c "import notifications_worker.app.main; import notifications_worker.app.consumers"
+.\.venv\Scripts\python.exe -m pytest notifications_worker/tests
 ```
-
-Проверить:
-
-- что backend публикует события в `app.events`;
-- что `notifications_worker` логирует `Connected to RabbitMQ` и начало consumption.
-
-## Что менять при изменении email-уведомлений
-
-Три уровня:
-
-1. Backend-пейлоад и content.
-   - формирование `subject/text_content/html_content/attachments/reply_token`
-   - где: `backend/app/infrastructure/email/*` и use-case’ы уведомлений.
-2. Контракт payload.
-   - если меняете поля, обновляйте соответствующую часть `notifications_worker/app/email_sender.py`.
-3. Delivery-логика.
-   - где: `notifications_worker/app/email_sender.py` (dedup/spam кулдауны, Reply-To адрес, attachments).
-
-## Связанные документы
-
-- `docs/product/runtime-architecture.md` (где воркер находится в схеме runtime)
-- `docs/operations/environments.md` (какой compose-слой использовать в dev/test/prod)
-- backend email архитектура:
-  - `backend/app/infrastructure/email/smtp_email_service.py`
-  - `backend/app/infrastructure/notification_publisher.py`

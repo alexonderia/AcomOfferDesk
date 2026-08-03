@@ -28,7 +28,6 @@ from app.schemas.contractors import (
 from app.services.contractor_invitations import ContractorInvitationService
 from app.services.contractors import ContractorService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
-from app.services.user_notification_preferences import UserNotificationPreferencesService
 from app.services.users import UserStatusService
 
 router = APIRouter()
@@ -48,9 +47,10 @@ def _ru_user_status(status: str) -> str:
 def _contractor_list_item(current_user: CurrentUser, item) -> ContractorListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
+    is_manual = data.pop("is_manual")
     data["actions"] = ContractorActionBuilder.build_contractor_actions(
         current_user,
-        is_manual=data.get("registration_source") == "manual",
+        is_manual=is_manual,
     )
     return ContractorListItemSchema(**data)
 
@@ -145,15 +145,8 @@ async def update_contractor_status(
         contractor_service = ContractorService(uow.users, uow.profiles, uow.units)
         status_service = UserStatusService(
             uow.users,
-            uow.tg_users,
             uow.profiles,
             uow.user_auth_accounts,
-            uow.max_users,
-            notification_preferences=UserNotificationPreferencesService(
-                uow.user_contact_channels,
-                uow.user_notification_preferences,
-                profiles=uow.profiles,
-            ),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await contractor_service.update_contractor_status(

@@ -37,10 +37,6 @@ from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.infrastructure.delayed_notification_publisher import schedule_unread_chat_email_notification
 from app.services.contractor_outbound_notifications import notify_contractor_offer_updated
-from app.services.max_notifications import notify_new_message as notify_max_new_message
-from app.services.max_notifications import notify_offer_status_finalized as notify_max_offer_status_finalized
-from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
-from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 DEFAULT_PARTNER_CARD_PATH = (
@@ -263,7 +259,6 @@ class OfferService:
         file_service: FileService | None = None,
         keycloak_admin: KeycloakAdminService | None = None,
         notifications: NotificationService | None = None,
-        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
@@ -280,7 +275,6 @@ class OfferService:
         self._file_service = file_service or FileService(files)
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
         self._notifications = notifications
-        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
@@ -393,9 +387,8 @@ class OfferService:
         offer_owner = await self._users.get_by_id(user_id=offer_owner_user_id)
         if offer_owner is None:
             raise NotFound("Offer owner not found")
-        return (
-            offer_owner.id_role == settings.contractor_role_id
-            and offer_owner.tg_user_id is None
+        return offer_owner.id_role == settings.contractor_role_id and not await self._users.has_legacy_messenger_account(
+            user_id=offer_owner.id
         )
 
     async def _require_chat_context(
@@ -1169,33 +1162,6 @@ class OfferService:
         previous_status = offer.status
         await self._offers.update_status(offer=offer, status=status)
 
-        if status_changed and status in {"accepted", "rejected"} and settings.telegram_legacy_enabled:
-            tg_id = await self._users.get_active_approved_contractor_tg_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if tg_id is not None:
-                await notify_offer_status_finalized(tg_id=tg_id, request_id=request.id)
-        if status_changed and status in {"accepted", "rejected"} and settings.max_bot_enabled:
-            max_user_id = await self._users.get_active_approved_contractor_max_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if max_user_id is not None:
-                if self._notification_preferences is not None:
-                    is_enabled = await self._notification_preferences.is_channel_enabled(
-                        user_id=offer.id_user,
-                        channel_type="max",
-                        notification_type="offer",
-                    )
-                    if not is_enabled:
-                        max_user_id = None
-            if max_user_id is not None:
-                await notify_max_offer_status_finalized(
-                    max_user_id=max_user_id,
-                    request_id=request.id,
-                )
-
         if status_changed and status in {"accepted", "rejected", "deleted"}:
             event = build_process_notification_event(
                 event_type="offer.status_changed",
@@ -1483,30 +1449,6 @@ class OfferService:
                 chat_id=chat.id,
                 message_id=message.id,
             )
-
-        if current_user.user_id != offer.id_user and settings.telegram_legacy_enabled:
-            tg_id = await self._users.get_active_approved_contractor_tg_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if tg_id is not None:
-                await notify_new_message(tg_id=tg_id, request_id=request.id)
-        if current_user.user_id != offer.id_user and settings.max_bot_enabled:
-            max_user_id = await self._users.get_active_approved_contractor_max_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if max_user_id is not None:
-                if self._notification_preferences is not None:
-                    is_enabled = await self._notification_preferences.is_channel_enabled(
-                        user_id=offer.id_user,
-                        channel_type="max",
-                        notification_type="chat",
-                    )
-                    if not is_enabled:
-                        max_user_id = None
-            if max_user_id is not None:
-                await notify_max_new_message(max_user_id=max_user_id, request_id=request.id)
 
         self._schedule_unread_chat_email_notifications(
             message_id=message.id,

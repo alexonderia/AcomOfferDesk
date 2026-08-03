@@ -47,7 +47,6 @@ class SMTPEmailService:
         if resolved_recipient_context is None and normalized_recipient_user_id:
             resolved_recipient_context = {
                 "user_login": normalized_recipient_user_id,
-                "tg_id": None,
             }
         await publish_notification(
             RK_EMAIL,

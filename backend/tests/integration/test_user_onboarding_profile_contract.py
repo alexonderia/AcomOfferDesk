@@ -37,7 +37,6 @@ class _OnboardingUsersRepo:
             id="contractor-review-1",
             id_role=settings.contractor_role_id,
             status="review",
-            tg_user_id=None,
         )
 
     async def get_with_profile_and_company_contacts(self, *, user_id: str):

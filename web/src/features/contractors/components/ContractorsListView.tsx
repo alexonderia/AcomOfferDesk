@@ -74,7 +74,6 @@ const VIEW_COLUMN_IDS = [
 
 const ALL_COLUMN_IDS = [
   ...VIEW_COLUMN_IDS,
-  'max_user_id',
   'company_name',
   'inn',
   'address',
@@ -424,14 +423,6 @@ export const ContractorsListView = ({
         getSearchValue: (row) => row.companyMail ?? '',
         getSortValue: (row) => row.companyMail ?? '',
         renderCell: (row) => renderEditableField(row, 'company_mail', row.actions.manage_manual_contractor),
-      },
-      {
-        id: 'max_user_id',
-        header: 'MAX ID',
-        minWidth: 170,
-        getSearchValue: (row) => row.maxUserId ?? '',
-        getSortValue: (row) => row.maxUserId ?? '',
-        renderCell: (row) => renderLockedCell(<ContractorTableCell value={row.maxUserId} />),
       },
       {
         id: 'company_name',

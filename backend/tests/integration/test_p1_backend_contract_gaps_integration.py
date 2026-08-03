@@ -451,7 +451,6 @@ class _OfferFilesUsersRepo:
         return SimpleNamespace(
             id=resolved_user_id,
             id_role=settings.contractor_role_id,
-            tg_user_id=None,
             id_parent=None,
         )
 
@@ -548,10 +547,9 @@ class _ManualEmailNotifications:
         users=None,
         files=None,
         *,
-        notification_preferences=None,
         after_commit_hook_registrar=None,
     ) -> None:
-        _ = (profiles, requests, users, files, notification_preferences, after_commit_hook_registrar)
+        _ = (profiles, requests, users, files, after_commit_hook_registrar)
         self.calls: list[dict] = []
 
     async def notify_request_to_additional_emails(
@@ -1426,19 +1424,16 @@ def test_offer_file_delete_denies_internal_user_outside_hierarchy_scope(
                 id="owner-1",
                 id_role=settings.economist_role_id,
                 id_parent="lead-2",
-                tg_user_id=None,
             ),
             "lead-2": SimpleNamespace(
                 id="lead-2",
                 id_role=settings.lead_economist_role_id,
                 id_parent="pm-1",
-                tg_user_id=None,
             ),
             "pm-1": SimpleNamespace(
                 id="pm-1",
                 id_role=settings.project_manager_role_id,
                 id_parent=None,
-                tg_user_id=None,
             ),
         }
     )
@@ -1741,7 +1736,6 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
         users,
         files=None,
         *,
-        notification_preferences=None,
         after_commit_hook_registrar=None,
     ):
         nonlocal fake_notifications
@@ -1750,7 +1744,6 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
             requests,
             users,
             files,
-            notification_preferences=notification_preferences,
             after_commit_hook_registrar=after_commit_hook_registrar,
         )
         return fake_notifications
@@ -1865,7 +1858,7 @@ def test_request_email_verification_uses_fake_mail_sender(
     assert response.status_code == 200
     assert sent[0]["email"] == "new@example.com"
     assert sent[0]["verification_link"].startswith("https://web.acom.example/verify-email?token=")
-    assert sent[0]["recipient_context"] == {"user_login": "profile-1", "tg_id": None}
+    assert sent[0]["recipient_context"] == {"user_login": "profile-1"}
 
 
 @pytest.mark.parametrize("update_result", [True, False])

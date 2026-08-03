@@ -298,7 +298,6 @@ def test_user_action_builder_contractor_not_given_internal_controls(make_current
         contractor,
         target_user_id="lead-1",
         target_role_id=settings.lead_economist_role_id,
-        target_tg_user_id=None,
     )
 
     assert actions.can_update_status is False
@@ -476,12 +475,12 @@ def test_contractor_action_builder_allows_manual_edit_only_for_manual_rows(make_
     )
 
     manual_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=True)
-    telegram_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=False)
+    external_account_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=False)
 
     assert manual_actions.can_view_profile is True
     assert manual_actions.can_update_status is True
     assert manual_actions.can_manage_manual_contractor is True
-    assert telegram_actions.can_manage_manual_contractor is False
+    assert external_account_actions.can_manage_manual_contractor is False
 
 
 def test_contractor_action_builder_allows_status_with_delegation_permission(make_current_user):

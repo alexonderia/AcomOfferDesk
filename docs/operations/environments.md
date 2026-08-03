@@ -88,7 +88,7 @@ Prod-like + `ngrok` (только для внешней проверки callbac
 - в `.env.prod-like` задан `NGROK_AUTHTOKEN=<ваш_токен>`.
 
 ```bash
-docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok up -d --build keycloak file_guard backend web gateway rabbitmq minio notifications_worker ngrok max_bot
+docker compose --env-file .env.prod-like -f docker-compose.yml -f docker-compose.prod-like.yml -f docker-compose.dev.yml --profile ngrok up -d --build keycloak file_guard backend web gateway rabbitmq minio notifications_worker ngrok
 ```
 
 ### Test (VPS)

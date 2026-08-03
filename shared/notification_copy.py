@@ -14,7 +14,6 @@ REGISTRATION_COMPLETED_BODY = "Регистрация пройдена. Данн
 ACCESS_OPENED_BODY = "Доступ к системе открыт."
 ACCESS_CLOSED_BODY = "Доступ к системе ограничен."
 
-MAX_ACCOUNT_LINKED_BODY = "MAX успешно привязан к вашему аккаунту AcomOfferDesk."
 
 EXPIRED_REGISTRATION_LINK_BODY = "Срок действия ссылки истек. Пожалуйста, запросите новую через /start."
 

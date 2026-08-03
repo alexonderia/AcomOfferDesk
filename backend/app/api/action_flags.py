@@ -292,7 +292,7 @@ class UserActionBuilder:
         *,
         target_user_id: str,
         target_role_id: int,
-        target_tg_user_id: int | None = None,
+        is_manual: bool = False,
         is_hierarchy_subordinate: bool | None = None,
     ) -> UserActionsSchema:
         can_manage_subordinate_target = _can_manage_subordinate_target(
@@ -356,7 +356,7 @@ class UserActionBuilder:
             can_manage_manual_contractor=(
                 UserPolicy.can_manage_manual_contractors(current_user)
                 and target_role_id == settings.contractor_role_id
-                and target_tg_user_id is None
+                and is_manual
             ),
         )
 
@@ -404,15 +404,11 @@ class ContractorActionBuilder:
     def build_contractor_actions(
         current_user: CurrentUser,
         *,
-        target_tg_user_id: int | None = None,
-        is_manual: bool | None = None,
+        is_manual: bool = False,
     ) -> UserActionsSchema:
         can_update_status = UserPolicy.can_update_contractor_profile_status(current_user)
         can_manage_manual_contractor = UserPolicy.can_manage_manual_contractors(current_user)
-        if is_manual is not None:
-            can_manage_manual_contractor = can_manage_manual_contractor and is_manual
-        else:
-            can_manage_manual_contractor = can_manage_manual_contractor and target_tg_user_id is None
+        can_manage_manual_contractor = can_manage_manual_contractor and is_manual
         return UserActionsSchema(
             can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
             can_update_status=can_update_status,
@@ -548,7 +544,7 @@ class OfferActionResolver:
             raise NotFound("Offer owner not found")
         offer_is_manual = (
             offer_owner.id_role == settings.contractor_role_id
-            and offer_owner.tg_user_id is None
+            and not await self._users.has_legacy_messenger_account(user_id=offer_owner.id)
         )
 
         can_create_new_offer = False

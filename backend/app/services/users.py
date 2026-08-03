@@ -12,46 +12,27 @@ from app.domain.authorization import has_permission
 from app.domain.department_delegations import get_department_permission_codes
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
-from app.models.auth_models import UserAuthAccount, UserContactChannel
+from app.models.auth_models import UserAuthAccount
 from app.domain.policies import CurrentUser, UserPolicy
-from app.models.orm_models import CompanyContact, Profile, Role, TgUser, User, UserStatusPeriod
+from app.models.orm_models import CompanyContact, Profile, Role, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
-from app.repositories.user_contact_channels import UserContactChannelRepository
-from app.repositories.tg_users import TgUserRepository
-from app.repositories.max_compat import max_subject_value
-from app.repositories.telegram_compat import telegram_subject_value
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
     notify_contractor_status_changed_email,
-    notify_registration_completed_email,
 )
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
-from app.services.registration_admin_notify import (
-    RegistrationNotifyContext,
-    notify_new_user_registration,
-    schedule_registration_review_required_notification,
-)
+from app.services.registration_admin_notify import schedule_registration_review_required_notification
 from app.services.department_scope import DepartmentScopeService
 from app.services.contractor_units import ContractorUnitService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.unit_hierarchy import HierarchyCounts, UnitHierarchyService
-from app.repositories.max_users import MaxUserRepository
-from app.models.orm_models import MaxUser
-from app.services.max_notifications import (
-    notify_access_closed as notify_max_access_closed,
-    notify_access_opened as notify_max_access_opened,
-)
 from app.services.user_notification_preferences import UserNotificationPreferencesService
-from app.services.tg_notifications import (
-    notify_access_closed as notify_tg_access_closed,
-    notify_access_opened as notify_tg_access_opened,
-)
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 ROLE_NAME_SUPERADMIN = "Суперадмин"
@@ -453,174 +434,6 @@ class UserRegistrationService:
             keycloak_subject_id=keycloak_user.id,
             local_role_id=role_id,
         )
-        await notify_new_user_registration(
-            RegistrationNotifyContext(
-                source="admin_register",
-                user_id=user.id,
-                role_id=role_id,
-                role_name=target_role.role,
-                status=user.status,
-                full_name=normalized_full_name,
-                email=normalized_mail,
-                registered_by=current_user.user_id,
-                keycloak_subject=keycloak_user.id,
-            )
-        )
-        return user
-    
-
-class ContractorRegistrationService:
-    def __init__(
-        self,
-        users: UserRepository,
-        profiles: ProfileRepository,
-        company_contacts: CompanyContactRepository,
-        user_auth_accounts: UserAuthAccountRepository,
-        user_contact_channels: UserContactChannelRepository,
-        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
-        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
-    ) -> None:
-        self._users = users
-        self._profiles = profiles
-        self._company_contacts = company_contacts
-        self._user_auth_accounts = user_auth_accounts
-        self._user_contact_channels = user_contact_channels
-        self._after_commit_hook_registrar = after_commit_hook_registrar
-        self._process_event_publisher = process_event_publisher or publish_process_notification_event
-
-    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
-        if self._after_commit_hook_registrar is None:
-            return False
-        self._after_commit_hook_registrar(
-            lambda: self._process_event_publisher(event)
-        )
-        return True
-
-    async def register_contractor(
-        self,
-        *,
-        tg_user_id: int | None = None,
-        max_user_id: str | None = None,
-        login: str,
-        password: str,
-        full_name: str,
-        phone: str,
-        company_name: str,
-        inn: str,
-        company_phone: str,
-        company_mail: str,
-        address: str,
-        note: str,
-    ) -> User:
-        if tg_user_id is not None and max_user_id is not None:
-            raise Conflict("Нельзя одновременно привязать Telegram и MAX")
-        if tg_user_id is None and max_user_id is None:
-            raise Conflict("Не указан канал регистрации")
-
-        if await self._users.exists(login):
-            raise Conflict("Пользователь уже существует")
-
-        messenger_provider: str
-        messenger_subject: str
-        registration_source: str
-        registration_notify_source: str
-
-        if max_user_id is not None:
-            messenger_provider = "max"
-            messenger_subject = max_subject_value(max_user_id)
-            registration_source = "contractor_max"
-            registration_notify_source = "contractor_max_registration"
-            existing_by_messenger = await self._users.get_by_max_user_id(max_user_id)
-            if existing_by_messenger is not None:
-                raise Conflict("Пользователь MAX уже привязан")
-        else:
-            messenger_provider = "telegram"
-            messenger_subject = telegram_subject_value(tg_user_id)  # type: ignore[arg-type]
-            registration_source = "contractor_tg"
-            registration_notify_source = "contractor_tg_registration"
-            existing_by_messenger = await self._users.get_by_tg_user_id(tg_user_id)  # type: ignore[arg-type]
-            if existing_by_messenger is not None:
-                raise Conflict("Пользователь Telegram уже привязан")
-
-        user = User(
-            id=login,
-            id_role=settings.contractor_role_id,
-            status="review",
-        )
-        profile = Profile(
-            id=login,
-            full_name=full_name,
-            phone=phone,
-            mail="Не указано",
-        )
-        company_contact = CompanyContact(
-            id=login,
-            company_name=company_name,
-            inn=inn,
-            phone=company_phone,
-            mail=company_mail,
-            address=address,
-            note=note,
-        )
-        await self._users.add(user)
-        await self._users.flush()
-        await self._profiles.add(profile)
-        await self._company_contacts.add(company_contact)
-        await self._user_auth_accounts.add(
-            UserAuthAccount(
-                id_user=login,
-                provider=messenger_provider,
-                external_subject_id=messenger_subject,
-                external_username=None,
-                external_email=None,
-                is_active=True,
-            )
-        )
-        await self._user_contact_channels.add(
-            UserContactChannel(
-                id_user=login,
-                channel_type=messenger_provider,
-                channel_value=messenger_subject,
-                is_verified=False,
-                verified_at=None,
-                is_primary=True,
-                is_active=True,
-            )
-        )
-        contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
-        await notify_new_user_registration(
-            RegistrationNotifyContext(
-                source=registration_source,
-                user_id=user.id,
-                role_id=settings.contractor_role_id,
-                role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
-                status=user.status,
-                full_name=full_name,
-                email=company_mail if company_mail != "Не указано" else None,
-                company_name=company_name,
-            )
-        )
-        schedule_registration_review_required_notification(
-            after_commit_hook_registrar=self._after_commit_hook_registrar,
-            user_id=user.id,
-            actor_user_id=user.id,
-            role_id=settings.contractor_role_id,
-            source=registration_notify_source,
-        )
-        normalized_mail = (company_mail or "").strip().lower()
-        if normalized_mail and normalized_mail != "не указано":
-            if self._after_commit_hook_registrar is None:
-                await notify_registration_completed_email(
-                    to_email=normalized_mail,
-                    recipient_user_id=user.id,
-                )
-            else:
-                self._after_commit_hook_registrar(
-                    lambda: notify_registration_completed_email(
-                        to_email=normalized_mail,
-                        recipient_user_id=user.id,
-                    )
-                )
         return user
 
 
@@ -633,8 +446,7 @@ class UserListItem:
     full_name: str | None
     phone: str | None
     mail: str | None
-    tg_user_id: int | None = None
-    tg_status: str | None = None
+    is_manual: bool = False
     company_name: str | None = None
     inn: str | None = None
     company_phone: str | None = None
@@ -676,8 +488,6 @@ class RequestContractorListItem:
 class UserStatusUpdateResult:
     user_id: str
     user_status: str
-    tg_user_id: int | None
-    tg_status: str | None
 
 
 @dataclass(frozen=True)
@@ -693,7 +503,6 @@ class MeResult:
     user_id: str
     role_id: int
     status: str
-    tg_user_id: int | None
     full_name: str | None
     phone: str | None
     mail: str | None
@@ -876,8 +685,7 @@ class UserQueryService:
                     full_name=profile.full_name if profile else None,
                     phone=profile.phone if profile else None,
                     mail=profile.mail if profile else None,
-                    tg_user_id=user.tg_user_id,
-                    tg_status=tg_user.status if tg_user else None,
+                    is_manual=_legacy_user is None and legacy_account_id is None,
                     company_name=company.company_name if company else None,
                     inn=company.inn if company else None,
                     company_phone=company.phone if company else None,
@@ -885,7 +693,7 @@ class UserQueryService:
                     address=company.address if company else None,
                     note=company.note if company else None,
                 )
-                for user, profile, company, tg_user, _max_user_id in rows
+                for user, profile, company, _legacy_user, legacy_account_id in rows
             ]
 
         rows = await self._users.list_users_with_profiles(role_id=role_id)
@@ -1043,7 +851,7 @@ class UserQueryService:
                 mail=profile.mail if profile else None,
                 company_mail=company.mail if company else None,
             )
-            for user, profile, company, _, _max_user_id in rows
+            for user, profile, company, _, _legacy_account_id in rows
             if user.status == "active"
         ]
     
@@ -1109,7 +917,6 @@ class UserQueryService:
             user_id=user.id,
             role_id=user.id_role,
             status=user.status,
-            tg_user_id=user.tg_user_id,
             full_name=profile.full_name if profile else None,
             phone=profile.phone if profile else None,
             mail=profile.mail if profile else None,
@@ -1405,19 +1212,6 @@ class ManualContractorService:
             current_user=current_user,
             contractor_user_id=login,
         )
-        contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
-        await notify_new_user_registration(
-            RegistrationNotifyContext(
-                source="manual_contractor",
-                user_id=login,
-                role_id=settings.contractor_role_id,
-                role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
-                status="active",
-                email=normalized_data.company_mail,
-                registered_by=current_user.user_id,
-                company_name=normalized_data.company_name,
-            )
-        )
         schedule_registration_review_required_notification(
             after_commit_hook_registrar=self._after_commit_hook_registrar,
             user_id=login,
@@ -1450,7 +1244,7 @@ class ManualContractorService:
             raise NotFound("Пользователь не найден")
         if user.id_role != settings.contractor_role_id:
             raise Conflict("Через этот endpoint можно обновлять только контрагента")
-        if user.tg_user_id is not None:
+        if await self._users.has_legacy_messenger_account(user_id=user.id):
             raise Conflict("Через этот endpoint можно обновлять только вручную созданного контрагента")
 
         profile = await self._profiles.get_by_id(user.id)
@@ -1683,15 +1477,12 @@ class UserManagerService:
 
 class UserStatusService:
     VALID_USER_STATUSES = {"active", "inactive", "review", "blacklist"}
-    VALID_TG_STATUSES = {"approved", "disapproved", "review"}
 
     def __init__(
         self,
         users: UserRepository,
-        tg_users: TgUserRepository,
         profiles: ProfileRepository,
         user_auth_accounts: UserAuthAccountRepository | None = None,
-        max_users: MaxUserRepository | None = None,
         notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
@@ -1699,8 +1490,6 @@ class UserStatusService:
         keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._users = users
-        self._tg_users = tg_users
-        self._max_users = max_users
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
         self._notification_preferences = notification_preferences
@@ -1758,7 +1547,6 @@ class UserStatusService:
         current_user: CurrentUser,
         user_id: str,
         user_status: str,
-        tg_status: str | None,
         contractor_only: bool = False,
     ) -> UserStatusUpdateResult:
         if contractor_only:
@@ -1768,10 +1556,6 @@ class UserStatusService:
 
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Неподдерживаемое значение users.status")
-        if tg_status is not None and tg_status not in self.VALID_TG_STATUSES:
-            raise Conflict("Неподдерживаемое значение статуса Telegram")
-        if tg_status is not None and not settings.telegram_legacy_enabled:
-            raise Forbidden("Обновление legacy-статусов Telegram отключено")
 
         user = await self._users.get_by_id(user_id)
         if user is None:
@@ -1800,36 +1584,6 @@ class UserStatusService:
             if not is_subordinate:
                 raise Forbidden("Вы можете обновлять статус только своих подчиненных")
 
-        tg_user: TgUser | None = None
-        if settings.telegram_legacy_enabled and user.tg_user_id is not None:
-            tg_user = await self._tg_users.get_by_id(user.tg_user_id)
-
-        max_user: MaxUser | None = None
-        linked_max_user_id: str | None = None
-        if settings.max_bot_enabled and self._max_users is not None:
-            linked_max_user_id = await self._users.get_linked_max_user_id(user.id)
-            if linked_max_user_id is not None:
-                max_user = await self._max_users.get_by_id(linked_max_user_id)
-                if max_user is None:
-                    max_user = MaxUser(id=linked_max_user_id, status="review")
-
-        if settings.telegram_legacy_enabled and tg_status is not None:
-            if tg_user is None:
-                raise Conflict("У пользователя нет привязанного аккаунта Telegram")
-            await self._tg_users.update_status(tg_user, tg_status)
-
-        if settings.telegram_legacy_enabled and tg_user is not None and tg_status is None:
-            if user_status in {"inactive", "blacklist"}:
-                await self._tg_users.update_status(tg_user, "disapproved")
-            elif user_status == "active":
-                await self._tg_users.update_status(tg_user, "approved")
-
-        if settings.max_bot_enabled and max_user is not None and self._max_users is not None and tg_status is None:
-            if user_status in {"inactive", "blacklist"}:
-                await self._max_users.update_status(max_user, "disapproved")
-            elif user_status == "active":
-                await self._max_users.update_status(max_user, "approved")
-
         old_status = user.status
         status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
@@ -1839,13 +1593,9 @@ class UserStatusService:
                 old_status=old_status,
             )
 
-        notify_tg_id = tg_user.id if tg_user is not None else None
-
         result = UserStatusUpdateResult(
             user_id=user.id,
             user_status=user.status,
-            tg_user_id=user.tg_user_id,
-            tg_status=tg_user.status if tg_user else None,
         )
 
         notify_email: str | None = None
@@ -1854,26 +1604,6 @@ class UserStatusService:
         if user.id_role == settings.contractor_role_id:
             profile = await self._profiles.get_by_id(user.id)
             notify_email = _normalize_notification_email(profile.mail if profile is not None else None)
-
-        if settings.telegram_legacy_enabled and notify_tg_id is not None and tg_user is not None:
-            if user.status == "active" and tg_user.status == "approved":
-                await notify_tg_access_opened(notify_tg_id)
-            else:
-                await notify_tg_access_closed(notify_tg_id)
-
-        if settings.max_bot_enabled and linked_max_user_id is not None and max_user is not None:
-            max_system_enabled = True
-            if self._notification_preferences is not None:
-                max_system_enabled = await self._notification_preferences.is_channel_enabled(
-                    user_id=user.id,
-                    channel_type="max",
-                    notification_type="system",
-                )
-            if max_system_enabled:
-                if user.status == "active" and max_user.status == "approved":
-                    await notify_max_access_opened(linked_max_user_id)
-                elif status_changed:
-                    await notify_max_access_closed(linked_max_user_id)
 
         if status_changed and user.id_role == settings.contractor_role_id:
             if notify_email is None:

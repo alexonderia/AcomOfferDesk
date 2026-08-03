@@ -77,7 +77,7 @@ const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
               <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Если удобнее, вы можете связаться с контактным лицом напрямую:<br/>
                 <strong>${PREVIEW_CONTACT_NAME}</strong><br/>
-                Тел. (MAX): ${PREVIEW_CONTACT_PHONE}<br/>
+                Телефон: ${PREVIEW_CONTACT_PHONE}<br/>
                 Эл. почта: ${PREVIEW_CONTACT_EMAIL}
               </td>
             </tr>

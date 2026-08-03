@@ -32,13 +32,7 @@ file_guard
   `-- ClamAV/clamd (optional, контролируется REQUIRE_ANTIVIRUS)
 
 notifications_worker
-  `-- RabbitMQ (queues: notify.email, notify.max)
-
-max_bot
-  `-- backend /api/v1/max/*  (+ X-Bot-Api-Secret header)
-
-tg_bot (legacy, optional)
-  `-- backend / gateway      (+ X-Bot-Api-Secret header)
+  `-- RabbitMQ (queue: notify.email)
 ```
 
 ## Периметр по режимам
@@ -127,7 +121,7 @@ Frontend:
 
 ### `notifications_worker`
 
-Отдельный воркер, который принимает события и отправляет email-уведомления, а также опционально push в MAX (и legacy Telegram при rollback).
+Отдельный воркер, который принимает события и отправляет email-уведомления.
 
 Такой подход нужен, чтобы не держать тяжелые сетевые операции в request/response-потоке backend.
 
@@ -152,24 +146,6 @@ Backend:
 - сохраняет объект в хранилище;
 - отдает файлы через контролируемый download endpoint.
 
-### `max_bot`
-
-Активный thin-client для мессенджера MAX. Запускается вместе с основным compose и обращается только к backend API `/api/v1/max/*`.
-
-MAX-идентичность хранится в универсальных таблицах `user_auth_accounts` и `user_contact_channels` с provider/channel_type `max`.
-
-Исходящие push-уведомления доставляются через `notifications_worker/app/max_sender.py` (очередь `notify.max`).
-
-### MAX push event flow
-
-1. Backend use-case (`max_notifications.py`) публикует payload в RabbitMQ exchange `app.events` с routing key `max.send`.
-2. `notifications_worker` читает очередь `notify.max` (если `MAX_BOT_ENABLED=true`).
-3. Worker вызывает `max_sender.py` → HTTP `POST` к MAX Bot API.
-
-### `tg_bot`
-
-Legacy-модуль. По умолчанию в основном compose выключен, но логика взаимодействия с backend сохранена.
-
 ## Репозиторий и runtime: что где живет
 
 ### В этом репозитории
@@ -181,9 +157,7 @@ Legacy-модуль. По умолчанию в основном compose вык�
 - runtime compose;
 - Keycloak bootstrap;
 - worker;
-- документация;
-- MAX bot;
-- legacy telegram bot.
+- документация.
 
 ### В другом репозитории
 

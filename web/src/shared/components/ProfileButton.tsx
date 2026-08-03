@@ -11,7 +11,6 @@ import {
   DialogContent,
   Divider,
   IconButton,
-  Link,
   Stack,
   Switch,
   Tooltip,
@@ -26,7 +25,6 @@ import { requestEmailVerification } from '@shared/api/auth/emailVerification';
 import {
   getCurrentUserProfile,
   getMyNotificationPreferences,
-  linkMyMaxAccount,
   setMyUnavailabilityPeriod,
   type CurrentUserProfile,
   type NotificationPreferenceType,
@@ -44,7 +42,6 @@ import { z } from 'zod';
 
 const fallbackText = 'Не указано';
 const defaultDbPlaceholder = 'не указано';
-const MAX_BOT_LINK = 'https://max.ru/id162611077185_1_bot';
 
 const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
@@ -60,13 +57,6 @@ const smallEditButtonSx = {
   px: 1.25
 };
 
-const primaryButtonSx = {
-  borderRadius: 1,
-  textTransform: 'none',
-  py: 1.1,
-  boxShadow: 'none'
-};
-
 const submitButtonSx = {
   borderRadius: 1,
   textTransform: 'none',
@@ -79,8 +69,8 @@ const submitButtonSx = {
 const notificationMatrixSx = {
   display: 'grid',
   gridTemplateColumns: {
-    xs: 'minmax(108px, 1fr) minmax(72px, 1fr) minmax(72px, 1fr)',
-    sm: 'minmax(128px, 1.1fr) minmax(96px, 1fr) minmax(96px, 1fr)'
+    xs: 'minmax(108px, 1fr) minmax(72px, 1fr)',
+    sm: 'minmax(128px, 1.1fr) minmax(96px, 1fr)'
   },
   border: '1px solid',
   borderColor: 'divider',
@@ -150,10 +140,6 @@ const profileSchema = z.object({
   mail: optionalEmail
 });
 
-const maxLinkSchema = z.object({
-  code: z.string().trim().min(1, 'Введите MAX ID')
-});
-
 const companySchema = z.object({
   inn: z.string().trim().min(1, 'Введите ИНН'),
   company_name: z.string().trim().min(1, 'Введите наименование'),
@@ -180,7 +166,6 @@ const unavailabilitySchema = z
 
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 type ProfileFormValues = z.infer<typeof profileSchema>;
-type MaxLinkFormValues = z.infer<typeof maxLinkSchema>;
 type CompanyFormValues = z.infer<typeof companySchema>;
 type NotificationContactsFormValues = z.infer<typeof notificationContactsSchema>;
 type UnavailabilityFormValues = z.infer<typeof unavailabilitySchema>;
@@ -331,7 +316,7 @@ const sanitizeDefaultValue = (value: string | null) => (value && isPlaceholderVa
 const renderNotificationInfo = (
   <Box sx={{ maxWidth: 340, py: 0.5 }}>
     <Typography variant="body2" sx={{ mb: 1 }}>
-      Для каждого типа уведомлений можно отдельно выбрать доставку по email и в MAX.
+      Для каждого типа уведомлений можно отдельно включить или отключить доставку по email.
     </Typography>
   </Box>
 );
@@ -345,7 +330,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
   const [openNotificationContacts, setOpenNotificationContacts] = useState(false);
-  const [openMaxLink, setOpenMaxLink] = useState(false);
   const [openUnavailability, setOpenUnavailability] = useState(false);
   const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null);
@@ -383,16 +367,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   } = useLiveValidatedForm<CompanyFormValues>({
     resolver: zodResolver(companySchema),
     defaultValues: { inn: '', company_name: '', company_phone: '', company_mail: '', address: '', note: '' }
-  });
-
-  const {
-    register: registerMaxLink,
-    handleSubmit: handleMaxLinkSubmit,
-    formState: { errors: maxLinkErrors, isSubmitting: isSubmittingMaxLink },
-    reset: resetMaxLink
-  } = useLiveValidatedForm<MaxLinkFormValues>({
-    resolver: zodResolver(maxLinkSchema),
-    defaultValues: { code: '' }
   });
 
   const {
@@ -449,12 +423,10 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       started_at: '',
       ended_at: ''
     });
-    resetMaxLink({ code: '' });
   }, [
     profile,
     notificationPreferences,
     resetCompany,
-    resetMaxLink,
     resetNotificationContacts,
     resetProfile,
     resetUnavailability
@@ -553,23 +525,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
     }
   };
 
-  const onSubmitMaxLink = async (values: MaxLinkFormValues) => {
-    setError(null);
-    try {
-      const nextProfile = await linkMyMaxAccount({
-        code: values.code.trim()
-      });
-      const nextPreferences = await getMyNotificationPreferences();
-      setProfile(nextProfile);
-      setNotificationPreferences(nextPreferences);
-      resetMaxLink({ code: '' });
-      setOpenMaxLink(false);
-      showSuccessToast('MAX привязан к вашему аккаунту.');
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Не удалось привязать MAX');
-    }
-  };
-
   const onSubmitNotificationContacts = async (values: NotificationContactsFormValues) => {
     if (!profile) {
       return;
@@ -611,7 +566,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   };
 
   const saveNotificationPreferences = async (
-    nextPreferences: Partial<Record<NotificationPreferenceType, { email?: boolean; max?: boolean }>>
+    nextPreferences: Partial<Record<NotificationPreferenceType, { email?: boolean }>>
   ) => {
     setError(null);
     setIsSavingNotificationPreferences(true);
@@ -628,12 +583,11 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
 
   const handleNotificationTypeChannelChange = (
     notificationType: NotificationPreferenceType,
-    channel: 'email' | 'max',
     checked: boolean
   ) => {
     void saveNotificationPreferences({
       [notificationType]: {
-        [channel]: checked
+        email: checked
       }
     });
   };
@@ -844,28 +798,12 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                       value={notificationPreferences.email ?? fallbackText}
                       onEdit={() => setOpenNotificationContacts(true)}
                     />
-                    <NotificationChannelRow
-                      label="MAX"
-                      value={notificationPreferences.maxUserId ?? fallbackText}
-                      editVariant={notificationPreferences.maxUserId ? 'outlined' : 'contained'}
-                      onEdit={() => setOpenMaxLink(true)}
-                    />
                   </Stack>
                   <Box sx={notificationMatrixSx}>
                     <Box sx={{ ...notificationMatrixHeaderCellSx, borderRight: '1px solid', borderColor: 'divider' }} />
 
-                    <Box
-                      sx={{
-                        ...notificationMatrixHeaderCellSx,
-                        borderRight: '1px solid',
-                        borderColor: 'divider'
-                      }}
-                    >
-                      <Typography fontWeight={700}>Email</Typography>
-                    </Box>
-
                     <Box sx={notificationMatrixHeaderCellSx}>
-                      <Typography fontWeight={700}>MAX</Typography>
+                      <Typography fontWeight={700}>Email</Typography>
                     </Box>
 
                     {notificationRows.flatMap((item, index) => {
@@ -876,7 +814,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                           sx={{
                             ...notificationMatrixCellSx,
                             borderBottom: isLastRow ? 'none' : '1px solid',
-                            borderRight: '1px solid',
                             borderColor: 'divider'
                           }}
                         >
@@ -899,23 +836,8 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                         >
                           <Switch
                             checked={notificationPreferences.preferences[item.type].email}
-                            onChange={(_, checked) => handleNotificationTypeChannelChange(item.type, 'email', checked)}
+                            onChange={(_, checked) => handleNotificationTypeChannelChange(item.type, checked)}
                             disabled={!notificationPreferences.emailAvailable || isSavingNotificationPreferences}
-                          />
-                        </Box>,
-                        <Box
-                          key={`${item.type}-max`}
-                          sx={{
-                            ...notificationMatrixCellSx,
-                            justifyContent: 'center',
-                            borderBottom: isLastRow ? 'none' : '1px solid',
-                            borderColor: 'divider'
-                          }}
-                        >
-                          <Switch
-                            checked={notificationPreferences.preferences[item.type].max}
-                            onChange={(_, checked) => handleNotificationTypeChannelChange(item.type, 'max', checked)}
-                            disabled={!notificationPreferences.maxAvailable || isSavingNotificationPreferences}
                           />
                         </Box>
                       ];
@@ -963,33 +885,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
               disabled={isSubmittingNotificationContacts}
             >
               Сохранить и подтвердить
-            </Button>
-          </Stack>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={openMaxLink} onClose={() => setOpenMaxLink(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
-        <DialogContent sx={dialogContentSx}>
-          <Stack spacing={2} component="form" onSubmit={handleMaxLinkSubmit((values) => void onSubmitMaxLink(values))}>
-            <Typography variant="h5" fontWeight={600} lineHeight={1}>
-              {notificationPreferences?.maxUserId ? 'Изменение привязки MAX' : 'Привязка MAX'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              По команде /start в MAX-боте можно узнать свой MAX ID и по нему привязать аккаунт для уведомлений.
-            </Typography>
-            <Link href={MAX_BOT_LINK} target="_blank" rel="noreferrer" sx={{ alignSelf: 'flex-start', wordBreak: 'break-all' }}>
-              {MAX_BOT_LINK}
-            </Link>
-            <ValidatedTextField
-              label="MAX ID"
-              fieldName="code"
-              registration={registerMaxLink('code')}
-              error={Boolean(maxLinkErrors.code)}
-              helperText={maxLinkErrors.code?.message}
-              sx={inputFieldSx}
-            />
-            <Button type="submit" variant="contained" sx={primaryButtonSx} disabled={isSubmittingMaxLink}>
-              Сохранить привязку MAX
             </Button>
           </Stack>
         </DialogContent>

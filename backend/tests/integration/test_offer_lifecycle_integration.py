@@ -128,20 +128,23 @@ class _NoopUsersRepo:
             ("contractor-2", 1),
         ]
         self._users = {
-            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, tg_user_id=None),
-            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
-            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
-            "econ-1": SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1", tg_user_id=None),
-            "econ-2": SimpleNamespace(id="econ-2", id_role=settings.economist_role_id, id_parent="lead-2", tg_user_id=None),
-            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
-            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-1"),
-            "contractor-2": SimpleNamespace(id="contractor-2", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-2"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "econ-1": SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+            "econ-2": SimpleNamespace(id="econ-2", id_role=settings.economist_role_id, id_parent="lead-2"),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None),
+            "contractor-2": SimpleNamespace(id="contractor-2", id_role=settings.contractor_role_id, id_parent=None),
         }
 
     async def get_by_id(self, user_id: str | None = None):
         if user_id is None:
             return None
         return self._users.get(user_id)
+
+    async def has_legacy_messenger_account(self, *, user_id: str) -> bool:
+        return user_id in {"contractor-1", "contractor-2"}
 
     async def list_active_user_parent_pairs(self):
         return [
@@ -159,15 +162,6 @@ class _NoopUsersRepo:
 
     async def list_active_unit_memberships(self):
         return list(self._memberships)
-
-    async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int):
-        _ = (user_id, contractor_role_id)
-        return None
-
-    async def get_active_approved_contractor_max_id(self, *, user_id: str, contractor_role_id: int):
-        _ = (user_id, contractor_role_id)
-        return None
-
 
 class _NoopChatsRepo:
     async def get_chat_state_for_user(self, *, chat_id: int, user_id: str):
@@ -247,7 +241,6 @@ class _OfferLifecycleUow:
         self.units = object()
         self.user_status_periods = None
         self.feedback = None
-        self.tg_users = None
         self.user_auth_accounts = None
         self.user_contact_channels = _NullUserContactChannelsRepo()
         self.user_notification_preferences = _NullUserNotificationPreferencesRepo()

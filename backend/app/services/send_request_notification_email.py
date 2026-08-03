@@ -38,7 +38,6 @@ _GENERIC_QUEUE_ERROR_MESSAGE = "Не удалось поставить пись�
 class NotificationRecipient:
     email: str
     user_login: str | None
-    tg_id: int | None
     is_verified_user: bool
     has_economist_created_account: bool = False
 
@@ -125,11 +124,10 @@ class SendRequestNotificationEmailUseCase:
         token_codec = ReplyTokenCodec(secret=reply_secret) if reply_secret else None
         invite_token_codec = RegistrationInviteTokenCodec(
             secret=settings.email_verification_secret,
-            ttl_seconds=settings.tg_register_ttl_seconds,
+            ttl_seconds=settings.registration_invite_ttl_seconds,
         )
         request_attachments, attachment_warning = await self._build_request_attachments(request_id=request_id)
         request_url = f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}"
-        tg_bot_url = settings.tg_bot_public_url if settings.telegram_legacy_enabled else None
         registration_base_url = (settings.public_backend_base_url or self._app_url).rstrip("/")
         invitation_contact = contact_info_from_invitation_settings(
             contact_name=settings.invitation_contact_name,
@@ -186,9 +184,8 @@ class SendRequestNotificationEmailUseCase:
                     request_id=request_id,
                     description=request.description,
                     deadline_at=request.deadline_at,
-                    tg_bot_url=tg_bot_url,
                     registration_url=registration_url,
-                    registration_ttl_seconds=settings.tg_register_ttl_seconds,
+                    registration_ttl_seconds=settings.registration_invite_ttl_seconds,
                     contact=invitation_contact,
                     attachment_warning=attachment_warning,
                 )
@@ -212,7 +209,6 @@ class SendRequestNotificationEmailUseCase:
                     operation_expected_total=len(recipients) if operation_id else None,
                     recipient_context={
                         "user_login": recipient.user_login,
-                        "tg_id": recipient.tg_id,
                     }
                     if recipient.user_login is not None
                     else None,
@@ -304,7 +300,6 @@ class SendRequestNotificationEmailUseCase:
             recipient = NotificationRecipient(
                 email=normalized_email,
                 user_login=contractor.user_id,
-                tg_id=contractor.tg_id,
                 is_verified_user=True,
             )
             recipients_by_email[normalized_email] = recipient
@@ -332,7 +327,6 @@ class SendRequestNotificationEmailUseCase:
                 NotificationRecipient(
                     email=normalized_email,
                     user_login=contractor_user_id,
-                    tg_id=None,
                     is_verified_user=False,
                     has_economist_created_account=contractor_user_id is not None,
                 )

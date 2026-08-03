@@ -48,7 +48,6 @@ vi.mock('@shared/ui/toasts', () => ({
 
 const buildContractor = (): ContractorListItem => ({
   userId: 'contractor-1',
-  maxUserId: 'max-42',
   roleId: 3,
   status: 'На проверке',
   fullName: 'Иван Петров',
@@ -62,7 +61,6 @@ const buildContractor = (): ContractorListItem => ({
   note: 'Тест',
   createdAt: '2026-06-01T10:00:00Z',
   updatedAt: '2026-06-10T11:00:00Z',
-  registrationSource: 'manual',
   actions: {
     view_profile: true,
     update_status: true,
@@ -134,7 +132,6 @@ describe('ContractorsListView editing', () => {
     expect(await screen.findByText('Иван Петров')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeInTheDocument();
     expect(screen.queryByLabelText('contractor-1-company_name')).not.toBeInTheDocument();
-    expect(screen.queryByText('max-42')).not.toBeInTheDocument();
   });
 
   it('keeps current page while editing a row on another page', async () => {
@@ -331,7 +328,6 @@ describe('ContractorsListView editing', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }));
 
-    await screen.findByText('max-42');
     expect(screen.getAllByLabelText('Поле недоступно для редактирования').length).toBeGreaterThanOrEqual(3);
   });
 

@@ -129,8 +129,6 @@ class UserStatusUpdateRequest(BaseModel):
 class UserStatusUpdateData(BaseModel):
     user_id: str
     user_status: str
-    tg_user_id: int | None = None
-    tg_status: str | None = None
 
 
 class UserStatusUpdateResponse(BaseModel):
@@ -300,16 +298,10 @@ class UpdateMyCompanyContactsRequest(BaseModel):
     note: str | None = None
 
 
-class LinkMyMaxAccountRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=4096)
-
-
 class NotificationPreferencesData(BaseModel):
     mode: str
     email_available: bool
-    max_available: bool
     email: str | None = None
-    max_user_id: str | None = None
     preferences: dict[str, dict[str, bool]]
 
 

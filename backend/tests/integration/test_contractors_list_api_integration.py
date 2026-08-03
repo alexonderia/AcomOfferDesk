@@ -38,7 +38,6 @@ def test_contractors_list_endpoint_returns_table_payload(
             items=[
                 ContractorListItemResult(
                     user_id="contractor-1",
-                    max_user_id="max-42",
                     role_id=6,
                     status="review",
                     full_name="Иван Петров",
@@ -52,7 +51,7 @@ def test_contractors_list_endpoint_returns_table_payload(
                     note="Тест",
                     created_at="2026-06-01 10:00:00",
                     updated_at="2026-06-10 11:00:00",
-                    registration_source="manual",
+                    is_manual=True,
                 ),
             ],
             total=1,
@@ -82,6 +81,6 @@ def test_contractors_list_endpoint_returns_table_payload(
     assert payload["total"] == 1
     assert payload["limit"] == 10
     assert payload["offset"] == 20
-    assert payload["items"][0]["max_user_id"] == "max-42"
-    assert payload["items"][0]["registration_source"] == "manual"
+    assert "max_user_id" not in payload["items"][0]
+    assert "registration_source" not in payload["items"][0]
     assert payload["items"][0]["actions"]["can_manage_manual_contractor"] is True

@@ -22,7 +22,7 @@ Backend changes must preserve the current FastAPI + async SQLAlchemy + Clean Arc
 - Keep Keycloak-backed E2E provisioning aligned with the realm user-profile schema. If Keycloak makes a profile attribute required (for example `middleName`), populate it during smoke-user creation so tests do not stall on required-action forms before the SPA loads.
 - Review-stage contractor onboarding must use dedicated registration-only self-profile endpoints. Do not weaken the normal `/users/me*` permission gates for already-authenticated pages.
 - Keep in-memory integration fixtures aligned with current dataclass constructors and service factory signatures; when request/offer schemas gain or lose fields, update the test factories in the same change.
-- Preserve legacy Telegram functionality unless removal is explicitly requested.
+- Keep removed external messenger integrations out of runtime, API, frontend, compose, and worker delivery paths.
 - For DB changes, include SQL/migration patch and rollout notes.
 - For infra changes, preserve `gateway`, `project_net`, and tunnel routing.
 
@@ -36,7 +36,7 @@ Backend changes must preserve the current FastAPI + async SQLAlchemy + Clean Arc
 - Direct public exposure of backend, Keycloak, RabbitMQ, MinIO, PostgreSQL, or admin ports in `test`/`prod`.
 - Hardcoded secrets, tokens, passwords, or production hostnames.
 - Temporary placeholder implementations, mock-only production paths, or TODO-dependent behavior.
-- Removing Telegram compatibility code or compose rollback comments without an explicit task.
+- Reintroducing external messenger runtime or UI through legacy database compatibility values.
 - Changing DB schema because it is convenient rather than required by the task.
 
 ---
@@ -461,5 +461,5 @@ If checks cannot be run, state why and list the residual risk.
 - [ ] Repositories are persistence-only.
 - [ ] DB changes have explicit SQL/migration patch.
 - [ ] Runtime/gateway/network shape is unchanged unless explicitly requested.
-- [ ] Legacy Telegram paths were considered when relevant.
+- [ ] Legacy database compatibility fields were not exposed as active integration paths.
 - [ ] No secrets or temporary stubs were introduced.

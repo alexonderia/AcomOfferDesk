@@ -20,7 +20,6 @@
 | Keycloak model checks | `scripts/check-keycloak.*` + `backend/app/scripts/check_keycloak_permission_model.py` | Корректность realm/клиентов/ролей/композитов/issuer/JWKS | Перед релизом, после изменений permission-модели |
 | Aggregated release checks | `scripts/test-release.*` | Последовательный прогон unit + integration + smoke + keycloak + build (+e2e опционально) | Финальная локальная проверка |
 | CI workflows | `.github/workflows/*.yml` | Автоматическая проверка в GitHub Actions | На `push` и `pull_request` |
-| Legacy Telegram test | `tg_bot/tests/test_main.py` | Устойчивость polling-цикла бота к сетевым ошибкам Telegram | При изменениях `tg_bot` |
 
 ## Backend unit-тесты (`backend/tests/unit`)
 
@@ -279,17 +278,6 @@
 - infra smoke;
 - keycloak model check;
 - опционально e2e smoke.
-
-## Legacy Telegram test
-
-### `tg_bot/tests/test_main.py`
-
-Проверяет устойчивость `run_bot`:
-- при `TelegramNetworkError` polling перезапускается;
-- корректно закрываются сессии;
-- выполняется retry-пауза.
-
-Этот тест важен, потому что legacy Telegram функциональность в проекте сохраняется.
 
 ## Что не покрывается полностью
 

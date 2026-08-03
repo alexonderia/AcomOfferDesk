@@ -49,7 +49,6 @@ from app.services.department_scope import DepartmentScopeService
 from app.services.requests import RequestEditInput, RequestService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.unit_hierarchy import UnitHierarchyService
-from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 router = APIRouter()
 
@@ -63,16 +62,6 @@ def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:
     if notifications_repo is None:
         return None
     return NotificationService(notifications_repo)
-
-
-def _build_notification_preferences_service(uow: UnitOfWork) -> UserNotificationPreferencesService | None:
-    if uow.user_contact_channels is None or uow.user_notification_preferences is None:
-        return None
-    return UserNotificationPreferencesService(
-        uow.user_contact_channels,
-        uow.user_notification_preferences,
-        profiles=uow.profiles,
-    )
 
 
 def _build_request_service(
@@ -92,7 +81,6 @@ def _build_request_service(
         email_notifications=email_notifications,
         file_service=file_service,
         notifications=_build_notification_service(uow),
-        notification_preferences=_build_notification_preferences_service(uow),
         after_commit_hook_registrar=after_commit_hook_registrar,
     )
 
@@ -721,7 +709,6 @@ async def create_request(
                 uow.requests,
                 uow.users,
                 uow.files,
-                notification_preferences=_build_notification_preferences_service(uow),
             )
             service = _build_request_service(
                 uow,
@@ -791,7 +778,6 @@ async def send_request_email_notifications(
             uow.requests,
             uow.users,
             uow.files,
-            notification_preferences=_build_notification_preferences_service(uow),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         service = _build_request_service(

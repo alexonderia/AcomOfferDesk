@@ -15,19 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Forbidden compose overrides
-        run: |
-          set -euo pipefail
-          if grep -qE 'KEYCLOAK_ADMIN_USERNAME:\s*""' docker-compose.yml; then
-            echo "FAIL: KEYCLOAK_ADMIN_USERNAME must not be empty in docker-compose.yml"
-            exit 1
-          fi
-          if grep -qE 'KEYCLOAK_ADMIN_PASSWORD:\s*""' docker-compose.yml; then
-            echo "FAIL: KEYCLOAK_ADMIN_PASSWORD must not be empty in docker-compose.yml"
-            exit 1
-          fi
-          echo "OK: no empty KEYCLOAK_ADMIN overrides"
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -39,7 +26,7 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pytest pytest-asyncio
 
-      - name: Keycloak admin settings unit tests
+      - name: Authentication unavailable config unit tests
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
           APP_ENV: development

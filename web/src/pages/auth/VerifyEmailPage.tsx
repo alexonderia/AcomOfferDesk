@@ -52,8 +52,8 @@ export const VerifyEmailPage = () => {
     navigate(authenticatedTarget, { replace: true });
   }, [authenticatedTarget, error, isAuthenticated, loading, navigate, verificationSucceeded]);
 
-  const waitingForSessionRestore = !loading && !error && verificationSucceeded && status === 'bootstrapping';
-  const showLoginLink = !loading && !error && verificationSucceeded && status !== 'bootstrapping' && !isAuthenticated;
+  const waitingForSessionRestore = false;
+  const showLoginLink = !loading && !error && verificationSucceeded && status === 'unavailable' && !isAuthenticated;
 
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>

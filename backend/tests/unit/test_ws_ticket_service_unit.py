@@ -16,7 +16,7 @@ async def test_issue_ticket_creates_hash_only_store_record() -> None:
         user_id="user-1",
         role_id=3,
         status="active",
-        keycloak_api_roles=frozenset({"chat.read"}),
+        identity_roles=frozenset({"chat.read"}),
         purpose="realtime_ws",
     )
 
@@ -32,7 +32,7 @@ async def test_consume_valid_ticket_returns_user_once() -> None:
         user_id="user-1",
         role_id=3,
         status="active",
-        keycloak_api_roles=frozenset({"chat.read"}),
+        identity_roles=frozenset({"chat.read"}),
         purpose="realtime_ws",
     )
 
@@ -41,7 +41,7 @@ async def test_consume_valid_ticket_returns_user_once() -> None:
     assert access.user_id == "user-1"
     assert access.role_id == 3
     assert access.status == "active"
-    assert access.keycloak_api_roles == frozenset({"chat.read"})
+    assert access.identity_roles == frozenset({"chat.read"})
     with pytest.raises(Unauthorized):
         await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="notifications_ws")
 
@@ -53,7 +53,7 @@ async def test_consume_rejects_expired_ticket() -> None:
         user_id="user-1",
         role_id=3,
         status="active",
-        keycloak_api_roles=frozenset({"chat.read"}),
+        identity_roles=frozenset({"chat.read"}),
         purpose="realtime_ws",
     )
     await service.cleanup_expired()
@@ -71,7 +71,7 @@ async def test_consume_rejects_wrong_purpose() -> None:
         user_id="user-1",
         role_id=3,
         status="active",
-        keycloak_api_roles=frozenset({"chat.read"}),
+        identity_roles=frozenset({"chat.read"}),
         purpose="realtime_ws",
     )
 

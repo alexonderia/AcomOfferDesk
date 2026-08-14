@@ -30,9 +30,6 @@ from app.services.files import FileService, PreparedUpload
 from app.services.department_scope import DepartmentScopeService
 from app.services.contractor_units import ContractorUnitService
 from app.services.staff_access_scope import StaffAccessScopeService
-from app.services.keycloak_admin import KeycloakAdminService
-from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
-from app.services.users import _bind_keycloak_account
 from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.infrastructure.delayed_notification_publisher import schedule_unread_chat_email_notification
@@ -90,12 +87,6 @@ _CYRILLIC_TO_LATIN = {
     "я": "ya",
 }
 
-
-def _normalize_keycloak_email_value(value: str | None) -> str | None:
-    normalized = (value or "").strip()
-    if not normalized or normalized == PLACEHOLDER_TEXT:
-        return None
-    return normalized
 
 @dataclass(frozen=True)
 class ExistingAttachmentFileInput:
@@ -257,7 +248,6 @@ class OfferService:
         units: UnitRepository | None = None,
         user_auth_accounts: UserAuthAccountRepository | None = None,
         file_service: FileService | None = None,
-        keycloak_admin: KeycloakAdminService | None = None,
         notifications: NotificationService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
@@ -273,7 +263,6 @@ class OfferService:
         self._units = units
         self._user_auth_accounts = user_auth_accounts
         self._file_service = file_service or FileService(files)
-        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
         self._notifications = notifications
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
@@ -637,24 +626,6 @@ class OfferService:
                 note=contractor_data.note or PLACEHOLDER_TEXT,
             )
         )
-        keycloak_user = await self._keycloak_admin.ensure_user(
-            username=login,
-            email=_normalize_keycloak_email_value(contractor_data.company_mail),
-            email_verified=False,
-        )
-        if self._user_auth_accounts is not None:
-            await _bind_keycloak_account(
-                user_auth_accounts=self._user_auth_accounts,
-                user_id=login,
-                keycloak_subject_id=keycloak_user.id,
-                username=login,
-                email=_normalize_keycloak_email_value(contractor_data.company_mail),
-            )
-            await sync_keycloak_app_role_for_user(
-                self._keycloak_admin,
-                keycloak_user_id=keycloak_user.id,
-                local_role_id=settings.contractor_role_id,
-            )
         await self._bind_to_creator_root_units_if_needed(
             current_user=current_user,
             contractor_user_id=login,

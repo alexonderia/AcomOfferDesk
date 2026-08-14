@@ -9,7 +9,6 @@ from app.domain.exceptions import Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser
 from app.services.files import FileService
 from app.services.notifications import NotificationService
-from app.services.keycloak_admin import KeycloakAdminService
 from app.services.offers import (
     ExistingAttachmentFileInput,
     OfferMessageAckResult,
@@ -55,7 +54,6 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
         uow.units,
         user_auth_accounts,
         file_service=file_service,
-        keycloak_admin=KeycloakAdminService(),
         notifications=(NotificationService(notifications_repo) if notifications_repo is not None else None),
         after_commit_hook_registrar=after_commit_hook_registrar,
     )

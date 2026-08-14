@@ -61,7 +61,7 @@ def make_current_user():
             role_id=role_id,
             status=status,
             permissions=normalized_permissions,
-            keycloak_roles=normalized_permissions,
+            identity_roles=normalized_permissions,
             app_roles=frozenset(),
             delegation_roles=frozenset(),
         )

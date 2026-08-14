@@ -190,7 +190,7 @@ class MeData(BaseModel):
     note: str | None = None
     department_name: str | None = None
     permissions: list[str] = Field(default_factory=list)
-    keycloak_roles: list[str] = Field(default_factory=list)
+    identity_roles: list[str] = Field(default_factory=list)
     app_roles: list[str] = Field(default_factory=list)
     delegation_roles: list[str] = Field(default_factory=list)
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)

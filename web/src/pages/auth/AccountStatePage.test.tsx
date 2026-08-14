@@ -88,7 +88,7 @@ describe('AccountStatePage', () => {
       unavailablePeriod: null,
       unavailablePeriods: [],
       permissions: [],
-      keycloakRoles: [],
+      identityRoles: [],
       appRoles: [],
       delegationRoles: [],
       actions: {
@@ -135,7 +135,7 @@ describe('AccountStatePage', () => {
       unavailablePeriod: null,
       unavailablePeriods: [],
       permissions: [],
-      keycloakRoles: [],
+      identityRoles: [],
       appRoles: [],
       delegationRoles: [],
       actions: {

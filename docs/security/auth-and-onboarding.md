@@ -1,9 +1,11 @@
-# Аутентификация, Регистрация И Keycloak
+# Аутентификация и онбординг
+
+> **Текущее состояние — Stage 1 IAM migration.** Keycloak отключён от runtime, новый IAM ещё не реализован. Login/callback/refresh/logout возвращают `503 AUTH_SERVICE_UNAVAILABLE`, frontend не выполняет redirect, защищённые API остаются закрытыми. Существующие `user_auth_accounts` и Keycloak bindings сохранены для следующего этапа. Keycloak-specific разделы ниже — legacy/migration reference, а не активный runtime-контракт.
 
 ## Граница ответственности документа
 
 Этот документ описывает:
-- текущую рабочую модель авторизации и регистрации;
+- текущее безопасное состояние авторизации и регистрации;
 - разделение ответственности между Keycloak, backend и frontend;
 - структуру Keycloak для проекта;
 - актуальный режим permissions;
@@ -14,15 +16,13 @@
 - [Runtime-архитектура](../product/runtime-architecture.md)
 - [Production: переменные окружения и секреты](../release/production-env.md)
 
-## Краткая архитектура
+## Краткая архитектура Stage 1
 
-- `frontend` (React SPA) выполняет login/logout и отображение UX.
+- `frontend` (React SPA) показывает состояние недоступности auth без внешних переходов.
 - `backend` (FastAPI) является финальным enforcement-слоем бизнес-правил.
-- `keycloak` является IdP/OIDC-провайдером и источником назначенных access-ролей.
+- поддерживаемого identity provider пока нет; `get_current_user` централизованно отказывает.
 
-Ключевой принцип:
-- Keycloak отвечает на вопрос «что назначено пользователю в IAM».
-- Backend отвечает на вопрос «что разрешено делать в бизнес-контексте здесь и сейчас».
+Ключевой принцип: отсутствие IAM не означает отключение authentication/authorization — система fail closed.
 
 ## Источник истины по данным
 

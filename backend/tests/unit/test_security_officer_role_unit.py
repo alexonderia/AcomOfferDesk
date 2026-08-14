@@ -299,31 +299,11 @@ async def test_security_officer_can_update_only_contractor_status(make_current_u
 
 
 @pytest.mark.asyncio
-async def test_superadmin_can_create_security_officer_but_admin_cannot(make_current_user, monkeypatch):
+async def test_superadmin_can_create_security_officer_but_admin_cannot(make_current_user):
     users_repo = _UsersRepo()
     profiles_repo = _ProfilesRepo(users_repo)
     auth_accounts_repo = _UserAuthAccountsRepo()
     service = UserRegistrationService(users_repo, profiles_repo, auth_accounts_repo)
-
-    async def _fake_ensure_user(
-        self,
-        *,
-        username: str,
-        email: str | None = None,
-        first_name: str | None = None,
-        last_name: str | None = None,
-        middle_name: str | None = None,
-        sync_names: bool = False,
-        email_verified: bool = False,
-    ):
-        _ = (self, email, first_name, last_name, middle_name, sync_names, email_verified)
-        return SimpleNamespace(id=f"kc-{username}")
-
-    async def _fake_sync_keycloak_app_role_for_user(*args, **kwargs) -> None:
-        _ = (args, kwargs)
-
-    monkeypatch.setattr(users_module.KeycloakAdminService, "ensure_user", _fake_ensure_user)
-    monkeypatch.setattr(users_module, "sync_keycloak_app_role_for_user", _fake_sync_keycloak_app_role_for_user)
 
     superadmin = make_current_user(
         user_id="root-1",

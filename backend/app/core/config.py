@@ -1,23 +1,7 @@
 from __future__ import annotations
 
-import os
-
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-_WEAK_SECRET_MARKERS = {
-    "change-me",
-    "changeme",
-    "change_me",
-    "top-secret",
-    "top_secret",
-    "secret",
-    "password",
-    "admin",
-    "test",
-    "example",
-}
 
 
 def _parse_int_list(value: str | list[int] | None) -> list[int]:
@@ -38,19 +22,6 @@ def _parse_str_list(value: str | list[str] | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _is_weak_secret(secret: str | None) -> bool:
-    normalized = (secret or "").strip().lower()
-    if not normalized:
-        return True
-    if normalized in _WEAK_SECRET_MARKERS:
-        return True
-    if normalized.startswith("change_me") or normalized.startswith("change-me"):
-        return True
-    if normalized.endswith("example"):
-        return True
-    return False
 
 
 class Settings(BaseSettings):
@@ -238,6 +209,12 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
         self.app_env = self.app_env.strip().lower() or "development"
+        # Stage 1 IAM migration: legacy Keycloak settings may remain in env files,
+        # but they can no longer activate a runtime authentication path.
+        self.keycloak_enabled = False
+        self.keycloak_bootstrap_binding_enabled = False
+        self.keycloak_dev_auto_link_by_username_enabled = False
+        self.keycloak_prod_auto_link_by_verified_email_enabled = False
         self.superadmin_role_id = 1
         self.admin_role_id = 2
         self.contractor_role_id = 3
@@ -251,7 +228,7 @@ class Settings(BaseSettings):
         if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
             self.refresh_cookie_samesite = "lax"
 
-        public_bases = [self.public_backend_base_url, self.web_base_url, self.keycloak_public_base_url, self.keycloak_issuer_url]
+        public_bases = [self.public_backend_base_url, self.web_base_url]
         if any((base or "").strip().lower().startswith("https://") for base in public_bases):
             self.refresh_cookie_secure = True
 
@@ -305,15 +282,6 @@ class Settings(BaseSettings):
             self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
         if self.keycloak_admin_password is not None:
             self.keycloak_admin_password = self.keycloak_admin_password.strip() or None
-        # Compose may set KEYCLOAK_ADMIN_*="" (overrides env_file). Fall back like bootstrap scripts.
-        if not self.keycloak_admin_username:
-            bootstrap_username = os.getenv("KC_BOOTSTRAP_ADMIN_USERNAME", "").strip()
-            if bootstrap_username:
-                self.keycloak_admin_username = bootstrap_username
-        if not self.keycloak_admin_password:
-            bootstrap_password = os.getenv("KC_BOOTSTRAP_ADMIN_PASSWORD", "").strip()
-            if bootstrap_password:
-                self.keycloak_admin_password = bootstrap_password
         self.keycloak_bootstrap_app_username = self.keycloak_bootstrap_app_username.strip() or "superadmin"
         if self.keycloak_jwks_cache_ttl_seconds <= 0:
             self.keycloak_jwks_cache_ttl_seconds = 300
@@ -326,20 +294,6 @@ class Settings(BaseSettings):
             )
         if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
             raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
-
-        if self.keycloak_enabled and self.app_env == "production":
-            if not self.keycloak_public_base_url:
-                raise ValueError("KEYCLOAK_PUBLIC_BASE_URL is required when KEYCLOAK_ENABLED=true in production")
-            if not self.keycloak_issuer_url:
-                raise ValueError("KEYCLOAK_ISSUER_URL is required when KEYCLOAK_ENABLED=true in production")
-            if not self.keycloak_public_base_url.startswith("https://"):
-                raise ValueError("KEYCLOAK_PUBLIC_BASE_URL must use https:// in production")
-            if not self.keycloak_issuer_url.startswith("https://"):
-                raise ValueError("KEYCLOAK_ISSUER_URL must use https:// in production")
-            if _is_weak_secret(self.keycloak_admin_client_secret):
-                raise ValueError(
-                    "KEYCLOAK_ADMIN_CLIENT_SECRET must be configured with a strong secret in production"
-                )
 
         return self
 

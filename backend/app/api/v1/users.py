@@ -8,6 +8,7 @@ from app.api.action_flags import UserActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
+from app.domain.authentication import reject_unavailable_authentication
 from app.domain.exceptions import Forbidden
 from app.domain.policies import CurrentUser
 from app.schemas.users import (
@@ -80,8 +81,6 @@ from app.services.users import (
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
 from app.services.user_notification_preferences import UserNotificationPreferencesService
-from app.services.user_department_delegations import UserDepartmentDelegationsService
-from app.services.user_contractor_delegations import UserContractorDelegationsService
 
 router = APIRouter()
 
@@ -133,7 +132,7 @@ def _me_data(current_user: CurrentUser, item) -> MeData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     data["permissions"] = serialize_permissions(current_user)
-    data["keycloak_roles"] = sorted(current_user.keycloak_roles)
+    data["identity_roles"] = sorted(current_user.identity_roles)
     data["app_roles"] = sorted(current_user.app_roles)
     data["delegation_roles"] = sorted(current_user.delegation_roles)
     data["actions"] = UserActionBuilder.build_me(current_user)
@@ -710,20 +709,7 @@ async def get_user_department_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserDepartmentDelegationsResponse:
-    async with uow:
-        service = UserDepartmentDelegationsService(
-            users=uow.users,
-            profiles=uow.profiles,
-            user_auth_accounts=uow.user_auth_accounts,
-        )
-        state = await service.get_state(
-            current_user=current_user,
-            target_user_id=user_id,
-        )
-
-    return UserDepartmentDelegationsResponse(
-        data=_department_delegations_data(state),
-    )
+    reject_unavailable_authentication()
 
 
 @router.get("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
@@ -732,20 +718,7 @@ async def get_user_contractor_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserContractorDelegationsResponse:
-    async with uow:
-        service = UserContractorDelegationsService(
-            users=uow.users,
-            profiles=uow.profiles,
-            user_auth_accounts=uow.user_auth_accounts,
-        )
-        state = await service.get_state(
-            current_user=current_user,
-            target_user_id=user_id,
-        )
-
-    return UserContractorDelegationsResponse(
-        data=_contractor_delegations_data(state),
-    )
+    reject_unavailable_authentication()
 
 
 @router.put("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
@@ -755,21 +728,7 @@ async def update_user_contractor_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserContractorDelegationsResponse:
-    async with uow:
-        service = UserContractorDelegationsService(
-            users=uow.users,
-            profiles=uow.profiles,
-            user_auth_accounts=uow.user_auth_accounts,
-        )
-        state = await service.update_state(
-            current_user=current_user,
-            target_user_id=user_id,
-            requested_access_codes=payload.access_codes,
-        )
-
-    return UserContractorDelegationsResponse(
-        data=_contractor_delegations_data(state),
-    )
+    reject_unavailable_authentication()
 
 
 @router.put("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)
@@ -779,21 +738,7 @@ async def update_user_department_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserDepartmentDelegationsResponse:
-    async with uow:
-        service = UserDepartmentDelegationsService(
-            users=uow.users,
-            profiles=uow.profiles,
-            user_auth_accounts=uow.user_auth_accounts,
-        )
-        state = await service.update_state(
-            current_user=current_user,
-            target_user_id=user_id,
-            requested_access_codes=payload.access_codes,
-        )
-
-    return UserDepartmentDelegationsResponse(
-        data=_department_delegations_data(state),
-    )
+    reject_unavailable_authentication()
 
 
 @router.post("/users/{user_id}/unavailability-period", response_model=SetSubordinateUnavailabilityPeriodResponse)

@@ -95,12 +95,9 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
   }, [applyRealtimeNotificationCreated, logout, refresh, runNotificationsSync]);
 
   useEffect(() => {
-    if (status === 'anonymous' || !session?.token || !session.businessAccess) {
+    if (status === 'unavailable' || !session?.token || !session.businessAccess) {
       realtimeSocketClient.disconnect();
       previousConnectionStateRef.current = 'idle';
-      return;
-    }
-    if (status === 'refreshing') {
       return;
     }
     realtimeSocketClient.connect();

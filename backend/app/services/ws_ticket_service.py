@@ -18,7 +18,7 @@ class WsTicketAccessContext:
     user_id: str
     role_id: int
     status: str
-    keycloak_api_roles: frozenset[str]
+    identity_roles: frozenset[str]
     purpose: WsTicketPurpose
     expires_at: datetime
 
@@ -45,7 +45,7 @@ class WsTicketService:
         user_id: str,
         role_id: int,
         status: str,
-        keycloak_api_roles: frozenset[str],
+        identity_roles: frozenset[str],
         purpose: WsTicketPurpose,
     ) -> tuple[str, datetime]:
         await self.cleanup_expired()
@@ -55,7 +55,7 @@ class WsTicketService:
             user_id=user_id,
             role_id=role_id,
             status=status,
-            keycloak_api_roles=keycloak_api_roles,
+            identity_roles=identity_roles,
             purpose=purpose,
             expires_at=expires_at,
         )

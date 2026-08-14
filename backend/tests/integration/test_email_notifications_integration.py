@@ -64,7 +64,7 @@ class _FakeRequestRepoForCreate:
                 return item
         return None
 
-    async def list_active_keycloak_visible_contractor_user_ids(
+    async def list_active_visible_contractor_user_ids(
         self,
         *,
         request_id: str,

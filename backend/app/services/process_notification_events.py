@@ -1098,7 +1098,7 @@ class ProcessNotificationEventHandler:
         request = await uow.requests.get_by_id(request_id=request_id)
         if request is None:
             return []
-        visible_contractor_user_ids = await uow.requests.list_active_keycloak_visible_contractor_user_ids(
+        visible_contractor_user_ids = await uow.requests.list_active_visible_contractor_user_ids(
             request_id=request_id,
             contractor_role_id=settings.contractor_role_id,
         )
@@ -1116,29 +1116,16 @@ class ProcessNotificationEventHandler:
         normalized = _normalize_user_ids(user_ids)
         if not normalized:
             return []
-        if uow.users is None or uow.user_auth_accounts is None:
+        if uow.users is None:
             logger.warning("Skip notification recipients filtering due to missing repositories")
             return []
 
         role_rows = await uow.users.list_by_ids_with_profiles_and_roles(user_ids=normalized)
         role_by_user_id = {user.id: user.id_role for user, _, _ in role_rows}
         filtered: list[str] = []
-        keycloak_cache: dict[str, bool] = {}
         for user_id in normalized:
             role_id = role_by_user_id.get(user_id)
             if role_id is None:
                 continue
-            if role_id != settings.contractor_role_id:
-                filtered.append(user_id)
-                continue
-            is_keycloak_eligible = keycloak_cache.get(user_id)
-            if is_keycloak_eligible is None:
-                account = await uow.user_auth_accounts.get_by_user_provider(
-                    user_id=user_id,
-                    provider="keycloak",
-                )
-                is_keycloak_eligible = account is not None
-                keycloak_cache[user_id] = is_keycloak_eligible
-            if is_keycloak_eligible:
-                filtered.append(user_id)
+            filtered.append(user_id)
         return filtered

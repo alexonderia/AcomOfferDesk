@@ -23,7 +23,7 @@ class AuthSessionData(BaseModel):
     login: str
     role_id: int
     status: str
-    auth_provider: str = "keycloak"
+    auth_provider: str = "unavailable"
     business_access: bool = False
     onboarding_state: str | None = None
     permissions: list[str] = Field(default_factory=list)

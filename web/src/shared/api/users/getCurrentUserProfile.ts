@@ -20,7 +20,7 @@ type ProfilePayload = {
   note?: string | null;
   department_name?: string | null;
   permissions?: string[];
-  keycloak_roles?: string[];
+  identity_roles?: string[];
   app_roles?: string[];
   delegation_roles?: string[];
   actions?: {
@@ -107,7 +107,7 @@ export type CurrentUserProfile = {
     endedAt: string;
   }>;
   permissions: string[];
-  keycloakRoles: string[];
+  identityRoles: string[];
   appRoles: string[];
   delegationRoles: string[];
   actions: UserActions;
@@ -192,7 +192,7 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
       endedAt: period.ended_at
     })),
     permissions: data.permissions ?? [],
-    keycloakRoles: data.keycloak_roles ?? [],
+    identityRoles: data.identity_roles ?? [],
     appRoles: data.app_roles ?? [],
     delegationRoles: data.delegation_roles ?? [],
     actions: normalizeUserActions(data.actions)

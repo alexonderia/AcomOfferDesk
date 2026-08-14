@@ -6,7 +6,7 @@ AcomOfferDesk — внутренняя платформа для работы с
 
 - frontend: React SPA (`web`)
 - backend: FastAPI (`backend`)
-- auth: Keycloak OIDC
+- auth: временно недоступна (Stage 1 IAM migration, fail-closed)
 - infra runtime: Docker Compose (`gateway`, `rabbitmq`, `minio`, `notifications_worker`)
 - внешняя БД: `order_database` (отдельный репозиторий)
 
@@ -40,9 +40,9 @@ AcomOfferDesk — внутренняя платформа для работы с
 - [Практический release checklist](docs/release/release-checklist.md)
 - [Roadmap/ТЗ production-readiness](docs/release/release-preparation-tz.md)
 
-### Менять вход/регистрацию/Keycloak
+### Менять вход/регистрацию/IAM
 
-- [Аутентификация и онбординг (актуальная модель)](docs/security/auth-and-onboarding.md)
+- [Аутентификация и онбординг (Stage 1 и legacy reference)](docs/security/auth-and-onboarding.md)
 - [Матрица прав (permissions)](docs/security/permissions-matrix.md)
 
 ### Решать проблемы на VPS
@@ -59,12 +59,7 @@ AcomOfferDesk — внутренняя платформа для работы с
 docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-3. Для init Keycloak:
-
-```bash
-docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_db_prepare
-docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootstrap
-```
+3. Keycloak для обычного запуска не нужен. Пока новый IAM не подключён, login UI показывает безопасное состояние недоступности, а защищённые API возвращают `503 AUTH_SERVICE_UNAVAILABLE`.
 
 Полные сценарии `dev/prod-like/test/prod`, tunnel-профили, perimeter и проверки — в [docs/operations/environments.md](docs/operations/environments.md).
 

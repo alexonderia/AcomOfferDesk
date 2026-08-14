@@ -19,7 +19,7 @@ def _operator_user(*, user_id: str = "operator-1") -> CurrentUser:
         role_id=settings.operator_role_id,
         status="active",
         permissions=frozenset(),
-        keycloak_roles=frozenset(),
+        identity_roles=frozenset(),
         app_roles=frozenset(),
         delegation_roles=frozenset(),
     )

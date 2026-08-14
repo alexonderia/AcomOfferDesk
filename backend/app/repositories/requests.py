@@ -25,8 +25,6 @@ from app.models.orm_models import (
     RequestOfferStats,
     User,
 )
-from app.models.auth_models import UserAuthAccount
-
 @dataclass(frozen=True)
 class PlanRequestStatsRow:
     total_requests: int
@@ -289,7 +287,7 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_active_keycloak_visible_contractor_user_ids(
+    async def list_active_visible_contractor_user_ids(
         self,
         *,
         request_id: str,
@@ -297,14 +295,6 @@ class RequestRepository:
     ) -> list[str]:
         stmt = (
             select(User.id)
-            .join(
-                UserAuthAccount,
-                and_(
-                    UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "keycloak",
-                    UserAuthAccount.is_active.is_(True),
-                ),
-            )
             .outerjoin(
                 RequestHiddenContractor,
                 and_(

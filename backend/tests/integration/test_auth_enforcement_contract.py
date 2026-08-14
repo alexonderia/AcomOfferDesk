@@ -10,14 +10,13 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from app.api import dependencies as api_dependencies
 from app.api.dependencies import get_current_user, get_uow
 from app.api.v1 import auth as auth_api
 from app.api.v1 import requests as requests_api
 from app.core.config import settings
 from app.core.email_token import EmailVerificationTokenCodec
-from app.domain.auth_context import CurrentUser, build_current_user_from_keycloak
-from app.domain.exceptions import Unauthorized
+from app.domain.auth_context import CurrentUser
+from app.domain.exceptions import ServiceUnavailable, Unauthorized
 from app.domain.permissions import PermissionCodes
 from app.services import email_verification as email_verification_service
 
@@ -166,6 +165,14 @@ def _build_guard_app() -> FastAPI:
         _ = request
         return JSONResponse(status_code=401, content={"detail": str(exc) or "Unauthorized"})
 
+    @app.exception_handler(ServiceUnavailable)
+    async def unavailable_handler(request, exc):
+        _ = request
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "reason_code": exc.reason_code},
+        )
+
     async def _uow_override():
         return _NoopUow()
 
@@ -178,28 +185,22 @@ def _build_guard_app() -> FastAPI:
     return app
 
 
-def test_endpoint_without_authorization_returns_401():
+def test_endpoint_without_supported_authentication_returns_503():
     app = _build_guard_app()
     with TestClient(app) as client:
         response = client.get("/guarded")
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Missing credentials"
+    assert response.status_code == 503
+    assert response.json()["reason_code"] == "AUTH_SERVICE_UNAVAILABLE"
 
 
-def test_endpoint_with_invalid_bearer_token_returns_401(monkeypatch):
+def test_bearer_token_does_not_restore_legacy_authentication():
     app = _build_guard_app()
-
-    async def _raise_unauthorized(token: str, *, uow):
-        _ = (token, uow)
-        raise Unauthorized("Invalid token")
-
-    monkeypatch.setattr(api_dependencies, "_get_current_user_from_keycloak_token", _raise_unauthorized)
 
     with TestClient(app) as client:
         response = client.get("/guarded", headers={"Authorization": "Bearer broken-token"})
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid token"
+    assert response.status_code == 503
+    assert response.json()["reason_code"] == "AUTH_SERVICE_UNAVAILABLE"
 
 
 def test_active_user_with_required_permission_gets_success_on_protected_endpoint(
@@ -256,14 +257,13 @@ def test_department_atomic_permission_without_delegation_role_is_ignored(
     set_current_user,
     set_uow,
 ):
-    user = build_current_user_from_keycloak(
+    user = CurrentUser(
         user_id="lead-1",
         role_id=settings.lead_economist_role_id,
         status="active",
-        api_roles=frozenset(
+        permissions=frozenset(
             {
                 PermissionCodes.FILES_DOWNLOAD,
-                PermissionCodes.DEPARTMENT_FILES_READ,
             }
         ),
     )

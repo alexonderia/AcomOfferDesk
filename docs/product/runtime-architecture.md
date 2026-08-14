@@ -4,6 +4,8 @@
 
 Этот документ описывает runtime-слой: контейнеры, интеграции, потоки данных и границы между сервисами.
 
+> **Stage 1 IAM migration:** Keycloak отключён от текущего runtime. Сохранившиеся ниже Keycloak-specific детали относятся только к legacy/migration reference и не являются инструкцией обычного запуска.
+
 Смежные документы:
 - [Окружения и периметр](../operations/environments.md)
 - [Навигация по коду](../development/developer-guide.md)
@@ -18,7 +20,6 @@ Browser
 gateway (Nginx)
   |-- /            -> web
   |-- /api/*       -> backend
-  |-- /iam/*       -> keycloak
 
 backend
   |-- PostgreSQL (external order_database)
@@ -54,12 +55,11 @@ notifications_worker
 
 - `/` -> frontend `web`
 - `/api/*` -> `backend`
-- `/iam/*` -> `keycloak`
 
 Практический смысл:
 
 - frontend использует относительные URL и не знает о внутренних контейнерах;
-- backend и Keycloak скрыты за единым host;
+- внутренние backend-сервисы скрыты за единым host;
 - внешние tunnel-решения подключаются к одному входу.
 
 ### `web`

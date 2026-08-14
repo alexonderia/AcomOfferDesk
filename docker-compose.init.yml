@@ -3,6 +3,7 @@ x-runtime-env: &runtime-env
     - ${APP_RUNTIME_ENV_FILE:-./.env}
 
 services:
+  # Legacy migration-only stack. It is not part of normal application runtime.
   keycloak_db_prepare:
     <<: *runtime-env
     image: postgres:16-alpine

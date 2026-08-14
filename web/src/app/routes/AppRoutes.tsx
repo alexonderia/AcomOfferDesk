@@ -8,7 +8,6 @@ import { RoleRoute } from '@app/routes/RoleRoute';
 import { REQUESTS_ROUTE_PERMISSIONS } from '@shared/lib/routing/getDefaultPathByRole';
 
 const AuthPage = lazy(async () => ({ default: (await import('@pages/auth/AuthPage')).AuthPage }));
-const AuthCallbackPage = lazy(async () => ({ default: (await import('@pages/auth/AuthCallbackPage')).AuthCallbackPage }));
 const AccountStatePage = lazy(async () => ({ default: (await import('@pages/auth/AccountStatePage')).AccountStatePage }));
 const RegistrationLinkStatusPage = lazy(
   async () => ({ default: (await import('@pages/auth/RegistrationLinkStatusPage')).RegistrationLinkStatusPage })
@@ -64,7 +63,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
         <Routes location={backgroundLocation ?? location}>
           <Route path="/login" element={<AuthPage />} />
           <Route path="/auth/login" element={<AuthPage />} />
-          <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/auth/callback" element={<AuthPage />} />
           <Route path="/auth/registration-link-status" element={<RegistrationLinkStatusPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route element={<ProtectedRoute />}>

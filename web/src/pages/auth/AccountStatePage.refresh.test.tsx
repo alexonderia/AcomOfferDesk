@@ -65,7 +65,7 @@ const profileResponse = {
   unavailablePeriod: null,
   unavailablePeriods: [],
   permissions: [],
-  keycloakRoles: [],
+  identityRoles: [],
   appRoles: [],
   delegationRoles: [],
   actions: {

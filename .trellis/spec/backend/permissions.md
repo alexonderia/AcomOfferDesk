@@ -5,8 +5,7 @@ This file captures the current permission model in the backend.
 ## Source Of Truth
 
 - `backend/app/domain/permissions.py` defines the canonical permission codes.
-- `backend/app/services/keycloak_app_roles.py` maps local role IDs to Keycloak app roles.
-- `backend/app/domain/auth_context.py` combines local role ceilings, token roles, and delegation scopes.
+- `backend/app/domain/auth_context.py` defines a provider-neutral authenticated-user shape for a future IAM integration.
 - `backend/app/api/action_flags.py` turns backend permission decisions into response `actions`.
 
 ## Roles
@@ -22,7 +21,7 @@ Current local role IDs:
 - `7` - `operator`
 - `8` - `security_officer`
 
-Keycloak app roles:
+Legacy Keycloak app-role names remain migration/reference data only:
 
 - `app.superadmin`
 - `app.admin`
@@ -58,9 +57,9 @@ The backend permission codes are grouped by domain:
 - Backend `actions` arrays/objects are the real per-resource control surface.
 - If a permission changes, update:
   - the backend permission map
-  - the Keycloak role mapping/bootstrap
   - the backend access checks
   - the frontend guards and menus
+- Do not synchronize roles to Keycloak while authentication is unavailable. Future IAM role mapping must be introduced behind an explicit provider adapter.
 
 ## Practical Rules
 

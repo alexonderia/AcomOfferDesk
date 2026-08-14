@@ -19,10 +19,7 @@ let authToken: string | null = null;
 let authRuntime: AuthRuntime | null = null;
 
 const ERROR_TRANSLATIONS: Record<string, string> = {
-  'Не удалось авторизоваться в Keycloak Admin API': 'Не удалось авторизоваться в Keycloak Admin API',
-  'Unable to authenticate in Keycloak admin API': 'Не удалось авторизоваться в Keycloak Admin API',
-  'Unable to create Keycloak account': 'Не удалось создать учетную запись в Keycloak',
-  'Unable to query Keycloak users': 'Не удалось получить пользователей из Keycloak',
+  'Authentication service unavailable': 'Сервис авторизации временно недоступен',
   'User is not active': 'Пользователь неактивен',
   'User not found': 'Пользователь не найден',
   'Invalid credentials': 'Неверный логин или пароль',

@@ -136,7 +136,7 @@ const schema = z
     if (!mail) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'E-mail обязателен для входа через Keycloak',
+        message: 'E-mail обязателен для будущей привязки учётной записи',
         path: ['mail']
       });
     } else if (!emailRegex.test(mail)) {

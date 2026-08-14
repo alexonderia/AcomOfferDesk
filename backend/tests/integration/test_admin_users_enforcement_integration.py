@@ -231,26 +231,7 @@ class _UsersUow:
 
 
 def _set_fake_keycloak(monkeypatch) -> None:
-    async def _fake_ensure_user(
-        self,
-        *,
-        username: str,
-        email: str | None = None,
-        first_name: str | None = None,
-        last_name: str | None = None,
-        middle_name: str | None = None,
-        sync_names: bool = False,
-        email_verified: bool = False,
-    ):
-        _ = (self, username, email, first_name, last_name, middle_name, sync_names, email_verified)
-        return SimpleNamespace(id=f"kc-{username}")
-
-    async def _fake_sync_keycloak_app_role_for_user(*args, **kwargs) -> None:
-        _ = (args, kwargs)
-        return None
-
-    monkeypatch.setattr(users_service.KeycloakAdminService, "ensure_user", _fake_ensure_user)
-    monkeypatch.setattr(users_service, "sync_keycloak_app_role_for_user", _fake_sync_keycloak_app_role_for_user)
+    _ = monkeypatch
 
 
 def test_admin_can_create_user_with_permission(

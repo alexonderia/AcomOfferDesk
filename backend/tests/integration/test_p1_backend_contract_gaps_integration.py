@@ -794,7 +794,8 @@ def test_dashboard_responsibility_denies_anonymous_user(api_app, test_client, se
 
     response = test_client.get("/api/v1/dashboard/responsibility")
 
-    assert response.status_code == 401
+    assert response.status_code == 503
+    assert response.json()["reason_code"] == "AUTH_SERVICE_UNAVAILABLE"
 
 
 def _empty_plan_dashboard():
@@ -925,7 +926,7 @@ def test_plans_dashboard_denies_anonymous_user(api_app, test_client):
 
     response = test_client.get("/api/v1/plans", params={"period": "2026-05"})
 
-    assert response.status_code == 401
+    assert response.status_code == 503
 
 
 def test_plans_tree_forwards_hierarchy_filter_to_service(
@@ -1008,7 +1009,7 @@ def test_feedback_create_denies_anonymous_user(api_app, test_client):
 
     response = test_client.post("/api/v1/feedback", json={"text": "anonymous"})
 
-    assert response.status_code == 401
+    assert response.status_code == 503
 
 
 def test_feedback_create_validates_payload(test_client, set_current_user, make_current_user):
@@ -1135,7 +1136,7 @@ def test_normative_file_upload_denies_anonymous_user(api_app, test_client, monke
         files={"file": ("norm.txt", b"normative text", "text/plain")},
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 503
 
 
 def test_request_file_upload_and_delete_contracts(
@@ -1199,7 +1200,7 @@ def test_request_file_upload_denies_anonymous_user(api_app, test_client, monkeyp
         files={"file": ("request.txt", b"request file", "text/plain")},
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 503
 
 
 def test_request_file_delete_missing_attachment_returns_404(
@@ -1464,7 +1465,7 @@ def test_offer_file_upload_denies_anonymous_user(api_app, test_client, monkeypat
         files={"file": ("offer.txt", b"offer file", "text/plain")},
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 503
 
 
 def test_file_download_allows_contractor_for_linked_open_request(

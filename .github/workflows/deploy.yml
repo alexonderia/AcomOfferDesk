@@ -184,7 +184,7 @@ jobs:
             # file_guard must come up before backend (backend depends_on file_guard: service_healthy);
             # the per-service app loop below uses --no-deps and would not start it otherwise,
             # leaving uploads failing closed (503) until file_guard is running.
-            for infra_svc in rabbitmq minio keycloak file_guard maintenance; do
+            for infra_svc in rabbitmq minio file_guard maintenance; do
               if ! compose_up_infra "$infra_svc"; then
                 echo "=== docker compose ps -a (infra: $infra_svc) ==="
                 docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
@@ -212,11 +212,10 @@ jobs:
               exit 1
             fi
 
-            # Keycloak: skip 20–30 min bootstrap when model OK + bootstrap.sh unchanged; repair on verify fail.
-            # Force full bootstrap: KEYCLOAK_BOOTSTRAP_FORCE=1 on VPS before deploy (workflow_dispatch).
-            chmod +x ./scripts/keycloak-init-deploy.sh ./scripts/keycloak-refresh-theme.sh ./scripts/run-keycloak-check-backend.sh ./scripts/post-deploy-verify.sh
-            if ! ./scripts/keycloak-init-deploy.sh "$COMPOSE_ENV_FILE"; then
-              echo "=== keycloak-init-deploy failed ==="
+            # Verify the active stack without requiring an identity-provider service.
+            chmod +x ./scripts/smoke-infra.sh
+            if ! ./scripts/smoke-infra.sh "$COMPOSE_ENV_FILE"; then
+              echo "=== post-deploy infrastructure smoke failed ==="
               docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               exit 1
             fi

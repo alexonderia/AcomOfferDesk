@@ -4,6 +4,8 @@
 
 Этот документ — единый источник по режимам `dev/test/prod`, compose-слоям, сетевому периметру и admin-only доступу.
 
+> **Stage 1 IAM migration:** normal runtime и deploy не запускают и не проверяют Keycloak. `docker-compose.init.yml`, старые `KEYCLOAK_*` параметры и Keycloak-скрипты сохранены только как migration reference.
+
 **Слияние `dev` → `test` (деплой):** см. [`branch-merge-policy.md`](branch-merge-policy.md) — PR, CI gate `Promotion to test`, защита ветки `test` в GitHub.
 
 Смежные документы:
@@ -25,38 +27,19 @@
 
 ## Auth/Permissions env contract
 
-Для всех окружений используйте разделение Keycloak clients:
-
-- `KEYCLOAK_WEB_CLIENT_ID=acom-web` (public SPA login client).
-- `KEYCLOAK_API_CLIENT_ID=acom-api` (источник application permissions в access token).
-- `KEYCLOAK_ADMIN_CLIENT_ID=acom-admin-service` + `KEYCLOAK_ADMIN_CLIENT_SECRET` (backend-only admin API access).
-
-Источник permissions:
-
-- backend в первую очередь читает permissions из `resource_access.<KEYCLOAK_API_CLIENT_ID>.roles`;
-- если в токене используется новый permission-формат без client roles, backend дополнительно читает `authorization.permissions` и `permissions`.
-- legacy/local режим выбора источника permissions удален.
-
-Важно:
-- frontend не хранит client secret;
-- frontend получает permissions/action metadata только из backend response;
-- `users.id_role` остается бизнес-ролью, а не источником security permissions.
-- `delegation.*` роли в текущем bootstrap не создаются и не удаляются автоматически (optional extension).
-- `delegation.*` сами по себе не являются atomic permissions; чтобы они давали действия, их нужно делать composite и включать коды из `PermissionCodes`.
-- `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true` включает init-синхронизацию `app.*` ролей для уже связанных пользователей.
-- Для актуализации текущей test-ветки оставляйте `KEYCLOAK_INIT_SYNC_EXISTING_USERS_BY_ROLE=true`.
+До подключения IAM authentication environment contract отсутствует: `KEYCLOAK_*`, issuer и JWKS параметры не требуются и не могут включить legacy runtime обратно. Backend permissions, `users.id_role`, unit/domain policies и response `actions` сохраняются, но защищённый контекст пользователя сейчас всегда fail-closed.
 
 ## Compose-файлы и назначение
 
 | Файл | Назначение |
 |---|---|
 | `docker-compose.yml` | Базовый runtime: сервисы, сети, healthchecks; **`gateway`** публикует **127.0.0.1:8080→80** для хостового reverse proxy на VPS (`test`/production perimeter) |
-| `docker-compose.dev.yml` | Dev override: localhost ports, dev-профили и `start-dev` для Keycloak |
+| `docker-compose.dev.yml` | Dev override: localhost ports и dev-профили |
 | `docker-compose.prod-like.yml` | Локальная production-like проверка |
 | `docker-compose.prod.yml` | Override для production-периметра в `test/prod` |
 | `docker-compose.test.yml` | Test helper: loopback-публикация `gateway` на том же VPS |
 | `docker-compose.maintenance.yml` | Override для ручного maintenance mode: переводит `gateway` в режим полной заглушки без пересборки `backend/web` |
-| `docker-compose.init.yml` | One-shot init: `keycloak_db_prepare`, `keycloak_bootstrap`, `keycloak_user_role_sync` |
+| `docker-compose.init.yml` | Legacy migration-only Keycloak helpers; не часть normal runtime |
 
 Внешний reverse proxy пример: `infra/reverse-proxy/nginx.prod.example.conf`.
 

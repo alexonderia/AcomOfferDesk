@@ -3,6 +3,40 @@ x-runtime-env: &runtime-env
     - ${APP_RUNTIME_ENV_FILE:-./.env}
 
 services:
+  iam_migrations:
+    image: flyway/flyway:10-alpine
+    container_name: iam_migrations
+    restart: "no"
+    env_file:
+      - ${IAM_MIGRATION_ENV_FILE:-./.env.iam-db}
+    command: ["migrate"]
+    volumes:
+      - ./iam/migrations/sql:/flyway/sql:ro
+    networks:
+      - project_net
+
+  iam:
+    build:
+      context: .
+      dockerfile: iam/Dockerfile
+    container_name: iam
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file:
+      - ${IAM_RUNTIME_ENV_FILE:-./.env.iam}
+    depends_on:
+      iam_migrations:
+        condition: service_completed_successfully
+    expose:
+      - "8100"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - project_net
+
   backend:
     <<: *runtime-env
     build:
@@ -14,6 +48,8 @@ services:
     volumes:
       - ./shared:/app/shared:ro
     depends_on:
+      iam:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
       minio:

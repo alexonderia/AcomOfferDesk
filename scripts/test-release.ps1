@@ -9,53 +9,17 @@ param(
   [string]$S3Endpoint = "",
   [Parameter(Mandatory=$false)]
   [string]$RabbitmqUrl = "",
-  [Parameter(Mandatory=$false)]
-  [string]$KeycloakInternalBaseUrl = "",
   [switch]$IncludeE2E,
   [switch]$StrictE2E,
   [switch]$ProvisionE2EUsers,
   [switch]$KeepProvisionedE2EUsers,
-  [switch]$RepairKeycloak
+  [switch]$RepairIamRbac
 )
 
 $ErrorActionPreference = "Stop"
 
 $RootDir = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
-
-function Get-EnvMap {
-  param([string]$Path)
-
-  if (-not (Test-Path $Path)) {
-    throw "Env file not found: $Path"
-  }
-
-  $map = @{}
-  foreach ($line in Get-Content $Path) {
-    $trimmed = $line.Trim()
-    if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
-    $idx = $trimmed.IndexOf("=")
-    if ($idx -lt 1) { continue }
-    $key = $trimmed.Substring(0, $idx).Trim()
-    $value = $trimmed.Substring($idx + 1).Trim()
-    if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) {
-      $value = $value.Substring(1, $value.Length - 2)
-    }
-    $map[$key] = $value
-  }
-  return $map
-}
-
-function Get-MapValue {
-  param(
-    [hashtable]$Map,
-    [string]$Key
-  )
-  if ($Map.ContainsKey($Key)) {
-    return [string]$Map[$Key]
-  }
-  return ""
-}
 
 function Assert-StepSucceeded {
   param([string]$StepName)
@@ -92,61 +56,17 @@ if ($RabbitmqUrl) {
 & "$RootDir/scripts/smoke-infra.ps1" @smokeParams
 Assert-StepSucceeded -StepName "infrastructure smoke checks"
 
-Write-Host "== [4/8] keycloak permission model checks =="
-$useRepairKeycloak = $RepairKeycloak
-if (-not $PSBoundParameters.ContainsKey("RepairKeycloak")) {
-  $useRepairKeycloak = $true
+Write-Host "== [4/8] IAM RBAC checks =="
+$iamCheckParams = @{ EnvFile = $EnvFile }
+$useRepairIamRbac = $RepairIamRbac
+if (-not $PSBoundParameters.ContainsKey("RepairIamRbac")) {
+  $useRepairIamRbac = $true
 }
-$prevKeycloakInternalBaseUrl = [Environment]::GetEnvironmentVariable("KEYCLOAK_INTERNAL_BASE_URL", "Process")
-$effectiveKeycloakInternalBaseUrl = $KeycloakInternalBaseUrl
-if (-not $effectiveKeycloakInternalBaseUrl) {
-  $resolvedEnvFile = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $RootDir $EnvFile }
-  $envMap = Get-EnvMap -Path $resolvedEnvFile
-
-  $internalBase = (Get-MapValue -Map $envMap -Key "KEYCLOAK_INTERNAL_BASE_URL").Trim()
-  $publicBase = (Get-MapValue -Map $envMap -Key "KEYCLOAK_PUBLIC_BASE_URL").Trim()
-  $realm = (Get-MapValue -Map $envMap -Key "KEYCLOAK_REALM").Trim()
-  if (-not $realm) {
-    $realm = "acom-offerdesk"
-  }
-
-  if ($publicBase -and $internalBase -match "://keycloak(:\d+)?/") {
-    $localKeycloakBase = "http://127.0.0.1:8080/iam"
-    $localRealmUrl = "$localKeycloakBase/realms/$realm"
-    try {
-      $localProbe = Invoke-WebRequest -Uri $localRealmUrl -UseBasicParsing -TimeoutSec 5
-      if ($localProbe.StatusCode -ge 200 -and $localProbe.StatusCode -lt 500) {
-        $effectiveKeycloakInternalBaseUrl = $localKeycloakBase
-      } else {
-        $effectiveKeycloakInternalBaseUrl = $publicBase
-      }
-    } catch {
-      $effectiveKeycloakInternalBaseUrl = $publicBase
-    }
-  }
+if ($useRepairIamRbac) {
+  $iamCheckParams.Repair = $true
 }
-if ($effectiveKeycloakInternalBaseUrl) {
-  $env:KEYCLOAK_INTERNAL_BASE_URL = $effectiveKeycloakInternalBaseUrl
-  Write-Host "Using KEYCLOAK_INTERNAL_BASE_URL=$effectiveKeycloakInternalBaseUrl for keycloak permission model checks"
-}
-try {
-  $keycloakCheckParams = @{
-    EnvFile = $EnvFile
-  }
-  if ($useRepairKeycloak) {
-    $keycloakCheckParams.Repair = $true
-  }
-  & "$RootDir/scripts/check-keycloak.ps1" @keycloakCheckParams
-  Assert-StepSucceeded -StepName "keycloak permission model checks"
-} finally {
-  if ($effectiveKeycloakInternalBaseUrl) {
-    if ($null -eq $prevKeycloakInternalBaseUrl) {
-      Remove-Item Env:KEYCLOAK_INTERNAL_BASE_URL -ErrorAction SilentlyContinue
-    } else {
-      $env:KEYCLOAK_INTERNAL_BASE_URL = $prevKeycloakInternalBaseUrl
-    }
-  }
-}
+& "$RootDir/scripts/check-iam.ps1" @iamCheckParams
+Assert-StepSucceeded -StepName "IAM RBAC and account reconciliation checks"
 
 Write-Host "== [5/8] frontend lint =="
 npm --prefix web run lint

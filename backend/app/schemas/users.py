@@ -7,7 +7,6 @@ from app.domain.contractor_validation import (
     validate_optional_email,
     validate_optional_inn,
     validate_optional_phone,
-    validate_password_bcrypt_bytes,
     validate_ru_phone,
 )
 from app.schemas.actions import UserActionsSchema
@@ -190,9 +189,6 @@ class MeData(BaseModel):
     note: str | None = None
     department_name: str | None = None
     permissions: list[str] = Field(default_factory=list)
-    identity_roles: list[str] = Field(default_factory=list)
-    app_roles: list[str] = Field(default_factory=list)
-    delegation_roles: list[str] = Field(default_factory=list)
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
@@ -233,6 +229,8 @@ class DepartmentDelegationAccessSchema(BaseModel):
     group: str
     label: str
     enabled: bool
+    granted_via_role: bool = False
+    granted_individually: bool = False
 
 
 class UserDepartmentDelegationsData(BaseModel):
@@ -258,6 +256,8 @@ class ContractorDelegationAccessSchema(BaseModel):
     label: str
     description: str
     enabled: bool
+    granted_via_role: bool = False
+    granted_individually: bool = False
 
 
 class UserContractorDelegationsData(BaseModel):
@@ -276,11 +276,6 @@ class UserContractorDelegationsResponse(BaseModel):
 
 class UserContractorDelegationsUpdateRequest(BaseModel):
     access_codes: list[str] = Field(default_factory=list)
-
-
-class UpdateMyCredentialsRequest(BaseModel):
-    current_password: str = Field(min_length=1, max_length=255)
-    new_password: str = Field(min_length=8, max_length=255)
 
 
 class UpdateMyProfileRequest(BaseModel):
@@ -375,7 +370,6 @@ class ManualContractorCreateResponse(BaseModel):
 
 
 class ManualContractorUpdateRequest(BaseModel):
-    password: str | None = Field(default=None, min_length=6, max_length=72)
     full_name: str | None = Field(default=None, max_length=256)
     phone: str | None = Field(default=None, max_length=64)
     mail: str | None = Field(default=None, max_length=256)
@@ -387,7 +381,6 @@ class ManualContractorUpdateRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1024)
 
     @field_validator(
-        "password",
         "full_name",
         "phone",
         "mail",
@@ -409,13 +402,6 @@ class ManualContractorUpdateRequest(BaseModel):
         if not normalized:
             raise ValueError("Updated value cannot be empty")
         return normalized
-
-    @field_validator("password")
-    @classmethod
-    def _validate_password(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return validate_password_bcrypt_bytes(value)
 
     @field_validator("phone", "company_phone")
     @classmethod

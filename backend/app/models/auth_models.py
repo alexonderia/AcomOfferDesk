@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, Text, TIMESTAMP, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, Text, TIMESTAMP, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -12,13 +12,15 @@ class UserAuthAccount(Base):
     __tablename__ = "user_auth_accounts"
     __table_args__ = (
         CheckConstraint(
-            "provider IN ('keycloak', 'telegram', 'max', 'phone', 'email')",
+            "provider IN ('iam', 'keycloak', 'telegram', 'max', 'phone', 'email')",
             name="user_auth_accounts_provider_chk",
         ),
         CheckConstraint(
             "btrim(external_subject_id) <> ''",
             name="user_auth_accounts_subject_not_blank",
         ),
+        UniqueConstraint("provider", "external_subject_id", name="ux_user_auth_accounts_provider_subject"),
+        UniqueConstraint("id_user", "provider", name="ux_user_auth_accounts_user_provider"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

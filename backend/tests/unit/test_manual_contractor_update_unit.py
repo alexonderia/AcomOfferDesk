@@ -47,6 +47,9 @@ async def test_update_manual_contractor_creates_missing_company_contacts():
 
     current_user = CurrentUser(
         user_id="admin-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="admin",
         role_id=settings.admin_role_id,
         status="active",
         permissions=frozenset({"contractors.manual.manage"}),

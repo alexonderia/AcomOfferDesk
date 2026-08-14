@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchJson, setAuthRuntime, setAuthToken } from './client';
+import { fetchJson, setAuthRuntime } from './client';
 
 describe('api client upload reason_code handling', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    setAuthToken(null);
     setAuthRuntime(null);
   });
 

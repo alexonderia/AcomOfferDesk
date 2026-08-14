@@ -15,7 +15,6 @@ type AuthRuntime = {
   forceLogout: () => void;
 };
 
-let authToken: string | null = null;
 let authRuntime: AuthRuntime | null = null;
 
 const ERROR_TRANSLATIONS: Record<string, string> = {
@@ -161,10 +160,6 @@ const extractDetailMessage = (detail: unknown): string | null => {
   return null;
 };
 
-export const setAuthToken = (token: string | null) => {
-  authToken = token;
-};
-
 export const setAuthRuntime = (runtime: AuthRuntime | null) => {
   authRuntime = runtime;
 };
@@ -214,6 +209,18 @@ const performFetch = async (url: string, init: RequestInit, headers: Headers): P
   });
 };
 
+const readCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  const prefix = `${encodeURIComponent(name)}=`;
+  const value = document.cookie
+    .split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix));
+  return value ? decodeURIComponent(value.slice(prefix.length)) : null;
+};
+
 export const apiFetch = async (
   url: string,
   init: RequestInit = {},
@@ -224,8 +231,12 @@ export const apiFetch = async (
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
   }
-  if (withAuth && authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (withAuth && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !headers.has('X-CSRF-Token')) {
+    const csrfToken = readCookie('acom_csrf');
+    if (csrfToken) {
+      headers.set('X-CSRF-Token', csrfToken);
+    }
   }
   if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');

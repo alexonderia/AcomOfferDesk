@@ -58,12 +58,12 @@ def make_current_user():
         normalized_permissions = frozenset(permissions or set())
         return CurrentUser(
             user_id=user_id,
+            iam_account_id="00000000-0000-4000-8000-000000000001",
+            iam_session_id="00000000-0000-4000-8000-000000000002",
+            system_role="economist",
             role_id=role_id,
             status=status,
             permissions=normalized_permissions,
-            identity_roles=normalized_permissions,
-            app_roles=frozenset(),
-            delegation_roles=frozenset(),
         )
 
     return _make_current_user

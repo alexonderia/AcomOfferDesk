@@ -16,6 +16,8 @@ build/
 !.env.example
 !.env.dev.example
 !.env.prod-like.example
+!.env.iam.example
+!.env.iam-db.example
 *.log
 *.sqlite3
 *.tsbuildinfo

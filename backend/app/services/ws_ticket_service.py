@@ -16,9 +16,12 @@ WsTicketPurpose = Literal["realtime_ws", "notifications_ws"]
 @dataclass(slots=True)
 class WsTicketAccessContext:
     user_id: str
+    iam_account_id: str
+    iam_session_id: str
+    system_role: str
     role_id: int
     status: str
-    identity_roles: frozenset[str]
+    permissions: frozenset[str]
     purpose: WsTicketPurpose
     expires_at: datetime
 
@@ -43,9 +46,12 @@ class WsTicketService:
         self,
         *,
         user_id: str,
+        iam_account_id: str,
+        iam_session_id: str,
+        system_role: str,
         role_id: int,
         status: str,
-        identity_roles: frozenset[str],
+        permissions: frozenset[str],
         purpose: WsTicketPurpose,
     ) -> tuple[str, datetime]:
         await self.cleanup_expired()
@@ -53,9 +59,12 @@ class WsTicketService:
         expires_at = datetime.now(UTC) + timedelta(seconds=self._ttl_seconds)
         access = WsTicketAccessContext(
             user_id=user_id,
+            iam_account_id=iam_account_id,
+            iam_session_id=iam_session_id,
+            system_role=system_role,
             role_id=role_id,
             status=status,
-            identity_roles=identity_roles,
+            permissions=permissions,
             purpose=purpose,
             expires_at=expires_at,
         )

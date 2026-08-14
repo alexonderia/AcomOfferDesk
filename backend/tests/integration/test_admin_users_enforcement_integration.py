@@ -148,16 +148,33 @@ class _ProfilesRepo:
 
 
 class _UserAuthAccountsRepo:
+    def __init__(self) -> None:
+        self._bindings = {
+            user_id: SimpleNamespace(
+                id_user=user_id,
+                provider="iam",
+                external_subject_id=f"00000000-0000-4000-8000-{index:012d}",
+                is_active=True,
+            )
+            for index, user_id in enumerate(
+                (
+                    "superadmin-1", "pm-1", "pm-2", "lead-1", "lead-2", "eco-1",
+                    "eco-2", "eco-3", "operator-1", "admin-1", "contractor-1",
+                ),
+                start=1,
+            )
+        }
+
     async def get_conflicting_subject(self, *, provider: str, subject: str, exclude_user_id: str):
         _ = (provider, subject, exclude_user_id)
         return None
 
     async def get_by_user_provider(self, *, user_id: str, provider: str, include_inactive: bool = True):
-        _ = (user_id, provider, include_inactive)
-        return None
+        _ = include_inactive
+        return self._bindings.get(user_id) if provider == "iam" else None
 
     async def add(self, row) -> None:
-        _ = row
+        self._bindings[row.id_user] = row
 
 
 class _UserStatusPeriodsRepo:
@@ -222,6 +239,7 @@ class _UsersUow:
         self.company_contacts = object()
         self.user_contact_channels = _NullUserContactChannelsRepo()
         self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
+        self.after_commit_hooks = []
 
     async def __aenter__(self):
         return self
@@ -229,9 +247,34 @@ class _UsersUow:
     async def __aexit__(self, exc_type, exc, tb):
         _ = (exc_type, exc, tb)
 
+    def add_after_commit_hook(self, hook) -> None:
+        self.after_commit_hooks.append(hook)
 
-def _set_fake_keycloak(monkeypatch) -> None:
-    _ = monkeypatch
+
+class _FakeIamClient:
+    async def put_account(self, *, account_id, login: str, role: str, auth_status: str):
+        return SimpleNamespace(
+            id=str(account_id), login=login, role=role, auth_status=auth_status, created=True
+        )
+
+    async def create_action_token(self, **_kwargs):
+        return SimpleNamespace(token="test-action-token", expires_at=0, purpose="password_setup")
+
+    async def update_status(self, **_kwargs):
+        return None
+
+    async def update_role(self, **_kwargs):
+        return None
+
+
+def _set_fake_iam(monkeypatch) -> None:
+    async def _send_email(**_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr("app.api.v1.auth.IamClient", _FakeIamClient)
+    monkeypatch.setattr("app.api.v1.users.IamClient", _FakeIamClient)
+    monkeypatch.setattr("app.api.v1.auth.send_iam_password_action_email", _send_email)
+    monkeypatch.setattr("app.api.v1.users.send_iam_password_action_email", _send_email)
 
 
 def test_admin_can_create_user_with_permission(
@@ -241,7 +284,7 @@ def test_admin_can_create_user_with_permission(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     admin = make_current_user(
         user_id="admin-1",
@@ -254,7 +297,6 @@ def test_admin_can_create_user_with_permission(
         "/api/v1/users/register",
         json={
             "login": "new-operator",
-            "password": "StrongPass1!",
             "role_id": settings.operator_role_id,
             "mail": "new-operator@example.com",
         },
@@ -271,7 +313,7 @@ def test_lead_economist_register_auto_assigns_creator_unit(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     uow = _UsersUow()
     set_uow(uow)
     lead = make_current_user(
@@ -302,7 +344,7 @@ def test_lead_economist_can_register_with_unit_in_scope(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     uow = _UsersUow()
     set_uow(uow)
     lead = make_current_user(
@@ -355,7 +397,7 @@ def test_superadmin_can_create_project_manager_without_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -384,7 +426,7 @@ def test_superadmin_cannot_create_project_manager_with_lead_as_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -413,7 +455,7 @@ def test_superadmin_can_create_lead_without_legacy_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -441,7 +483,7 @@ def test_superadmin_can_create_lead_with_lead_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -471,7 +513,7 @@ def test_superadmin_cannot_create_economist_with_project_manager_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -495,10 +537,12 @@ def test_superadmin_cannot_create_economist_with_project_manager_manager(
 
 def test_lead_economist_can_update_subordinate_status(
     test_client,
+    monkeypatch,
     set_uow,
     set_current_user,
     make_current_user,
 ):
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     lead = make_current_user(
         user_id="lead-1",
@@ -527,7 +571,8 @@ def test_user_without_users_status_update_cannot_change_status(test_client, set_
     assert response.status_code == 403
 
 
-def test_superadmin_can_update_user_role(test_client, set_uow, set_current_user, make_current_user):
+def test_superadmin_can_update_user_role(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",

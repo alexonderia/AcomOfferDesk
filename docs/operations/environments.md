@@ -435,17 +435,17 @@ PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\check-prod-perimeter.ps1
 ```
 
-VPS deploy (`test` branch): `scripts/keycloak-init-deploy.sh` skips the long `keycloak_bootstrap` container when read-only `check_keycloak_permission_model` passes and `infra/keycloak/bootstrap.sh` is unchanged (state: `.deploy-state/keycloak-bootstrap.sha256`). On post-deploy failure it runs `run-keycloak-check-backend.sh --repair`. Force full bootstrap: `KEYCLOAK_BOOTSTRAP_FORCE=1` before deploy.
+Stage 2 deploy starts `iam`, seeds the IAM RBAC matrix from the Acom `PermissionCodes` contract, and runs infrastructure smoke checks. `scripts/keycloak-init-deploy.sh` is retained only as a stage-3 migration/reference artifact and is not part of the active deploy workflow.
 
-Keycloak permission model on VPS (running `backend` container):
+Active IAM checks on VPS (running `backend` container):
 
-- **Do not** `docker exec backend python -m app.scripts.check_keycloak_permission_model --env-file /app/backend/.env` — that file is not baked into the image; env is injected by `docker compose --env-file backend/.env` on the host.
+- **Do not** use the retained Keycloak checkers as a stage 2 deployment gate.
 - **Do** from `/opt/acome-offer-desk` on the host:
-  - `./scripts/post-deploy-verify.sh` — full post-deploy gate (smoke + Keycloak);
-  - `./scripts/run-keycloak-check-backend.sh` — Keycloak only (add `--repair` if deploy gate failed and repair is intended).
-- CI deploy runs the same pattern via `post-deploy-verify.sh` after `docker compose up`.
+  - `./scripts/post-deploy-verify.sh` — full post-deploy gate (smoke + read-only IAM RBAC report);
+  - `./scripts/check-iam.sh backend/.env` — IAM RBAC report (`IAM_RBAC_REPAIR=1` only for intentional reseeding).
+- CI deploy starts IAM, seeds/reports IAM RBAC, and then runs `smoke-infra.sh`.
 
-Local/dev Keycloak model check (host Python, repo env file): `./scripts/check-keycloak.sh .env.dev` (see `docs/development/testing-strategy.md`).
+Legacy Keycloak check/provisioning guidance below remains reference material for stage 3; it is not an active runtime path.
 
 ### Keycloak Admin API (backend: создание пользователей / контрагентов)
 

@@ -185,12 +185,12 @@ def _build_guard_app() -> FastAPI:
     return app
 
 
-def test_endpoint_without_supported_authentication_returns_503():
+def test_endpoint_without_iam_cookie_returns_401():
     app = _build_guard_app()
     with TestClient(app) as client:
         response = client.get("/guarded")
-    assert response.status_code == 503
-    assert response.json()["reason_code"] == "AUTH_SERVICE_UNAVAILABLE"
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing credentials"
 
 
 def test_bearer_token_does_not_restore_legacy_authentication():
@@ -199,8 +199,8 @@ def test_bearer_token_does_not_restore_legacy_authentication():
     with TestClient(app) as client:
         response = client.get("/guarded", headers={"Authorization": "Bearer broken-token"})
 
-    assert response.status_code == 503
-    assert response.json()["reason_code"] == "AUTH_SERVICE_UNAVAILABLE"
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing credentials"
 
 
 def test_active_user_with_required_permission_gets_success_on_protected_endpoint(
@@ -259,6 +259,9 @@ def test_department_atomic_permission_without_delegation_role_is_ignored(
 ):
     user = CurrentUser(
         user_id="lead-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="lead_economist",
         role_id=settings.lead_economist_role_id,
         status="active",
         permissions=frozenset(

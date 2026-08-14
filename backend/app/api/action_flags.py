@@ -524,7 +524,15 @@ class OfferActionResolver:
         current_user: CurrentUser,
         request_owner_user_id: str,
     ) -> bool:
-        return False
+        if not has_permission(
+            current_user,
+            PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE,
+        ):
+            return False
+        return await DepartmentScopeService(self._users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
 
     async def resolve_workspace_context(
         self,

@@ -53,7 +53,6 @@ class User(Base):
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    password_hash: Mapped[Optional[str]] = query_expression()
     id_role: Mapped[int] = mapped_column(SmallInteger, ForeignKey("roles.id"), nullable=False)
     id_parent: Mapped[Optional[str]] = mapped_column(
         Text,

@@ -4,8 +4,9 @@ This file captures the current permission model in the backend.
 
 ## Source Of Truth
 
-- `backend/app/domain/permissions.py` defines the canonical permission codes.
-- `backend/app/domain/auth_context.py` defines a provider-neutral authenticated-user shape for a future IAM integration.
+- IAM `roles`, `permissions`, and `role_permissions` are the runtime source of role membership and permission grants.
+- `backend/app/domain/permissions.py` defines the Acom permission vocabulary and seed matrix contract synchronized into IAM; it is also the strict allowlist used while validating IAM token claims.
+- `backend/app/domain/auth_context.py` defines the provider-neutral authenticated-user shape populated from a verified IAM token and an active local IAM binding.
 - `backend/app/api/action_flags.py` turns backend permission decisions into response `actions`.
 
 ## Roles
@@ -21,7 +22,7 @@ Current local role IDs:
 - `7` - `operator`
 - `8` - `security_officer`
 
-Legacy Keycloak app-role names remain migration/reference data only:
+Legacy Keycloak app-role names remain migration/reference data only and are not runtime grants:
 
 - `app.superadmin`
 - `app.admin`
@@ -52,21 +53,117 @@ The backend permission codes are grouped by domain:
 
 ## Contract Rules
 
-- Backend permissions are authoritative.
+- IAM token permissions are authoritative for coarse application authorization after strict local JWT validation.
+- Acom remains authoritative for unit scope, local user/business status, and per-resource action decisions.
 - Frontend `role_id` checks are UX hints only.
 - Backend `actions` arrays/objects are the real per-resource control surface.
 - If a permission changes, update:
   - the backend permission map
   - the backend access checks
   - the frontend guards and menus
-- Do not synchronize roles to Keycloak while authentication is unavailable. Future IAM role mapping must be introduced behind an explicit provider adapter.
+- Role/status administration synchronizes IAM before the local transaction is declared successful; it never synchronizes or falls back to Keycloak.
 
 ## Practical Rules
 
 - Prefer `has_permission(...)` or the existing policy helpers instead of string-comparing roles directly.
 - Use role ceilings for access control, not just for display decisions.
-- `department.*` and `delegation.*` scopes are extensions, not replacements, for the normal permission matrix.
+- `department.*` permissions extend the normal permission matrix and are still constrained by Acom unit/resource policies.
+- `delegation.*` strings are legacy Acom API/UI compatibility codes only. Never seed them as IAM roles or treat them as effective permissions.
 - Do not add a parallel permission system in the frontend.
+
+## Scenario: IAM Individual Permission Grants
+
+### 1. Scope / Trigger
+- Trigger: an account needs additional functional permissions without changing its IAM role or the shared role-permission matrix.
+
+### 2. Signatures
+- IAM DB: `account_permission_grants(account_id UUID, permission_id BIGINT, granted_at TIMESTAMPTZ)` with composite primary key `(account_id, permission_id)` and cascading foreign keys to `accounts` and `permissions`.
+- IAM API: `GET /internal/accounts/{account_id}/permissions`.
+- IAM API: `PUT /internal/accounts/{account_id}/permission-grants` with body `{"permissions": ["requests.update"]}`.
+- IAM service result: `permissions_from_role`, `individually_granted_permissions`, and `effective_permissions` are sorted unique permission-name lists.
+
+### 3. Contracts
+- Effective permissions are `role_permissions UNION account_permission_grants`; individual grants can only add permissions and never deny or mask role permissions.
+- The access JWT `permissions` claim contains the effective set. Login and the existing refresh flow recalculate that set from current IAM data.
+- PUT fully replaces only the account's individual grants. It must not update `accounts.role_id` or `role_permissions`.
+- IAM is the storage source of truth for individual grants. Acom keeps unit hierarchy and resource/business authorization but does not persist a duplicate grants table.
+- A changed grant set writes `account.permissions.updated` to `auth_audit_log` with `details.added` and `details.removed`. Internal service operations may have a null `session_id` because they are not necessarily initiated by an IAM browser session.
+
+### 4. Validation & Error Matrix
+- unknown account -> `404 Not Found`.
+- inactive account role -> `403 Forbidden` when reading or replacing its permission set.
+- unknown or inactive requested permission -> `409 Conflict`; preserve the existing grant set atomically.
+- repeated PUT with the same set -> `200 OK`, no duplicate grant rows, and no duplicate change-audit event.
+- duplicate names in the request -> normalize to one grant and one effective permission.
+
+### 5. Good/Base/Bad Cases
+- Good: an economist keeps `requests.read` and `offers.read` from the role and receives `requests.update` individually; the JWT contains all three values once.
+- Base: PUT with an empty list removes individual grants while all role permissions remain effective.
+- Bad: removing an individual row for a permission also present in the role removes the effective permission, mutates `role_permissions`, or creates a DENY record.
+
+### 6. Tests Required
+- IAM schema test asserts the composite key, `BIGINT` permission ID, and cascading foreign keys.
+- IAM service tests assert union/deduplication, role preservation, removal behavior, unknown/inactive atomic rejection, PUT idempotency, and `added`/`removed` audit details.
+- IAM auth test asserts login and refresh JWTs contain the current effective set.
+- IAM API test asserts service authentication and the three-list GET/PUT response contract.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Store individual permissions in Acom, copy permissions, introduce delegation roles, or infer that a missing grant denies a role permission.
+
+#### Correct
+- Store additive account-to-permission rows only in IAM, calculate a unique union for JWTs, and leave unit/resource enforcement in Acom.
+
+## Scenario: Acom Delegation UI Backed By IAM Grants
+
+### 1. Scope / Trigger
+- Trigger: the existing department or contractor delegation UI reads or changes an account's additive functional access after the Keycloak-to-IAM migration.
+
+### 2. Signatures
+- Acom API compatibility surface:
+  `GET|PUT /api/v1/users/{user_id}/delegations/department`
+  `GET|PUT /api/v1/users/{user_id}/delegations/contractors`
+- PUT body: `{"access_codes": ["delegation.department.requests.update"]}`.
+- Access response fields: `enabled`, `granted_via_role`, and `granted_individually` in addition to the existing code/label fields.
+- Account resolution: active `user_auth_accounts(provider='iam')`, where `external_subject_id = IAM accounts.id`.
+- Legacy migration command:
+  `python -m app.scripts.migrate_legacy_keycloak_grants --dry-run|--apply`.
+
+### 3. Contracts
+- GET obtains `permissions_from_role`, `individually_granted_permissions`, and `effective_permissions` from IAM; Acom and the frontend must not recalculate the effective functional set.
+- The frontend checkbox reflects and submits only `granted_individually`. `enabled` remains true when the same permission is supplied by the role.
+- Acom translates compatibility `delegation.*` access codes to atomic permission names before calling IAM.
+- Each PUT replaces only the endpoint's managed subset. It preserves individual IAM grants owned by the other delegation family or another feature.
+- PUT never changes IAM `role_permissions`, and Acom never stores grants in its own tables.
+- Unit hierarchy, object scope, and domain/business policies remain enforced by existing Acom services after the IAM functional-permission check.
+- The one-time legacy migration reads retained Keycloak tables directly from the local PostgreSQL schema; it performs no Keycloak HTTP/OIDC/admin runtime call and creates no `delegation.*` IAM role.
+
+### 4. Validation & Error Matrix
+- inactive or missing IAM binding -> GET returns the access catalog with a warning; PUT returns `409 Conflict`.
+- unknown compatibility access code -> `409 Conflict`, with no IAM write.
+- IAM account absent during local apply -> provision only in `development|dev|local`; otherwise report the user and return a non-zero migration exit.
+- unsupported legacy `delegation.*` role -> stop migration with an explicit error instead of silently dropping access.
+- unchanged managed grant set -> return success without a duplicate IAM PUT.
+
+### 5. Good/Base/Bad Cases
+- Good: a role-provided permission is also granted individually; unchecking it removes only the individual row, while `enabled` stays true.
+- Base: an individual-only permission is checked, saved through Acom, appears in IAM effective permissions, and disappears after unchecking.
+- Bad: submit all effective permissions as individual grants, overwrite unrelated account grants, mutate role permissions, or call Keycloak at runtime.
+
+### 6. Tests Required
+- Backend unit: role-only, individual-only, combined, and absent access states map to the response flags.
+- Backend unit: managed-subset replacement preserves unrelated grants and repeated saves skip duplicate PUTs.
+- Backend unit: department/unit/domain scope decisions remain unchanged and active application imports contain no Keycloak runtime modules.
+- IAM client unit: exact GET/PUT paths, internal-service authentication header, and atomic permission payload.
+- Frontend unit: checkbox changes only `grantedIndividually`, preserves role-provided `enabled`, and submits only individual access codes.
+- Runtime migration: apply reports the exact added count; the following dry-run reports `grants_to_add = 0`.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Derive effective permissions in React, save effective permissions into Acom, or replace the complete IAM individual-grant set with one UI section's selection.
+
+#### Correct
+- Render the three IAM source states, submit only the individual selection, merge the managed subset with existing IAM grants in Acom, and keep scope enforcement in the existing domain services.
 
 ## Units Hierarchy Contract
 

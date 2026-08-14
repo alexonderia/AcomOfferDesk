@@ -5,7 +5,11 @@ export const ProtectedRoute = () => {
   const { isAuthenticated, status, session } = useAuth();
   const location = useLocation();
 
-  if (status === 'unavailable' || (!session && !isAuthenticated)) {
+  if (status === 'authenticating') {
+    return null;
+  }
+
+  if (!session || !isAuthenticated) {
     const next = location.pathname !== '/' ? `?next=${encodeURIComponent(location.pathname + location.search)}` : '';
     return <Navigate to={`/login${next}`} replace />;
   }

@@ -95,13 +95,13 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
   }, [applyRealtimeNotificationCreated, logout, refresh, runNotificationsSync]);
 
   useEffect(() => {
-    if (status === 'unavailable' || !session?.token || !session.businessAccess) {
+    if (status !== 'authenticated' || !session?.businessAccess) {
       realtimeSocketClient.disconnect();
       previousConnectionStateRef.current = 'idle';
       return;
     }
     realtimeSocketClient.connect();
-  }, [session?.businessAccess, session?.token, status]);
+  }, [session?.businessAccess, status]);
 
   const value = useMemo<RealtimeContextValue>(
     () => ({

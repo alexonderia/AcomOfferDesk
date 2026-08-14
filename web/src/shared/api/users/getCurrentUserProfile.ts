@@ -20,9 +20,6 @@ type ProfilePayload = {
   note?: string | null;
   department_name?: string | null;
   permissions?: string[];
-  identity_roles?: string[];
-  app_roles?: string[];
-  delegation_roles?: string[];
   actions?: {
     can_manage_own_profile?: boolean;
     can_manage_credentials?: boolean;
@@ -107,9 +104,6 @@ export type CurrentUserProfile = {
     endedAt: string;
   }>;
   permissions: string[];
-  identityRoles: string[];
-  appRoles: string[];
-  delegationRoles: string[];
   actions: UserActions;
 };
 
@@ -122,11 +116,6 @@ export type NotificationPreferences = {
   emailAvailable: boolean;
   email: string | null;
   preferences: Record<NotificationPreferenceType, { email: boolean }>;
-};
-
-type UpdateCredentialsPayload = {
-  current_password: string;
-  new_password: string;
 };
 
 type UpdateProfilePayload = {
@@ -192,9 +181,6 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
       endedAt: period.ended_at
     })),
     permissions: data.permissions ?? [],
-    identityRoles: data.identity_roles ?? [],
-    appRoles: data.app_roles ?? [],
-    delegationRoles: data.delegation_roles ?? [],
     actions: normalizeUserActions(data.actions)
   };
 };
@@ -241,16 +227,6 @@ export const getRegistrationCurrentUserProfile = async (): Promise<CurrentUserPr
     '/api/v1/users/me/registration-profile',
     { method: 'GET' },
     'Ошибка загрузки данных регистрации'
-  );
-
-  return mapCurrentUserProfile(response);
-};
-
-export const updateMyCredentials = async (payload: UpdateCredentialsPayload): Promise<CurrentUserProfile> => {
-  const response = await fetchJson<CurrentUserResponse>(
-    '/api/v1/users/me/credentials',
-    { method: 'PATCH', body: JSON.stringify(payload) },
-    'Ошибка обновления пароля'
   );
 
   return mapCurrentUserProfile(response);

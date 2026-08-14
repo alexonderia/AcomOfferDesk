@@ -78,6 +78,7 @@ class PermissionCodes:
     DEPARTMENT_OFFERS_ACCEPT = "department.offers.accept"
     DEPARTMENT_OFFERS_REJECT = "department.offers.reject"
     DEPARTMENT_CHATS_READ = "department.chats.read"
+    DEPARTMENT_CHATS_SEND_MESSAGE = "department.chats.send_message"
     DEPARTMENT_FILES_READ = "department.files.read"
     DEPARTMENT_FILES_UPLOAD = "department.files.upload"
     DEPARTMENT_FILES_DELETE = "department.files.delete"

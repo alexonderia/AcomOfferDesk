@@ -397,9 +397,29 @@ async def run_checks(
 
     await _check_http(
         reporter,
-        name="API proxy",
-        url=f"{resolved_base_url}/api/v1/auth/oidc/login?next_path=%2F",
-        accepted_codes={503},
+        name="IAM BFF login redirect",
+        url=f"{resolved_base_url}/api/v1/auth/login?next=%2F",
+        accepted_codes={200, 302},
+        timeout=timeout,
+        critical=True,
+        retries=retries,
+    )
+
+    await _check_http(
+        reporter,
+        name="IAM public JWKS",
+        url=f"{resolved_base_url}/iam/.well-known/jwks.json",
+        accepted_codes={200},
+        timeout=timeout,
+        critical=True,
+        retries=retries,
+    )
+
+    await _check_http(
+        reporter,
+        name="IAM internal gateway isolation",
+        url=f"{resolved_base_url}/iam/internal/rbac",
+        accepted_codes={404},
         timeout=timeout,
         critical=True,
         retries=retries,

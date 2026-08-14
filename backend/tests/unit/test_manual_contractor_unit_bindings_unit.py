@@ -37,6 +37,9 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
 
     current_user = CurrentUser(
         user_id="economist-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="economist",
         role_id=settings.economist_role_id,
         status="active",
         permissions=frozenset({"contractors.manual.create"}),

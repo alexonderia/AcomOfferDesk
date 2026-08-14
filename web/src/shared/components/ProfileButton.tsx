@@ -30,7 +30,6 @@ import {
   type NotificationPreferenceType,
   type NotificationPreferences,
   updateMyCompanyContacts,
-  updateMyCredentials,
   updateMyNotificationPreferences,
   updateMyProfile
 } from '@shared/api/users/getCurrentUserProfile';
@@ -123,17 +122,6 @@ const optionalEmail = z
     'Введите корректный email'
   );
 
-const passwordSchema = z
-  .object({
-    oldPassword: z.string().min(1, 'Введите текущий пароль'),
-    password: z.string().min(8, 'Минимум 8 символов'),
-    confirmPassword: z.string().min(1, 'Повторите пароль')
-  })
-  .refine((values) => values.password === values.confirmPassword, {
-    message: 'Пароли не совпадают',
-    path: ['confirmPassword']
-  });
-
 const profileSchema = z.object({
   full_name: z.string().trim().min(1, 'Введите ФИО'),
   phone: z.string().trim().min(1, 'Введите телефон'),
@@ -164,7 +152,6 @@ const unavailabilitySchema = z
     path: ['ended_at']
   });
 
-type PasswordFormValues = z.infer<typeof passwordSchema>;
 type ProfileFormValues = z.infer<typeof profileSchema>;
 type CompanyFormValues = z.infer<typeof companySchema>;
 type NotificationContactsFormValues = z.infer<typeof notificationContactsSchema>;
@@ -326,7 +313,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const { session } = useAuth();
   const { showSuccessToast, showSystemToast } = useSystemToasts();
   const [open, setOpen] = useState(false);
-  const [openPassword, setOpenPassword] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
   const [openNotificationContacts, setOpenNotificationContacts] = useState(false);
@@ -338,16 +324,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
   const [error, setError] = useState<string | null>(null);
 
   useToastMessageEffect({ message: error });
-
-  const {
-    register: registerPassword,
-    handleSubmit: handlePasswordSubmit,
-    formState: { errors: passwordErrors, isSubmitting: isSubmittingPassword },
-    reset: resetPassword
-  } = useLiveValidatedForm<PasswordFormValues>({
-    resolver: zodResolver(passwordSchema),
-    defaultValues: { oldPassword: '', password: '', confirmPassword: '' }
-  });
 
   const {
     register: registerProfile,
@@ -457,27 +433,11 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
 
   const showCompanyInfo = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
   const showContractorNotificationSettings = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
-  const canEditCredentials = Boolean(profile?.actions.manage_credentials) && session?.authProvider === 'legacy';
   const canEditProfile = Boolean(profile?.actions.manage_own_profile);
   const canEditCompany = Boolean(profile?.actions.manage_company_contacts);
   const canSetUnavailability = Boolean(profile?.actions.manage_own_unavailability);
 
   const notificationRows = useMemo(() => NOTIFICATION_TYPE_META, []);
-
-  const onSubmitPassword = async (values: PasswordFormValues) => {
-    setError(null);
-    try {
-      const nextProfile = await updateMyCredentials({
-        current_password: values.oldPassword.trim(),
-        new_password: values.password.trim()
-      });
-      setProfile(nextProfile);
-      resetPassword({ oldPassword: '', password: '', confirmPassword: '' });
-      setOpenPassword(false);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить пароль');
-    }
-  };
 
   const onSubmitProfile = async (values: ProfileFormValues) => {
     setError(null);
@@ -708,19 +668,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                   showEdit={canEditProfile}
                   onEdit={() => setOpenProfile(true)}
                 />
-                <Stack direction="row" spacing={1}>
-                  {canEditCredentials ? (
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<EditOutlined fontSize="small" />}
-                      sx={smallEditButtonSx}
-                      onClick={() => setOpenPassword(true)}
-                    >
-                      Пароль
-                    </Button>
-                  ) : null}
-                </Stack>
                 <DataRow label="Логин" value={session?.login ?? profile?.userId ?? null} />
                 <DataRow label="ФИО" value={profile?.fullName ?? null} />
                 <DataRow label="Телефон" value={profile?.phone ?? null} />
@@ -885,46 +832,6 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
               disabled={isSubmittingNotificationContacts}
             >
               Сохранить и подтвердить
-            </Button>
-          </Stack>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={openPassword} onClose={() => setOpenPassword(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
-        <DialogContent sx={dialogContentSx}>
-          <Stack spacing={2} component="form" onSubmit={handlePasswordSubmit((values) => void onSubmitPassword(values))}>
-            <Typography variant="h5" fontWeight={600} lineHeight={1}>
-              Изменение пароля
-            </Typography>
-            <ValidatedTextField
-              label="Старый пароль"
-              type="password"
-              fieldName="oldPassword"
-              registration={registerPassword('oldPassword')}
-              error={Boolean(passwordErrors.oldPassword)}
-              helperText={passwordErrors.oldPassword?.message}
-              sx={inputFieldSx}
-            />
-            <ValidatedTextField
-              label="Новый пароль"
-              type="password"
-              fieldName="password"
-              registration={registerPassword('password')}
-              error={Boolean(passwordErrors.password)}
-              helperText={passwordErrors.password?.message}
-              sx={inputFieldSx}
-            />
-            <ValidatedTextField
-              label="Повторите новый пароль"
-              type="password"
-              fieldName="confirmPassword"
-              registration={registerPassword('confirmPassword')}
-              error={Boolean(passwordErrors.confirmPassword)}
-              helperText={passwordErrors.confirmPassword?.message}
-              sx={inputFieldSx}
-            />
-            <Button type="submit" variant="contained" fullWidth sx={submitButtonSx} disabled={isSubmittingPassword}>
-              Сохранить новый пароль
             </Button>
           </Stack>
         </DialogContent>

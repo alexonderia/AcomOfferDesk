@@ -34,9 +34,6 @@ describe('accountStateDraft', () => {
       unavailablePeriod: null,
       unavailablePeriods: [],
       permissions: [],
-      identityRoles: [],
-      appRoles: [],
-      delegationRoles: [],
       actions: {
         view_profile: false,
         update_status: false,

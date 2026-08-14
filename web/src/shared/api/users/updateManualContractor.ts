@@ -1,7 +1,6 @@
 import { fetchJson } from '../client';
 
 export type UpdateManualContractorPayload = {
-  password?: string;
   full_name?: string;
   phone?: string;
   mail?: string;

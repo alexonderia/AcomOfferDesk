@@ -544,9 +544,6 @@ class OfferService:
             if index > 1000:
                 raise Conflict("Unable to generate unique login for manual contractor")
 
-    def _build_manual_password(self) -> str:
-        return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
-
     async def _find_existing_manual_contractor_user_id(
         self,
         *,
@@ -1607,6 +1604,17 @@ class OfferService:
                 )
             ):
                 raise Forbidden("Insufficient permissions to send chat message")
+            return
+        if (
+            has_permission(
+                current_user,
+                PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE,
+            )
+            and await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            )
+        ):
             return
         raise Forbidden("Insufficient permissions to send chat message")
 

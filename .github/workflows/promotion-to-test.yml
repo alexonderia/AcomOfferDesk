@@ -40,7 +40,7 @@ jobs:
           S3_ACCESS_KEY: ci-access-key
           S3_SECRET_KEY: ci-secret-key
           S3_BUCKET: ci-bucket
-        run: python -m pytest backend/tests/unit/test_keycloak_admin_settings_unit.py -q
+        run: python -m pytest backend/tests/unit/test_iam_authentication_unit.py backend/tests/unit/test_iam_migration_unit.py -q
 
       - name: Verify promotion script
         run: bash scripts/verify-promotion-to-test.sh

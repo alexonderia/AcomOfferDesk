@@ -428,7 +428,7 @@ def test_user_action_builder_economist_cannot_update_contractor_status_with_user
     assert actions.can_update_status is False
 
 
-def test_user_action_builder_delegated_lead_can_update_contractor_status(make_current_user):
+def test_user_action_builder_lead_with_explicit_permission_can_update_contractor_status(make_current_user):
     lead = make_current_user(
         user_id="lead-1",
         role_id=settings.lead_economist_role_id,
@@ -437,7 +437,6 @@ def test_user_action_builder_delegated_lead_can_update_contractor_status(make_cu
             PermissionCodes.CONTRACTORS_PROFILE_READ,
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
         },
-        keycloak_roles={"delegation.contractors.profile.status.update"},
     )
 
     actions = UserActionBuilder.build_list_item(
@@ -449,17 +448,16 @@ def test_user_action_builder_delegated_lead_can_update_contractor_status(make_cu
     assert actions.can_update_status is True
 
 
-def test_contractor_action_builder_allows_status_with_delegation_role_only(make_current_user):
+def test_contractor_action_builder_denies_status_without_iam_permission(make_current_user):
     lead = make_current_user(
         user_id="lead-1",
         role_id=settings.lead_economist_role_id,
         permissions=set(),
-        keycloak_roles={"delegation.contractors.profile.status.update"},
     )
 
     actions = ContractorActionBuilder.build_contractor_actions(lead, is_manual=False)
 
-    assert actions.can_update_status is True
+    assert actions.can_update_status is False
 
 
 def test_contractor_action_builder_allows_manual_edit_only_for_manual_rows(make_current_user):

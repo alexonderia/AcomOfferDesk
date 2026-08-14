@@ -41,9 +41,12 @@ async def create_ws_ticket(
     service = get_ws_ticket_service()
     raw_ticket, expires_at = await service.issue_ticket(
         user_id=current_user.user_id,
+        iam_account_id=current_user.iam_account_id,
+        iam_session_id=current_user.iam_session_id,
+        system_role=current_user.system_role,
         role_id=current_user.role_id,
         status=current_user.status,
-        identity_roles=current_user.identity_roles,
+        permissions=current_user.permissions,
         purpose=purpose,
     )
     now = int(time.time())
@@ -60,8 +63,20 @@ async def _get_current_user_from_websocket_with_purpose(
     *,
     expected_purpose: WsTicketPurpose,
 ) -> CurrentUser:
-    _ = websocket, expected_purpose
-    raise AuthenticationUnavailable()
+    raw_ticket = (websocket.query_params.get("ticket") or "").strip()
+    access = await get_ws_ticket_service().consume_ticket(
+        raw_ticket=raw_ticket,
+        expected_purpose=expected_purpose,
+    )
+    return CurrentUser(
+        user_id=access.user_id,
+        iam_account_id=access.iam_account_id,
+        iam_session_id=access.iam_session_id,
+        system_role=access.system_role,
+        role_id=access.role_id,
+        status=access.status,
+        permissions=access.permissions,
+    )
 
 
 async def _get_user_full_name(user_id: str) -> str | None:

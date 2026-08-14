@@ -50,6 +50,15 @@ class UserAuthAccountRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_provider(self, *, provider: str) -> list[UserAuthAccount]:
+        stmt = (
+            select(UserAuthAccount)
+            .where(UserAuthAccount.provider == provider)
+            .order_by(UserAuthAccount.id_user.asc(), UserAuthAccount.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def add(self, account: UserAuthAccount) -> None:
         self._session.add(account)
 

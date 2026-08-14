@@ -8,9 +8,12 @@ from app.api.action_flags import UserActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
-from app.domain.authentication import reject_unavailable_authentication
-from app.domain.exceptions import Forbidden
+from app.domain.exceptions import Conflict, Forbidden
+from app.domain.iam_identity import stable_iam_account_id
+from app.domain.iam_roles import technical_role_name
 from app.domain.policies import CurrentUser
+from app.infrastructure.iam_client import IamClient
+from app.models.auth_models import UserAuthAccount
 from app.schemas.users import (
     DepartmentDelegationAccessSchema,
     EconomistListData,
@@ -41,7 +44,6 @@ from app.schemas.users import (
     SubordinateProfileData,
     SubordinateProfileResponse,
     UpdateMyCompanyContactsRequest,
-    UpdateMyCredentialsRequest,
     UpdateMyProfileRequest,
     UserHierarchyData,
     UserHierarchyResponse,
@@ -80,6 +82,9 @@ from app.services.users import (
 )
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
+from app.services.iam_password_actions import send_iam_password_action_email
+from app.services.user_contractor_delegations import UserContractorDelegationsService
+from app.services.user_department_delegations import UserDepartmentDelegationsService
 from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 router = APIRouter()
@@ -132,9 +137,6 @@ def _me_data(current_user: CurrentUser, item) -> MeData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     data["permissions"] = serialize_permissions(current_user)
-    data["identity_roles"] = sorted(current_user.identity_roles)
-    data["app_roles"] = sorted(current_user.app_roles)
-    data["delegation_roles"] = sorted(current_user.delegation_roles)
     data["actions"] = UserActionBuilder.build_me(current_user)
     return MeData(**data)
 
@@ -171,6 +173,8 @@ def _department_delegations_data(item) -> UserDepartmentDelegationsData:
                 group=access.group,
                 label=access.label,
                 enabled=access.enabled,
+                granted_via_role=access.granted_via_role,
+                granted_individually=access.granted_individually,
             )
             for access in item.accesses
         ],
@@ -191,6 +195,8 @@ def _contractor_delegations_data(item) -> UserContractorDelegationsData:
                 label=access.label,
                 description=access.description,
                 enabled=access.enabled,
+                granted_via_role=access.granted_via_role,
+                granted_individually=access.granted_individually,
             )
             for access in item.accesses
         ],
@@ -370,46 +376,6 @@ async def get_my_registration_profile(
 
     return MeResponse(
         data=_registration_onboarding_me_data(current_user, me),
-    )
-
-
-@router.patch("/users/me/credentials", response_model=MeResponse)
-async def update_my_credentials(
-    payload: UpdateMyCredentialsRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    uow: UnitOfWork = Depends(get_uow),
-) -> MeResponse:
-    async with uow:
-        self_service = UserSelfService(
-            uow.users,
-            uow.profiles,
-            uow.company_contacts,
-            uow.user_status_periods,
-            uow.user_auth_accounts,
-        )
-        await self_service.update_my_credentials(
-            current_user,
-            current_password=payload.current_password,
-            new_password=payload.new_password,
-        )
-
-        query_service = UserQueryService(uow.users, uow.user_status_periods)
-        me = await query_service.get_me(current_user)
-
-    if current_user.role_id != settings.contractor_role_id:
-        me = me.__class__(
-            user_id=me.user_id,
-            role_id=me.role_id,
-            status=me.status,
-            full_name=me.full_name,
-            phone=me.phone,
-            mail=me.mail,
-            unavailable_period=me.unavailable_period,
-            unavailable_periods=me.unavailable_periods,
-        )
-
-    return MeResponse(
-        data=_me_data(current_user, me),
     )
 
 
@@ -709,7 +675,17 @@ async def get_user_department_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserDepartmentDelegationsResponse:
-    reject_unavailable_authentication()
+    async with uow:
+        service = UserDepartmentDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.get_state(
+            current_user=current_user,
+            target_user_id=user_id,
+        )
+    return UserDepartmentDelegationsResponse(data=_department_delegations_data(state))
 
 
 @router.get("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
@@ -718,7 +694,17 @@ async def get_user_contractor_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserContractorDelegationsResponse:
-    reject_unavailable_authentication()
+    async with uow:
+        service = UserContractorDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.get_state(
+            current_user=current_user,
+            target_user_id=user_id,
+        )
+    return UserContractorDelegationsResponse(data=_contractor_delegations_data(state))
 
 
 @router.put("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
@@ -728,7 +714,18 @@ async def update_user_contractor_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserContractorDelegationsResponse:
-    reject_unavailable_authentication()
+    async with uow:
+        service = UserContractorDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.update_state(
+            current_user=current_user,
+            target_user_id=user_id,
+            requested_access_codes=payload.access_codes,
+        )
+    return UserContractorDelegationsResponse(data=_contractor_delegations_data(state))
 
 
 @router.put("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)
@@ -738,7 +735,18 @@ async def update_user_department_delegations(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserDepartmentDelegationsResponse:
-    reject_unavailable_authentication()
+    async with uow:
+        service = UserDepartmentDelegationsService(
+            users=uow.users,
+            profiles=uow.profiles,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        state = await service.update_state(
+            current_user=current_user,
+            target_user_id=user_id,
+            requested_access_codes=payload.access_codes,
+        )
+    return UserDepartmentDelegationsResponse(data=_department_delegations_data(state))
 
 
 @router.post("/users/{user_id}/unavailability-period", response_model=SetSubordinateUnavailabilityPeriodResponse)
@@ -844,6 +852,45 @@ async def create_manual_contractor(
                 note=payload.note,
             ),
         )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=created_user_id,
+            provider="iam",
+            include_inactive=True,
+        )
+        account_id = (
+            stable_iam_account_id(created_user_id)
+            if binding is None
+            else binding.external_subject_id
+        )
+        account = await IamClient().put_account(
+            account_id=account_id,
+            login=created_user_id,
+            role="contractor",
+            auth_status="pending",
+        )
+        if binding is None:
+            binding = UserAuthAccount(
+                id_user=created_user_id,
+                provider="iam",
+                external_subject_id=account.id,
+                external_username=created_user_id,
+                external_email=payload.company_mail,
+                is_active=True,
+            )
+            await uow.user_auth_accounts.add(binding)
+        else:
+            binding.is_active = True
+        if account.auth_status == "pending":
+            action = await IamClient().create_action_token(
+                account_id=account.id,
+                purpose="password_setup",
+            )
+            if payload.company_mail:
+                await send_iam_password_action_email(
+                    to_email=payload.company_mail,
+                    raw_token=action.token,
+                    purpose="password_setup",
+                )
 
     return ManualContractorCreateResponse(
         data={"user_id": created_user_id},
@@ -863,7 +910,6 @@ async def update_manual_contractor(
             current_user=current_user,
             user_id=user_id,
             data=ManualContractorUpdateInput(
-                password=payload.password,
                 full_name=payload.full_name,
                 phone=payload.phone,
                 mail=payload.mail,
@@ -905,6 +951,19 @@ async def update_user_status(
             user_id=user_id,
             user_status=payload.user_status,
         )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=user_id,
+            provider="iam",
+        )
+        if binding is None:
+            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+        iam_status = "active" if payload.user_status in {"active", "review"} else "blocked"
+        await IamClient().update_status(
+            account_id=binding.external_subject_id,
+            auth_status=iam_status,
+            actor_account_id=current_user.iam_account_id,
+            actor_session_id=current_user.iam_session_id,
+        )
 
     return UserStatusUpdateResponse(
         data=UserStatusUpdateData(
@@ -927,6 +986,21 @@ async def update_user_role(
             current_user=current_user,
             user_id=user_id,
             role_id=payload.role_id,
+        )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=user_id,
+            provider="iam",
+        )
+        role_name = technical_role_name(payload.role_id)
+        if binding is None:
+            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+        if role_name is None:
+            raise Conflict("Выбранная роль не поддерживается IAM")
+        await IamClient().update_role(
+            account_id=binding.external_subject_id,
+            role=role_name,
+            actor_account_id=current_user.iam_account_id,
+            actor_session_id=current_user.iam_session_id,
         )
 
     return UserRoleUpdateResponse(

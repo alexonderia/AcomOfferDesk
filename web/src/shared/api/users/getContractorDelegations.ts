@@ -5,6 +5,8 @@ export type ContractorDelegationAccess = {
   label: string;
   description: string;
   enabled: boolean;
+  grantedViaRole: boolean;
+  grantedIndividually: boolean;
 };
 
 export type UserContractorDelegations = {
@@ -22,6 +24,8 @@ type ContractorDelegationAccessPayload = {
   label: string;
   description: string;
   enabled: boolean;
+  granted_via_role: boolean;
+  granted_individually: boolean;
 };
 
 type UserContractorDelegationsPayload = {
@@ -48,6 +52,8 @@ const mapDelegations = (payload: UserContractorDelegationsPayload): UserContract
     label: item.label,
     description: item.description,
     enabled: item.enabled,
+    grantedViaRole: item.granted_via_role,
+    grantedIndividually: item.granted_individually,
   })),
   tokenRefreshRequired: Boolean(payload.token_refresh_required),
   warning: payload.warning ?? null,

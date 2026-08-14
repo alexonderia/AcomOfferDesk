@@ -26,6 +26,9 @@ async def test_contractor_activation_updates_local_status_without_auth_provider(
     result = await service.update_statuses(
         current_user=CurrentUser(
             user_id="admin-1",
+            iam_account_id="00000000-0000-4000-8000-000000000001",
+            iam_session_id="00000000-0000-4000-8000-000000000002",
+            system_role="admin",
             role_id=settings.admin_role_id,
             status="active",
             permissions=frozenset({PermissionCodes.USERS_STATUS_UPDATE}),

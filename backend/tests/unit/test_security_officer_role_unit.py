@@ -313,7 +313,6 @@ async def test_superadmin_can_create_security_officer_but_admin_cannot(make_curr
     created = await service.register_user(
         superadmin,
         user_id="security-new",
-        password=None,
         role_id=settings.security_officer_role_id,
         id_parent=None,
         full_name="Security Officer",
@@ -333,7 +332,6 @@ async def test_superadmin_can_create_security_officer_but_admin_cannot(make_curr
         await service.register_user(
             admin,
             user_id="security-blocked",
-            password=None,
             role_id=settings.security_officer_role_id,
             id_parent=None,
             full_name="Blocked Security",

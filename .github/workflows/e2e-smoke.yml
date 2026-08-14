@@ -17,10 +17,10 @@ on:
         type: boolean
         default: false
       provision_users:
-        description: "Create temporary e2e users before tests and cleanup after run"
+        description: "Legacy Keycloak provisioning (stage-3 migration reference only)"
         required: false
         type: boolean
-        default: true
+        default: false
       keep_provisioned_users:
         description: "Keep provisioned temporary users after run (debug only)"
         required: false

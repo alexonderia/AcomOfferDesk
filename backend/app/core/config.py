@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +44,30 @@ class Settings(BaseSettings):
     refresh_cookie_samesite: str = Field(default="lax", validation_alias="REFRESH_COOKIE_SAMESITE")
     refresh_cookie_domain: str | None = Field(default=None, validation_alias="REFRESH_COOKIE_DOMAIN")
     refresh_token_secret: str | None = Field(default=None, validation_alias="REFRESH_TOKEN_SECRET")
+
+    iam_internal_base_url: str = Field(default="http://iam:8100", validation_alias="IAM_INTERNAL_BASE_URL")
+    iam_public_base_url: str | None = Field(default=None, validation_alias="IAM_PUBLIC_BASE_URL")
+    iam_issuer: str | None = Field(default=None, validation_alias="IAM_ISSUER")
+    iam_audience: str = Field(default="acomofferdesk", validation_alias="IAM_AUDIENCE")
+    iam_signing_public_key: str | None = Field(default=None, validation_alias="IAM_SIGNING_PUBLIC_KEY")
+    iam_signing_kid: str = Field(default="iam-signing-1", validation_alias="IAM_SIGNING_KID")
+    iam_internal_service_token: str = Field(
+        default="development-only-iam-service-token-change-me",
+        validation_alias="IAM_INTERNAL_SERVICE_TOKEN",
+    )
+    iam_http_timeout_seconds: float = Field(default=10.0, validation_alias="IAM_HTTP_TIMEOUT_SECONDS")
+    iam_access_cookie_name: str = Field(default="acom_iam_access", validation_alias="IAM_ACCESS_COOKIE_NAME")
+    iam_refresh_cookie_name: str = Field(default="acom_iam_refresh", validation_alias="IAM_REFRESH_COOKIE_NAME")
+    iam_state_cookie_name: str = Field(default="acom_iam_flow", validation_alias="IAM_STATE_COOKIE_NAME")
+    iam_flow_recovery_cookie_name: str = Field(
+        default="acom_iam_flow_recovery",
+        validation_alias="IAM_FLOW_RECOVERY_COOKIE_NAME",
+    )
+    iam_browser_session_cookie_name: str = Field(
+        default="iam_browser_session",
+        validation_alias="IAM_BROWSER_SESSION_COOKIE_NAME",
+    )
+    iam_csrf_cookie_name: str = Field(default="acom_csrf", validation_alias="IAM_CSRF_COOKIE_NAME")
 
     keycloak_enabled: bool = Field(default=False, validation_alias="KEYCLOAK_ENABLED")
     keycloak_realm: str = Field(default="acom-offerdesk", validation_alias="KEYCLOAK_REALM")
@@ -124,6 +150,7 @@ class Settings(BaseSettings):
     email_app_password: str = Field(..., validation_alias="EMAIL_APP_PASSWORD")
     smtp_host: str = Field(..., validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=465, validation_alias="SMTP_PORT")
+    smtp_security: str = Field(default="auto", validation_alias="SMTP_SECURITY")
     rabbitmq_url: str = Field(default="amqp://guest:guest@rabbitmq:5672/", validation_alias="RABBITMQ_URL")
     email_verification_secret: str = Field(..., validation_alias="EMAIL_VERIFICATION_SECRET")
     email_verification_ttl_seconds: int = Field(default=3600, validation_alias="EMAIL_VERIFICATION_TTL_SECONDS")
@@ -209,7 +236,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
         self.app_env = self.app_env.strip().lower() or "development"
-        # Stage 1 IAM migration: legacy Keycloak settings may remain in env files,
+        # Stage 2 IAM migration: legacy Keycloak settings may remain in env files,
         # but they can no longer activate a runtime authentication path.
         self.keycloak_enabled = False
         self.keycloak_bootstrap_binding_enabled = False
@@ -229,11 +256,38 @@ class Settings(BaseSettings):
             self.refresh_cookie_samesite = "lax"
 
         public_bases = [self.public_backend_base_url, self.web_base_url]
-        if any((base or "").strip().lower().startswith("https://") for base in public_bases):
+        if self.app_env == "production" or any(
+            (base or "").strip().lower().startswith("https://") for base in public_bases
+        ):
             self.refresh_cookie_secure = True
 
         if not self.refresh_token_secret:
             self.refresh_token_secret = self.jwt_secret
+
+        self.iam_internal_base_url = self.iam_internal_base_url.rstrip("/") or "http://iam:8100"
+        if self.iam_public_base_url is not None:
+            self.iam_public_base_url = self.iam_public_base_url.rstrip("/") or None
+        if self.iam_issuer is not None:
+            self.iam_issuer = self.iam_issuer.rstrip("/") or None
+        if self.iam_signing_public_key is not None:
+            self.iam_signing_public_key = self.iam_signing_public_key.replace("\\n", "\n").strip() or None
+        self.iam_audience = self.iam_audience.strip() or "acomofferdesk"
+        self.iam_signing_kid = self.iam_signing_kid.strip() or "iam-signing-1"
+        if self.iam_http_timeout_seconds <= 0:
+            self.iam_http_timeout_seconds = 10.0
+        if self.app_env == "production":
+            if not self.iam_signing_public_key:
+                raise ValueError("IAM_SIGNING_PUBLIC_KEY is required in production")
+            try:
+                signing_key = serialization.load_pem_public_key(
+                    self.iam_signing_public_key.encode("utf-8")
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("IAM_SIGNING_PUBLIC_KEY must contain valid PEM data") from exc
+            if not isinstance(signing_key, RSAPublicKey):
+                raise ValueError("IAM_SIGNING_PUBLIC_KEY must be an RSA public key")
+            if self.iam_internal_service_token == "development-only-iam-service-token-change-me":
+                raise ValueError("IAM_INTERNAL_SERVICE_TOKEN must be configured in production")
 
         self.s3_endpoint = self.s3_endpoint.strip()
         if self.s3_public_endpoint is not None:
@@ -250,6 +304,9 @@ class Settings(BaseSettings):
         self.file_guard_url = self.file_guard_url.rstrip("/") or "http://file_guard:8080"
         if self.file_guard_timeout_seconds <= 0:
             self.file_guard_timeout_seconds = 10.0
+        self.smtp_security = self.smtp_security.strip().lower() or "auto"
+        if self.smtp_security not in {"auto", "ssl", "starttls", "plain"}:
+            raise ValueError("SMTP_SECURITY must be one of: auto, ssl, starttls, plain")
         if self.contractor_invite_max_emails_per_request <= 0:
             self.contractor_invite_max_emails_per_request = 50
         if self.invitation_portal_url is not None:
@@ -307,6 +364,23 @@ class Settings(BaseSettings):
     @property
     def resolved_refresh_token_secret(self) -> str:
         return self.refresh_token_secret or self.jwt_secret
+
+    @property
+    def resolved_iam_public_base_url(self) -> str:
+        if self.iam_public_base_url:
+            return self.iam_public_base_url
+        if self.web_base_url:
+            return f"{self.web_base_url.rstrip('/')}/iam"
+        return "http://localhost:8080/iam"
+
+    @property
+    def resolved_iam_issuer(self) -> str:
+        return self.iam_issuer or self.resolved_iam_public_base_url
+
+    @property
+    def iam_callback_url(self) -> str:
+        base = (self.public_backend_base_url or self.web_base_url or "http://localhost:8080").rstrip("/")
+        return f"{base}/api/v1/auth/callback"
 
     @property
     def resolved_keycloak_public_base_url(self) -> str:

@@ -19,6 +19,9 @@ def _dependency_callable(permission: str):
 async def test_permission_dependency_accepts_neutral_current_user() -> None:
     current_user = CurrentUser(
         user_id="u-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="economist",
         role_id=settings.economist_role_id,
         status="active",
         permissions=frozenset({PermissionCodes.REQUESTS_READ}),
@@ -33,6 +36,9 @@ async def test_permission_dependency_accepts_neutral_current_user() -> None:
 async def test_permission_dependency_rejects_missing_permission() -> None:
     current_user = CurrentUser(
         user_id="u-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="economist",
         role_id=settings.economist_role_id,
         status="active",
         permissions=frozenset(),

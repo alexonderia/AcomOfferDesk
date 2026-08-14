@@ -70,6 +70,11 @@ import {
   type UserContractorDelegations,
 } from '@shared/api/users/getContractorDelegations';
 import { useAuth } from '@app/providers/AuthProvider';
+import {
+  getIndividuallyGrantedAccessCodes,
+  permissionSourceLabel,
+  withIndividualGrant,
+} from '../model/delegationAccess';
 
 const statusSchema = z.object({
   user_status: z.enum(['review', 'active', 'inactive', 'blacklist'])
@@ -674,7 +679,6 @@ export const UsersTable = ({
     address: '',
     note: ''
   }));
-  const [manualContractorPassword, setManualContractorPassword] = useState('');
   const [manualContractorError, setManualContractorError] = useState<string | null>(null);
   const [manualContractorSuccess, setManualContractorSuccess] = useState<string | null>(null);
   const [isUpdatingManualContractor, setIsUpdatingManualContractor] = useState(false);
@@ -738,7 +742,6 @@ export const UsersTable = ({
       return;
     }
     setManualContractorDraft(buildManualContractorDraft(selectedUser));
-    setManualContractorPassword('');
     setManualContractorError(null);
     setManualContractorSuccess(null);
   }, [selectedUser]);
@@ -765,11 +768,7 @@ export const UsersTable = ({
       };
     }
 
-    const { payload, trimmedDraft } = buildManualContractorPayload(
-      selectedUser,
-      manualContractorDraft,
-      manualContractorPassword
-    );
+    const { payload, trimmedDraft } = buildManualContractorPayload(selectedUser, manualContractorDraft);
     const { fieldErrors, firstError } = validateManualContractorPayload(payload);
 
     return {
@@ -779,7 +778,7 @@ export const UsersTable = ({
       fieldErrors,
       firstError
     };
-  }, [manualContractorDraft, manualContractorPassword, selectedUser]);
+  }, [manualContractorDraft, selectedUser]);
 
   const updateManualContractorField = <K extends keyof ManualContractorDraft>(
     field: K,
@@ -788,12 +787,6 @@ export const UsersTable = ({
     setManualContractorError(null);
     setManualContractorSuccess(null);
     setManualContractorDraft((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleManualContractorPasswordChange = (value: string) => {
-    setManualContractorError(null);
-    setManualContractorSuccess(null);
-    setManualContractorPassword(value);
   };
 
   const shouldLoadDepartmentDelegations = Boolean(
@@ -1064,7 +1057,6 @@ export const UsersTable = ({
     try {
       await updateManualContractor(selectedUser.user_id, manualContractorValidation.payload);
 
-      setManualContractorPassword('');
       setManualContractorSuccess('Данные контрагента обновлены');
       await onStatusUpdated();
       setSelectedUser((prev) => (
@@ -1099,7 +1091,7 @@ export const UsersTable = ({
         ...prev,
         accesses: prev.accesses.map((item) =>
           item.code === code
-            ? { ...item, enabled }
+            ? withIndividualGrant(item, enabled)
             : item
         ),
       };
@@ -1119,9 +1111,7 @@ export const UsersTable = ({
     try {
       const nextState = await updateDepartmentDelegations(
         selectedUser.user_id,
-        departmentDelegations.accesses
-          .filter((item) => item.enabled)
-          .map((item) => item.code)
+        getIndividuallyGrantedAccessCodes(departmentDelegations.accesses)
       );
       setDepartmentDelegations(nextState);
       showSystemToast({
@@ -1149,7 +1139,9 @@ export const UsersTable = ({
       return {
         ...prev,
         accesses: prev.accesses.map((item) =>
-          item.code === code ? { ...item, enabled } : item
+          item.code === code
+            ? withIndividualGrant(item, enabled)
+            : item
         ),
       };
     });
@@ -1165,7 +1157,7 @@ export const UsersTable = ({
     try {
       const nextState = await updateContractorDelegations(
         selectedUser.user_id,
-        contractorDelegations.accesses.filter((item) => item.enabled).map((item) => item.code)
+        getIndividuallyGrantedAccessCodes(contractorDelegations.accesses)
       );
       setContractorDelegations(nextState);
       showSystemToast({
@@ -1610,12 +1602,22 @@ export const UsersTable = ({
                                 key={item.code}
                                 control={(
                                   <Checkbox
-                                    checked={item.enabled}
+                                    checked={item.grantedIndividually}
                                     onChange={(event) => handleDelegationToggle(item.code, event.target.checked)}
                                     disabled={!departmentDelegations.canManage || isSavingDepartmentDelegations}
                                   />
                                 )}
-                                label={item.label}
+                                label={(
+                                  <Stack spacing={0.1}>
+                                    <Typography variant="body2">{item.label}</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                      {permissionSourceLabel(
+                                        item.grantedViaRole,
+                                        item.grantedIndividually
+                                      )}
+                                    </Typography>
+                                  </Stack>
+                                )}
                               />
                             ))}
                           </FormGroup>
@@ -1660,12 +1662,22 @@ export const UsersTable = ({
                           key={item.code}
                           control={(
                             <Checkbox
-                              checked={item.enabled}
+                              checked={item.grantedIndividually}
                               onChange={(event) => handleContractorDelegationToggle(item.code, event.target.checked)}
                               disabled={!contractorDelegations.canManage || isSavingContractorDelegations}
                             />
                           )}
-                          label={item.label}
+                          label={(
+                            <Stack spacing={0.1}>
+                              <Typography variant="body2">{item.label}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {permissionSourceLabel(
+                                  item.grantedViaRole,
+                                  item.grantedIndividually
+                                )}
+                              </Typography>
+                            </Stack>
+                          )}
                         />
                       ))}
                     </FormGroup>
@@ -1893,16 +1905,6 @@ export const UsersTable = ({
                       value={selectedUser.user_id}
                       InputProps={{ readOnly: true }}
                       sx={{ '& .MuiInputBase-input': { cursor: 'default' } }}
-                    />
-                    <TextField
-                      label="Новый пароль"
-                      type="password"
-                      {...textFieldAutocompleteProps('password')}
-                      placeholder="Оставьте пустым, если без смены"
-                      value={manualContractorPassword}
-                      onChange={(event) => handleManualContractorPasswordChange(event.target.value)}
-                      error={Boolean(manualContractorFieldErrors.password)}
-                      helperText={manualContractorFieldErrors.password}
                     />
                     <TextField
                       label="ФИО"

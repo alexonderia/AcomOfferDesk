@@ -33,6 +33,9 @@ async def test_admin_without_profile_read_can_view_bindings():
     service = _build_service()
     admin = CurrentUser(
         user_id="admin-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="admin",
         role_id=settings.admin_role_id,
         status="active",
         permissions=frozenset({PermissionCodes.USERS_STATUS_UPDATE}),
@@ -65,6 +68,9 @@ async def test_list_bindings_for_users_batches_in_one_membership_load():
     service = ContractorUnitService(users=users_repo, units=units_repo)
     superadmin = CurrentUser(
         user_id="root",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="superadmin",
         role_id=settings.superadmin_role_id,
         status="active",
         permissions=frozenset({PermissionCodes.CONTRACTORS_PROFILE_READ}),
@@ -89,6 +95,9 @@ async def test_user_without_view_or_manage_cannot_view_bindings():
     service = _build_service()
     user = CurrentUser(
         user_id="op-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="economist",
         role_id=settings.economist_role_id,
         status="active",
         permissions=frozenset(),

@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.authorization import has_permission
 from app.domain.department_delegations import get_department_permission_codes
-from app.domain.exceptions import AuthenticationUnavailable, Conflict, Forbidden, NotFound
+from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, UserPolicy
 from app.models.orm_models import CompanyContact, Profile, Role, User, UserStatusPeriod
@@ -223,7 +223,6 @@ class UserRegistrationService:
         current_user: CurrentUser,
         *,
         user_id: str,
-        password: str | None,
         role_id: int,
         id_parent: str | None,
         full_name: str | None,
@@ -825,7 +824,6 @@ class UserManagerUpdateResult:
 
 @dataclass(frozen=True)
 class ManualContractorUpdateInput:
-    password: str | None = None
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None
@@ -969,9 +967,6 @@ class ManualContractorService:
             if index > 1000:
                 raise Conflict("Не удалось сгенерировать уникальный логин для ручного контрагента")
 
-    def _build_manual_password(self) -> str:
-        return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
-
     async def _find_existing_manual_contractor_user_id(
         self,
         *,
@@ -1105,10 +1100,6 @@ class ManualContractorService:
             raise NotFound("Профиль не найден")
 
         company_contact = await self._company_contacts.get_by_id(user.id)
-
-        next_password = self._normalize_value(data.password)
-        if next_password is not None:
-            raise Forbidden("Пароль управляется провайдером аутентификации")
 
         full_name = self._normalize_value(data.full_name)
         phone = self._normalize_value(data.phone)
@@ -1499,16 +1490,6 @@ class UserSelfService:
                     "У пользователя уже есть период недоступности в этом диапазоне времени "
                     f"{period.started_at.isoformat()} - {period.ended_at.isoformat()}"
                 )
-
-    async def update_my_credentials(
-        self,
-        current_user: CurrentUser,
-        *,
-        current_password: str,
-        new_password: str,
-    ) -> None:
-        UserPolicy.ensure_can_manage_own_profile(current_user)
-        raise AuthenticationUnavailable()
 
     async def _apply_my_profile_update(
         self,

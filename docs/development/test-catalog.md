@@ -202,17 +202,17 @@
 - API proxy маршрут;
 - доступность `/iam`;
 - подключение к PostgreSQL + `SELECT 1` + наличие критичных таблиц;
-- issuer/JWKS Keycloak;
+- issuer/JWKS IAM;
 - доступность bucket в MinIO/S3;
 - AMQP-подключение к RabbitMQ.
 
 Скрипт не создает и не удаляет данные (non-destructive smoke).
 
-### `scripts/check-keycloak.ps1` / `scripts/check-keycloak.sh`
+### Legacy: `scripts/check-keycloak.ps1` / `scripts/check-keycloak.sh`
 
 Запускают `backend/app/scripts/check_keycloak_permission_model.py` **на хосте** с env-файлом из репозитория (например `.env.dev`).
 
-На **VPS** с уже поднятым контейнером `backend` используйте не `check-keycloak.sh`, а `./scripts/run-keycloak-check-backend.sh` или `./scripts/post-deploy-verify.sh` (env с хоста `backend/.env` → compose → снимок в контейнере). Путь `/app/backend/.env` внутри образа отсутствует.
+Эти скрипты сохранены только как reference для этапа 3. Для активного IAM на VPS используйте `./scripts/check-iam.sh backend/.env` или `./scripts/post-deploy-verify.sh`.
 
 Скрипт проверяет:
 - realm и его enabled-состояние;

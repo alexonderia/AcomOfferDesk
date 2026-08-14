@@ -262,24 +262,6 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
                   <ValidatedTextField
-                    label="Пароль"
-                    type="password"
-                    fieldName="password"
-                    error={Boolean(getFieldError('password'))}
-                    helperText={getFieldError('password')}
-                    registration={register('password')}
-                    sx={{ display: 'none' }}
-                  />
-                  <ValidatedTextField
-                    label="Повторите пароль"
-                    type="password"
-                    fieldName="confirmPassword"
-                    error={Boolean(getFieldError('confirmPassword'))}
-                    helperText={getFieldError('confirmPassword')}
-                    registration={register('confirmPassword')}
-                    sx={{ display: 'none' }}
-                  />
-                  <ValidatedTextField
                     label={<RequiredFieldLabel label="E-mail" isValid={isMailFieldValid} />}
                     fieldName="mail"
                     error={Boolean(getFieldError('mail'))}

@@ -3,7 +3,6 @@
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.authorization import has_permission, require_any_permission, require_permission
-from app.domain.contractor_delegations import user_has_contractor_status_delegation
 from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 
@@ -182,10 +181,7 @@ class UserPolicy:
 
     @staticmethod
     def can_update_contractor_profile_status(current_user: CurrentUser) -> bool:
-        # security_officer app role, delegation expansion, or explicit delegation role in token
         if has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE):
-            return True
-        if user_has_contractor_status_delegation(current_user.delegation_roles):
             return True
         # admin/superadmin manage contractor status via users.status.update
         return (

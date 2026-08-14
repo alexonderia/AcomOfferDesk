@@ -30,6 +30,9 @@ async def test_profile_update_is_local_only() -> None:
     await service.update_my_profile_for_review_onboarding(
         CurrentUser(
             user_id=profile.id,
+            iam_account_id="00000000-0000-4000-8000-000000000001",
+            iam_session_id="00000000-0000-4000-8000-000000000002",
+            system_role="contractor",
             role_id=settings.contractor_role_id,
             status="review",
             permissions=frozenset(),

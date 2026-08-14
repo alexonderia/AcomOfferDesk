@@ -43,6 +43,14 @@ class UserRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def list_all_with_profiles(self) -> list[tuple[User, Profile | None]]:
+        stmt = (
+            select(User, Profile)
+            .outerjoin(Profile, Profile.id == User.id)
+            .order_by(User.id.asc())
+        )
+        return list((await self._session.execute(stmt)).all())
+
     def _build_contractors_stmt(
         self,
         *,

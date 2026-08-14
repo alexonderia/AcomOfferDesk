@@ -27,8 +27,6 @@ const schema = z
   .object({
     role_id: z.number({ required_error: 'Выберите роль' }),
     login: z.string().optional(),
-    password: z.string().optional(),
-    confirmPassword: z.string().optional(),
     mail: z.string().optional(),
     full_name: z.string().optional(),
     phone: z.string().optional(),
@@ -278,8 +276,6 @@ export const useAdminPage = () => {
     defaultValues: {
       role_id: preferredCreateRoleId,
       login: '',
-      password: '',
-      confirmPassword: '',
       mail: '',
       full_name: '',
       phone: '',
@@ -420,8 +416,6 @@ export const useAdminPage = () => {
     reset({
       role_id: preferredCreateRoleId,
       login: '',
-      password: '',
-      confirmPassword: '',
       mail: '',
       full_name: '',
       phone: '',

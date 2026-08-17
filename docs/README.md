@@ -14,7 +14,7 @@
 
 ## 3. Доступы и безопасность
 
-- [Аутентификация, онбординг и Keycloak](./security/auth-and-onboarding.md)
+- [Аутентификация, IAM и авторизация](./security/auth-and-onboarding.md)
 - [Матрица прав (Permissions Matrix)](./security/permissions-matrix.md)
 
 ## 4. Окружения и эксплуатация
@@ -27,4 +27,3 @@
 
 - [Контракт production-переменных и секретов](./release/production-env.md)
 - [Практический release checklist](./release/release-checklist.md)
-- [Roadmap/ТЗ production-readiness](./release/release-preparation-tz.md)

@@ -39,7 +39,7 @@ const buildSession = (token: string, permissions: string[] = []) => ({
   roleId: 3,
   role: 'contractor',
   status: 'review',
-  authProvider: 'keycloak',
+  authProvider: 'iam',
   businessAccess: false,
   onboardingState: null,
   permissions,

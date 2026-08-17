@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 from app.core.config import settings
-from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
 from app.domain.exceptions import NotFound
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.infrastructure.email.email_templates.email_contact_blocks import contact_info_from_invitation_settings
@@ -13,7 +12,6 @@ from app.infrastructure.email.email_templates.request_invited_contractor_email i
 )
 from app.infrastructure.email.email_templates.request_notification_email import (
     build_request_notification_email_payload,
-    build_request_registration_email_payload,
 )
 from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
 from app.infrastructure.email_service import SMTPEmailService
@@ -39,7 +37,6 @@ class NotificationRecipient:
     email: str
     user_login: str | None
     is_verified_user: bool
-    has_economist_created_account: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,13 +119,8 @@ class SendRequestNotificationEmailUseCase:
             )
 
         token_codec = ReplyTokenCodec(secret=reply_secret) if reply_secret else None
-        invite_token_codec = RegistrationInviteTokenCodec(
-            secret=settings.email_verification_secret,
-            ttl_seconds=settings.registration_invite_ttl_seconds,
-        )
         request_attachments, attachment_warning = await self._build_request_attachments(request_id=request_id)
         request_url = f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}"
-        registration_base_url = (settings.public_backend_base_url or self._app_url).rstrip("/")
         invitation_contact = contact_info_from_invitation_settings(
             contact_name=settings.invitation_contact_name,
             contact_email=settings.invitation_contact_email,
@@ -159,7 +151,7 @@ class SendRequestNotificationEmailUseCase:
                     attachment_warning=attachment_warning,
                 )
                 attachments = request_attachments
-            elif recipient.has_economist_created_account and portal_url:
+            else:
                 payload = build_request_invited_contractor_email_payload(
                     to_email=recipient.email,
                     request_id=request_id,
@@ -173,24 +165,6 @@ class SendRequestNotificationEmailUseCase:
                     request_attachments=request_attachments,
                     attachment_warning=attachment_warning,
                 )
-            else:
-                invite_token = invite_token_codec.create_token(email=recipient.email)
-                registration_url = (
-                    f"{registration_base_url}/api/v1/auth/oidc/register"
-                    f"?invite_token={quote(invite_token, safe='')}&next_path={quote('/account', safe='/')}"
-                )
-                payload = build_request_registration_email_payload(
-                    to_email=recipient.email,
-                    request_id=request_id,
-                    description=request.description,
-                    deadline_at=request.deadline_at,
-                    registration_url=registration_url,
-                    registration_ttl_seconds=settings.registration_invite_ttl_seconds,
-                    contact=invitation_contact,
-                    attachment_warning=attachment_warning,
-                )
-                attachments = request_attachments
-
             try:
                 await self._email_service.send_email(
                     to_email=payload.to_email,
@@ -328,14 +302,13 @@ class SendRequestNotificationEmailUseCase:
                     email=normalized_email,
                     user_login=contractor_user_id,
                     is_verified_user=False,
-                    has_economist_created_account=contractor_user_id is not None,
                 )
             )
             recipient_emails.add(normalized_email)
 
         return recipients
 
-    def _resolve_portal_url(self) -> str | None:
+    def _resolve_portal_url(self) -> str:
         if settings.invitation_portal_url:
             return settings.invitation_portal_url.rstrip("/")
         if settings.web_base_url:

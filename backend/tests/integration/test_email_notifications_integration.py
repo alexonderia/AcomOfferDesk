@@ -2,12 +2,9 @@
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlparse
-
 import pytest
 
 from app.core.config import settings
-from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
 from app.domain.exceptions import Conflict
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
 from app.infrastructure.email.email_attachment import EmailAttachment
@@ -350,10 +347,9 @@ async def test_manual_request_email_notification_does_not_swallow_internal_type_
 @pytest.mark.asyncio
 async def test_send_use_case_generates_verified_and_invite_email_events(monkeypatch):
     monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
-    monkeypatch.setattr(settings, "email_verification_secret", "verify-secret")
-    monkeypatch.setattr(settings, "registration_invite_ttl_seconds", 3600)
     monkeypatch.setattr(settings, "reply_email_ttl_seconds", 1800)
     monkeypatch.setattr(settings, "public_backend_base_url", "https://api.acom.example")
+    monkeypatch.setattr(settings, "invitation_portal_url", "https://portal.acom.example/login")
 
     request_row = SimpleNamespace(
         id=33,
@@ -405,22 +401,12 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
     assert verified_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert verified_item["operation_expected_total"] == 2
     assert invite_item["reply_token"] is None
-    assert "/api/v1/auth/oidc/register?invite_token=" in invite_item["text_content"]
-    assert "Ссылка на регистрацию:" in invite_item["text_content"]
+    assert "https://portal.acom.example/login" in invite_item["text_content"]
+    assert "Ссылка для входа:" in invite_item["text_content"]
     assert invite_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert invite_item["operation_expected_total"] == 2
     assert verified_item["operation_id"] == invite_item["operation_id"]
 
-    registration_url = next(
-        line.removeprefix("Ссылка на регистрацию: ").strip()
-        for line in invite_item["text_content"].splitlines()
-        if line.startswith("Ссылка на регистрацию: ")
-    )
-    parsed = urlparse(registration_url)
-    qs = parse_qs(parsed.query)
-    invite_token = qs["invite_token"][0]
-    claims = RegistrationInviteTokenCodec(secret="verify-secret", ttl_seconds=3600).parse_token(invite_token)
-    assert claims.email == "invite@example.com"
 
 
 @pytest.mark.asyncio
@@ -550,7 +536,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
     assert "Инструкция по получению доступа приложена к письму в виде презентации." in event["text_content"]
     assert "Поступила новая заявка №50." in event["text_content"]
     assert "Перейти в систему:" in event["text_content"]
-    assert "/api/v1/auth/oidc/register" not in event["text_content"]
+    assert "invite_token=" not in event["text_content"]
     assert event["attachments"][0].filename == "onboarding.pptx"
 
 

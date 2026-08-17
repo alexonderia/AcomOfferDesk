@@ -27,7 +27,7 @@ from app.core.auth_cookies import (
 from app.core.config import settings
 from app.core.iam_flow import FLOW_TTL_SECONDS, build_iam_authorize_url, create_iam_flow, decode_iam_flow
 from app.core.uow import UnitOfWork
-from app.domain.authentication import decode_iam_access_token, reject_unavailable_authentication
+from app.domain.authentication import decode_iam_access_token
 from app.domain.auth_context import CurrentUser
 from app.domain.contractor_validation import validate_optional_email
 from app.domain.exceptions import AuthenticationUnavailable, Conflict, Unauthorized
@@ -287,12 +287,6 @@ async def request_password_reset(
             )
         )
     return PasswordResetResponse(detail=generic_detail)
-
-
-@router.get("/auth/oidc/login")
-@router.get("/auth/oidc/register")
-async def unavailable_legacy_authentication_flow() -> None:
-    reject_unavailable_authentication()
 
 
 @router.post("/auth/request-email-verification", response_model=EmailVerificationActionResponse)

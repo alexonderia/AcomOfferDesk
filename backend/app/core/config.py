@@ -69,72 +69,6 @@ class Settings(BaseSettings):
     )
     iam_csrf_cookie_name: str = Field(default="acom_csrf", validation_alias="IAM_CSRF_COOKIE_NAME")
 
-    keycloak_enabled: bool = Field(default=False, validation_alias="KEYCLOAK_ENABLED")
-    keycloak_realm: str = Field(default="acom-offerdesk", validation_alias="KEYCLOAK_REALM")
-    keycloak_client_id: str = Field(
-        default="acom-web",
-        validation_alias=AliasChoices("KEYCLOAK_WEB_CLIENT_ID", "KEYCLOAK_CLIENT_ID"),
-    )
-    keycloak_api_client_id: str = Field(default="acom-api", validation_alias="KEYCLOAK_API_CLIENT_ID")
-    keycloak_internal_base_url: str = Field(
-        default="http://keycloak:8080/iam",
-        validation_alias="KEYCLOAK_INTERNAL_BASE_URL",
-    )
-    keycloak_public_base_url: str | None = Field(default=None, validation_alias="KEYCLOAK_PUBLIC_BASE_URL")
-    keycloak_issuer_url: str | None = Field(default=None, validation_alias="KEYCLOAK_ISSUER_URL")
-    keycloak_jwks_cache_ttl_seconds: int = Field(
-        default=300,
-        validation_alias="KEYCLOAK_JWKS_CACHE_TTL_SECONDS",
-    )
-    keycloak_http_timeout_seconds: float = Field(
-        default=10.0,
-        validation_alias="KEYCLOAK_HTTP_TIMEOUT_SECONDS",
-    )
-    keycloak_refresh_cookie_name: str = Field(
-        default="acom_oidc_refresh",
-        validation_alias="KEYCLOAK_REFRESH_COOKIE_NAME",
-    )
-    keycloak_state_cookie_name: str = Field(
-        default="acom_oidc_state",
-        validation_alias="KEYCLOAK_STATE_COOKIE_NAME",
-    )
-    keycloak_bootstrap_binding_enabled: bool = Field(
-        default=True,
-        validation_alias="KEYCLOAK_BOOTSTRAP_BINDING_ENABLED",
-    )
-    keycloak_bootstrap_app_username: str = Field(
-        default="superadmin",
-        validation_alias="KEYCLOAK_BOOTSTRAP_APP_USERNAME",
-    )
-    keycloak_admin_realm: str = Field(
-        default="master",
-        validation_alias=AliasChoices("KEYCLOAK_ADMIN_REALM", "KC_BOOTSTRAP_ADMIN_REALM"),
-    )
-    keycloak_admin_client_id: str = Field(
-        default="admin-cli",
-        validation_alias="KEYCLOAK_ADMIN_CLIENT_ID",
-    )
-    keycloak_admin_client_secret: str | None = Field(
-        default=None,
-        validation_alias="KEYCLOAK_ADMIN_CLIENT_SECRET",
-    )
-    keycloak_admin_username: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("KEYCLOAK_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_USERNAME"),
-    )
-    keycloak_admin_password: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("KEYCLOAK_ADMIN_PASSWORD", "KC_BOOTSTRAP_ADMIN_PASSWORD"),
-    )
-    keycloak_dev_auto_link_by_username_enabled: bool = Field(
-        default=False,
-        validation_alias="KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED",
-    )
-    keycloak_prod_auto_link_by_verified_email_enabled: bool = Field(
-        default=False,
-        validation_alias="KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED",
-    )
-
     superadmin_role_id: int = 1
     admin_role_id: int = 2
     contractor_role_id: int = 3
@@ -217,7 +151,6 @@ class Settings(BaseSettings):
     file_guard_enabled: bool = Field(default=True, validation_alias="FILE_GUARD_ENABLED")
     file_guard_url: str = Field(default="http://file_guard:8080", validation_alias="FILE_GUARD_URL")
     file_guard_timeout_seconds: float = Field(default=10.0, validation_alias="FILE_GUARD_TIMEOUT_SECONDS")
-    registration_invite_ttl_seconds: int = Field(default=86400, validation_alias="REGISTRATION_INVITE_TTL_SECONDS")
     allowed_creation_role_ids: list[int] = Field(default_factory=lambda: [2, 3, 4, 5, 6, 7])
     cors_allow_origins: list[str] = Field(
         default_factory=list,
@@ -236,12 +169,6 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
         self.app_env = self.app_env.strip().lower() or "development"
-        # Stage 2 IAM migration: legacy Keycloak settings may remain in env files,
-        # but they can no longer activate a runtime authentication path.
-        self.keycloak_enabled = False
-        self.keycloak_bootstrap_binding_enabled = False
-        self.keycloak_dev_auto_link_by_username_enabled = False
-        self.keycloak_prod_auto_link_by_verified_email_enabled = False
         self.superadmin_role_id = 1
         self.admin_role_id = 2
         self.contractor_role_id = 3
@@ -324,34 +251,6 @@ class Settings(BaseSettings):
         if self.ws_ticket_ttl_seconds > 60:
             self.ws_ticket_ttl_seconds = 60
 
-        self.keycloak_internal_base_url = self.keycloak_internal_base_url.rstrip("/")
-        self.keycloak_client_id = self.keycloak_client_id.strip() or "acom-web"
-        self.keycloak_api_client_id = self.keycloak_api_client_id.strip() or "acom-api"
-        if self.keycloak_public_base_url is not None:
-            self.keycloak_public_base_url = self.keycloak_public_base_url.rstrip("/") or None
-        if self.keycloak_issuer_url is not None:
-            self.keycloak_issuer_url = self.keycloak_issuer_url.rstrip("/") or None
-        self.keycloak_admin_realm = self.keycloak_admin_realm.strip() or "master"
-        self.keycloak_admin_client_id = self.keycloak_admin_client_id.strip() or "admin-cli"
-        if self.keycloak_admin_client_secret is not None:
-            self.keycloak_admin_client_secret = self.keycloak_admin_client_secret.strip() or None
-        if self.keycloak_admin_username is not None:
-            self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
-        if self.keycloak_admin_password is not None:
-            self.keycloak_admin_password = self.keycloak_admin_password.strip() or None
-        self.keycloak_bootstrap_app_username = self.keycloak_bootstrap_app_username.strip() or "superadmin"
-        if self.keycloak_jwks_cache_ttl_seconds <= 0:
-            self.keycloak_jwks_cache_ttl_seconds = 300
-        if self.keycloak_http_timeout_seconds <= 0:
-            self.keycloak_http_timeout_seconds = 10.0
-        if self.keycloak_dev_auto_link_by_username_enabled and self.keycloak_prod_auto_link_by_verified_email_enabled:
-            raise ValueError(
-                "KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED and "
-                "KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED cannot be enabled together"
-            )
-        if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
-            raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
-
         return self
 
     @property
@@ -381,49 +280,5 @@ class Settings(BaseSettings):
     def iam_callback_url(self) -> str:
         base = (self.public_backend_base_url or self.web_base_url or "http://localhost:8080").rstrip("/")
         return f"{base}/api/v1/auth/callback"
-
-    @property
-    def resolved_keycloak_public_base_url(self) -> str:
-        if self.keycloak_public_base_url:
-            return self.keycloak_public_base_url
-        if self.web_base_url:
-            return f"{self.web_base_url.rstrip('/')}/iam"
-        return "http://localhost:8080/iam"
-
-    @property
-    def resolved_keycloak_issuer_url(self) -> str:
-        if self.keycloak_issuer_url:
-            return self.keycloak_issuer_url
-        return f"{self.resolved_keycloak_public_base_url}/realms/{self.keycloak_realm}"
-
-    @property
-    def keycloak_internal_realm_base_url(self) -> str:
-        return f"{self.keycloak_internal_base_url}/realms/{self.keycloak_realm}"
-
-    @property
-    def keycloak_token_endpoint(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/token"
-
-    @property
-    def keycloak_authorization_endpoint(self) -> str:
-        return f"{self.resolved_keycloak_issuer_url}/protocol/openid-connect/auth"
-
-    @property
-    def keycloak_logout_endpoint(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/logout"
-
-    @property
-    def keycloak_jwks_uri(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/certs"
-
-    @property
-    def keycloak_userinfo_endpoint(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/userinfo"
-
-    @property
-    def keycloak_callback_url(self) -> str:
-        base = (self.public_backend_base_url or self.web_base_url or "http://localhost:8080").rstrip("/")
-        return f"{base}/api/v1/auth/callback"
-
 
 settings = Settings()

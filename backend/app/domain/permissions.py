@@ -290,7 +290,3 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             }
         ),
     }
-
-
-def get_permissions_for_role(role_id: int) -> frozenset[str]:
-    return get_role_permissions_map().get(role_id, frozenset())

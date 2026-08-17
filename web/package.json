@@ -12,11 +12,10 @@
     "test:unit": "vitest run",
     "e2e:smoke": "playwright test --config playwright.config.ts --grep @smoke",
     "e2e:roles": "playwright test --config playwright.config.ts --grep @roles",
-    "e2e:registration": "playwright test --config playwright.config.ts --grep @registration",
     "e2e:request-offer": "playwright test --config playwright.config.ts --grep @request-offer",
     "e2e:dashboard": "playwright test --config playwright.config.ts --grep @dashboard",
     "e2e:files-chat": "playwright test --config playwright.config.ts --grep @files-chat",
-    "e2e:extended": "playwright test --config playwright.config.ts --grep \"@roles|@registration|@request-offer|@dashboard|@files-chat\""
+    "e2e:extended": "playwright test --config playwright.config.ts --grep \"@roles|@request-offer|@dashboard|@files-chat\""
   },
   "dependencies": {
     "@emotion/react": "^11.11.4",

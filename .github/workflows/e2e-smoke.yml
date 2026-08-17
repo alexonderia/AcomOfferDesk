@@ -16,16 +16,6 @@ on:
         required: false
         type: boolean
         default: false
-      provision_users:
-        description: "Legacy Keycloak provisioning (stage-3 migration reference only)"
-        required: false
-        type: boolean
-        default: false
-      keep_provisioned_users:
-        description: "Keep provisioned temporary users after run (debug only)"
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   e2e-smoke:
@@ -59,8 +49,6 @@ jobs:
           ENV_FILE: ${{ inputs.env_file }}
           BASE_URL: ${{ inputs.base_url }}
           STRICT_CREDENTIALS: ${{ inputs.strict_credentials }}
-          PROVISION_USERS: ${{ inputs.provision_users }}
-          KEEP_PROVISIONED_USERS: ${{ inputs.keep_provisioned_users }}
           E2E_SUPERADMIN_USERNAME: ${{ secrets.E2E_SUPERADMIN_USERNAME }}
           E2E_SUPERADMIN_PASSWORD: ${{ secrets.E2E_SUPERADMIN_PASSWORD }}
           E2E_ADMIN_USERNAME: ${{ secrets.E2E_ADMIN_USERNAME }}

@@ -22,16 +22,9 @@ Current local role IDs:
 - `7` - `operator`
 - `8` - `security_officer`
 
-Legacy Keycloak app-role names remain migration/reference data only and are not runtime grants:
-
-- `app.superadmin`
-- `app.admin`
-- `app.project_manager`
-- `app.lead_economist`
-- `app.economist`
-- `app.operator`
-- `app.security_officer`
-- `app.contractor`
+These IDs classify Acom business users and support UI/domain behavior; they do not
+produce `CurrentUser.permissions`. Effective functional permissions come only from
+the verified IAM token.
 
 ## Permission Families
 
@@ -61,12 +54,12 @@ The backend permission codes are grouped by domain:
   - the backend permission map
   - the backend access checks
   - the frontend guards and menus
-- Role/status administration synchronizes IAM before the local transaction is declared successful; it never synchronizes or falls back to Keycloak.
+- Role/status administration synchronizes IAM before the local transaction is declared successful; it never synchronizes or falls back to another provider.
 
 ## Practical Rules
 
 - Prefer `has_permission(...)` or the existing policy helpers instead of string-comparing roles directly.
-- Use role ceilings for access control, not just for display decisions.
+- Use IAM permissions for functional access and then apply Acom unit/domain/resource scope; never calculate permissions from `users.id_role`.
 - `department.*` permissions extend the normal permission matrix and are still constrained by Acom unit/resource policies.
 - `delegation.*` strings are legacy Acom API/UI compatibility codes only. Never seed them as IAM roles or treat them as effective permissions.
 - Do not add a parallel permission system in the frontend.
@@ -117,7 +110,7 @@ The backend permission codes are grouped by domain:
 ## Scenario: Acom Delegation UI Backed By IAM Grants
 
 ### 1. Scope / Trigger
-- Trigger: the existing department or contractor delegation UI reads or changes an account's additive functional access after the Keycloak-to-IAM migration.
+- Trigger: the existing department or contractor delegation UI reads or changes an account's additive functional IAM access.
 
 ### 2. Signatures
 - Acom API compatibility surface:
@@ -126,8 +119,6 @@ The backend permission codes are grouped by domain:
 - PUT body: `{"access_codes": ["delegation.department.requests.update"]}`.
 - Access response fields: `enabled`, `granted_via_role`, and `granted_individually` in addition to the existing code/label fields.
 - Account resolution: active `user_auth_accounts(provider='iam')`, where `external_subject_id = IAM accounts.id`.
-- Legacy migration command:
-  `python -m app.scripts.migrate_legacy_keycloak_grants --dry-run|--apply`.
 
 ### 3. Contracts
 - GET obtains `permissions_from_role`, `individually_granted_permissions`, and `effective_permissions` from IAM; Acom and the frontend must not recalculate the effective functional set.
@@ -136,27 +127,24 @@ The backend permission codes are grouped by domain:
 - Each PUT replaces only the endpoint's managed subset. It preserves individual IAM grants owned by the other delegation family or another feature.
 - PUT never changes IAM `role_permissions`, and Acom never stores grants in its own tables.
 - Unit hierarchy, object scope, and domain/business policies remain enforced by existing Acom services after the IAM functional-permission check.
-- The one-time legacy migration reads retained Keycloak tables directly from the local PostgreSQL schema; it performs no Keycloak HTTP/OIDC/admin runtime call and creates no `delegation.*` IAM role.
 
 ### 4. Validation & Error Matrix
 - inactive or missing IAM binding -> GET returns the access catalog with a warning; PUT returns `409 Conflict`.
 - unknown compatibility access code -> `409 Conflict`, with no IAM write.
-- IAM account absent during local apply -> provision only in `development|dev|local`; otherwise report the user and return a non-zero migration exit.
-- unsupported legacy `delegation.*` role -> stop migration with an explicit error instead of silently dropping access.
+- IAM account absent -> reject the mutation; do not synthesize a functional identity from the Acom role column.
 - unchanged managed grant set -> return success without a duplicate IAM PUT.
 
 ### 5. Good/Base/Bad Cases
 - Good: a role-provided permission is also granted individually; unchecking it removes only the individual row, while `enabled` stays true.
 - Base: an individual-only permission is checked, saved through Acom, appears in IAM effective permissions, and disappears after unchecking.
-- Bad: submit all effective permissions as individual grants, overwrite unrelated account grants, mutate role permissions, or call Keycloak at runtime.
+- Bad: submit all effective permissions as individual grants, overwrite unrelated account grants, mutate role permissions, or call another identity provider at runtime.
 
 ### 6. Tests Required
 - Backend unit: role-only, individual-only, combined, and absent access states map to the response flags.
 - Backend unit: managed-subset replacement preserves unrelated grants and repeated saves skip duplicate PUTs.
-- Backend unit: department/unit/domain scope decisions remain unchanged and active application imports contain no Keycloak runtime modules.
+- Backend unit: department/unit/domain scope decisions remain unchanged and active application imports contain no legacy identity-provider runtime modules.
 - IAM client unit: exact GET/PUT paths, internal-service authentication header, and atomic permission payload.
 - Frontend unit: checkbox changes only `grantedIndividually`, preserves role-provided `enabled`, and submits only individual access codes.
-- Runtime migration: apply reports the exact added count; the following dry-run reports `grants_to_add = 0`.
 
 ### 7. Wrong vs Correct
 #### Wrong

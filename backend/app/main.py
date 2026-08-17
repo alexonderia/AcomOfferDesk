@@ -76,8 +76,6 @@ _DIRECT_PUBLIC_DETAIL_TRANSLATIONS = {
     "Insufficient permissions to send chat message": "Недостаточно прав для отправки сообщения в чат.",
     "Insufficient permissions to view workspace": "Недостаточно прав для просмотра рабочего пространства.",
     "Password is managed by the identity provider": "Пароль управляется провайдером аутентификации.",
-    "Keycloak authentication is disabled": "Вход временно недоступен.",
-    "Keycloak email is already used by another account": "Почта уже используется другим аккаунтом.",
 }
 _CONTAINS_PUBLIC_DETAIL_TRANSLATIONS: tuple[tuple[str, str], ...] = (
     ("missing credentials", "Необходимо войти в систему."),

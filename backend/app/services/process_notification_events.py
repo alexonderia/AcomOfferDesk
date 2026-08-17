@@ -58,7 +58,7 @@ def _status_severity(status: str | None) -> str:
 
 
 _PROFILE_PLACEHOLDER_VALUES = frozenset({"не указано", "-"})
-_CONTRACTOR_REGISTRATION_SOURCES = frozenset({"contractor_tg", "oidc_invite"})
+_CONTRACTOR_REGISTRATION_SOURCES = frozenset({"contractor_tg"})
 _CONTRACTOR_CREATION_SOURCES = frozenset({"manual_contractor"})
 _USER_STATUS_LABELS = {
     "review": "На проверке",

@@ -2,24 +2,16 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import NoReturn
 
 from jose import ExpiredSignatureError, JWTError, jwt
 
 from app.core.config import settings
-from app.domain.exceptions import AuthenticationUnavailable
-from app.domain.exceptions import Unauthorized
+from app.domain.exceptions import AuthenticationUnavailable, Unauthorized
 from app.domain.iam_roles import local_role_id
 from app.domain.permissions import get_known_permissions
 
 
 AUTH_SERVICE_UNAVAILABLE_CODE = "AUTH_SERVICE_UNAVAILABLE"
-
-
-def reject_unavailable_authentication() -> NoReturn:
-    """Fail closed until a supported IAM adapter provides an auth context."""
-
-    raise AuthenticationUnavailable()
 
 
 @dataclass(frozen=True, slots=True)

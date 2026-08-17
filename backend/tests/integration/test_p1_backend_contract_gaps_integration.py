@@ -1,7 +1,7 @@
 ﻿"""P1 backend contract coverage for existing API surface.
 
 These tests keep the integration contour in-memory: no SMTP, S3/MinIO,
-Keycloak, or external database is contacted.
+IAM, or external database is contacted.
 """
 
 from __future__ import annotations

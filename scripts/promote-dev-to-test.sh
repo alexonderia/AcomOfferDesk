@@ -51,13 +51,12 @@ risky_diff() {
     docker-compose.yml \
     docker-compose.prod.yml \
     docker-compose.test.yml \
-    docker-compose.init.yml \
     .github/workflows/deploy.yml \
     .github/workflows/promotion-to-test.yml \
-    infra/keycloak/ \
+    iam/ \
     backend/app/core/config.py \
-    backend/app/services/keycloak_admin.py \
-    backend/.env.example \
+    backend/app/domain/authentication.py \
+    .env.example \
     2>/dev/null || true
 }
 
@@ -113,7 +112,7 @@ if [ "${DIFF_LINES}" -gt 0 ]; then
     info "(diff truncated — run: git diff ${GIT_REMOTE}/${TEST_BRANCH}...${GIT_REMOTE}/${DEV_BRANCH} -- <paths>)"
   fi
 else
-  ok "no changes in risky paths (compose/keycloak/deploy)"
+  ok "no changes in risky paths (compose/IAM/deploy)"
 fi
 
 if [ "$DRY_RUN" = 1 ]; then

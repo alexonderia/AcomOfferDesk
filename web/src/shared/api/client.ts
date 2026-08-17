@@ -102,7 +102,7 @@ const VALIDATION_TRANSLATIONS: Record<string, string> = {
 };
 
 const isLikelyMojibake = (value: string): boolean => {
-  // Common UTF-8 -> cp1251/latin1 mojibake markers (e.g. "РџРѕР»Рµ")
+  // Common UTF-8 -> cp1251/latin1 mojibake markers in corrupted Cyrillic text.
   return /(?:Р.|С.){2,}/.test(value);
 };
 

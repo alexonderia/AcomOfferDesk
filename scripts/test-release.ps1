@@ -11,8 +11,6 @@ param(
   [string]$RabbitmqUrl = "",
   [switch]$IncludeE2E,
   [switch]$StrictE2E,
-  [switch]$ProvisionE2EUsers,
-  [switch]$KeepProvisionedE2EUsers,
   [switch]$RepairIamRbac
 )
 
@@ -90,16 +88,6 @@ if ($IncludeE2E) {
   }
   if ($StrictE2E) {
     $e2eParams.StrictCredentials = $true
-  }
-  $useProvisionE2EUsers = $ProvisionE2EUsers
-  if (-not $PSBoundParameters.ContainsKey("ProvisionE2EUsers")) {
-    $useProvisionE2EUsers = $true
-  }
-  if ($useProvisionE2EUsers) {
-    $e2eParams.ProvisionUsers = $true
-  }
-  if ($KeepProvisionedE2EUsers) {
-    $e2eParams.KeepProvisionedUsers = $true
   }
   & "$RootDir/scripts/e2e-smoke.ps1" @e2eParams
   Assert-StepSucceeded -StepName "e2e smoke"

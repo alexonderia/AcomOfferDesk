@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import html
 import json
 import logging
-import time
 import uuid
-from collections import defaultdict, deque
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 
@@ -24,6 +21,9 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from shared.client_ip import resolve_client_ip
+from shared.rate_limiter import SlidingWindowRateLimiter
 
 from iam_app.core.config import settings
 from iam_app.core.request_id import get_request_id
@@ -60,30 +60,63 @@ from iam_app.services import IamService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+MAX_RATE_LIMIT_BUCKETS = 10_000
 
 
 class LoginRateLimiter:
-    def __init__(self) -> None:
-        self._attempts: dict[str, deque[float]] = defaultdict(deque)
-        self._lock = asyncio.Lock()
+    def __init__(
+        self,
+        *,
+        attempts: int | None = None,
+        window_seconds: float | None = None,
+        max_buckets: int = MAX_RATE_LIMIT_BUCKETS,
+    ) -> None:
+        effective_attempts = (
+            attempts
+            if attempts is not None
+            else settings.login_rate_limit_attempts
+        )
+        effective_window = (
+            window_seconds
+            if window_seconds is not None
+            else settings.login_rate_limit_window_seconds
+        )
+        self._ip_limiter = SlidingWindowRateLimiter(
+            attempts=effective_attempts,
+            window_seconds=effective_window,
+            max_buckets=max_buckets,
+        )
+        self._login_limiter = SlidingWindowRateLimiter(
+            attempts=effective_attempts,
+            window_seconds=effective_window,
+            max_buckets=max_buckets,
+        )
 
-    async def check(self, key: str) -> None:
-        now = time.monotonic()
-        cutoff = now - settings.login_rate_limit_window_seconds
-        async with self._lock:
-            attempts = self._attempts[key]
-            while attempts and attempts[0] <= cutoff:
-                attempts.popleft()
-            if len(attempts) >= settings.login_rate_limit_attempts:
-                raise RateLimited()
-            attempts.append(now)
-            if len(self._attempts) > 10_000:
-                empty_keys = [item for item, values in self._attempts.items() if not values]
-                for item in empty_keys:
-                    self._attempts.pop(item, None)
+    @property
+    def bucket_count(self) -> int:
+        return self._ip_limiter.bucket_count + self._login_limiter.bucket_count
+
+    async def check(self, *, client_ip: str, login: str) -> None:
+        normalized_login = login.strip().casefold()
+        if not await self._ip_limiter.allow(client_ip):
+            raise RateLimited()
+        if not await self._login_limiter.allow(normalized_login):
+            raise RateLimited()
 
 
 login_rate_limiter = LoginRateLimiter()
+
+
+def _client_ip(request: Request) -> str:
+    return (
+        resolve_client_ip(
+            peer_host=request.client.host if request.client else None,
+            forwarded_for=request.headers.get("x-forwarded-for"),
+            real_ip=request.headers.get("x-real-ip"),
+            trusted_proxy_cidrs=settings.trusted_proxy_cidrs,
+        )
+        or "unknown"
+    )
 
 
 async def require_internal_service(
@@ -300,8 +333,8 @@ async def login_submit(
     except ValueError as exc:
         _ = exc
         return _login_restart_page(error="Сессия входа истекла. Войдите в систему заново.")
-    client_ip = request.client.host if request.client else "unknown"
-    await login_rate_limiter.check(f"{client_ip}:{login.strip()}")
+    client_ip = _client_ip(request)
+    await login_rate_limiter.check(client_ip=client_ip, login=login)
     try:
         result = await IamService(session).authenticate_and_create_code(
             login=login,

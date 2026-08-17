@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 
 from cryptography.hazmat.primitives import serialization
@@ -68,6 +69,10 @@ class Settings(BaseSettings):
         validation_alias="IAM_BROWSER_SESSION_COOKIE_NAME",
     )
     iam_csrf_cookie_name: str = Field(default="acom_csrf", validation_alias="IAM_CSRF_COOKIE_NAME")
+    trusted_proxy_cidrs_csv: str = Field(
+        default="127.0.0.0/8,::1/128,172.16.0.0/12",
+        validation_alias="TRUSTED_PROXY_CIDRS",
+    )
 
     superadmin_role_id: int = 1
     admin_role_id: int = 2
@@ -184,6 +189,16 @@ class Settings(BaseSettings):
             str(kid).strip(): str(public_key).replace("\\n", "\n").strip()
             for kid, public_key in value.items()
         }
+
+    @field_validator("trusted_proxy_cidrs_csv")
+    @classmethod
+    def _validate_trusted_proxy_cidrs(cls, value: str) -> str:
+        cidrs = [item.strip() for item in value.split(",") if item.strip()]
+        if not cidrs:
+            raise ValueError("TRUSTED_PROXY_CIDRS must not be empty")
+        for cidr in cidrs:
+            ipaddress.ip_network(cidr, strict=False)
+        return ",".join(cidrs)
 
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
@@ -302,6 +317,14 @@ class Settings(BaseSettings):
         if self.web_base_url and self.web_base_url not in origins:
             origins.append(self.web_base_url)
         return origins
+
+    @property
+    def trusted_proxy_cidrs(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.trusted_proxy_cidrs_csv.split(",")
+            if item.strip()
+        ]
 
     @property
     def resolved_refresh_token_secret(self) -> str:

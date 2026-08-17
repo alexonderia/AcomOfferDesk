@@ -6,11 +6,11 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, exists, func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iam_app.db import SessionLocal
-from iam_app.models import AuthActionToken, AuthAuditLog, AuthSession, AuthorizationCode
+from iam_app.models import AuthActionToken, AuthSession, AuthorizationCode
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,14 +89,9 @@ async def cleanup_transient_data(
         AuthActionToken.expires_at <= effective_now,
         AuthActionToken.consumed_at <= retention_cutoff,
     )
-    session_condition = (
-        or_(
-            AuthSession.expires_at <= effective_now,
-            AuthSession.revoked_at <= retention_cutoff,
-        )
-        & ~exists(
-            select(AuthAuditLog.id).where(AuthAuditLog.session_id == AuthSession.id)
-        )
+    session_condition = or_(
+        AuthSession.expires_at <= effective_now,
+        AuthSession.revoked_at <= retention_cutoff,
     )
 
     if dry_run:

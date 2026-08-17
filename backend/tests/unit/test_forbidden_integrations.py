@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOTS = (
@@ -14,6 +16,7 @@ RUNTIME_ROOTS = (
     REPOSITORY_ROOT / "shared",
     REPOSITORY_ROOT / "scripts",
     REPOSITORY_ROOT / "deploy",
+    REPOSITORY_ROOT / "infra",
 )
 ROOT_CONFIG_FILES = (
     *REPOSITORY_ROOT.glob(".env*.example"),
@@ -85,6 +88,7 @@ FORBIDDEN_DEPENDENCY = re.compile(
 ALLOWED_KEYCLOAK_DATA_COMPATIBILITY = {
     REPOSITORY_ROOT / "backend" / "app" / "models" / "auth_models.py",
 }
+FORBIDDEN_DIRECTORY_NAMES = {"keycloak", "tg_bot", "max_bot"}
 
 
 def _runtime_files() -> list[Path]:
@@ -106,13 +110,28 @@ def _runtime_files() -> list[Path]:
     return sorted(set(files))
 
 
+def _forbidden_runtime_directories(roots: tuple[Path, ...] = RUNTIME_ROOTS) -> list[Path]:
+    forbidden: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if (
+                path.is_dir()
+                and path.name.lower() in FORBIDDEN_DIRECTORY_NAMES
+                and not any(part in SKIPPED_DIRECTORY_NAMES for part in path.parts)
+            ):
+                forbidden.append(path)
+    return sorted(forbidden)
+
+
 def test_forbidden_auth_and_messenger_integrations_are_not_in_runtime() -> None:
-    violations: list[str] = []
+    violations = [
+        f"{path.relative_to(REPOSITORY_ROOT).as_posix()}: forbidden runtime directory"
+        for path in _forbidden_runtime_directories()
+    ]
     for path in _runtime_files():
         relative_path = path.relative_to(REPOSITORY_ROOT).as_posix()
-        lowered_parts = {part.lower() for part in path.parts}
-        if {"tg_bot", "max_bot"} & lowered_parts:
-            violations.append(f"{relative_path}: forbidden runtime directory")
         text = path.read_text(encoding="utf-8", errors="ignore")
         if path in DEPENDENCY_MANIFESTS:
             for match in FORBIDDEN_DEPENDENCY.finditer(text):
@@ -131,3 +150,26 @@ def test_forbidden_auth_and_messenger_integrations_are_not_in_runtime() -> None:
                 violations.append(f"{relative_path}:{line}: {label}")
 
     assert violations == [], "\n".join(violations)
+
+
+@pytest.mark.parametrize("directory_name", sorted(FORBIDDEN_DIRECTORY_NAMES))
+def test_forbidden_directory_names_are_detected_in_infra(
+    tmp_path: Path,
+    directory_name: str,
+) -> None:
+    infra_root = tmp_path / "infra"
+    forbidden_directory = infra_root / directory_name
+    forbidden_directory.mkdir(parents=True)
+
+    assert _forbidden_runtime_directories((infra_root,)) == [
+        forbidden_directory
+    ]
+
+
+def test_historical_provider_values_remain_allowed_compatibility_data() -> None:
+    compatibility_model = next(iter(ALLOWED_KEYCLOAK_DATA_COMPATIBILITY))
+    text = compatibility_model.read_text(encoding="utf-8")
+
+    assert "provider IN ('iam', 'keycloak', 'telegram', 'max', 'phone', 'email')" in text
+    assert "channel_type IN ('email', 'phone', 'telegram', 'max')" in text
+    assert compatibility_model in ALLOWED_KEYCLOAK_DATA_COMPATIBILITY

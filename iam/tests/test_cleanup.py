@@ -23,6 +23,7 @@ NOW = datetime(2026, 8, 17, 8, 0, tzinfo=UTC)
 async def _seed_account(session) -> uuid.UUID:
     account_id = uuid.uuid4()
     session.add(Role(id=1, name="economist", is_active=True))
+    await session.flush()
     session.add(
         Account(
             id=account_id,
@@ -115,6 +116,11 @@ async def test_cleanup_is_batched_idempotent_and_preserves_active_rows(session) 
         expires_at=NOW + timedelta(days=1),
         revoked_at=NOW - timedelta(days=2),
     )
+    recently_revoked_session = _auth_session(
+        account_id,
+        expires_at=NOW + timedelta(days=1),
+        revoked_at=NOW - timedelta(hours=1),
+    )
     session.add_all(
         [
             AuthorizationCode(
@@ -153,6 +159,7 @@ async def test_cleanup_is_batched_idempotent_and_preserves_active_rows(session) 
             active_session,
             expired_session,
             revoked_session,
+            recently_revoked_session,
         ]
     )
     await session.commit()
@@ -173,15 +180,16 @@ async def test_cleanup_is_batched_idempotent_and_preserves_active_rows(session) 
     assert totals == CleanupCounts(1, 1, 2)
     assert await _table_count(session, AuthorizationCode) == 1
     assert await _table_count(session, AuthActionToken) == 1
-    assert await _table_count(session, AuthSession) == 1
+    assert await _table_count(session, AuthSession) == 2
     assert await session.get(AuthSession, active_session.id) is not None
+    assert await session.get(AuthSession, recently_revoked_session.id) is not None
 
     repeated = await cleanup_transient_data(session, now=NOW)
     assert repeated == CleanupCounts()
 
 
 @pytest.mark.asyncio
-async def test_cleanup_does_not_delete_session_referenced_by_audit(session) -> None:
+async def test_cleanup_deletes_audited_expired_session_and_preserves_audit(session) -> None:
     account_id = await _seed_account(session)
     audited_session = _auth_session(
         account_id,
@@ -189,21 +197,24 @@ async def test_cleanup_does_not_delete_session_referenced_by_audit(session) -> N
     )
     session.add(audited_session)
     await session.flush()
-    session.add(
-        AuthAuditLog(
-            id=uuid.uuid4(),
-            account_id=account_id,
-            session_id=audited_session.id,
-            event_type="login.success",
-            success=True,
-            details={},
-        )
+    audit = AuthAuditLog(
+        id=uuid.uuid4(),
+        account_id=account_id,
+        session_id=audited_session.id,
+        event_type="login.success",
+        success=True,
+        details={},
     )
+    session.add(audit)
     await session.commit()
 
     counts = await cleanup_transient_data(session, now=NOW)
     await session.commit()
 
-    assert counts.auth_sessions == 0
-    assert await session.get(AuthSession, audited_session.id) is not None
+    await session.refresh(audit)
+
+    assert counts.auth_sessions == 1
+    assert await session.get(AuthSession, audited_session.id) is None
     assert await _table_count(session, AuthAuditLog) == 1
+    assert audit.account_id == account_id
+    assert audit.session_id is None

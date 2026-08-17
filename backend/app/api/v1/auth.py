@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import hmac
 import secrets
 import time
-from collections import defaultdict, deque
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+
+from shared.client_ip import resolve_client_ip
+from shared.rate_limiter import SlidingWindowRateLimiter
 
 from app.api.dependencies import get_current_user, get_uow, resolve_iam_current_user
 from app.core.auth_cookies import (
@@ -48,6 +49,7 @@ from app.services.users import UserRegistrationService
 
 
 router = APIRouter()
+MAX_PASSWORD_RESET_RATE_LIMIT_BUCKETS = 10_000
 
 
 class RequestEmailVerificationRequest(BaseModel):
@@ -71,26 +73,48 @@ class PasswordResetResponse(BaseModel):
 
 
 class PasswordResetRateLimiter:
-    def __init__(self, *, attempts: int = 5, window_seconds: int = 900) -> None:
-        self._limit = attempts
-        self._window = window_seconds
-        self._attempts: dict[str, deque[float]] = defaultdict(deque)
-        self._lock = asyncio.Lock()
+    def __init__(
+        self,
+        *,
+        attempts: int = 5,
+        window_seconds: int = 900,
+        max_buckets: int = MAX_PASSWORD_RESET_RATE_LIMIT_BUCKETS,
+    ) -> None:
+        self._ip_limiter = SlidingWindowRateLimiter(
+            attempts=attempts,
+            window_seconds=window_seconds,
+            max_buckets=max_buckets,
+        )
+        self._login_limiter = SlidingWindowRateLimiter(
+            attempts=attempts,
+            window_seconds=window_seconds,
+            max_buckets=max_buckets,
+        )
 
-    async def allow(self, key: str) -> bool:
-        now = time.monotonic()
-        cutoff = now - self._window
-        async with self._lock:
-            attempts = self._attempts[key]
-            while attempts and attempts[0] <= cutoff:
-                attempts.popleft()
-            if len(attempts) >= self._limit:
-                return False
-            attempts.append(now)
-            return True
+    @property
+    def bucket_count(self) -> int:
+        return self._ip_limiter.bucket_count + self._login_limiter.bucket_count
+
+    async def allow(self, *, client_ip: str, login: str) -> bool:
+        normalized_login = login.strip().casefold()
+        if not await self._ip_limiter.allow(client_ip):
+            return False
+        return await self._login_limiter.allow(normalized_login)
 
 
 password_reset_rate_limiter = PasswordResetRateLimiter()
+
+
+def _client_ip(request: Request) -> str:
+    return (
+        resolve_client_ip(
+            peer_host=request.client.host if request.client else None,
+            forwarded_for=request.headers.get("x-forwarded-for"),
+            real_ip=request.headers.get("x-real-ip"),
+            trusted_proxy_cidrs=settings.trusted_proxy_cidrs,
+        )
+        or "unknown"
+    )
 
 
 def _session_response(current_user: CurrentUser) -> AuthSessionResponse:
@@ -170,7 +194,7 @@ async def auth_callback(
             code=code,
             verifier=flow.verifier,
             redirect_uri=flow.redirect_uri,
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
         await resolve_iam_current_user(decode_iam_access_token(bundle.access_token))
@@ -251,8 +275,11 @@ async def request_password_reset(
 ) -> PasswordResetResponse:
     generic_detail = "Если учётная запись существует, инструкция отправлена на подтверждённый email."
     normalized_login = payload.login.strip()
-    client_ip = request.client.host if request.client else "unknown"
-    if not await password_reset_rate_limiter.allow(f"{client_ip}:{normalized_login.casefold()}"):
+    client_ip = _client_ip(request)
+    if not await password_reset_rate_limiter.allow(
+        client_ip=client_ip,
+        login=normalized_login,
+    ):
         return PasswordResetResponse(detail=generic_detail)
 
     async with uow:

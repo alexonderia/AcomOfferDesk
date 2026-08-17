@@ -30,13 +30,17 @@ Restore не предназначен для перезаписи рабочей
 export PGHOST='DB_HOST'
 export PGPORT='5432'
 export PGDATABASE='acom_iam_restore'
+export IAM_RESTORE_CONFIRM_DATABASE='acom_iam_restore'
 export PGUSER='NEW_IAM_USER'
 export PGPASSWORD='NEW_PASSWORD'
 bash ./scripts/restore-iam-db.sh /secure/backups/iam/iam-20260817T080000Z.dump
 ```
 
-Для custom-format backup используется `pg_restore --exit-on-error`; для
-переданного `.sql` — `psql` с `ON_ERROR_STOP=1`.
+Скрипт требует точного совпадения `IAM_RESTORE_CONFIRM_DATABASE` и
+`PGDATABASE`, а также прекращает работу, если в `public` target DB уже есть
+пользовательские таблицы. Он не удаляет существующие объекты. Для custom-format
+backup используется `pg_restore --exit-on-error --single-transaction`; для
+переданного `.sql` — `psql` с `ON_ERROR_STOP=1` и `--single-transaction`.
 
 ## Проверенный операционный сценарий
 

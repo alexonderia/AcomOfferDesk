@@ -29,6 +29,7 @@ build/
 .agents/
 .trellis/
 artifacts/
+/backups/
 .tmp/
 .deploy-state/
 AGENTS.md

@@ -105,8 +105,9 @@ quality gate можно добавить `--strict`: при найденном d
 
 Команда удаляет expired authorization codes/action tokens/sessions и
 consumed/revoked записи старше retention. Удаление идёт пакетами, активно
-действующие sessions не затрагиваются, `auth_audit_log` не удаляется. Session,
-на которую ссылается audit, сохраняется из-за FK.
+действующие sessions не затрагиваются, `auth_audit_log` не удаляется. При
+удалении audited session её исторические audit events сохраняются, а
+`auth_audit_log.session_id` становится `NULL` через FK `ON DELETE SET NULL`.
 
 ```bash
 docker compose exec iam \

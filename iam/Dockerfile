@@ -13,6 +13,7 @@ COPY iam/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY iam/iam_app ./iam_app
+COPY shared ./shared
 
 RUN addgroup --system iam \
     && adduser --system --ingroup iam --home /app --no-create-home iam

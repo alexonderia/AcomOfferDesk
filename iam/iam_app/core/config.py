@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 
 from cryptography.hazmat.primitives import serialization
@@ -36,6 +37,10 @@ class Settings(BaseSettings):
     login_lock_seconds: int = 900
     login_rate_limit_attempts: int = 20
     login_rate_limit_window_seconds: int = 60
+    trusted_proxy_cidrs_csv: str = Field(
+        default="127.0.0.0/8,::1/128,172.16.0.0/12",
+        validation_alias="IAM_TRUSTED_PROXY_CIDRS",
+    )
     auth_request_cookie_name: str = "iam_auth_request"
     browser_session_cookie_name: str = "iam_browser_session"
     browser_session_ttl_seconds: int = 43200
@@ -64,6 +69,16 @@ class Settings(BaseSettings):
             str(kid).strip(): str(public_key).replace("\\n", "\n").strip()
             for kid, public_key in value.items()
         }
+
+    @field_validator("trusted_proxy_cidrs_csv")
+    @classmethod
+    def _validate_trusted_proxy_cidrs(cls, value: str) -> str:
+        cidrs = [item.strip() for item in value.split(",") if item.strip()]
+        if not cidrs:
+            raise ValueError("IAM_TRUSTED_PROXY_CIDRS must not be empty")
+        for cidr in cidrs:
+            ipaddress.ip_network(cidr, strict=False)
+        return ",".join(cidrs)
 
     @model_validator(mode="after")
     def _validate_security_settings(self) -> "Settings":
@@ -129,6 +144,14 @@ class Settings(BaseSettings):
         return [
             item.strip()
             for item in self.allowed_redirect_uris_csv.split(",")
+            if item.strip()
+        ]
+
+    @property
+    def trusted_proxy_cidrs(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.trusted_proxy_cidrs_csv.split(",")
             if item.strip()
         ]
 

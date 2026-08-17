@@ -36,4 +36,8 @@ def test_account_permission_grants_schema_uses_cascading_composite_key() -> None
         "account_id": ("accounts.id", "CASCADE"),
         "permission_id": ("permissions.id", "CASCADE"),
     }
-    assert Base.metadata.tables["auth_audit_log"].c.session_id.nullable is True
+    audit_session_id = Base.metadata.tables["auth_audit_log"].c.session_id
+    assert audit_session_id.nullable is True
+    assert {foreign_key.ondelete for foreign_key in audit_session_id.foreign_keys} == {
+        "SET NULL"
+    }

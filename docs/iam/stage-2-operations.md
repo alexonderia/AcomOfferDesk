@@ -26,6 +26,35 @@
 RSA-ключи генерируются вне репозитория. Реальные env-файлы и ключи не должны
 попадать в git, логи или артефакты сборки.
 
+## Ручная overlap-ротация signing key
+
+IAM подписывает новые access JWT только парой
+`IAM_SIGNING_PRIVATE_KEY` / `IAM_SIGNING_PUBLIC_KEY` с активным
+`IAM_SIGNING_KID`. `IAM_SIGNING_VERIFICATION_KEYS` — JSON-объект
+`kid -> public PEM` для RETIRING-ключей. Backend использует локальный key ring
+из активной пары `IAM_SIGNING_PUBLIC_KEY` / `IAM_SIGNING_KID` и того же JSON;
+запрос к IAM при проверке business request не выполняется.
+
+1. Сгенерировать новую RSA-пару вне репозитория. Старый private key для
+   verification не нужен.
+2. Сначала добавить новый public key в
+   `IAM_SIGNING_VERIFICATION_KEYS` backend и развернуть backend. Старый ключ
+   пока остаётся активным.
+3. В IAM заменить активные private/public/kid на новую пару, а старый public
+   key добавить в `IAM_SIGNING_VERIFICATION_KEYS`. Перезапустить IAM.
+4. Проверить, что JWKS содержит old + new, новые JWT имеют new `kid`, а backend
+   принимает токены с обоими `kid`.
+5. В backend сделать новую пару основной в
+   `IAM_SIGNING_PUBLIC_KEY` / `IAM_SIGNING_KID`, оставив old public key в JSON.
+6. Выждать не меньше максимального `IAM_ACCESS_TOKEN_TTL_SECONDS` плюс время
+   распространения deploy/config. Текущая конфигурация ограничивает TTL
+   диапазоном 60–900 секунд.
+7. Удалить old public key из JSON IAM и backend, перезапустить сервисы и
+   проверить, что старый `kid` отклоняется.
+
+Не переключать IAM на новый active key до того, как backend получил его public
+key. Не удалять RETIRING public key до истечения всех выпущенных им access JWT.
+
 ## Порядок развёртывания
 
 ```bash
@@ -58,7 +87,11 @@ quality gate можно добавить `--strict`: при найденном d
 
 ## Проверка после запуска
 
-- `GET /health` backend и внутренний `GET /health` IAM возвращают `200`.
+- `GET /health/live` IAM проверяет только процесс и не обращается к DB.
+- `GET /health/ready` IAM проверяет `SELECT 1` в IAM DB и активную signing
+  configuration. Docker healthcheck использует readiness.
+- `GET /health` IAM сохранён как совместимый alias readiness; `GET /health`
+  backend возвращает `200`.
 - `/iam/authorize`, `/iam/login`, `/iam/password/setup`,
   `/iam/password/reset` и `/iam/.well-known/jwks.json` доступны через gateway.
 - `/iam/internal/*`, `/internal/*` и остальные IAM URL через gateway не
@@ -67,6 +100,25 @@ quality gate можно добавить `--strict`: при найденном d
   только HttpOnly access/refresh cookie и читаемую double-submit CSRF cookie.
 - Бизнес-endpoint не вызывает IAM: access JWT проверяется локально публичным
   ключом.
+
+## Cleanup transient IAM data
+
+Команда удаляет expired authorization codes/action tokens/sessions и
+consumed/revoked записи старше retention. Удаление идёт пакетами, активно
+действующие sessions не затрагиваются, `auth_audit_log` не удаляется. Session,
+на которую ссылается audit, сохраняется из-за FK.
+
+```bash
+docker compose exec iam \
+  python -m iam_app.maintenance.cleanup --dry-run --retention-hours 24 --batch-size 500
+
+docker compose exec iam \
+  python -m iam_app.maintenance.cleanup --retention-hours 24 --batch-size 500
+```
+
+Результат — JSON с количеством записей по каждой таблице и общим `total`.
+Команду можно вызывать из cron/systemd/container schedule; отдельный scheduler
+в IAM не требуется.
 
 ## Ошибки и откат
 

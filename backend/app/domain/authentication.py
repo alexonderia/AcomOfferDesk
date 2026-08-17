@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import json
+import logging
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from jose import ExpiredSignatureError, JWTError, jwt
 
 from app.core.config import settings
+from app.core.request_id import get_request_id
 from app.domain.exceptions import AuthenticationUnavailable, Unauthorized
 from app.domain.iam_roles import local_role_id
 from app.domain.permissions import get_known_permissions
 
 
 AUTH_SERVICE_UNAVAILABLE_CODE = "AUTH_SERVICE_UNAVAILABLE"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,13 +30,46 @@ class IamAccessClaims:
     expires_at: int
 
 
+def _log_jwt_header_failure(*, kid: str | None, reason_code: str) -> None:
+    logger.warning(
+        "security_event %s",
+        json.dumps(
+            {
+                "event_type": (
+                    "invalid_jwt_kid"
+                    if reason_code == "unknown_kid"
+                    else "invalid_jwt"
+                ),
+                "kid": kid,
+                "reason_code": reason_code,
+                "request_id": get_request_id(),
+                "success": False,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+            sort_keys=True,
+        ),
+    )
+
+
 def decode_iam_access_token(token: str) -> IamAccessClaims:
-    public_key = settings.iam_signing_public_key
-    if not public_key:
+    verification_keys = settings.iam_verification_keys
+    if not verification_keys:
         raise AuthenticationUnavailable()
     try:
         header = jwt.get_unverified_header(token)
-        if header.get("alg") != "RS256" or header.get("kid") != settings.iam_signing_kid:
+        kid = str(header.get("kid") or "").strip()
+        if header.get("alg") != "RS256":
+            _log_jwt_header_failure(
+                kid=kid or None,
+                reason_code="invalid_algorithm",
+            )
+            raise Unauthorized("Unknown IAM signing key")
+        public_key = verification_keys.get(kid)
+        if public_key is None:
+            _log_jwt_header_failure(
+                kid=kid or None,
+                reason_code="unknown_kid",
+            )
             raise Unauthorized("Unknown IAM signing key")
         payload = jwt.decode(
             token,

@@ -22,6 +22,13 @@ services:
     container_name: iam
     restart: unless-stopped
     stop_grace_period: 30s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     env_file:
       - ${IAM_RUNTIME_ENV_FILE:-./.env.iam}
     depends_on:
@@ -30,7 +37,7 @@ services:
     expose:
       - "8100"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 12

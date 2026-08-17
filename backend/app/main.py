@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.csrf import csrf_failure_reason
+from app.core.request_id import RequestIdMiddleware
 from app.api.v1 import router as v1_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, ServiceUnavailable, Unauthorized, UploadRejected
 from app.infrastructure.db import engine
@@ -249,6 +250,8 @@ async def csrf_protection(request: Request, call_next):
             content={"detail": "Запрос отклонён проверкой безопасности."},
         )
     return await call_next(request)
+
+app.add_middleware(RequestIdMiddleware)
 
 cors_allow_origins = settings.resolved_cors_allow_origins
 if cors_allow_origins:

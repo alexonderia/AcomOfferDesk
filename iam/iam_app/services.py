@@ -5,11 +5,12 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iam_app.core.config import settings
+from iam_app.core.request_id import get_request_id
 from iam_app.core.security import (
     as_utc,
     constant_time_equal,
@@ -133,6 +134,8 @@ class IamService:
         payload = {
             "event_type": event_type,
             "success": success,
+            "request_id": get_request_id(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "details": _safe_details(details),
             "audit_storage": "application_log",
             "reason": "auth_audit_log requires an auditable account identity",
@@ -148,6 +151,10 @@ class IamService:
         success: bool,
         details: dict | None = None,
     ) -> None:
+        safe_details = _safe_details(details)
+        request_id = get_request_id()
+        if request_id is not None:
+            safe_details["request_id"] = request_id
         await self._audit.add(
             AuthAuditLog(
                 id=uuid.uuid4(),
@@ -155,7 +162,7 @@ class IamService:
                 session_id=session_id,
                 event_type=event_type,
                 success=success,
-                details=_safe_details(details),
+                details=safe_details,
             )
         )
 
@@ -427,6 +434,14 @@ class IamService:
             credential.failed_login_count += 1
             if credential.failed_login_count >= settings.login_max_failures:
                 credential.locked_until = now + timedelta(seconds=settings.login_lock_seconds)
+                self._structured_security_log(
+                    event_type="account.locked",
+                    success=False,
+                    details={
+                        "account_id": str(account.id),
+                        "reason": "login_failure_limit",
+                    },
+                )
             credential.updated_at = now
             self._structured_security_log(
                 event_type="login.failed",

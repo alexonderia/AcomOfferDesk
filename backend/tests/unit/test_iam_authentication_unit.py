@@ -70,9 +70,11 @@ def test_decodes_iam_rs256_claims_without_network_calls(rsa_keys) -> None:
     "overrides",
     [
         {"aud": "another-service"},
+        {"iss": "https://wrong.example/iam"},
         {"role": "unknown-role"},
         {"permissions": ["unknown.permission"]},
         {"sub": "not-a-uuid"},
+        {"sid": "not-a-uuid"},
         {"exp": 1},
     ],
 )
@@ -81,7 +83,7 @@ def test_rejects_invalid_or_expired_claims(rsa_keys, overrides) -> None:
         decode_iam_access_token(_token(rsa_keys, **overrides))
 
 
-def test_rejects_unknown_kid_and_symmetric_algorithm(rsa_keys) -> None:
+def test_rejects_unknown_kid_and_symmetric_algorithm(rsa_keys, caplog) -> None:
     token_with_wrong_kid = jwt.encode(
         jwt.get_unverified_claims(_token(rsa_keys)),
         rsa_keys,
@@ -99,9 +101,75 @@ def test_rejects_unknown_kid_and_symmetric_algorithm(rsa_keys) -> None:
     )
     with pytest.raises(Unauthorized):
         decode_iam_access_token(symmetric)
+    assert '"event_type": "invalid_jwt_kid"' in caplog.text
+    assert '"reason_code": "unknown_kid"' in caplog.text
 
 
-@pytest.mark.parametrize("missing_claim", ["sub", "iat", "exp", "iss", "aud"])
+def test_accepts_active_and_retiring_keys_during_overlap(rsa_keys, monkeypatch) -> None:
+    old_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    old_private = old_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode("utf-8")
+    old_public = old_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    monkeypatch.setattr(settings, "iam_signing_verification_keys", {"old-kid": old_public})
+    old_token = jwt.encode(
+        jwt.get_unverified_claims(_token(rsa_keys)),
+        old_private,
+        algorithm="RS256",
+        headers={"kid": "old-kid"},
+    )
+
+    assert decode_iam_access_token(_token(rsa_keys)).account_id == ACCOUNT_ID
+    assert decode_iam_access_token(old_token).account_id == ACCOUNT_ID
+
+    monkeypatch.setattr(settings, "iam_signing_verification_keys", {})
+    with pytest.raises(Unauthorized):
+        decode_iam_access_token(old_token)
+
+
+def test_rejects_conflicting_public_keys_for_same_kid(rsa_keys, monkeypatch) -> None:
+    _ = rsa_keys
+    conflicting_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    conflicting_public = conflicting_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    monkeypatch.setattr(
+        settings,
+        "iam_signing_verification_keys",
+        {"test-kid": conflicting_public},
+    )
+
+    with pytest.raises(ValueError, match="conflicts"):
+        settings._normalize()
+
+
+def test_rejects_signature_from_wrong_rsa_private_key(rsa_keys) -> None:
+    wrong_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    wrong_private = wrong_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode("utf-8")
+    token = jwt.encode(
+        jwt.get_unverified_claims(_token(rsa_keys)),
+        wrong_private,
+        algorithm="RS256",
+        headers={"kid": "test-kid"},
+    )
+    with pytest.raises(Unauthorized):
+        decode_iam_access_token(token)
+
+
+@pytest.mark.parametrize(
+    "missing_claim",
+    ["sub", "sid", "role", "permissions", "iat", "exp", "iss", "aud"],
+)
 def test_requires_all_registered_iam_claims(rsa_keys, missing_claim: str) -> None:
     payload = jwt.get_unverified_claims(_token(rsa_keys))
     payload.pop(missing_claim)

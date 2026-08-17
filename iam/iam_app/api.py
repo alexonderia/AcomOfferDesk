@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import html
+import json
+import logging
 import time
 import uuid
 from collections import defaultdict, deque
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 from cryptography.hazmat.primitives import serialization
@@ -23,6 +26,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iam_app.core.config import settings
+from iam_app.core.request_id import get_request_id
 from iam_app.core.security import (
     constant_time_equal,
     decode_auth_request,
@@ -55,6 +59,7 @@ from iam_app.services import IamService
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class LoginRateLimiter:
@@ -85,6 +90,19 @@ async def require_internal_service(
     x_acom_service_token: str = Header(default="", alias="X-Acom-Service-Token"),
 ) -> None:
     if not constant_time_equal(x_acom_service_token, settings.internal_service_token):
+        logger.warning(
+            "iam_security_event %s",
+            json.dumps(
+                {
+                    "event_type": "internal_service_auth.failed",
+                    "request_id": get_request_id(),
+                    "success": False,
+                    "reason_code": "invalid_service_token",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+                sort_keys=True,
+            ),
+        )
         raise Forbidden()
 
 
@@ -393,27 +411,27 @@ async def password_reset_submit(
 
 @router.get("/iam/.well-known/jwks.json")
 async def jwks() -> dict:
-    public_key = serialization.load_pem_public_key(settings.signing_public_key.encode("utf-8"))
-    if not isinstance(public_key, RSAPublicKey):
-        raise RuntimeError("IAM signing public key must be RSA")
-    numbers = public_key.public_numbers()
-
     def encode_number(value: int) -> str:
         length = (value.bit_length() + 7) // 8
         return base64.urlsafe_b64encode(value.to_bytes(length, "big")).decode("ascii").rstrip("=")
 
-    return {
-        "keys": [
+    keys: list[dict[str, str]] = []
+    for kid, public_key_pem in settings.verification_public_keys.items():
+        public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        if not isinstance(public_key, RSAPublicKey):
+            raise RuntimeError("IAM signing public key must be RSA")
+        numbers = public_key.public_numbers()
+        keys.append(
             {
                 "kty": "RSA",
                 "use": "sig",
                 "alg": "RS256",
-                "kid": settings.signing_kid,
+                "kid": kid,
                 "n": encode_number(numbers.n),
                 "e": encode_number(numbers.e),
             }
-        ]
-    }
+        )
+    return {"keys": keys}
 
 
 @router.post(

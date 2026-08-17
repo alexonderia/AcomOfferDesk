@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -33,13 +35,7 @@ class Settings(BaseSettings):
     database_url: str = Field(..., validation_alias="DATABASE_URL")
     jwt_secret: str = Field(..., validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
-    jwt_exp_minutes: int = Field(default=60, validation_alias="JWT_EXP_MINUTES")
-    access_token_ttl_seconds: int = Field(default=300, validation_alias="ACCESS_TOKEN_TTL_SECONDS")
     ws_ticket_ttl_seconds: int = Field(default=30, validation_alias="WS_TICKET_TTL_SECONDS")
-    ws_legacy_query_token_enabled: bool = Field(default=False, validation_alias="WS_LEGACY_QUERY_TOKEN_ENABLED")
-    refresh_token_idle_ttl_seconds: int = Field(default=1800, validation_alias="REFRESH_TOKEN_IDLE_TTL_SECONDS")
-    refresh_token_max_ttl_seconds: int = Field(default=43200, validation_alias="REFRESH_TOKEN_MAX_TTL_SECONDS")
-    refresh_cookie_name: str = Field(default="acom_refresh_token", validation_alias="REFRESH_COOKIE_NAME")
     refresh_cookie_secure: bool = Field(default=False, validation_alias="REFRESH_COOKIE_SECURE")
     refresh_cookie_samesite: str = Field(default="lax", validation_alias="REFRESH_COOKIE_SAMESITE")
     refresh_cookie_domain: str | None = Field(default=None, validation_alias="REFRESH_COOKIE_DOMAIN")
@@ -51,6 +47,10 @@ class Settings(BaseSettings):
     iam_audience: str = Field(default="acomofferdesk", validation_alias="IAM_AUDIENCE")
     iam_signing_public_key: str | None = Field(default=None, validation_alias="IAM_SIGNING_PUBLIC_KEY")
     iam_signing_kid: str = Field(default="iam-signing-1", validation_alias="IAM_SIGNING_KID")
+    iam_signing_verification_keys: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias="IAM_SIGNING_VERIFICATION_KEYS",
+    )
     iam_internal_service_token: str = Field(
         default="development-only-iam-service-token-change-me",
         validation_alias="IAM_INTERNAL_SERVICE_TOKEN",
@@ -166,6 +166,25 @@ class Settings(BaseSettings):
     def _validate_cors_allow_origins(cls, value: str | list[str] | None) -> list[str]:
         return _parse_str_list(value)
 
+    @field_validator("iam_signing_verification_keys", mode="before")
+    @classmethod
+    def _validate_iam_signing_verification_keys(cls, value: object) -> dict[str, str]:
+        if value is None or value == "":
+            return {}
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "IAM_SIGNING_VERIFICATION_KEYS must be a JSON object"
+                ) from exc
+        if not isinstance(value, dict):
+            raise ValueError("IAM_SIGNING_VERIFICATION_KEYS must be a JSON object")
+        return {
+            str(kid).strip(): str(public_key).replace("\\n", "\n").strip()
+            for kid, public_key in value.items()
+        }
+
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
         self.app_env = self.app_env.strip().lower() or "development"
@@ -198,21 +217,45 @@ class Settings(BaseSettings):
             self.iam_issuer = self.iam_issuer.rstrip("/") or None
         if self.iam_signing_public_key is not None:
             self.iam_signing_public_key = self.iam_signing_public_key.replace("\\n", "\n").strip() or None
+        self.iam_signing_verification_keys = {
+            kid.strip(): public_key.replace("\\n", "\n").strip()
+            for kid, public_key in self.iam_signing_verification_keys.items()
+        }
         self.iam_audience = self.iam_audience.strip() or "acomofferdesk"
         self.iam_signing_kid = self.iam_signing_kid.strip() or "iam-signing-1"
+        configured_active_key = self.iam_signing_verification_keys.get(
+            self.iam_signing_kid
+        )
+        if (
+            self.iam_signing_public_key
+            and configured_active_key
+            and configured_active_key != self.iam_signing_public_key
+        ):
+            raise ValueError(
+                "IAM_SIGNING_PUBLIC_KEY conflicts with IAM_SIGNING_VERIFICATION_KEYS "
+                f"for kid {self.iam_signing_kid!r}"
+            )
         if self.iam_http_timeout_seconds <= 0:
             self.iam_http_timeout_seconds = 10.0
-        if self.app_env == "production":
-            if not self.iam_signing_public_key:
-                raise ValueError("IAM_SIGNING_PUBLIC_KEY is required in production")
+        verification_keys = self.iam_verification_keys
+        if self.app_env == "production" and not verification_keys:
+            raise ValueError(
+                "IAM_SIGNING_PUBLIC_KEY or IAM_SIGNING_VERIFICATION_KEYS is required in production"
+            )
+        for kid, public_key in verification_keys.items():
+            if not kid:
+                raise ValueError("IAM signing verification key ids must not be empty")
             try:
                 signing_key = serialization.load_pem_public_key(
-                    self.iam_signing_public_key.encode("utf-8")
+                    public_key.encode("utf-8")
                 )
             except (TypeError, ValueError) as exc:
-                raise ValueError("IAM_SIGNING_PUBLIC_KEY must contain valid PEM data") from exc
+                raise ValueError(
+                    f"IAM verification key {kid!r} must contain valid PEM data"
+                ) from exc
             if not isinstance(signing_key, RSAPublicKey):
-                raise ValueError("IAM_SIGNING_PUBLIC_KEY must be an RSA public key")
+                raise ValueError(f"IAM verification key {kid!r} must be an RSA public key")
+        if self.app_env == "production":
             if self.iam_internal_service_token == "development-only-iam-service-token-change-me":
                 raise ValueError("IAM_INTERNAL_SERVICE_TOKEN must be configured in production")
 
@@ -275,6 +318,13 @@ class Settings(BaseSettings):
     @property
     def resolved_iam_issuer(self) -> str:
         return self.iam_issuer or self.resolved_iam_public_base_url
+
+    @property
+    def iam_verification_keys(self) -> dict[str, str]:
+        keys = dict(self.iam_signing_verification_keys)
+        if self.iam_signing_public_key:
+            keys[self.iam_signing_kid] = self.iam_signing_public_key
+        return keys
 
     @property
     def iam_callback_url(self) -> str:

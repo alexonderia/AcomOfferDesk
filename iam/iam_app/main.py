@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from iam_app.api import render_browser_auth_error, router
 from iam_app.core.config import settings
+from iam_app.core.request_id import RequestIdMiddleware, get_request_id
 from iam_app.db import SessionLocal
 from iam_app.errors import IamError
 
@@ -36,12 +37,43 @@ async def security_headers(request: Request, call_next):
         response.headers.setdefault("Cache-Control", "no-store")
     return response
 
+app.add_middleware(RequestIdMiddleware)
+
+
+@app.get("/health/live")
+async def health_live() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+async def _readiness_response() -> JSONResponse:
+    try:
+        if not settings.signing_configuration_is_ready():
+            raise RuntimeError("invalid signing configuration")
+        async with SessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as exc:
+        logger.warning(
+            "iam_readiness_failed request_id=%s reason_code=%s",
+            get_request_id(),
+            type(exc).__name__,
+        )
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(content={"status": "ok"}, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/health/ready")
+async def health_ready() -> JSONResponse:
+    return await _readiness_response()
+
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    async with SessionLocal() as session:
-        await session.execute(text("SELECT 1"))
-    return {"status": "ok"}
+async def health() -> JSONResponse:
+    """Compatibility endpoint; retains the previous DB-backed readiness semantics."""
+    return await _readiness_response()
 
 
 @app.exception_handler(IamError)

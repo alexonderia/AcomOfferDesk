@@ -14,4 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY iam/iam_app ./iam_app
 
+RUN addgroup --system iam \
+    && adduser --system --ingroup iam --home /app --no-create-home iam
+
+USER iam
+
 CMD ["sh", "-c", "exec gunicorn -k uvicorn.workers.UvicornWorker -w ${IAM_WORKERS:-1} -b 0.0.0.0:8100 iam_app.main:app"]

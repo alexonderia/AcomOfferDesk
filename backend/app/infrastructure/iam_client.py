@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.core.config import settings
+from app.core.request_id import REQUEST_ID_HEADER, get_request_id
 from app.domain.exceptions import AuthenticationUnavailable, Conflict, NotFound, Unauthorized
 
 
@@ -45,7 +46,10 @@ class IamClient:
         self._client = client
 
     async def _request(self, method: str, path: str, *, json: dict | None = None) -> httpx.Response:
-        headers = {"X-Acom-Service-Token": settings.iam_internal_service_token}
+        headers = {
+            "X-Acom-Service-Token": settings.iam_internal_service_token,
+            REQUEST_ID_HEADER: get_request_id() or str(uuid.uuid4()),
+        }
         try:
             if self._client is not None:
                 response = await self._client.request(method, path, json=json, headers=headers)

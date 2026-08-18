@@ -41,6 +41,7 @@ const toUserListItem = (row: ContractorListItem): UserListItem => ({
   full_name: row.fullName,
   phone: row.phone,
   mail: row.mail,
+  email_verified: Boolean(row.emailVerified),
   company_name: row.companyName,
   inn: row.inn,
   company_phone: row.companyPhone,

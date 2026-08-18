@@ -50,6 +50,12 @@ class EmailVerificationTokenCodec:
         exp = self._extract_exp(payload)
         return EmailVerificationClaims(purpose=purpose, email=email, exp=exp, user_id=user_id)
 
+    def encode_payload(self, payload: dict[str, object]) -> str:
+        return self._encode(payload)
+
+    def decode_payload(self, token: str) -> dict[str, object]:
+        return self._decode(token)
+
     def _build_exp(self) -> int:
         return int((datetime.now(timezone.utc) + timedelta(seconds=self._ttl_seconds)).timestamp())
 

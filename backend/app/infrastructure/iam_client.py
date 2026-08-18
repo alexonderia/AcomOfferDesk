@@ -35,10 +35,29 @@ class IamActionToken:
 
 
 @dataclass(frozen=True, slots=True)
+class IamActionConsumeResult:
+    account_id: str
+    purpose: str
+    auth_status: str
+    context: dict | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class IamAccountPermissions:
     permissions_from_role: frozenset[str]
     individually_granted_permissions: frozenset[str]
     effective_permissions: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class IamCredentialState:
+    id: str
+    login: str
+    role: str
+    auth_status: str
+    password_set: bool
+    created: bool = False
+    required_actions: tuple[str, ...] = ()
 
 
 class IamClient:
@@ -125,6 +144,57 @@ class IamClient:
         )
         return IamAccount(**response.json())
 
+    async def provision_registration_credentials(
+        self,
+        *,
+        account_id: uuid.UUID | str,
+        login: str,
+        role: str,
+        password: str,
+        auth_status: str = "pending",
+        replace_password: bool = False,
+    ) -> IamCredentialState:
+        response = await self._request(
+            "PUT",
+            f"/internal/accounts/{account_id}/registration-credentials",
+            json={
+                "login": login,
+                "role": role,
+                "auth_status": auth_status,
+                "password": password,
+                "replace_password": replace_password,
+            },
+        )
+        payload = response.json()
+        return IamCredentialState(
+            id=str(payload["id"]),
+            login=payload["login"],
+            role=payload["role"],
+            auth_status=payload["auth_status"],
+            password_set=bool(payload["password_set"]),
+            created=bool(payload.get("created", False)),
+            required_actions=tuple(payload.get("required_actions") or ()),
+        )
+
+    async def get_credential_state(
+        self,
+        *,
+        account_id: uuid.UUID | str,
+    ) -> IamCredentialState:
+        response = await self._request(
+            "GET",
+            f"/internal/accounts/{account_id}/credential-state",
+        )
+        payload = response.json()
+        return IamCredentialState(
+            id=str(payload["id"]),
+            login=payload["login"],
+            role=payload["role"],
+            auth_status=payload["auth_status"],
+            password_set=bool(payload["password_set"]),
+            required_actions=tuple(payload.get("required_actions") or ()),
+        )
+
     async def provision_local_development_account(
         self,
         *,
@@ -196,13 +266,56 @@ class IamClient:
         )
         return int(response.json()["revoked_sessions"])
 
-    async def create_action_token(self, *, account_id: uuid.UUID | str, purpose: str) -> IamActionToken:
+    async def create_action_token(
+        self,
+        *,
+        account_id: uuid.UUID | str,
+        purpose: str,
+        context: dict | None = None,
+    ) -> IamActionToken:
+        payload: dict = {"purpose": purpose}
+        if context:
+            payload["context"] = context
         response = await self._request(
             "POST",
             f"/internal/accounts/{account_id}/action-tokens",
-            json={"purpose": purpose},
+            json=payload,
         )
         return IamActionToken(**response.json())
+
+    async def consume_action_token(
+        self,
+        *,
+        token: str,
+        purpose: str,
+        new_password: str | None = None,
+    ) -> IamActionConsumeResult:
+        payload: dict = {"token": token, "purpose": purpose}
+        if new_password is not None:
+            payload["new_password"] = new_password
+        response = await self._request(
+            "POST",
+            "/internal/action-tokens/consume",
+            json=payload,
+        )
+        body = response.json()
+        return IamActionConsumeResult(
+            account_id=str(body["account_id"]),
+            purpose=body["purpose"],
+            auth_status=body["auth_status"],
+            context=body.get("context"),
+        )
+
+    async def complete_required_action(
+        self,
+        *,
+        account_id: uuid.UUID | str,
+        purpose: str = "complete_profile",
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/accounts/{account_id}/required-actions/{purpose}/complete",
+        )
 
     async def get_account_permissions(
         self,

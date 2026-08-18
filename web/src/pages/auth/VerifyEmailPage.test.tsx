@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { render, waitFor, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -87,6 +87,28 @@ describe('VerifyEmailPage', () => {
       expect(verifyEmailTokenMock).toHaveBeenCalledWith('test-token');
     });
 
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('asks to verify email after registration submit without consuming a token', async () => {
+    useAuthMock.mockReturnValue({
+      status: 'anonymous',
+      isAuthenticated: false,
+      session: null,
+    });
+
+    renderPage('/verify-email?next=check_email&invite=invite-token-value-123456');
+
+    expect(await screen.findByText('Подтвердите email')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Мы отправили письмо на указанный адрес/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Изменить данные' })).toHaveAttribute(
+      'href',
+      '/register?token=invite-token-value-123456',
+    );
+    expect(screen.queryByText('Email подтверждён.')).not.toBeInTheDocument();
+    expect(verifyEmailTokenMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalled();
   });
 });

@@ -6,13 +6,14 @@ from dataclasses import dataclass
 
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
-from app.domain.authorization import require_permission
+from app.domain.authorization import require_any_permission
 from app.domain.exceptions import Conflict, Forbidden
 from app.domain.permissions import PermissionCodes
 from app.infrastructure.email.email_templates.contractor_invitation_email import (
     build_contractor_invitation_email_payload,
 )
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
+from app.services.registration_invitations import RegistrationInvitationService
 from app.services.email_delivery_events import (
     BATCH_OPERATION_KIND_CONTRACTOR_INVITE,
     record_email_batch_operation_state,
@@ -47,6 +48,7 @@ class ContractorInvitationService:
         *,
         email_service: SMTPEmailService | None = None,
         attachment_service: NormativeEmailAttachmentService,
+        invitation_service: RegistrationInvitationService | None = None,
         after_commit_hook_registrar=None,
     ) -> None:
         self._email_service = email_service or SMTPEmailService(
@@ -58,6 +60,7 @@ class ContractorInvitationService:
             from_name=settings.email_from_name,
         )
         self._attachment_service = attachment_service
+        self._invitation_service = invitation_service
         self._after_commit_hook_registrar = after_commit_hook_registrar
 
     async def invite_contractors(
@@ -67,9 +70,12 @@ class ContractorInvitationService:
         emails: list[str],
         normative_file_id: int,
     ) -> ContractorInviteResult:
-        require_permission(
+        require_any_permission(
             current_user,
-            PermissionCodes.CONTRACTORS_MANUAL_CREATE,
+            (
+                PermissionCodes.CONTRACTORS_MANUAL_CREATE,
+                PermissionCodes.USERS_REGISTRATION_INVITE,
+            ),
             message="Недостаточно прав для отправки приглашений контрагентам",
         )
         if current_user.role_id == settings.contractor_role_id:
@@ -88,16 +94,16 @@ class ContractorInvitationService:
         presentation_attachment = await self._attachment_service.load_required_attachment(
             normative_file_id=normative_file_id,
         )
-        portal_url = self._resolve_portal_url()
         failed: list[InviteFailure] = []
         sent: list[str] = []
         operation_id = generate_correlation_id()
         first_error_message: str | None = None
 
         for email in normalized_valid:
+            registration_url = self._registration_url(current_user=current_user, email=email)
             payload = build_contractor_invitation_email_payload(
                 to_email=email,
-                portal_url=portal_url,
+                portal_url=registration_url,
                 contact_name=settings.invitation_contact_name,
                 contact_email=settings.invitation_contact_email,
                 contact_phone=settings.invitation_contact_phone,
@@ -186,6 +192,17 @@ class ContractorInvitationService:
             raise Conflict("Необходимо указать хотя бы один email")
 
         return normalized_valid, invalid
+
+    def _registration_url(self, *, current_user: CurrentUser, email: str) -> str | None:
+        if self._invitation_service is None:
+            return self._resolve_portal_url()
+        raw_token = self._invitation_service.create_contractor_invitation(
+            current_user=current_user,
+            email=email,
+        )
+        if settings.web_base_url:
+            return f"{settings.web_base_url.rstrip('/')}/register?token={raw_token}"
+        return f"/register?token={raw_token}"
 
     def _resolve_portal_url(self) -> str | None:
         if settings.invitation_portal_url:

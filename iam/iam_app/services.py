@@ -50,6 +50,8 @@ _TECHNICAL_NAME = re.compile(r"^[a-z][a-z0-9_.-]{1,127}$")
 _SECRET_DETAIL_KEYS = {
     "password",
     "password_hash",
+    "initial_password",
+    "new_password",
     "access_token",
     "refresh_token",
     "authorization_code",
@@ -100,6 +102,36 @@ class AccountResult:
     account: Account
     role_name: str
     created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RegistrationCredentialsResult:
+    account: Account
+    role_name: str
+    created: bool
+    password_set: bool
+
+
+PASSWORD_ACTION_PURPOSES = frozenset({"password_setup", "password_reset"})
+EMAIL_ACTION_PURPOSES = frozenset({"verify_email", "first_access", "profile_change"})
+KNOWN_REQUIRED_ACTIONS = frozenset({"complete_profile"})
+ACTION_PURPOSES = PASSWORD_ACTION_PURPOSES | EMAIL_ACTION_PURPOSES
+
+
+@dataclass(frozen=True, slots=True)
+class AccountCredentialState:
+    account: Account
+    role_name: str
+    password_set: bool
+    required_actions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ActionTokenConsumeResult:
+    account_id: uuid.UUID
+    purpose: str
+    context: dict | None
+    auth_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +334,7 @@ class IamService:
             login=normalized_login,
             role_id=role.id,
             auth_status=auth_status,
+            required_actions=[],
         )
         await self._accounts.add(account)
         await self._accounts.flush()
@@ -312,6 +345,140 @@ class IamService:
             details={"account_id": str(account_id), "role": normalized_role},
         )
         return AccountResult(account, normalized_role, True)
+
+    async def provision_registration_credentials(
+        self,
+        *,
+        account_id: uuid.UUID,
+        login: str,
+        role_name: str,
+        initial_password: str,
+        auth_status: str = "pending",
+        replace_password: bool = False,
+    ) -> RegistrationCredentialsResult:
+        if auth_status != "pending":
+            raise Conflict("registration account must be pending")
+        if len(initial_password) < 12 or len(initial_password) > 128:
+            raise Conflict("password policy")
+
+        normalized_login = login.strip()
+        normalized_role = role_name.strip()
+        if not 3 <= len(normalized_login) <= 128:
+            raise Conflict("login policy")
+        if not 2 <= len(normalized_role) <= 128:
+            raise Conflict("role policy")
+        role = await self._roles.get_by_name(normalized_role)
+        if role is None or not role.is_active:
+            raise Conflict("unknown role")
+
+        now = utc_now()
+        account = await self._accounts.get(account_id, for_update=True)
+        created = account is None
+        if account is None:
+            login_owner = await self._accounts.get_by_login(normalized_login, for_update=True)
+            if login_owner is not None:
+                raise Conflict("login already exists")
+            account = Account(
+                id=account_id,
+                login=normalized_login,
+                role_id=role.id,
+                auth_status="pending",
+            )
+            await self._accounts.add(account)
+            await self._accounts.flush()
+        else:
+            existing_role = await self._roles.get_by_id(account.role_id)
+            if (
+                account.login != normalized_login
+                or existing_role is None
+                or existing_role.name != normalized_role
+                or account.auth_status != "pending"
+            ):
+                raise Conflict("idempotency conflict")
+
+        credential = await self._credentials.get(account.id, for_update=True)
+        repaired_credential = credential is None and not created
+        if credential is None:
+            credential = AccountCredential(account_id=account.id)
+            await self._credentials.add(credential)
+
+        password_created = not credential.password_hash
+        password_replaced = False
+        if credential.password_hash and not await verify_password(
+            initial_password, credential.password_hash
+        ):
+            if not replace_password or account.auth_status != "pending":
+                raise Conflict("idempotency conflict")
+            credential.password_hash = await hash_password(initial_password)
+            credential.password_algo = "argon2id"
+            credential.password_changed_at = now
+            password_replaced = True
+        elif password_created:
+            credential.password_hash = await hash_password(initial_password)
+            credential.password_algo = "argon2id"
+            credential.password_changed_at = now
+        credential.failed_login_count = 0
+        credential.locked_until = None
+        credential.updated_at = now
+
+        if password_created:
+            await self._record_audit(
+                account_id=account.id,
+                session_id=None,
+                event_type="password.initial_provisioned",
+                success=True,
+                details={
+                    "auth_status": account.auth_status,
+                    "created_account": created,
+                    "repaired_credential": repaired_credential,
+                },
+            )
+        elif password_replaced:
+            await self._record_audit(
+                account_id=account.id,
+                session_id=None,
+                event_type="password.registration_replaced",
+                success=True,
+                details={"auth_status": account.auth_status},
+            )
+        self._structured_security_log(
+            event_type="registration_credentials.provisioned",
+            success=True,
+            details={
+                "account_id": str(account.id),
+                "role": normalized_role,
+                "created": created,
+                "password_created": password_created,
+                "password_replaced": password_replaced,
+                "repaired_credential": repaired_credential,
+            },
+        )
+        await self._db.flush()
+        return RegistrationCredentialsResult(
+            account=account,
+            role_name=normalized_role,
+            created=created,
+            password_set=True,
+        )
+
+    async def get_credential_state(
+        self,
+        *,
+        account_id: uuid.UUID,
+    ) -> AccountCredentialState:
+        account = await self._accounts.get(account_id)
+        if account is None:
+            raise NotFound()
+        role = await self._roles.get_by_id(account.role_id)
+        if role is None:
+            raise Conflict("account role is unavailable")
+        credential = await self._credentials.get(account.id)
+        return AccountCredentialState(
+            account=account,
+            role_name=role.name,
+            password_set=bool(credential and credential.password_hash),
+            required_actions=tuple(self._normalize_required_actions(account.required_actions)),
+        )
 
     async def provision_local_development_account(
         self,
@@ -581,11 +748,13 @@ class IamService:
         )
         await self._db.flush()
         role_name, permissions = await self._role_and_permissions(account)
+        required_actions = self._normalize_required_actions(account.required_actions)
         access_token, access_expires_at = encode_access_token(
             account_id=str(account.id),
             session_id=str(session_id),
             role=role_name,
             permissions=permissions,
+            required_actions=required_actions,
         )
         await self._record_audit(
             account_id=account.id,
@@ -676,11 +845,13 @@ class IamService:
         auth_session.refresh_token_hash = rotated_hash
         auth_session.last_used_at = now
         role_name, permissions = await self._role_and_permissions(account)
+        required_actions = self._normalize_required_actions(account.required_actions)
         access_token, access_expires_at = encode_access_token(
             account_id=str(account.id),
             session_id=str(auth_session.id),
             role=role_name,
             permissions=permissions,
+            required_actions=required_actions,
         )
         await self._record_audit(
             account_id=account.id,
@@ -823,14 +994,36 @@ class IamService:
         role, _ = await self._role_and_permissions(account)
         return AccountResult(account, role, False)
 
+    def _normalize_required_actions(self, raw: object) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        return sorted(
+            {
+                str(item).strip()
+                for item in raw
+                if str(item).strip() in KNOWN_REQUIRED_ACTIONS
+            }
+        )
+
+    def _add_required_action(self, account: Account, purpose: str) -> None:
+        current = self._normalize_required_actions(account.required_actions)
+        if purpose not in KNOWN_REQUIRED_ACTIONS or purpose in current:
+            return
+        account.required_actions = sorted([*current, purpose])
+        account.updated_at = utc_now()
+
     async def create_action_token(
         self,
         *,
         account_id: uuid.UUID,
         purpose: str,
+        context: dict | None = None,
     ) -> tuple[str, int]:
+        if purpose not in ACTION_PURPOSES:
+            raise Conflict("unknown action purpose")
         if await self._accounts.get(account_id) is None:
             raise NotFound()
+        normalized_context = self._normalize_action_context(purpose=purpose, context=context)
         now = utc_now()
         await self._actions.invalidate_active(
             account_id=account_id,
@@ -845,6 +1038,7 @@ class IamService:
                 account_id=account_id,
                 purpose=purpose,
                 token_hash=hash_secret(raw_token),
+                context=normalized_context,
                 expires_at=expires_at,
             )
         )
@@ -855,15 +1049,23 @@ class IamService:
         )
         return raw_token, int(expires_at.timestamp())
 
+    def _normalize_action_context(self, *, purpose: str, context: dict | None) -> dict | None:
+        if purpose not in EMAIL_ACTION_PURPOSES:
+            return None
+        email = str((context or {}).get("email") or "").strip().lower()
+        if not email or "@" not in email:
+            raise Conflict("email context required")
+        return {"email": email}
+
     async def consume_action_token(
         self,
         *,
         raw_token: str,
         purpose: str,
-        new_password: str,
-    ) -> None:
-        if len(new_password) < 12 or len(new_password) > 128:
-            raise Conflict("password policy")
+        new_password: str | None = None,
+    ) -> ActionTokenConsumeResult:
+        if purpose not in ACTION_PURPOSES:
+            raise Conflict("unknown action purpose")
         token = await self._actions.get_by_hash(hash_secret(raw_token), for_update=True)
         now = utc_now()
         if (
@@ -883,22 +1085,81 @@ class IamService:
         if account is None or credential is None or account.auth_status in {"blocked", "disabled"}:
             raise Unauthorized()
 
-        credential.password_hash = await hash_password(new_password)
-        credential.password_algo = "argon2id"
-        credential.password_changed_at = now
-        credential.failed_login_count = 0
-        credential.locked_until = None
-        credential.updated_at = now
-        token.consumed_at = now
-        if purpose == "password_setup" and account.auth_status == "pending":
-            account.auth_status = "active"
-            account.updated_at = now
-        if purpose == "password_reset":
-            await self.revoke_all(account_id=account.id, reason="password_reset")
+        if purpose in PASSWORD_ACTION_PURPOSES:
+            if new_password is None or len(new_password) < 12 or len(new_password) > 128:
+                raise Conflict("password policy")
+            first_password = credential.password_hash is None
+            credential.password_hash = await hash_password(new_password)
+            credential.password_algo = "argon2id"
+            credential.password_changed_at = now
+            credential.failed_login_count = 0
+            credential.locked_until = None
+            credential.updated_at = now
+            token.consumed_at = now
+            if purpose == "password_reset":
+                await self.revoke_all(account_id=account.id, reason="password_reset")
+            if purpose == "password_setup" and first_password and account.auth_status == "active":
+                self._add_required_action(account, "complete_profile")
+            await self._record_audit(
+                account_id=account.id,
+                session_id=None,
+                event_type=(
+                    "password.setup_completed"
+                    if purpose == "password_setup"
+                    else "password.reset_completed"
+                ),
+                success=True,
+                details={"auth_status": account.auth_status},
+            )
+        else:
+            token.consumed_at = now
+            await self._record_audit(
+                account_id=account.id,
+                session_id=None,
+                event_type=f"{purpose}.completed",
+                success=True,
+                details={"auth_status": account.auth_status},
+            )
+
         self._structured_security_log(
             event_type=f"{purpose}.completed",
             success=True,
             details={"account_id": str(account.id)},
+        )
+        return ActionTokenConsumeResult(
+            account_id=account.id,
+            purpose=purpose,
+            context=token.context,
+            auth_status=account.auth_status,
+        )
+
+    async def complete_required_action(
+        self,
+        *,
+        account_id: uuid.UUID,
+        purpose: str,
+    ) -> None:
+        if purpose not in KNOWN_REQUIRED_ACTIONS:
+            raise Conflict("unknown required action")
+        account = await self._accounts.get(account_id, for_update=True)
+        if account is None:
+            raise NotFound()
+        current = self._normalize_required_actions(account.required_actions)
+        if purpose not in current:
+            return
+        account.required_actions = [item for item in current if item != purpose]
+        account.updated_at = utc_now()
+        await self._record_audit(
+            account_id=account_id,
+            session_id=None,
+            event_type=f"{purpose}.completed",
+            success=True,
+            details={},
+        )
+        self._structured_security_log(
+            event_type=f"{purpose}.completed",
+            success=True,
+            details={"account_id": str(account_id)},
         )
 
     async def seed_rbac(self, matrix: dict[str, list[str]]) -> dict[str, list[str]]:

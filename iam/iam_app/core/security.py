@@ -67,6 +67,7 @@ def encode_access_token(
     session_id: str,
     role: str,
     permissions: list[str],
+    required_actions: list[str] | None = None,
 ) -> tuple[str, int]:
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=settings.access_token_ttl_seconds)
@@ -75,6 +76,7 @@ def encode_access_token(
         "sid": session_id,
         "role": role,
         "permissions": sorted(set(permissions)),
+        "required_actions": sorted(set(required_actions or ())),
         "iat": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
         "iss": settings.issuer,

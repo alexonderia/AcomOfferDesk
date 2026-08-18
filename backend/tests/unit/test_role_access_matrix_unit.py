@@ -150,6 +150,8 @@ def test_security_officer_role_has_only_expected_permissions() -> None:
             PermissionCodes.CONTRACTORS_READ,
             PermissionCodes.CONTRACTORS_PROFILE_READ,
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            PermissionCodes.USERS_REGISTRATION_INVITE,
+            PermissionCodes.USERS_REGISTRATION_APPROVE,
         }
     )
 
@@ -185,4 +187,6 @@ def test_units_permissions_are_granted_to_hierarchy_roles_for_subtree_management
         PermissionCodes.CONTRACTORS_READ,
         PermissionCodes.CONTRACTORS_PROFILE_READ,
         PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+        PermissionCodes.USERS_REGISTRATION_INVITE,
+        PermissionCodes.USERS_REGISTRATION_APPROVE,
     }

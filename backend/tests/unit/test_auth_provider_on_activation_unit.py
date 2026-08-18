@@ -21,7 +21,16 @@ async def test_contractor_activation_updates_local_status_without_auth_provider(
     users.update_status = AsyncMock(side_effect=update_status)
     profiles = AsyncMock()
     profiles.get_by_id = AsyncMock(return_value=SimpleNamespace(mail=None))
-    service = UserStatusService(users=users, profiles=profiles, user_auth_accounts=AsyncMock())
+    channels = AsyncMock()
+    channels.get_primary_by_type = AsyncMock(
+        return_value=SimpleNamespace(is_verified=True, channel_value="contractor@example.com")
+    )
+    service = UserStatusService(
+        users=users,
+        profiles=profiles,
+        user_auth_accounts=AsyncMock(),
+        user_contact_channels=channels,
+    )
 
     result = await service.update_statuses(
         current_user=CurrentUser(
@@ -31,7 +40,12 @@ async def test_contractor_activation_updates_local_status_without_auth_provider(
             system_role="admin",
             role_id=settings.admin_role_id,
             status="active",
-            permissions=frozenset({PermissionCodes.USERS_STATUS_UPDATE}),
+            permissions=frozenset(
+                {
+                    PermissionCodes.USERS_STATUS_UPDATE,
+                    PermissionCodes.USERS_REGISTRATION_APPROVE,
+                }
+            ),
         ),
         user_id=user.id,
         user_status="active",

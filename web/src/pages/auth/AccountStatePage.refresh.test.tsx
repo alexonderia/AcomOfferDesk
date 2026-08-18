@@ -106,6 +106,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-1'),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     const view = renderPage();
@@ -117,6 +118,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-2'),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     view.rerender(
@@ -134,6 +136,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-1', []),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     const view = renderPage();
@@ -145,6 +148,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-1', ['profile.manage_own']),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     view.rerender(

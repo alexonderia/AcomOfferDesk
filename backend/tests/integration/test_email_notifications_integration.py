@@ -350,6 +350,8 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
     monkeypatch.setattr(settings, "reply_email_ttl_seconds", 1800)
     monkeypatch.setattr(settings, "public_backend_base_url", "https://api.acom.example")
     monkeypatch.setattr(settings, "invitation_portal_url", "https://portal.acom.example/login")
+    monkeypatch.setattr(settings, "web_base_url", "https://web.acom.example")
+    monkeypatch.setattr(settings, "email_verification_secret", "invite-test-secret")
 
     request_row = SimpleNamespace(
         id=33,
@@ -401,7 +403,9 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
     assert verified_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert verified_item["operation_expected_total"] == 2
     assert invite_item["reply_token"] is None
-    assert "https://portal.acom.example/login" in invite_item["text_content"]
+    assert "/register?token=" in invite_item["text_content"]
+    assert "https://web.acom.example/register?token=" in invite_item["text_content"]
+    assert "https://portal.acom.example/login" not in invite_item["text_content"]
     assert "Ссылка для входа:" in invite_item["text_content"]
     assert invite_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert invite_item["operation_expected_total"] == 2
@@ -537,6 +541,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
     assert "Поступила новая заявка №50." in event["text_content"]
     assert "Перейти в систему:" in event["text_content"]
     assert "invite_token=" not in event["text_content"]
+    assert "/register?token=" not in event["text_content"]
     assert event["attachments"][0].filename == "onboarding.pptx"
 
 

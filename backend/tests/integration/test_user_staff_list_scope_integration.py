@@ -145,6 +145,9 @@ class _ScopedUsersRepo:
             if user.id_role == contractor_role_id
         ]
 
+    async def map_primary_email_verified(self, *, user_ids: list[str]) -> dict[str, bool]:
+        return {user_id: False for user_id in user_ids}
+
 
 class _EmptyUserStatusPeriodsRepo:
     async def list_active_for_users(self, *, user_ids):

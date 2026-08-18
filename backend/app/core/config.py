@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     rabbitmq_url: str = Field(default="amqp://guest:guest@rabbitmq:5672/", validation_alias="RABBITMQ_URL")
     email_verification_secret: str = Field(..., validation_alias="EMAIL_VERIFICATION_SECRET")
     email_verification_ttl_seconds: int = Field(default=3600, validation_alias="EMAIL_VERIFICATION_TTL_SECONDS")
+    registration_invite_ttl_seconds: int = Field(
+        default=86400,
+        validation_alias="REGISTRATION_INVITE_TTL_SECONDS",
+    )
     reply_email_token_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices("REPLY_EMAIL_TOKEN_SECRET", "EMAIL_REPLY_SECRET"),

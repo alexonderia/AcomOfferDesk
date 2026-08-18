@@ -14,8 +14,12 @@ export const ProtectedRoute = () => {
     return <Navigate to={`/login${next}`} replace />;
   }
 
-  if (session && !session.businessAccess && location.pathname !== '/account') {
-    return <Navigate to="/account" replace />;
+  if (session && !session.businessAccess && location.pathname !== '/account' && location.pathname !== '/profile/onboarding') {
+    const onboardingPath = session.onboardingState === 'first_login' ? '/profile/onboarding' : '/account';
+    return <Navigate to={onboardingPath} replace />;
+  }
+  if (session?.onboardingState === 'first_login' && session.businessAccess && location.pathname !== '/profile/onboarding' && location.pathname !== '/account') {
+    return <Navigate to="/profile/onboarding" replace />;
   }
 
   return <Outlet />;

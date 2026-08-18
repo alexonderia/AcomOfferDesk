@@ -23,6 +23,7 @@ class ContractorListItemSchema(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None
+    email_verified: bool = False
     company_name: str | None = None
     inn: str | None = None
     company_phone: str | None = None

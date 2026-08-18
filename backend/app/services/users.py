@@ -23,6 +23,7 @@ from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
     notify_contractor_status_changed_email,
 )
+from app.infrastructure.iam_client import IamClient
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.registration_admin_notify import schedule_registration_review_required_notification
 from app.services.department_scope import DepartmentScopeService
@@ -318,6 +319,7 @@ class UserListItem:
     full_name: str | None
     phone: str | None
     mail: str | None
+    email_verified: bool = False
     is_manual: bool = False
     company_name: str | None = None
     inn: str | None = None
@@ -459,6 +461,17 @@ class UserQueryService:
             )
         return result
 
+    async def _apply_email_verified(self, items: list[UserListItem]) -> list[UserListItem]:
+        if not items:
+            return items
+        verified_by_user_id = await self._users.map_primary_email_verified(
+            user_ids=[item.user_id for item in items],
+        )
+        return [
+            replace(item, email_verified=verified_by_user_id.get(item.user_id, False))
+            for item in items
+        ]
+
     async def _ensure_accessible_subordinate(
         self,
         *,
@@ -518,7 +531,7 @@ class UserQueryService:
                 for user, profile, _ in rows
                 if user.id in visible_scope_ids and user.id_role in allowed_role_ids
             ]
-            return await self._apply_hierarchy_counts(items)
+            return await self._apply_email_verified(await self._apply_hierarchy_counts(items))
 
         if current_user.role_id == settings.admin_role_id and role_id != settings.contractor_role_id:
             visible_scope_ids = await UnitHierarchyService(self._users).get_visible_user_ids(
@@ -544,11 +557,11 @@ class UserQueryService:
                     settings.superadmin_role_id,
                 }
             ]
-            return await self._apply_hierarchy_counts(items)
+            return await self._apply_email_verified(await self._apply_hierarchy_counts(items))
 
         if role_id == settings.contractor_role_id:
             rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
-            return [
+            items = [
                 UserListItem(
                     user_id=user.id,
                     role_id=user.id_role,
@@ -567,6 +580,7 @@ class UserQueryService:
                 )
                 for user, profile, company, _legacy_user, legacy_account_id in rows
             ]
+            return await self._apply_email_verified(items)
 
         rows = await self._users.list_users_with_profiles(role_id=role_id)
         items = [
@@ -581,7 +595,7 @@ class UserQueryService:
             )
             for user, profile in rows
         ]
-        return await self._apply_hierarchy_counts(items)
+        return await self._apply_email_verified(await self._apply_hierarchy_counts(items))
 
     async def list_manager_candidates(
         self,
@@ -853,6 +867,7 @@ class ManualContractorService:
         company_contacts: CompanyContactRepository,
         user_auth_accounts: UserAuthAccountRepository,
         units: UnitRepository | None = None,
+        user_contact_channels=None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
     ) -> None:
         self._users = users
@@ -860,6 +875,7 @@ class ManualContractorService:
         self._company_contacts = company_contacts
         self._user_auth_accounts = user_auth_accounts
         self._units = units
+        self._user_contact_channels = user_contact_channels
         self._after_commit_hook_registrar = after_commit_hook_registrar
 
     def _contractor_unit_service(self) -> ContractorUnitService:
@@ -1034,6 +1050,14 @@ class ManualContractorService:
                 note=data.note or PLACEHOLDER_TEXT,
             )
         )
+        if self._user_contact_channels is not None and data.company_mail:
+            await self._user_contact_channels.upsert_channel(
+                user_id=login,
+                channel_type="email",
+                channel_value=data.company_mail.strip().lower(),
+                is_verified=False,
+                is_primary=True,
+            )
         return login
 
     async def create_manual_contractor(
@@ -1059,13 +1083,6 @@ class ManualContractorService:
         await self._bind_to_creator_root_units_if_needed(
             current_user=current_user,
             contractor_user_id=login,
-        )
-        schedule_registration_review_required_notification(
-            after_commit_hook_registrar=self._after_commit_hook_registrar,
-            user_id=login,
-            actor_user_id=current_user.user_id,
-            role_id=settings.contractor_role_id,
-            source="manual_contractor",
         )
         return login
 
@@ -1288,6 +1305,7 @@ class UserStatusService:
         users: UserRepository,
         profiles: ProfileRepository,
         user_auth_accounts: UserAuthAccountRepository | None = None,
+        user_contact_channels=None,
         notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
@@ -1295,6 +1313,7 @@ class UserStatusService:
         self._users = users
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
+        self._user_contact_channels = user_contact_channels
         self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
@@ -1351,6 +1370,16 @@ class UserStatusService:
                 raise Forbidden("Вы можете обновлять статус только своих подчиненных")
 
         old_status = user.status
+        if old_status == "review" and user_status == "active":
+            UserPolicy.ensure_can_approve_registration(current_user)
+            channel = None
+            if self._user_contact_channels is not None:
+                channel = await self._user_contact_channels.get_primary_by_type(
+                    user_id=user.id,
+                    channel_type="email",
+                )
+            if channel is None or not channel.is_verified:
+                raise Conflict("Нельзя подтвердить регистрацию до подтверждения email")
         status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
 
@@ -1428,12 +1457,14 @@ class UserSelfService:
         company_contacts: CompanyContactRepository,
         user_status_periods: UserStatusPeriodRepository,
         user_auth_accounts: UserAuthAccountRepository | None = None,
+        user_contact_channels=None,
     ):
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_status_periods = user_status_periods
         self._user_auth_accounts = user_auth_accounts
+        self._user_contact_channels = user_contact_channels
 
     async def _ensure_accessible_subordinate(
         self,
@@ -1515,6 +1546,16 @@ class UserSelfService:
                 profile.phone = phone
             if mail is not None:
                 profile.mail = mail
+        if mail is not None and self._user_contact_channels is not None:
+            normalized_mail = mail.strip().lower()
+            if normalized_mail and normalized_mail not in {"не указано", "none", "null"}:
+                await self._user_contact_channels.upsert_channel(
+                    user_id=user_id,
+                    channel_type="email",
+                    channel_value=normalized_mail,
+                    is_verified=False,
+                    is_primary=True,
+                )
 
 
     async def update_my_profile(
@@ -1542,12 +1583,40 @@ class UserSelfService:
         mail: str | None,
     ) -> None:
         UserPolicy.ensure_can_manage_review_onboarding(current_user)
+        previous_email = None
+        if mail is not None and self._user_contact_channels is not None:
+            channel = await self._user_contact_channels.get_primary_by_type(
+                user_id=current_user.user_id,
+                channel_type="email",
+            )
+            if channel is not None:
+                previous_email = (channel.channel_value or "").strip().lower()
         await self._apply_my_profile_update(
             user_id=current_user.user_id,
             full_name=full_name,
             phone=phone,
             mail=mail,
         )
+        if current_user.onboarding_state == "first_login":
+            await IamClient().complete_required_action(account_id=current_user.iam_account_id)
+            normalized_mail = (mail or "").strip().lower()
+            if (
+                normalized_mail
+                and normalized_mail not in {"не указано", "none", "null"}
+                and normalized_mail != previous_email
+            ):
+                from app.services.email_verification import EmailVerificationService, PROFILE_CHANGE_PURPOSE
+
+                await EmailVerificationService(
+                    self._profiles,
+                    self._user_contact_channels,
+                    user_auth_accounts=self._user_auth_accounts,
+                ).request_profile_verification(
+                    user_id=current_user.user_id,
+                    email=normalized_mail,
+                    purpose=PROFILE_CHANGE_PURPOSE,
+                    account_id=current_user.iam_account_id,
+                )
 
     async def _apply_my_company_contacts_update(
         self,

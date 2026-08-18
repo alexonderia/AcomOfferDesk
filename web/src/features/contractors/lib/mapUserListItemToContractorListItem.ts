@@ -8,6 +8,7 @@ export const mapUserListItemToContractorListItem = (user: UserListItem): Contrac
   fullName: user.full_name,
   phone: user.phone,
   mail: user.mail,
+  emailVerified: Boolean(user.email_verified),
   companyName: user.company_name,
   inn: user.inn,
   companyPhone: user.company_phone,

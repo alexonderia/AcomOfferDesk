@@ -19,6 +19,7 @@ from app.repositories.profiles import ActiveContractorEmailRecipient, ProfileRep
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_units import ContractorUnitService
+from app.services.registration_invitations import RegistrationInvitationService
 from app.services.email_delivery_events import (
     BATCH_OPERATION_KIND_REQUEST_ADDITIONAL,
     record_email_batch_operation_state,
@@ -60,6 +61,7 @@ class SendRequestNotificationEmailUseCase:
         presentation_attachment_service: NormativeEmailAttachmentService | None = None,
         notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar=None,
+        invitation_service: RegistrationInvitationService | None = None,
     ) -> None:
         self._request_repository = request_repository
         self._profile_repository = profile_repository
@@ -70,6 +72,7 @@ class SendRequestNotificationEmailUseCase:
         self._presentation_attachment_service = presentation_attachment_service
         self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._invitation_service = invitation_service or RegistrationInvitationService()
 
     async def execute(
         self,
@@ -126,8 +129,8 @@ class SendRequestNotificationEmailUseCase:
             contact_email=settings.invitation_contact_email,
             contact_phone=settings.invitation_contact_phone,
         )
-        portal_url = self._resolve_portal_url()
         operation_id = generate_correlation_id() if initiator_user_id else None
+        inviter_id = (initiator_user_id or request.id_user or "").strip()
         immediate_failure_count = 0
         first_error_message: str | None = None
 
@@ -157,7 +160,10 @@ class SendRequestNotificationEmailUseCase:
                     request_id=request_id,
                     description=request.description,
                     deadline_at=request.deadline_at,
-                    portal_url=portal_url,
+                    portal_url=self._portal_url_for_invitee(
+                        recipient=recipient,
+                        inviter_id=inviter_id,
+                    ),
                     contact=invitation_contact,
                     attachment_warning=attachment_warning,
                 )
@@ -307,6 +313,20 @@ class SendRequestNotificationEmailUseCase:
             recipient_emails.add(normalized_email)
 
         return recipients
+
+    def _portal_url_for_invitee(
+        self,
+        *,
+        recipient: NotificationRecipient,
+        inviter_id: str,
+    ) -> str:
+        if recipient.user_login or not inviter_id:
+            return self._resolve_portal_url()
+        raw_token = self._invitation_service.issue_contractor_registration_token(
+            email=recipient.email,
+            inviter_id=inviter_id,
+        )
+        return self._invitation_service.registration_portal_url(raw_token)
 
     def _resolve_portal_url(self) -> str:
         if settings.invitation_portal_url:

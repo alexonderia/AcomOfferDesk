@@ -30,7 +30,6 @@ from app.core.iam_flow import FLOW_TTL_SECONDS, build_iam_authorize_url, create_
 from app.core.uow import UnitOfWork
 from app.domain.authentication import decode_iam_access_token
 from app.domain.auth_context import CurrentUser
-from app.domain.contractor_validation import validate_optional_email
 from app.domain.exceptions import AuthenticationUnavailable, Conflict, Unauthorized
 from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
@@ -38,11 +37,8 @@ from app.domain.policies import UserPolicy
 from app.infrastructure.iam_client import IamClient
 from app.models.auth_models import UserAuthAccount
 from app.schemas.auth import AuthSessionData, AuthSessionResponse, RegisterUserRequest, RegisterUserResponse
-from app.services.email_verification import EmailVerificationService
-from app.services.iam_password_actions import (
-    send_iam_password_action_email,
-    send_iam_password_action_email_safely,
-)
+from app.services.account_recovery import AccountRecoveryService, GENERIC_RECOVERY_DETAIL
+from app.services.email_verification import FIRST_ACCESS_PURPOSE, EmailVerificationService
 from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.units import UnitService
 from app.services.users import UserRegistrationService
@@ -58,6 +54,8 @@ class RequestEmailVerificationRequest(BaseModel):
 
 class EmailVerificationActionResponse(BaseModel):
     detail: str
+    next_action: str | None = None
+    redirect_url: str | None = None
 
 
 class CsrfResponse(BaseModel):
@@ -65,7 +63,7 @@ class CsrfResponse(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    login: str = Field(..., min_length=3, max_length=128)
+    login: str = Field(..., min_length=3, max_length=255)
 
 
 class PasswordResetResponse(BaseModel):
@@ -118,6 +116,11 @@ def _client_ip(request: Request) -> str:
 
 
 def _session_response(current_user: CurrentUser) -> AuthSessionResponse:
+    onboarding_state = current_user.onboarding_state
+    if onboarding_state != "first_login" and current_user.status == "review":
+        onboarding_state = "review"
+    if onboarding_state == "completed":
+        onboarding_state = None
     return AuthSessionResponse(
         data=AuthSessionData(
             user_id=current_user.user_id,
@@ -126,8 +129,8 @@ def _session_response(current_user: CurrentUser) -> AuthSessionResponse:
             role=current_user.system_role,
             status=current_user.status,
             auth_provider="iam",
-            business_access=current_user.status == "active",
-            onboarding_state="review" if current_user.status == "review" else None,
+            business_access=current_user.status == "active" and current_user.onboarding_state != "first_login",
+            onboarding_state=onboarding_state,
             permissions=sorted(current_user.permissions),
         )
     )
@@ -273,7 +276,7 @@ async def request_password_reset(
     request: Request,
     uow: UnitOfWork = Depends(get_uow),
 ) -> PasswordResetResponse:
-    generic_detail = "Если учётная запись существует, инструкция отправлена на подтверждённый email."
+    generic_detail = GENERIC_RECOVERY_DETAIL
     normalized_login = payload.login.strip()
     client_ip = _client_ip(request)
     if not await password_reset_rate_limiter.allow(
@@ -283,37 +286,8 @@ async def request_password_reset(
         return PasswordResetResponse(detail=generic_detail)
 
     async with uow:
-        user = await uow.users.get_by_id(normalized_login)
-        if user is None:
-            return PasswordResetResponse(detail=generic_detail)
-        profile = await uow.profiles.get_by_id(user.id)
-        try:
-            delivery_email = validate_optional_email(
-                (profile.mail if profile else "") or "",
-                allow_placeholder=False,
-            )
-        except ValueError:
-            return PasswordResetResponse(detail=generic_detail)
-        if delivery_email is None:
-            return PasswordResetResponse(detail=generic_detail)
-        binding = await uow.user_auth_accounts.get_by_user_provider(
-            user_id=user.id,
-            provider="iam",
-        )
-        if binding is None:
-            return PasswordResetResponse(detail=generic_detail)
-        action = await IamClient().create_action_token(
-            account_id=binding.external_subject_id,
-            purpose="password_reset",
-        )
-        uow.add_after_commit_hook(
-            lambda: send_iam_password_action_email_safely(
-                to_email=delivery_email,
-                raw_token=action.token,
-                purpose="password_reset",
-            )
-        )
-    return PasswordResetResponse(detail=generic_detail)
+        result = await AccountRecoveryService(uow).request_recovery(identifier=normalized_login)
+    return PasswordResetResponse(detail=result.detail)
 
 
 @router.post("/auth/request-email-verification", response_model=EmailVerificationActionResponse)
@@ -324,8 +298,16 @@ async def request_email_verification(
 ) -> EmailVerificationActionResponse:
     UserPolicy.ensure_can_manage_own_profile(current_user)
     async with uow:
-        service = EmailVerificationService(uow.profiles, uow.user_contact_channels)
-        result = await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
+        service = EmailVerificationService(
+            uow.profiles,
+            uow.user_contact_channels,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        result = await service.request_profile_verification(
+            user_id=current_user.user_id,
+            email=payload.email,
+            purpose="profile_change",
+        )
 
     if result == "same_email":
         return EmailVerificationActionResponse(detail="Указан текущий подтверждённый email")
@@ -340,9 +322,35 @@ async def verify_email(
     uow: UnitOfWork = Depends(get_uow),
 ) -> EmailVerificationActionResponse:
     async with uow:
-        service = EmailVerificationService(uow.profiles, uow.user_contact_channels)
-        updated = await service.confirm_profile_verification(token=token)
-    return EmailVerificationActionResponse(detail="Email подтверждён" if updated else "Email уже подтверждён")
+        service = EmailVerificationService(
+            uow.profiles,
+            uow.user_contact_channels,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        result = await service.confirm_profile_verification(token=token)
+        next_action = result.next_action
+        redirect_url = result.redirect_url
+        if result.purpose == FIRST_ACCESS_PURPOSE:
+            from app.services.account_recovery import AccountRecoveryService
+
+            redirect_url = await AccountRecoveryService(uow).issue_setup_after_verified_access(
+                user_id=result.user_id,
+                email=result.email,
+            )
+            next_action = "password_setup"
+        else:
+            user = await uow.users.get_by_id(result.user_id)
+            if user is not None and user.status == "review":
+                next_action = "waiting_for_review"
+            elif result.purpose == "profile_change":
+                next_action = "login"
+            else:
+                next_action = "first_login"
+    return EmailVerificationActionResponse(
+        detail="Email подтверждён" if result.updated else "Email уже подтверждён",
+        next_action=next_action,
+        redirect_url=redirect_url,
+    )
 
 
 @router.post("/users/register", response_model=RegisterUserResponse)
@@ -378,35 +386,20 @@ async def register_user(
                 phone=payload.phone.strip() if payload.phone else None,
                 mail=payload.mail.strip() if payload.mail else None,
             )
-        if binding is not None and binding.is_active:
-            account = await iam_client.put_account(
-                account_id=binding.external_subject_id,
-                login=user.id,
-                role=role_name,
-                auth_status="pending",
+        delivery_email = (payload.mail or "").strip().lower()
+        if delivery_email:
+            await uow.user_contact_channels.upsert_channel(
+                user_id=user.id,
+                channel_type="email",
+                channel_value=delivery_email,
+                is_verified=False,
+                is_primary=True,
             )
-            if account.auth_status == "pending":
-                action = await iam_client.create_action_token(
-                    account_id=account.id,
-                    purpose="password_setup",
-                )
-                profile = await uow.profiles.get_by_id(user.id)
-                delivery_email = (payload.mail or (profile.mail if profile else None) or "").strip()
-                if delivery_email:
-                    await send_iam_password_action_email(
-                        to_email=delivery_email,
-                        raw_token=action.token,
-                        purpose="password_setup",
-                    )
-            return RegisterUserResponse(
-                data={"user_id": user.id, "role_id": user.id_role, "status": user.status}
-            )
-
         account = await iam_client.put_account(
             account_id=binding.external_subject_id if binding is not None else account_id,
             login=user.id,
             role=role_name,
-            auth_status="pending",
+            auth_status="active",
         )
         if binding is None:
             binding = UserAuthAccount(
@@ -420,19 +413,6 @@ async def register_user(
             await uow.user_auth_accounts.add(binding)
         else:
             binding.is_active = True
-        if account.auth_status == "pending":
-            action = await iam_client.create_action_token(
-                account_id=account.id,
-                purpose="password_setup",
-            )
-            profile = await uow.profiles.get_by_id(user.id)
-            delivery_email = (payload.mail or (profile.mail if profile else None) or "").strip()
-            if delivery_email:
-                await send_iam_password_action_email(
-                    to_email=delivery_email,
-                    raw_token=action.token,
-                    purpose="password_setup",
-                )
 
         unit_service = UnitService(uow.units, uow.users)
         if payload.unit_id is not None:

@@ -83,4 +83,5 @@ def test_contractors_list_endpoint_returns_table_payload(
     assert payload["offset"] == 20
     assert "max_user_id" not in payload["items"][0]
     assert "registration_source" not in payload["items"][0]
+    assert payload["items"][0]["email_verified"] is False
     assert payload["items"][0]["actions"]["can_manage_manual_contractor"] is True

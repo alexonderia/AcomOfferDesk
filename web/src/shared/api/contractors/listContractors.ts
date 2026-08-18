@@ -9,6 +9,7 @@ export type ContractorListItem = {
   fullName: string | null;
   phone: string | null;
   mail: string | null;
+  emailVerified: boolean;
   companyName: string | null;
   inn: string | null;
   companyPhone: string | null;
@@ -44,6 +45,7 @@ type ContractorListItemPayload = {
   full_name?: string | null;
   phone?: string | null;
   mail?: string | null;
+  email_verified?: boolean;
   company_name?: string | null;
   inn?: string | null;
   company_phone?: string | null;
@@ -86,6 +88,7 @@ const mapItem = (payload: ContractorListItemPayload): ContractorListItem => ({
   fullName: payload.full_name ?? null,
   phone: payload.phone ?? null,
   mail: payload.mail ?? null,
+  emailVerified: Boolean(payload.email_verified),
   companyName: payload.company_name ?? null,
   inn: payload.inn ?? null,
   companyPhone: payload.company_phone ?? null,

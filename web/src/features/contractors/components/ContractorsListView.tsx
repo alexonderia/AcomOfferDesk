@@ -27,6 +27,7 @@ import {
   InfoRow,
   SourceSection,
   UserStatusPill,
+  EmailWithVerifiedMark,
   dialogContentSx,
   dialogPaperSx,
   normalizeUserStatus,
@@ -43,6 +44,8 @@ import {
 import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
 import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
+import { useAuth } from '@app/providers/AuthProvider';
+import { hasPermission } from '@shared/auth/permissions';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { ContractorMobileCard } from './ContractorMobileCard';
 import { ContractorUnitsCell } from './ContractorUnitsCell';
@@ -90,6 +93,7 @@ const toUserListItem = (row: ContractorListItem): UserListItem => ({
   full_name: row.fullName,
   phone: row.phone,
   mail: row.mail,
+  email_verified: Boolean(row.emailVerified),
   company_name: row.companyName,
   inn: row.inn,
   company_phone: row.companyPhone,
@@ -135,6 +139,8 @@ export const ContractorsListView = ({
   onAddClick,
 }: ContractorsListViewProps) => {
   const theme = useTheme();
+  const { session } = useAuth();
+  const canViewEmailVerification = hasPermission(session, 'users.registration.approve');
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const [isEditMode, setIsEditMode] = useState(false);
   const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([...VIEW_COLUMN_IDS]);
@@ -404,9 +410,21 @@ export const ContractorsListView = ({
         id: 'mail',
         header: 'E-mail',
         minWidth: 190,
+        width: '240px',
         getSearchValue: (row) => row.mail ?? '',
         getSortValue: (row) => row.mail ?? '',
-        renderCell: (row) => renderEditableField(row, 'mail', row.actions.manage_manual_contractor),
+        renderCell: (row) => {
+          if (isEditMode) {
+            return renderEditableField(row, 'mail', row.actions.manage_manual_contractor);
+          }
+          return (
+            <EmailWithVerifiedMark
+              mail={row.mail}
+              verified={Boolean(row.emailVerified)}
+              showMark={canViewEmailVerification}
+            />
+          );
+        },
       },
       {
         id: 'company_phone',
@@ -471,7 +489,7 @@ export const ContractorsListView = ({
         renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField],
+    [contractorStatusFilterOptions, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField, canViewEmailVerification],
   );
 
   const openContractorDetails = (row: ContractorListItem) => {
@@ -635,6 +653,7 @@ export const ContractorsListView = ({
           return (
             <ContractorMobileCard
               row={userRow}
+              canViewEmailVerification={canViewEmailVerification}
               isContactExpanded={Boolean(expandedContractorCardsById[row.userId]?.contact)}
               isCompanyExpanded={Boolean(expandedContractorCardsById[row.userId]?.company)}
               onToggleContact={() =>
@@ -720,7 +739,16 @@ export const ContractorsListView = ({
                         }}
                       >
                         <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                        <InfoRow label="E-mail" value={selectedUser.mail} />
+                        <InfoRow
+                          label="E-mail"
+                          value={
+                            <EmailWithVerifiedMark
+                              mail={selectedUser.mail}
+                              verified={Boolean(selectedUser.email_verified)}
+                              showMark={canViewEmailVerification}
+                            />
+                          }
+                        />
                       </Box>
                     </Stack>
                   </SourceSection>

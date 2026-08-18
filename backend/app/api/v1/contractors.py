@@ -7,7 +7,10 @@ from fastapi import APIRouter, Body, Depends, Path, Query
 from app.api.action_flags import ContractorActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
+from app.domain.exceptions import Conflict
+from app.domain.iam_status import iam_auth_status_for_user_status
 from app.domain.policies import CurrentUser
+from app.infrastructure.iam_client import IamClient
 from app.schemas.contractors import (
     ContractorInviteData,
     ContractorInviteRequest,
@@ -28,6 +31,7 @@ from app.schemas.contractors import (
 from app.services.contractor_invitations import ContractorInvitationService
 from app.services.contractors import ContractorService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
+from app.services.registration_invitations import RegistrationInvitationService
 from app.services.users import UserStatusService
 
 router = APIRouter()
@@ -147,6 +151,7 @@ async def update_contractor_status(
             uow.users,
             uow.profiles,
             uow.user_auth_accounts,
+            user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await contractor_service.update_contractor_status(
@@ -154,6 +159,18 @@ async def update_contractor_status(
             contractor_id=contractor_id,
             user_status=payload.user_status,
             status_service=status_service,
+        )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=contractor_id,
+            provider="iam",
+        )
+        if binding is None:
+            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+        await IamClient().update_status(
+            account_id=binding.external_subject_id,
+            auth_status=iam_auth_status_for_user_status(payload.user_status),
+            actor_account_id=current_user.iam_account_id,
+            actor_session_id=current_user.iam_session_id,
         )
 
     return ContractorStatusUpdateResponse(
@@ -211,6 +228,7 @@ async def invite_contractors(
     async with uow:
         service = ContractorInvitationService(
             attachment_service=NormativeEmailAttachmentService(uow.files),
+            invitation_service=RegistrationInvitationService(),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.invite_contractors(

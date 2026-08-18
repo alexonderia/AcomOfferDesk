@@ -42,3 +42,52 @@ async def test_iam_client_reads_and_replaces_individual_permission_grants() -> N
     assert requests[1].method == "PUT"
     assert requests[1].url.path == "/internal/accounts/account-1/permission-grants"
     assert json.loads(requests[1].content) == {"permissions": ["requests.update"]}
+
+
+@pytest.mark.asyncio
+async def test_iam_client_provisions_registration_credentials_and_reads_password_set_only() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/credential-state"):
+            return httpx.Response(
+                200,
+                json={
+                    "id": "account-1",
+                    "login": "new.user",
+                    "role": "contractor",
+                    "auth_status": "pending",
+                    "password_set": True,
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": "account-1",
+                "login": "new.user",
+                "role": "contractor",
+                "auth_status": "pending",
+                "password_set": True,
+                "created": True,
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://iam.test",
+    ) as http_client:
+        client = IamClient(http_client)
+        created = await client.provision_registration_credentials(
+            account_id="account-1",
+            login="new.user",
+            role="contractor",
+            password="correct horse battery staple",
+        )
+        state = await client.get_credential_state(account_id="account-1")
+
+    assert created.password_set is True
+    assert state.password_set is True
+    assert requests[0].url.path == "/internal/accounts/account-1/registration-credentials"
+    assert "correct horse battery staple" not in str(state)
+

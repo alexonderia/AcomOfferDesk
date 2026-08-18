@@ -13,7 +13,7 @@ const updateContractorRootUnitsMock = vi.fn();
 const showSystemToastMock = vi.fn();
 const showErrorToastMock = vi.fn();
 
-let mockSession: { roleId: number } = {
+let mockSession: { roleId: number; permissions?: string[] } = {
   roleId: ROLE.ADMIN,
 };
 
@@ -53,6 +53,7 @@ const buildContractor = (): ContractorListItem => ({
   fullName: 'Иван Петров',
   phone: '+79990000000',
   mail: 'ivan@example.com',
+  emailVerified: false,
   companyName: 'ООО Ромашка',
   inn: '1234567890',
   companyPhone: '+79990000001',
@@ -396,5 +397,34 @@ describe('ContractorsListView editing', () => {
       severity: 'success',
       message: 'Привязки к подразделениям сохранены.',
     });
+  });
+
+  it('shows a check next to verified email for registration approvers', () => {
+    mockSession = {
+      roleId: ROLE.ADMIN,
+      permissions: ['users.registration.approve'],
+    };
+    renderView({
+      contractors: [
+        buildContractor(),
+        { ...buildContractor(), userId: 'contractor-2', emailVerified: true, mail: 'ok@example.com' },
+      ],
+    });
+
+    expect(screen.getByTitle('Почта подтверждена')).toBeInTheDocument();
+    expect(screen.getByText('ok@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('Подтверждение почты')).not.toBeInTheDocument();
+  });
+
+  it('hides email verification check without registration approve permission', () => {
+    mockSession = {
+      roleId: ROLE.ECONOMIST,
+      permissions: [],
+    };
+    renderView({
+      contractors: [{ ...buildContractor(), emailVerified: true }],
+    });
+
+    expect(screen.queryByTitle('Почта подтверждена')).not.toBeInTheDocument();
   });
 });

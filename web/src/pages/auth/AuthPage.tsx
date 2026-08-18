@@ -25,7 +25,7 @@ export const AuthPage = () => {
 
   const submitReset = async () => {
     if (resetLogin.trim().length < 3) {
-      showErrorToast('Укажите логин');
+      showErrorToast('Укажите логин или email');
       return;
     }
     setIsResetting(true);
@@ -84,11 +84,11 @@ export const AuthPage = () => {
             Восстановление пароля
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Укажите логин. Если учётная запись существует, инструкция придёт на подтверждённый email.
+            Укажите логин или email. Если учётная запись существует, инструкция придёт на подтверждённый email.
           </Typography>
           <Stack spacing={1.5} sx={{ width: '100%' }}>
             <TextField
-              label="Логин"
+              label="Логин или email"
               value={resetLogin}
               onChange={(event) => setResetLogin(event.target.value)}
               autoComplete="username"

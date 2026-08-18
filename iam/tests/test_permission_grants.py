@@ -152,6 +152,12 @@ async def test_access_token_uses_effective_permissions_after_login_and_refresh(s
         purpose="password_setup",
         new_password="correct horse battery staple",
     )
+    await service.update_status(
+        account_id=account_id,
+        auth_status="active",
+        actor_account_id=None,
+        actor_session_id=None,
+    )
     await service.replace_account_permission_grants(
         account_id=account_id,
         permission_names=["offers.accept", "requests.read"],

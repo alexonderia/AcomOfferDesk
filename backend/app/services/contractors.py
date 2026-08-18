@@ -30,6 +30,7 @@ class ContractorListItemResult:
     created_at: str | None
     updated_at: str | None
     is_manual: bool
+    email_verified: bool = False
     root_unit_bindings: ContractorRootUnitBindingsState | None = None
 
 
@@ -120,6 +121,14 @@ class ContractorService:
                     replace(item, root_unit_bindings=bindings_by_user.get(item.user_id))
                     for item in items
                 ]
+        if items:
+            verified_by_user_id = await self._users.map_primary_email_verified(
+                user_ids=[item.user_id for item in items],
+            )
+            items = [
+                replace(item, email_verified=verified_by_user_id.get(item.user_id, False))
+                for item in items
+            ]
         return ContractorListResult(
             items=items,
             total=total,

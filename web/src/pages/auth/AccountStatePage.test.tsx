@@ -66,6 +66,7 @@ describe('AccountStatePage', () => {
     useAuthMock.mockReturnValue({
       session: baseSession,
       logout: logoutMock,
+      refresh: vi.fn(),
     });
   });
 

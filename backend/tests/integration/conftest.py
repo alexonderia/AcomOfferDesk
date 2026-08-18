@@ -54,8 +54,10 @@ def make_current_user():
         role_id: int = 6,
         status: str = "active",
         permissions: set[str] | frozenset[str] | None = None,
+        onboarding_state: str | None = None,
     ) -> CurrentUser:
         normalized_permissions = frozenset(permissions or set())
+        required_actions = frozenset({"complete_profile"}) if onboarding_state == "first_login" else frozenset()
         return CurrentUser(
             user_id=user_id,
             iam_account_id="00000000-0000-4000-8000-000000000001",
@@ -64,6 +66,7 @@ def make_current_user():
             role_id=role_id,
             status=status,
             permissions=normalized_permissions,
+            required_actions=required_actions,
         )
 
     return _make_current_user

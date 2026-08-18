@@ -8,12 +8,14 @@ import {
   Typography,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import type { UserListItem } from '@entities/user';
+import { EmailWithVerifiedMark } from '@features/admin/components/UserCardPrimitives';
 import { ContractorStatusPill, formatPhoneForView } from './contractorUi';
 
 type ContractorMobileCardProps = {
   row: UserListItem;
+  canViewEmailVerification?: boolean;
   isContactExpanded: boolean;
   isCompanyExpanded: boolean;
   onToggleContact: () => void;
@@ -23,6 +25,7 @@ type ContractorMobileCardProps = {
 
 export const ContractorMobileCard = ({
   row,
+  canViewEmailVerification = false,
   isContactExpanded,
   isCompanyExpanded,
   onToggleContact,
@@ -32,9 +35,19 @@ export const ContractorMobileCard = ({
   const theme = useTheme();
   const name = row.full_name?.trim();
   const title = name ? `${name} (${row.user_id})` : row.user_id;
-  const contactRows = [
+  const contactRows: Array<{ key: string; label: string; value: ReactNode }> = [
     { key: 'phone', label: 'Телефон', value: formatPhoneForView(row.phone) ?? '—' },
-    { key: 'mail', label: 'Почта', value: row.mail ?? '—' },
+    {
+      key: 'mail',
+      label: 'Почта',
+      value: (
+        <EmailWithVerifiedMark
+          mail={row.mail}
+          verified={Boolean(row.email_verified)}
+          showMark={canViewEmailVerification}
+        />
+      ),
+    },
   ];
   const companyRows = [
     { key: 'company_phone', label: 'Телефон', value: formatPhoneForView(row.company_phone) ?? '—' },

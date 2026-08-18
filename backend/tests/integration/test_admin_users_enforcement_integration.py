@@ -119,6 +119,9 @@ class _UsersRepo:
             rows.append((user, self._profiles.get(user.id), None, None, None))
         return rows
 
+    async def map_primary_email_verified(self, *, user_ids: list[str]) -> dict[str, bool]:
+        return {user_id: False for user_id in user_ids}
+
     async def list_active_user_parent_pairs(self):
         return [
             (user.id, user.id_parent)
@@ -191,6 +194,13 @@ class _NullUserContactChannelsRepo:
     async def get_primary_by_type(self, *, user_id: str, channel_type: str, include_inactive: bool = False):
         _ = (user_id, channel_type, include_inactive)
         return None
+
+    async def exists_primary_email(self, *, email: str, exclude_user_id: str | None = None) -> bool:
+        _ = (email, exclude_user_id)
+        return False
+
+    async def upsert_channel(self, **_kwargs):
+        return SimpleNamespace(is_verified=False)
 
 
 class _NullUserNotificationPreferencesRepo:
@@ -268,13 +278,8 @@ class _FakeIamClient:
 
 
 def _set_fake_iam(monkeypatch) -> None:
-    async def _send_email(**_kwargs) -> None:
-        return None
-
     monkeypatch.setattr("app.api.v1.auth.IamClient", _FakeIamClient)
     monkeypatch.setattr("app.api.v1.users.IamClient", _FakeIamClient)
-    monkeypatch.setattr("app.api.v1.auth.send_iam_password_action_email", _send_email)
-    monkeypatch.setattr("app.api.v1.users.send_iam_password_action_email", _send_email)
 
 
 def test_admin_can_create_user_with_permission(

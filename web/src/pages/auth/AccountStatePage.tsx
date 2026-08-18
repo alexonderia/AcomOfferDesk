@@ -26,7 +26,14 @@ type StatusContent = {
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const innRegex = /^\d{10}$|^\d{12}$/;
 
-const getStatusContent = (status: string): StatusContent => {
+const getStatusContent = (status: string, onboardingState: string | null): StatusContent => {
+  if (onboardingState === 'first_login') {
+    return {
+      title: 'Заполните профиль',
+      description: 'После сохранения данных откроется рабочий доступ.',
+      severity: 'info'
+    };
+  }
   if (status === 'review') {
     return {
       title: 'Проверяем данные',
@@ -129,7 +136,7 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
 
 export const AccountStatePage = () => {
   const navigate = useNavigate();
-  const { session, logout } = useAuth();
+  const { session, logout, refresh } = useAuth();
   const { showErrorToast, showSuccessToast } = useSystemToasts();
   const [draft, setDraft] = useState<ProfileDraft>(emptyDraft);
   const [isLoading, setIsLoading] = useState(true);
@@ -143,6 +150,7 @@ export const AccountStatePage = () => {
   const sessionUserId = session?.userId ?? null;
   const hasBusinessAccess = Boolean(session?.businessAccess);
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
+  const isFirstLogin = session?.onboardingState === 'first_login';
   const isReview = session?.status === 'review';
   const isBlocked = session?.status === 'inactive' || session?.status === 'blacklist';
 
@@ -201,8 +209,14 @@ export const AccountStatePage = () => {
     };
   }, [hasBusinessAccess, session, sessionUserId]);
 
-  const canEditCompany = useMemo(() => isContractor && isReview, [isContractor, isReview]);
-  const statusContent = useMemo(() => getStatusContent(session?.status ?? ''), [session?.status]);
+  const canEditCompany = useMemo(
+    () => isContractor && (isReview || isFirstLogin),
+    [isContractor, isFirstLogin, isReview],
+  );
+  const statusContent = useMemo(
+    () => getStatusContent(session?.status ?? '', session?.onboardingState ?? null),
+    [session?.onboardingState, session?.status],
+  );
   const validationErrors = useMemo(
     () => validateDraft(draft, { requireCompany: canEditCompany }),
     [canEditCompany, draft]
@@ -261,7 +275,14 @@ export const AccountStatePage = () => {
         setDraft(buildDraft(nextProfile));
       }
       setIsSubmitted(true);
-      showSuccessToast('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.');
+      showSuccessToast(
+        isFirstLogin
+          ? 'Профиль сохранён. Рабочий доступ открыт.'
+          : 'Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.',
+      );
+      if (isFirstLogin) {
+        await refresh('bootstrap');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось сохранить данные';
       setErrorMessage(message);

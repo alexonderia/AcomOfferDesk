@@ -31,7 +31,7 @@ describe('AuthPage password reset', () => {
     passwordReset.mockResolvedValue('Если учётная запись существует, инструкция отправлена на подтверждённый email.');
     renderPage();
 
-    fireEvent.change(screen.getByLabelText('Логин'), { target: { value: 'superadmin' } });
+    fireEvent.change(screen.getByLabelText('Логин или email'), { target: { value: 'superadmin' } });
     fireEvent.click(screen.getByRole('button', { name: 'Отправить инструкцию' }));
 
     await waitFor(() => expect(toasts.showSuccessToast).toHaveBeenCalledTimes(1));

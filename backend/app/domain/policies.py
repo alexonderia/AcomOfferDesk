@@ -18,6 +18,8 @@ def _is_allowed(checker) -> bool:
 class UserPolicy:
     @staticmethod
     def can_manage_review_onboarding(current_user: CurrentUser) -> bool:
+        if current_user.status == "active" and current_user.onboarding_state == "first_login":
+            return True
         return current_user.role_id == settings.contractor_role_id and current_user.status == "review"
 
     @staticmethod
@@ -113,6 +115,30 @@ class UserPolicy:
     @staticmethod
     def can_register_user(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.USERS_CREATE)
+
+    @staticmethod
+    def ensure_can_invite_registration(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.USERS_REGISTRATION_INVITE,
+            message="Недостаточно прав для приглашения к регистрации",
+        )
+
+    @staticmethod
+    def can_invite_registration(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.USERS_REGISTRATION_INVITE)
+
+    @staticmethod
+    def ensure_can_approve_registration(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.USERS_REGISTRATION_APPROVE,
+            message="Недостаточно прав для подтверждения регистрации",
+        )
+
+    @staticmethod
+    def can_approve_registration(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.USERS_REGISTRATION_APPROVE)
 
     @staticmethod
     def ensure_can_register_user(current_user: CurrentUser) -> None:

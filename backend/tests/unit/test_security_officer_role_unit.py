@@ -128,6 +128,9 @@ class _UsersRepo:
         total = len(rows)
         return rows[offset: offset + limit], total
 
+    async def map_primary_email_verified(self, *, user_ids: list[str]) -> dict[str, bool]:
+        return {user_id: False for user_id in user_ids}
+
     async def get_with_profile_and_company_contacts(self, *, user_id: str):
         user = self._users.get(user_id)
         if user is None:
@@ -261,7 +264,15 @@ async def test_security_officer_can_change_contractor_status_via_contractor_serv
 async def test_security_officer_can_update_only_contractor_status(make_current_user, monkeypatch):
     users_repo = _UsersRepo()
     profiles_repo = _ProfilesRepo(users_repo)
-    service = UserStatusService(users_repo, profiles_repo)
+
+    class _Channels:
+        async def get_primary_by_type(self, *, user_id: str, channel_type: str, include_inactive: bool = False):
+            _ = (include_inactive, channel_type)
+            if user_id != "contractor-1":
+                return None
+            return SimpleNamespace(is_verified=True, channel_value="contractor@example.com")
+
+    service = UserStatusService(users_repo, profiles_repo, user_contact_channels=_Channels())
     async def _fake_notify_contractor_status_changed_email(*, to_email: str, user_status: str, recipient_user_id: str, initiator_user_id: str) -> bool:
         _ = (to_email, user_status, recipient_user_id, initiator_user_id)
         return True
@@ -276,6 +287,7 @@ async def test_security_officer_can_update_only_contractor_status(make_current_u
         role_id=settings.security_officer_role_id,
         permissions={
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            PermissionCodes.USERS_REGISTRATION_APPROVE,
         },
     )
 

@@ -98,6 +98,9 @@ class Account(Base):
     login: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     role_id: Mapped[int] = mapped_column(SmallInteger, ForeignKey("roles.id"), nullable=False)
     auth_status: Mapped[str] = mapped_column(Text, nullable=False)
+    required_actions: Mapped[list] = mapped_column(
+        _json, nullable=False, default=list, server_default="[]"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -176,7 +179,10 @@ class AuthActionToken(Base):
     __tablename__ = "auth_action_tokens"
     __table_args__ = (
         CheckConstraint(
-            "purpose IN ('password_setup', 'password_reset')",
+            "purpose IN ("
+            "'password_setup', 'password_reset', 'verify_email', "
+            "'first_access', 'profile_change'"
+            ")",
             name="auth_action_tokens_purpose_chk",
         ),
     )
@@ -187,6 +193,7 @@ class AuthActionToken(Base):
     )
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    context: Mapped[dict | None] = mapped_column(_json, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

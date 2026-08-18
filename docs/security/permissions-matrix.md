@@ -12,6 +12,11 @@
 - Unit hierarchy и memberships ограничивают data scope независимо от functional permission.
 - Frontend permissions/actions служат для UX; enforcement остаётся на backend.
 
+## Registration lifecycle
+
+- `users.registration.invite` — выпуск HMAC-подписанного stateless registration invite (MAIN invitation не хранит); contractor batch invite также допускает `contractors.manual.create`.
+- `users.registration.approve` — единственный переход саморегистрации `review → active` при verified primary email (superadmin/admin/security).
+
 ## Individual access
 
 Department и contractor delegation UI сохраняют изменения только в IAM grants. UI access codes могут оставаться стабильными identifiers, но runtime authorization проверяет соответствующие atomic permission codes. Удаление индивидуального grant не снимает permission, если он наследуется от system role.

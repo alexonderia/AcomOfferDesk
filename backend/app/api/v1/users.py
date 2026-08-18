@@ -12,6 +12,7 @@ from app.domain.exceptions import Conflict, Forbidden
 from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.domain.policies import CurrentUser
+from app.domain.iam_status import iam_auth_status_for_user_status
 from app.infrastructure.iam_client import IamClient
 from app.models.auth_models import UserAuthAccount
 from app.schemas.users import (
@@ -82,7 +83,6 @@ from app.services.users import (
 )
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
-from app.services.iam_password_actions import send_iam_password_action_email
 from app.services.user_contractor_delegations import UserContractorDelegationsService
 from app.services.user_department_delegations import UserDepartmentDelegationsService
 from app.services.user_notification_preferences import UserNotificationPreferencesService
@@ -392,6 +392,7 @@ async def update_my_profile(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_profile(
             current_user,
@@ -488,6 +489,7 @@ async def update_my_registration_profile(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_profile_for_review_onboarding(
             current_user,
@@ -517,6 +519,7 @@ async def update_my_company_contacts(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_company_contacts(
             current_user,
@@ -549,6 +552,7 @@ async def update_my_registration_company_contacts(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_company_contacts_for_review_onboarding(
             current_user,
@@ -581,6 +585,7 @@ async def set_my_unavailability_period(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.set_my_unavailability_period(
             current_user,
@@ -763,6 +768,7 @@ async def set_subordinate_unavailability_period(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.set_subordinate_unavailability_period(
             current_user=current_user,
@@ -839,6 +845,7 @@ async def create_manual_contractor(
             uow.company_contacts,
             uow.user_auth_accounts,
             uow.units,
+            user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         created_user_id = await service.create_manual_contractor(
@@ -866,7 +873,7 @@ async def create_manual_contractor(
             account_id=account_id,
             login=created_user_id,
             role="contractor",
-            auth_status="pending",
+            auth_status="active",
         )
         if binding is None:
             binding = UserAuthAccount(
@@ -880,17 +887,6 @@ async def create_manual_contractor(
             await uow.user_auth_accounts.add(binding)
         else:
             binding.is_active = True
-        if account.auth_status == "pending":
-            action = await IamClient().create_action_token(
-                account_id=account.id,
-                purpose="password_setup",
-            )
-            if payload.company_mail:
-                await send_iam_password_action_email(
-                    to_email=payload.company_mail,
-                    raw_token=action.token,
-                    purpose="password_setup",
-                )
 
     return ManualContractorCreateResponse(
         data={"user_id": created_user_id},
@@ -939,6 +935,7 @@ async def update_user_status(
             uow.users,
             uow.profiles,
             uow.user_auth_accounts,
+            user_contact_channels=uow.user_contact_channels,
             notification_preferences=UserNotificationPreferencesService(
                 uow.user_contact_channels,
                 uow.user_notification_preferences,
@@ -957,7 +954,7 @@ async def update_user_status(
         )
         if binding is None:
             raise Conflict("Для пользователя отсутствует активная привязка IAM")
-        iam_status = "active" if payload.user_status in {"active", "review"} else "blocked"
+        iam_status = iam_auth_status_for_user_status(payload.user_status)
         await IamClient().update_status(
             account_id=binding.external_subject_id,
             auth_status=iam_status,

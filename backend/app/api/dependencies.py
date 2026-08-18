@@ -33,6 +33,7 @@ async def resolve_iam_current_user(claims: IamAccessClaims) -> CurrentUser:
             role_id=claims.role_id,
             status=user.status,
             permissions=claims.permissions,
+            required_actions=claims.required_actions,
         )
 
 

@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
-import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
@@ -53,6 +53,7 @@ import {
   normalizeUserStatus,
   userStatusLabelByValue,
   userStatusMemoText,
+  EmailWithVerifiedMark,
 } from './UserCardPrimitives';
 import {
   getSubordinateProfile,
@@ -70,6 +71,7 @@ import {
   type UserContractorDelegations,
 } from '@shared/api/users/getContractorDelegations';
 import { useAuth } from '@app/providers/AuthProvider';
+import { hasPermission } from '@shared/auth/permissions';
 import {
   getIndividuallyGrantedAccessCodes,
   permissionSourceLabel,
@@ -120,6 +122,7 @@ type UserRow = {
   full_name: string;
   phone: string;
   mail: string;
+  email_verified: boolean;
   id_role: number;
   role: string;
   status: StatusFormValues['user_status'];
@@ -197,18 +200,29 @@ const formatPhoneForView = (value: string | null | undefined) => {
 type UserMobileCardProps = {
   row: UserRow;
   canViewRoleIds: boolean;
+  canViewEmailVerification: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onOpenDetails?: (row: UserRow) => void;
 };
 
-const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpenDetails }: UserMobileCardProps) => {
+const UserMobileCard = ({ row, canViewRoleIds, canViewEmailVerification, isExpanded, onToggleExpand, onOpenDetails }: UserMobileCardProps) => {
   const theme = useTheme();
-  const detailRows = [
+  const detailRows: Array<{ key: string; label: string; value: ReactNode }> = [
     { key: 'login', label: 'Логин', value: row.id },
     { key: 'full_name', label: 'ФИО', value: row.full_name },
     { key: 'phone', label: 'Телефон', value: row.phone },
-    { key: 'mail', label: 'E-mail', value: row.mail },
+    {
+      key: 'mail',
+      label: 'E-mail',
+      value: (
+        <EmailWithVerifiedMark
+          mail={row.mail}
+          verified={row.email_verified}
+          showMark={canViewEmailVerification}
+        />
+      ),
+    },
     ...(canViewRoleIds ? [{ key: 'role_id', label: 'ID роли', value: String(row.id_role) }] : []),
     { key: 'role', label: 'Роль', value: row.role },
     { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] },
@@ -691,6 +705,7 @@ export const UsersTable = ({
   const [isLoadingContractorDelegations, setIsLoadingContractorDelegations] = useState(false);
   const [isSavingContractorDelegations, setIsSavingContractorDelegations] = useState(false);
   const { session } = useAuth();
+  const canViewEmailVerification = hasPermission(session, 'users.registration.approve');
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const lastDelegationToastRef = useRef<string | null>(null);
 
@@ -891,6 +906,7 @@ export const UsersTable = ({
         full_name: user.full_name ?? '—',
         phone: formatPhoneForView(user.phone) ?? '—',
         mail: user.mail ?? '—',
+        email_verified: Boolean(user.email_verified),
         id_role: user.role_id,
         role: getRoleLabel(user.role_id),
         status: normalizeUserStatus(user.status),
@@ -1245,7 +1261,14 @@ export const UsersTable = ({
         header: 'E-mail',
         field: 'mail',
         minWidth: 190,
-        renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography>
+        width: '240px',
+        renderCell: (row) => (
+          <EmailWithVerifiedMark
+            mail={row.mail}
+            verified={row.email_verified}
+            showMark={canViewEmailVerification}
+          />
+        )
       },
       ...(canViewRoleIds ? [{ id: 'id_role', header: 'ID роли', field: 'id_role', minWidth: 100, width: '110px' } as TableTemplateColumn<UserRow>] : []),
       {
@@ -1329,7 +1352,7 @@ export const UsersTable = ({
         }
       }
     ],
-    [getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, canViewRoleIds, resolveEditableRoleOptions, updatingUserId, usersRoleFilterOptions, usersStatusFilterOptions]
+    [getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, canViewEmailVerification, canViewRoleIds, resolveEditableRoleOptions, updatingUserId, usersRoleFilterOptions, usersStatusFilterOptions]
   );
   const contractorStatusFilterOptions = useMemo(
     () => Array.from(new Set(users.map((user) => toStatusLabel(user.status)))).map((status) => ({ label: status, value: status })),
@@ -1340,7 +1363,13 @@ export const UsersTable = ({
       { id: 'login', header: 'Логин', field: 'user_id', minWidth: 170 },
       { id: 'full_name', header: 'ФИО', field: 'full_name', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
       { id: 'phone', header: 'Телефон', field: 'phone', minWidth: 150, renderValue: (value) => <Typography variant="body2">{formatPhoneForView(value as string | null | undefined) ?? '—'}</Typography> },
-      { id: 'mail', header: 'E-mail', field: 'mail', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
+      { id: 'mail', header: 'E-mail', field: 'mail', minWidth: 190, width: '240px', renderCell: (row) => (
+        <EmailWithVerifiedMark
+          mail={row.mail}
+          verified={Boolean(row.email_verified)}
+          showMark={canViewEmailVerification}
+        />
+      ) },
       { id: 'company_phone', header: 'Телефон компании', field: 'company_phone', minWidth: 170, renderValue: (value) => <Typography variant="body2">{formatPhoneForView(value as string | null | undefined) ?? '—'}</Typography> },
       { id: 'company_mail', header: 'E-mail компании', field: 'company_mail', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
       {
@@ -1355,7 +1384,7 @@ export const UsersTable = ({
         renderCell: (row) => <ContractorStatusPill value={row.status} />
       }
     ],
-    [contractorStatusFilterOptions]
+    [contractorStatusFilterOptions, canViewEmailVerification]
   );
 
   if (!isContractorsTab) {
@@ -1389,6 +1418,7 @@ export const UsersTable = ({
               <UserMobileCard
                 row={row}
                 canViewRoleIds={canViewRoleIds}
+                canViewEmailVerification={canViewEmailVerification}
                 isExpanded={Boolean(expandedUserCardsById[row.id])}
                 onToggleExpand={() =>
                   setExpandedUserCardsById((prev) => ({
@@ -1472,7 +1502,16 @@ export const UsersTable = ({
                           }}
                         >
                           <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                          <InfoRow label="E-mail" value={selectedUser.mail} />
+                          <InfoRow
+                            label="E-mail"
+                            value={
+                              <EmailWithVerifiedMark
+                                mail={selectedUser.mail}
+                                verified={Boolean(selectedUser.email_verified)}
+                                showMark={canViewEmailVerification}
+                              />
+                            }
+                          />
                         </Box>
                       </Stack>
                     </SourceSection>
@@ -1843,7 +1882,16 @@ export const UsersTable = ({
                         }}
                       >
                         <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                        <InfoRow label="E-mail" value={selectedUser.mail} />
+                        <InfoRow
+                          label="E-mail"
+                          value={
+                            <EmailWithVerifiedMark
+                              mail={selectedUser.mail}
+                              verified={Boolean(selectedUser.email_verified)}
+                              showMark={canViewEmailVerification}
+                            />
+                          }
+                        />
                       </Box>
                     </Stack>
                   </SourceSection>

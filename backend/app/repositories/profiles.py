@@ -151,6 +151,14 @@ class ProfileRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_id_by_mail(self, *, email: str) -> str | None:
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            return None
+        stmt = select(Profile.id).where(Profile.mail.ilike(normalized_email)).limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def exists_by_mail(self, *, email: str, exclude_user_id: str | None = None) -> bool:
         normalized_email = email.strip().lower()
         if not normalized_email:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi.testclient import TestClient
 
 from iam_app.core.config import settings
@@ -48,6 +50,140 @@ def test_internal_reconciliation_is_authenticated_and_read_only() -> None:
         "orphan_iam_account_ids": [],
         "missing_iam_account_ids": [],
     }
+
+
+def test_registration_credential_routes_are_service_only_and_secret_free(caplog) -> None:
+    headers = {"X-Acom-Service-Token": settings.internal_service_token}
+    account_id = uuid.uuid4()
+    password = "registration secret 123"
+    path = f"/internal/accounts/{account_id}/registration-credentials"
+    payload = {
+        "login": "api.registration",
+        "role": "economist",
+        "auth_status": "pending",
+        "password": password,
+    }
+    with TestClient(app) as client:
+        client.put(
+            "/internal/rbac",
+            headers=headers,
+            json={"roles": [{"name": "economist", "permissions": ["requests.view"]}]},
+        )
+        forbidden_put = client.put(path, json=payload)
+        created = client.put(path, headers=headers, json=payload)
+        repeated = client.put(path, headers=headers, json=payload)
+        conflict = client.put(
+            path,
+            headers=headers,
+            json={**payload, "password": "different registration password"},
+        )
+        forbidden_state = client.get(f"/internal/accounts/{account_id}/credential-state")
+        state = client.get(
+            f"/internal/accounts/{account_id}/credential-state",
+            headers=headers,
+        )
+        public_write = client.put(
+            f"/iam/accounts/{account_id}/registration-credentials",
+            json=payload,
+        )
+
+    assert forbidden_put.status_code == 403
+    assert forbidden_state.status_code == 403
+    assert created.status_code == 200
+    assert created.json() == {
+        "id": str(account_id),
+        "login": "api.registration",
+        "role": "economist",
+        "auth_status": "pending",
+        "password_set": True,
+        "required_actions": [],
+        "created": True,
+    }
+    assert repeated.status_code == 200
+    assert repeated.json() == {**created.json(), "created": False}
+    assert state.status_code == 200
+    assert state.json() == {
+        "id": str(account_id),
+        "login": "api.registration",
+        "role": "economist",
+        "auth_status": "pending",
+        "password_set": True,
+        "required_actions": [],
+    }
+    assert conflict.status_code == 409
+    assert conflict.json() == {"detail": "Конфликт данных"}
+    assert public_write.status_code == 404
+    response_text = created.text + repeated.text + state.text + conflict.text
+    assert password not in response_text
+    assert "password_hash" not in response_text
+    assert password not in caplog.text
+
+
+def test_password_confirmation_mismatch_does_not_consume_token() -> None:
+    headers = {"X-Acom-Service-Token": settings.internal_service_token}
+    account_id = uuid.uuid4()
+    password = "confirmed password 123"
+    with TestClient(app) as client:
+        client.put(
+            "/internal/rbac",
+            headers=headers,
+            json={"roles": [{"name": "economist", "permissions": ["requests.view"]}]},
+        )
+        client.put(
+            f"/internal/accounts/{account_id}",
+            headers=headers,
+            json={
+                "login": "confirmation.user",
+                "role": "economist",
+                "auth_status": "pending",
+            },
+        )
+        passwordless_state = client.get(
+            f"/internal/accounts/{account_id}/credential-state",
+            headers=headers,
+        )
+        token_response = client.post(
+            f"/internal/accounts/{account_id}/action-tokens",
+            headers=headers,
+            json={"purpose": "password_setup"},
+        )
+        token = token_response.json()["token"]
+        page = client.get("/iam/password/setup", params={"token": token})
+        mismatch = client.post(
+            "/iam/password/setup",
+            data={
+                "token": token,
+                "new_password": password,
+                "password_confirmation": "different password 123",
+            },
+        )
+        consumed = client.post(
+            "/iam/password/setup",
+            data={
+                "token": token,
+                "new_password": password,
+                "password_confirmation": password,
+            },
+        )
+        state = client.get(
+            f"/internal/accounts/{account_id}/credential-state",
+            headers=headers,
+        )
+
+    assert token_response.status_code == 200
+    assert passwordless_state.status_code == 200
+    assert passwordless_state.json()["password_set"] is False
+    assert page.status_code == 200
+    assert 'name="password_confirmation"' in page.text
+    assert page.headers["cache-control"] == "no-store"
+    assert page.headers["x-frame-options"] == "DENY"
+    assert mismatch.status_code == 400
+    assert "Пароли не совпадают" in mismatch.text
+    assert password not in mismatch.text
+    assert consumed.status_code == 200
+    assert "Пароль сохранён" in consumed.text
+    assert state.json()["auth_status"] == "pending"
+    assert state.json()["password_set"] is True
 
 
 def test_local_development_provisioning_requires_service_auth_and_creates_active_account(

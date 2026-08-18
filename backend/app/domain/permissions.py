@@ -8,6 +8,8 @@ from app.core.config import settings
 class PermissionCodes:
     USERS_READ = "users.read"
     USERS_CREATE = "users.create"
+    USERS_REGISTRATION_INVITE = "users.registration.invite"
+    USERS_REGISTRATION_APPROVE = "users.registration.approve"
     USERS_STATUS_UPDATE = "users.status.update"
     USERS_ROLE_UPDATE_ANY = "users.role.update_any"
     USERS_ROLE_UPDATE_ECONOMY = "users.role.update_economy"
@@ -179,6 +181,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | {
                 PermissionCodes.USERS_READ,
                 PermissionCodes.USERS_CREATE,
+                PermissionCodes.USERS_REGISTRATION_INVITE,
+                PermissionCodes.USERS_REGISTRATION_APPROVE,
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_ROLE_UPDATE_ANY,
                 PermissionCodes.USERS_LOGIN_UPDATE,
@@ -271,6 +275,8 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+                PermissionCodes.USERS_REGISTRATION_INVITE,
+                PermissionCodes.USERS_REGISTRATION_APPROVE,
             }
         ),
         settings.operator_role_id: frozenset(
@@ -290,3 +296,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             }
         ),
     }
+
+
+get_known_permissions.cache_clear()
+get_role_permissions_map.cache_clear()

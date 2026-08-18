@@ -242,6 +242,30 @@ class ActionTokenRepository:
             stmt = stmt.with_for_update()
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
+    async def get_active_for_account(
+        self,
+        *,
+        account_id: uuid.UUID,
+        purpose: str,
+        for_update: bool = False,
+    ) -> AuthActionToken | None:
+        stmt = select(AuthActionToken).where(
+            AuthActionToken.account_id == account_id,
+            AuthActionToken.purpose == purpose,
+            AuthActionToken.consumed_at.is_(None),
+        )
+        if for_update:
+            stmt = stmt.with_for_update()
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def list_active_purposes(self, *, account_id: uuid.UUID, now: datetime) -> list[str]:
+        stmt = select(AuthActionToken.purpose).where(
+            AuthActionToken.account_id == account_id,
+            AuthActionToken.consumed_at.is_(None),
+            AuthActionToken.expires_at > now,
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
+
 
 class AuditRepository:
     def __init__(self, session: AsyncSession) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, Text, TIMESTAMP, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, SmallInteger, Text, TIMESTAMP, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base

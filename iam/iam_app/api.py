@@ -37,12 +37,15 @@ from iam_app.core.security import (
 from iam_app.db import get_session
 from iam_app.errors import Forbidden, IamError, RateLimited
 from iam_app.schemas import (
+    AccountCredentialStateResponse,
     AccountPermissionGrantsPutRequest,
     AccountPermissionsResponse,
     AccountPutRequest,
     AccountResponse,
     AccountRolePatchRequest,
     AccountStatusPatchRequest,
+    ActionTokenConsumeRequest,
+    ActionTokenConsumeResponse,
     ActionTokenRequest,
     ActionTokenResponse,
     LogoutRequest,
@@ -51,6 +54,8 @@ from iam_app.schemas import (
     ReconciliationRequest,
     ReconciliationResponse,
     RefreshRequest,
+    RegistrationCredentialsPutRequest,
+    RegistrationCredentialsResponse,
     RevokeAllRequest,
     TokenBundleResponse,
     TokenExchangeRequest,
@@ -219,6 +224,9 @@ def _password_page(*, purpose: str, token: str, error: str | None = None) -> HTM
             f'<input type="hidden" name="token" value="{html.escape(token, quote=True)}">'
             '<label for="new_password">Пароль</label><input id="new_password" name="new_password" '
             'type="password" autocomplete="new-password" minlength="12" maxlength="128" required>'
+            '<label for="password_confirmation">Повторите пароль</label>'
+            '<input id="password_confirmation" name="password_confirmation" type="password" '
+            'autocomplete="new-password" minlength="12" maxlength="128" required>'
             '<p class="hint">Используйте не менее 12 символов.</p>'
             f'<button type="submit">{title}</button></form>'
         ),
@@ -399,8 +407,17 @@ async def _consume_password_form(
     purpose: str,
     token: str,
     new_password: str,
+    password_confirmation: str,
     session: AsyncSession,
 ) -> HTMLResponse:
+    if new_password != password_confirmation:
+        response = _password_page(
+            purpose=purpose,
+            token=token,
+            error="Пароли не совпадают",
+        )
+        response.status_code = 400
+        return response
     try:
         await IamService(session).consume_action_token(
             raw_token=token,
@@ -411,11 +428,16 @@ async def _consume_password_form(
         response = _password_page(purpose=purpose, token=token, error=exc.public_detail)
         response.status_code = exc.status_code
         return response
+    hint = (
+        "Пароль создан. Если учётная запись активна, теперь можно войти."
+        if purpose == "password_setup"
+        else "Теперь можно вернуться в AcomOfferDesk и войти с новым паролем."
+    )
     return _page(
         title="Пароль сохранён",
         body=(
             "<h1>Пароль сохранён</h1>"
-            '<p class="hint">Теперь можно вернуться в AcomOfferDesk и войти с новым паролем.</p>'
+            f'<p class="hint">{hint}</p>'
         ),
     )
 
@@ -424,10 +446,15 @@ async def _consume_password_form(
 async def password_setup_submit(
     token: str = Form(min_length=20, max_length=512),
     new_password: str = Form(min_length=12, max_length=128),
+    password_confirmation: str = Form(min_length=12, max_length=128),
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     return await _consume_password_form(
-        purpose="password_setup", token=token, new_password=new_password, session=session
+        purpose="password_setup",
+        token=token,
+        new_password=new_password,
+        password_confirmation=password_confirmation,
+        session=session,
     )
 
 
@@ -435,10 +462,15 @@ async def password_setup_submit(
 async def password_reset_submit(
     token: str = Form(min_length=20, max_length=512),
     new_password: str = Form(min_length=12, max_length=128),
+    password_confirmation: str = Form(min_length=12, max_length=128),
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     return await _consume_password_form(
-        purpose="password_reset", token=token, new_password=new_password, session=session
+        purpose="password_reset",
+        token=token,
+        new_password=new_password,
+        password_confirmation=password_confirmation,
+        session=session,
     )
 
 
@@ -529,6 +561,54 @@ async def put_account(
         role=result.role_name,
         auth_status=result.account.auth_status,
         created=result.created,
+    )
+
+
+@router.put(
+    "/internal/accounts/{account_id}/registration-credentials",
+    response_model=RegistrationCredentialsResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+async def put_registration_credentials(
+    account_id: uuid.UUID,
+    payload: RegistrationCredentialsPutRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RegistrationCredentialsResponse:
+    result = await IamService(session).provision_registration_credentials(
+        account_id=account_id,
+        login=payload.login,
+        role_name=payload.role,
+        auth_status=payload.auth_status,
+        initial_password=payload.password,
+        replace_password=payload.replace_password,
+    )
+    return RegistrationCredentialsResponse(
+        id=result.account.id,
+        login=result.account.login,
+        role=result.role_name,
+        auth_status=result.account.auth_status,
+        password_set=result.password_set,
+        created=result.created,
+    )
+
+
+@router.get(
+    "/internal/accounts/{account_id}/credential-state",
+    response_model=AccountCredentialStateResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+async def get_account_credential_state(
+    account_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> AccountCredentialStateResponse:
+    result = await IamService(session).get_credential_state(account_id=account_id)
+    return AccountCredentialStateResponse(
+        id=result.account.id,
+        login=result.account.login,
+        role=result.role_name,
+        auth_status=result.account.auth_status,
+        password_set=result.password_set,
+        required_actions=list(result.required_actions),
     )
 
 
@@ -673,8 +753,44 @@ async def create_action_token(
     token, expires_at = await IamService(session).create_action_token(
         account_id=account_id,
         purpose=payload.purpose,
+        context=payload.context,
     )
     return ActionTokenResponse(token=token, expires_at=expires_at, purpose=payload.purpose)
+
+
+@router.post(
+    "/internal/action-tokens/consume",
+    response_model=ActionTokenConsumeResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+async def consume_action_token(
+    payload: ActionTokenConsumeRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ActionTokenConsumeResponse:
+    result = await IamService(session).consume_action_token(
+        raw_token=payload.token,
+        purpose=payload.purpose,
+        new_password=payload.new_password,
+    )
+    return ActionTokenConsumeResponse(
+        account_id=result.account_id,
+        purpose=result.purpose,
+        auth_status=result.auth_status,
+        context=result.context,
+    )
+
+
+@router.post(
+    "/internal/accounts/{account_id}/required-actions/{purpose}/complete",
+    dependencies=[Depends(require_internal_service)],
+)
+async def complete_required_action(
+    account_id: uuid.UUID,
+    purpose: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    await IamService(session).complete_required_action(account_id=account_id, purpose=purpose)
+    return {"status": "completed", "purpose": purpose}
 
 
 @router.put(

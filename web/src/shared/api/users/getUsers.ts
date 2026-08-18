@@ -14,6 +14,7 @@ type UsersRow = {
   full_name?: string | null;
   phone?: string | null;
   mail?: string | null;
+  email_verified?: boolean;
   company_name?: string | null;
   inn?: string | null;
   company_phone?: string | null;
@@ -82,6 +83,7 @@ const normalizeUserItem = (item: UsersRow): UserListItem => {
     full_name: item.full_name ?? profile?.full_name ?? null,
     phone: item.phone ?? profile?.phone ?? null,
     mail: item.mail ?? profile?.mail ?? null,
+    email_verified: Boolean(item.email_verified),
     company_name: item.company_name ?? company?.company_name ?? null,
     inn: item.inn ?? company?.inn ?? null,
     company_phone: companyPhone,

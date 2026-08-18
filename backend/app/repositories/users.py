@@ -447,6 +447,29 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
+    async def map_primary_email_verified(self, *, user_ids: list[str]) -> dict[str, bool]:
+        if not user_ids:
+            return {}
+        stmt = (
+            select(UserContactChannel.id_user, UserContactChannel.is_verified)
+            .where(
+                UserContactChannel.id_user.in_(user_ids),
+                UserContactChannel.channel_type == "email",
+                UserContactChannel.is_active.is_(True),
+            )
+            .order_by(
+                UserContactChannel.is_primary.desc(),
+                UserContactChannel.id.asc(),
+            )
+        )
+        result = await self._session.execute(stmt)
+        verified_by_user: dict[str, bool] = {}
+        for user_id, is_verified in result.all():
+            if user_id in verified_by_user:
+                continue
+            verified_by_user[user_id] = bool(is_verified)
+        return verified_by_user
+
     async def list_contractors(
         self,
         contractor_role_id: int,

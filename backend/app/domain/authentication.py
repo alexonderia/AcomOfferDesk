@@ -28,6 +28,7 @@ class IamAccessClaims:
     permissions: frozenset[str]
     issued_at: int
     expires_at: int
+    required_actions: frozenset[str] = frozenset()
 
 
 def _log_jwt_header_failure(*, kid: str | None, reason_code: str) -> None:
@@ -115,6 +116,11 @@ def decode_iam_access_token(token: str) -> IamAccessClaims:
     permissions = frozenset(item.strip() for item in raw_permissions)
     if not permissions.issubset(get_known_permissions()):
         raise Unauthorized("Invalid token payload")
+    raw_required_actions = payload.get("required_actions") or []
+    if not isinstance(raw_required_actions, list) or not all(
+        isinstance(item, str) and item.strip() for item in raw_required_actions
+    ):
+        raise Unauthorized("Invalid token payload")
     return IamAccessClaims(
         account_id=subject,
         session_id=session_id,
@@ -123,4 +129,5 @@ def decode_iam_access_token(token: str) -> IamAccessClaims:
         permissions=permissions,
         issued_at=issued_at,
         expires_at=expires_at,
+        required_actions=frozenset(item.strip() for item in raw_required_actions),
     )

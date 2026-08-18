@@ -1,6 +1,6 @@
-from sqlalchemy import BigInteger
+from sqlalchemy import BigInteger, CheckConstraint
 
-from iam_app.models import Base
+from iam_app.models import Account, AuthActionToken, Base
 
 
 def test_iam_schema_contains_exactly_the_ten_approved_tables() -> None:
@@ -41,3 +41,30 @@ def test_account_permission_grants_schema_uses_cascading_composite_key() -> None
     assert {foreign_key.ondelete for foreign_key in audit_session_id.foreign_keys} == {
         "SET NULL"
     }
+
+
+def test_auth_action_tokens_support_lifecycle_purposes_and_email_context() -> None:
+    table = AuthActionToken.__table__
+    assert "context" in table.c
+    assert table.c.context.nullable is True
+    purpose_sql = " ".join(
+        str(constraint.sqltext)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    )
+    for purpose in (
+        "password_setup",
+        "password_reset",
+        "verify_email",
+        "first_access",
+        "profile_change",
+    ):
+        assert purpose in purpose_sql
+    assert "complete_profile" not in purpose_sql
+
+
+def test_accounts_store_durable_required_actions_without_ttl() -> None:
+    table = Account.__table__
+    assert "required_actions" in table.c
+    assert table.c.required_actions.nullable is False
+    assert "expires_at" not in table.c

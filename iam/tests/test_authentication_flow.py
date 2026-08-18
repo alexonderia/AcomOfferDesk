@@ -8,7 +8,7 @@ from jose import jwt
 from iam_app.core.config import settings
 from iam_app.core.security import pkce_s256
 from iam_app.errors import InvalidCredentials, Unauthorized
-from iam_app.repositories import AuthSessionRepository
+from iam_app.repositories import AccountRepository, AuditRepository, AuthSessionRepository
 from iam_app.services import IamService
 
 
@@ -35,6 +35,12 @@ async def _active_account(service: IamService) -> uuid.UUID:
         raw_token=setup_token,
         purpose="password_setup",
         new_password="correct horse battery staple",
+    )
+    await service.update_status(
+        account_id=account_id,
+        auth_status="active",
+        actor_account_id=None,
+        actor_session_id=None,
     )
     return account_id
 
@@ -248,10 +254,19 @@ async def test_password_setup_token_is_single_use_and_password_is_argon2id(sessi
 
     account = await AccountRepository(session).get(account_id)
     credential = await CredentialRepository(session).get(account_id)
-    assert account is not None and account.auth_status == "active"
+    assert account is not None and account.auth_status == "pending"
     assert credential is not None
     assert credential.password_algo == "argon2id"
     assert credential.password_hash is not None and credential.password_hash.startswith("$argon2")
+    assert (await service.get_credential_state(account_id=account_id)).required_actions == ()
+    setup_events = [
+        event
+        for event in await AuditRepository(session).list_events()
+        if event.event_type == "password.setup_completed"
+    ]
+    assert len(setup_events) == 1
+    assert setup_events[0].session_id is None
+    assert setup_events[0].details == {"auth_status": "pending"}
 
     with pytest.raises(Unauthorized):
         await service.consume_action_token(
@@ -322,6 +337,17 @@ async def test_password_reset_changes_password_and_revokes_existing_sessions(ses
         new_password="a completely different password",
     )
 
+    account = await AccountRepository(session).get(account_id)
+    assert account is not None and account.auth_status == "active"
+    assert (await service.get_credential_state(account_id=account_id)).required_actions == ()
+    reset_events = [
+        event
+        for event in await AuditRepository(session).list_events()
+        if event.event_type == "password.reset_completed"
+    ]
+    assert len(reset_events) == 1
+    assert reset_events[0].session_id is None
+    assert reset_events[0].details == {"auth_status": "active"}
     with pytest.raises(Unauthorized):
         await service.refresh(raw_refresh_token=bundle.refresh_token)
     with pytest.raises(InvalidCredentials):

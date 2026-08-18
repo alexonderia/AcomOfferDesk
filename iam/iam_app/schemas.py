@@ -48,6 +48,43 @@ class AccountResponse(BaseModel):
     created: bool = False
 
 
+class RegistrationCredentialsPutRequest(BaseModel):
+    login: str = Field(min_length=3, max_length=128)
+    role: str = Field(min_length=2, max_length=128)
+    auth_status: Literal["pending"] = "pending"
+    password: str = Field(min_length=12, max_length=128)
+    replace_password: bool = False
+
+    @field_validator("login")
+    @classmethod
+    def _strip_login(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 3:
+            raise ValueError("login is too short")
+        return normalized
+
+    @field_validator("role")
+    @classmethod
+    def _strip_role(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("role is too short")
+        return normalized
+
+
+class AccountCredentialStateResponse(BaseModel):
+    id: uuid.UUID
+    login: str
+    role: str
+    auth_status: str
+    password_set: bool
+    required_actions: list[str] = Field(default_factory=list)
+
+
+class RegistrationCredentialsResponse(AccountCredentialStateResponse):
+    created: bool = False
+
+
 class AccountPermissionGrantsPutRequest(BaseModel):
     permissions: list[Annotated[str, Field(min_length=2, max_length=128)]] = Field(
         max_length=10_000
@@ -87,13 +124,39 @@ class RevokeAllRequest(BaseModel):
 
 
 class ActionTokenRequest(BaseModel):
-    purpose: Literal["password_setup", "password_reset"]
+    purpose: Literal[
+        "password_setup",
+        "password_reset",
+        "verify_email",
+        "first_access",
+        "profile_change",
+    ]
+    context: dict[str, str] | None = None
 
 
 class ActionTokenResponse(BaseModel):
     token: str
     expires_at: int
     purpose: str
+
+
+class ActionTokenConsumeRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+    purpose: Literal[
+        "password_setup",
+        "password_reset",
+        "verify_email",
+        "first_access",
+        "profile_change",
+    ]
+    new_password: str | None = Field(default=None, min_length=12, max_length=128)
+
+
+class ActionTokenConsumeResponse(BaseModel):
+    account_id: uuid.UUID
+    purpose: str
+    auth_status: str
+    context: dict | None = None
 
 
 class RbacRoleInput(BaseModel):

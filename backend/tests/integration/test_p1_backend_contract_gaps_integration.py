@@ -20,13 +20,13 @@ from app.api.v1 import offers as offers_api
 from app.api.v1 import plans as plans_api
 from app.api.v1 import requests as requests_api
 from app.core.config import settings
-from app.core.email_token import EmailVerificationTokenCodec
 from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import UserPolicy
 from app.services import file_upload_guard as file_upload_guard_module
 from app.services import offers as offers_service_module
 from app.services import requests as requests_service_module
+from app.services import email_verification as email_verification_service
 
 
 def _dt() -> datetime:
@@ -611,16 +611,61 @@ class _ProfilesRepo:
         return self.update_result
 
 
+class _P1UsersRepo:
+    async def get_by_id(self, user_id: str):
+        return SimpleNamespace(id=user_id, status="active")
+
+
+class _P1AuthAccountsRepo:
+    async def get_by_provider_subject(self, *, provider: str, subject: str):
+        _ = provider
+        return SimpleNamespace(id_user="profile-1", external_subject_id=subject)
+
+    async def get_by_user_provider(self, **_kwargs):
+        return SimpleNamespace(external_subject_id="00000000-0000-4000-8000-000000000099")
+
+
 class _ProfilesUow:
     def __init__(self, repo: _ProfilesRepo) -> None:
         self.profiles = repo
         self.user_contact_channels = None
+        self.users = _P1UsersRepo()
+        self.user_auth_accounts = _P1AuthAccountsRepo()
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         _ = (exc_type, exc, tb)
+
+
+def _fake_iam_consume(monkeypatch, *, email: str, fail_after: int = 1):
+    calls = {"count": 0}
+
+    class _Client:
+        async def consume_action_token(self, *, token: str, purpose: str, new_password=None):
+            _ = (token, new_password)
+            if purpose != "verify_email":
+                from app.domain.exceptions import Unauthorized
+
+                raise Unauthorized("Ссылка подтверждения недействительна")
+            calls["count"] += 1
+            if calls["count"] > fail_after:
+                from app.domain.exceptions import Unauthorized
+
+                raise Unauthorized("Ссылка подтверждения недействительна")
+            return SimpleNamespace(
+                account_id="00000000-0000-4000-8000-000000000099",
+                purpose="verify_email",
+                auth_status="pending",
+                context={"email": email},
+            )
+
+        async def create_action_token(self, *, account_id, purpose, context=None):
+            _ = (account_id, purpose, context)
+            return SimpleNamespace(token="iam-verify-token-1234567890")
+
+    monkeypatch.setattr(email_verification_service, "IamClient", _Client)
 
 
 def _clear_current_user_override(api_app) -> None:
@@ -1845,8 +1890,8 @@ def test_request_email_verification_uses_fake_mail_sender(
 
     auth_api.EmailVerificationService._request_locks.clear()
     monkeypatch.setattr(settings, "web_base_url", "https://web.acom.example")
-    monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     monkeypatch.setattr(auth_api.EmailVerificationService, "_send_verification_email", _fake_send)
+    _fake_iam_consume(monkeypatch, email="new@example.com")
     set_current_user(make_current_user(user_id="profile-1", permissions={PermissionCodes.PROFILE_MANAGE_OWN}))
     set_uow(_ProfilesUow(_ProfilesRepo()))
 
@@ -1871,53 +1916,39 @@ def test_verify_email_valid_token_updates_or_reports_repeat(
     monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     profiles = _ProfilesRepo(update_result=update_result)
     set_uow(_ProfilesUow(profiles))
-    token = asyncio.run(
-        EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=3600).create_profile_token(
-            user_id="profile-1",
-            email="verified@example.com",
-        )
-    )
+    token = "valid-email-action-token-123456"
+    _fake_iam_consume(monkeypatch, email="verified@example.com")
 
     response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
 
     assert response.status_code == 200
     assert profiles.updated == [("profile-1", "verified@example.com")]
-    if update_result:
-        assert "Email" in response.json()["detail"]
-    else:
-        assert "Email" in response.json()["detail"]
+    assert "Email" in response.json()["detail"]
 
 
-@pytest.mark.parametrize(
-    "token",
-    [
-        "not-a-valid-verification-token.value",
-        asyncio.run(
-            EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=-1).create_profile_token(
-                user_id="profile-1",
-                email="expired@example.com",
-            )
-        ),
-    ],
-)
-def test_verify_email_rejects_invalid_and_expired_tokens(test_client, monkeypatch, set_uow, token):
+def test_verify_email_rejects_invalid_and_expired_tokens(test_client, monkeypatch, set_uow):
     monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     set_uow(_ProfilesUow(_ProfilesRepo()))
+    _fake_iam_consume(monkeypatch, email="expired@example.com", fail_after=0)
 
-    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+    invalid = test_client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": "not-a-valid-verification-token.value"},
+    )
+    expired = test_client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": "expired-email-action-token-123456"},
+    )
 
-    assert response.status_code == 401
+    assert invalid.status_code == 401
+    assert expired.status_code == 401
 
 
 def test_verify_email_rejects_token_when_email_belongs_to_another_user(test_client, monkeypatch, set_uow):
     monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     set_uow(_ProfilesUow(_ProfilesRepo(mail_exists=True)))
-    token = asyncio.run(
-        EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=3600).create_profile_token(
-            user_id="profile-1",
-            email="taken@example.com",
-        )
-    )
+    token = "taken-email-action-token-123456"
+    _fake_iam_consume(monkeypatch, email="taken@example.com")
 
     response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
 

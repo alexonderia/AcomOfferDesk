@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Button, CircularProgress, Stack, Typography } from '@mui/material';
 
 import { useAuth } from '@app/providers/AuthProvider';
 import { verifyEmailToken } from '@shared/api/auth/emailVerification';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
 import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
 
 export const CHECK_EMAIL_NEXT = 'check_email';
@@ -94,47 +95,42 @@ export const VerifyEmailPage = () => {
     && nextAction !== 'password_setup';
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
-      <Paper sx={{ p: 4, width: { xs: '100%', sm: 560 } }}>
-        <Stack spacing={2} alignItems="center">
-          <Typography variant="h5" fontWeight={700}>
-            {pendingVerification ? 'Подтвердите email' : 'Подтверждение email'}
+    <AuthPageShell title={pendingVerification ? 'Подтвердите email' : 'Подтверждение email'} maxWidth={560}>
+      <Stack spacing={2} alignItems="center">
+        {loading ? <CircularProgress size={28} /> : null}
+        {!loading && error ? <Alert severity="error" sx={{ width: '100%' }}>{error}</Alert> : null}
+        {!loading && !error && pendingVerification ? (
+          <Alert severity="info" sx={{ width: '100%' }}>{message}</Alert>
+        ) : null}
+        {pendingVerification && inviteToken ? (
+          <Button
+            component={Link}
+            to={`/register?token=${encodeURIComponent(inviteToken)}`}
+            variant="outlined"
+            fullWidth
+          >
+            Изменить данные
+          </Button>
+        ) : null}
+        {!loading && !error && !pendingVerification ? (
+          <Alert severity="success" sx={{ width: '100%' }}>{message || 'Email подтверждён.'}</Alert>
+        ) : null}
+        {nextAction === 'password_setup' && redirectUrl ? (
+          <Button href={redirectUrl} variant="contained" fullWidth>
+            Создать пароль
+          </Button>
+        ) : null}
+        {showLoginLink ? (
+          <Typography variant="body2">
+            Перейти к <Link to="/login">входу</Link>
           </Typography>
-          {loading ? <CircularProgress size={28} /> : null}
-          {!loading && error ? <Alert severity="error" sx={{ width: '100%' }}>{error}</Alert> : null}
-          {!loading && !error && pendingVerification ? (
-            <Alert severity="info" sx={{ width: '100%' }}>{message}</Alert>
-          ) : null}
-          {pendingVerification && inviteToken ? (
-            <Button
-              component={Link}
-              to={`/register?token=${encodeURIComponent(inviteToken)}`}
-              variant="outlined"
-              fullWidth
-            >
-              Изменить данные
-            </Button>
-          ) : null}
-          {!loading && !error && !pendingVerification ? (
-            <Alert severity="success" sx={{ width: '100%' }}>{message || 'Email подтверждён.'}</Alert>
-          ) : null}
-          {nextAction === 'password_setup' && redirectUrl ? (
-            <Button href={redirectUrl} variant="contained" fullWidth>
-              Создать пароль
-            </Button>
-          ) : null}
-          {showLoginLink ? (
-            <Typography variant="body2">
-              Перейти к <Link to="/login">входу</Link>
-            </Typography>
-          ) : null}
-          {status === 'unavailable' ? (
-            <Typography variant="body2">
-              Перейти к <Link to="/login">входу</Link>
-            </Typography>
-          ) : null}
-        </Stack>
-      </Paper>
-    </Box>
+        ) : null}
+        {status === 'unavailable' ? (
+          <Typography variant="body2">
+            Перейти к <Link to="/login">входу</Link>
+          </Typography>
+        ) : null}
+      </Stack>
+    </AuthPageShell>
   );
 };

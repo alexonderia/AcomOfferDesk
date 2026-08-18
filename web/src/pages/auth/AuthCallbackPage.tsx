@@ -1,7 +1,8 @@
-import { Box, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { CircularProgress, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
 import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
 
 export const AuthCallbackPage = () => {
@@ -45,16 +46,13 @@ export const AuthCallbackPage = () => {
   }, [isAuthenticated, navigate, nextPath, session]);
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
-      <Paper sx={{ p: 4, width: { xs: '100%', sm: 520 } }}>
-        <Stack spacing={2} alignItems="center">
-          <Typography variant="h5" fontWeight={700}>Завершаем вход</Typography>
-          <CircularProgress size={28} />
-          <Typography variant="body2" color="text.secondary" textAlign="center">
-            Проверяем доступ и открываем рабочий кабинет.
-          </Typography>
-        </Stack>
-      </Paper>
-    </Box>
+    <AuthPageShell title="Завершаем вход">
+      <Stack spacing={2} alignItems="center">
+        <CircularProgress size={28} />
+        <Typography variant="body2" color="text.secondary" textAlign="center">
+          Проверяем доступ и открываем рабочий кабинет.
+        </Typography>
+      </Stack>
+    </AuthPageShell>
   );
 };

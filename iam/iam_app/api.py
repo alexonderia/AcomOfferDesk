@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import html
 import json
 import logging
 import uuid
@@ -25,6 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.client_ip import resolve_client_ip
 from shared.rate_limiter import SlidingWindowRateLimiter
 
+from iam_app.browser_pages import (
+    render_login_page,
+    render_login_restart_page,
+    render_password_page,
+    render_password_saved_page,
+)
 from iam_app.core.config import settings
 from iam_app.core.request_id import get_request_id
 from iam_app.core.security import (
@@ -144,93 +149,10 @@ async def require_internal_service(
         raise Forbidden()
 
 
-def _page(*, title: str, body: str) -> HTMLResponse:
-    return HTMLResponse(
-        "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"<title>{html.escape(title)}</title>"
-        "<style>body{font-family:system-ui,sans-serif;background:#f5f7fa;margin:0;"
-        "min-height:100vh;display:grid;place-items:center;color:#18212f}.card{width:min(420px,"
-        "calc(100% - 32px));box-sizing:border-box;background:#fff;border:1px solid #dce2ea;"
-        "border-radius:16px;padding:32px;box-shadow:0 12px 36px #17203314}h1{font-size:24px;"
-        "margin:0 0 20px}label{display:block;font-weight:600;margin:14px 0 6px}input{width:100%;"
-        "box-sizing:border-box;padding:11px 12px;border:1px solid #aeb8c5;border-radius:8px;"
-        "font:inherit}button{width:100%;margin-top:22px;padding:12px;border:0;border-radius:8px;"
-        "background:#1769e0;color:#fff;font:inherit;font-weight:700;cursor:pointer}.error{color:#a51d2d;"
-        "margin-bottom:12px}.hint{color:#586579;font-size:14px}.action{display:block;text-align:center;"
-        "margin-top:22px;padding:12px;border-radius:8px;background:#1769e0;color:#fff;text-decoration:none;"
-        "font-weight:700}.secondary-action{display:block;text-align:center;margin-top:18px;color:#1769e0;"
-        "font-weight:600;text-decoration:none}</style></head>"
-        f'<body><main class="card">{body}</main></body></html>',
-        headers={
-            "Cache-Control": "no-store",
-            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-            "Referrer-Policy": "no-referrer",
-            "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
-        },
-    )
-
-
-def _login_page(*, error: str | None = None, status_code: int = 200) -> HTMLResponse:
-    error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
-    response = _page(
-        title="Вход в AcomOfferDesk",
-        body=(
-            "<h1>Вход в AcomOfferDesk</h1>"
-            f"{error_html}"
-            '<form method="post" action="/iam/login" autocomplete="on">'
-            '<label for="login">Логин</label><input id="login" name="login" '
-            'autocomplete="username" maxlength="128" required>'
-            '<label for="password">Пароль</label><input id="password" name="password" '
-            'type="password" autocomplete="current-password" maxlength="128" required>'
-            '<button type="submit">Войти</button></form>'
-            '<a class="secondary-action" href="/login?reset=1">Забыли пароль?</a>'
-        ),
-    )
-    response.status_code = status_code
-    return response
-
-
-def _login_restart_page(*, error: str, status_code: int = 400) -> HTMLResponse:
-    response = _page(
-        title="Вход в AcomOfferDesk",
-        body=(
-            "<h1>Вход в AcomOfferDesk</h1>"
-            f'<p class="error">{html.escape(error)}</p>'
-            '<p class="hint">Начните вход заново, чтобы создать новую защищённую сессию.</p>'
-            '<a class="action" href="/api/v1/auth/login">Войти снова</a>'
-        ),
-    )
-    response.status_code = status_code
-    return response
-
-
 def render_browser_auth_error(*, request: Request, error: str, status_code: int) -> HTMLResponse:
     if request.cookies.get(settings.auth_request_cookie_name):
-        return _login_page(error=error, status_code=status_code)
-    return _login_restart_page(error=error, status_code=status_code)
-
-
-def _password_page(*, purpose: str, token: str, error: str | None = None) -> HTMLResponse:
-    title = "Создание пароля" if purpose == "password_setup" else "Новый пароль"
-    path = "setup" if purpose == "password_setup" else "reset"
-    error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
-    return _page(
-        title=title,
-        body=(
-            f"<h1>{title}</h1>{error_html}"
-            f'<form method="post" action="/iam/password/{path}">'
-            f'<input type="hidden" name="token" value="{html.escape(token, quote=True)}">'
-            '<label for="new_password">Пароль</label><input id="new_password" name="new_password" '
-            'type="password" autocomplete="new-password" minlength="12" maxlength="128" required>'
-            '<label for="password_confirmation">Повторите пароль</label>'
-            '<input id="password_confirmation" name="password_confirmation" type="password" '
-            'autocomplete="new-password" minlength="12" maxlength="128" required>'
-            '<p class="hint">Используйте не менее 12 символов.</p>'
-            f'<button type="submit">{title}</button></form>'
-        ),
-    )
+        return render_login_page(error=error, status_code=status_code)
+    return render_login_restart_page(error=error, status_code=status_code)
 
 
 def _token_response(bundle) -> TokenBundleResponse:
@@ -270,7 +192,7 @@ async def authorize(
                 redirect_uri=redirect_uri,
             )
         except (KeyError, TypeError, ValueError, IamError):
-            response = _login_page()
+            response = render_login_page()
             response.delete_cookie(
                 settings.browser_session_cookie_name,
                 path="/iam",
@@ -302,7 +224,7 @@ async def authorize(
             "redirect_uri": redirect_uri,
         }
     )
-    response = _login_page()
+    response = render_login_page()
     response.set_cookie(
         key=settings.auth_request_cookie_name,
         value=auth_request,
@@ -322,10 +244,10 @@ async def login_page(request: Request, error: str | None = Query(default=None, m
             "session_expired": "Сессия входа истекла. Войдите в систему заново.",
             "service_unavailable": "Сервис авторизации временно недоступен. Попробуйте позже.",
         }
-        return _login_restart_page(error=messages.get(error, "Не удалось продолжить вход."))
+        return render_login_restart_page(error=messages.get(error, "Не удалось продолжить вход."))
     if not request.cookies.get(settings.auth_request_cookie_name):
         return RedirectResponse("/api/v1/auth/login", status_code=303)
-    return _login_page()
+    return render_login_page()
 
 
 @router.post("/iam/login", response_class=HTMLResponse)
@@ -340,7 +262,7 @@ async def login_submit(
         auth_request = decode_auth_request(auth_request_token)
     except ValueError as exc:
         _ = exc
-        return _login_restart_page(error="Сессия входа истекла. Войдите в систему заново.")
+        return render_login_restart_page(error="Сессия входа истекла. Войдите в систему заново.")
     client_ip = _client_ip(request)
     await login_rate_limiter.check(client_ip=client_ip, login=login)
     try:
@@ -352,7 +274,7 @@ async def login_submit(
             redirect_uri=str(auth_request["redirect_uri"]),
         )
     except IamError as exc:
-        return _login_page(error=exc.public_detail, status_code=exc.status_code)
+        return render_login_page(error=exc.public_detail, status_code=exc.status_code)
 
     separator = "&" if "?" in result.redirect_uri else "?"
     location = f"{result.redirect_uri}{separator}{urlencode({'code': result.code, 'state': result.state})}"
@@ -394,12 +316,12 @@ async def logout_browser_session() -> Response:
 
 @router.get("/iam/password/setup", response_class=HTMLResponse)
 async def password_setup_page(token: str = Query(min_length=20, max_length=512)) -> HTMLResponse:
-    return _password_page(purpose="password_setup", token=token)
+    return render_password_page(purpose="password_setup", token=token)
 
 
 @router.get("/iam/password/reset", response_class=HTMLResponse)
 async def password_reset_page(token: str = Query(min_length=20, max_length=512)) -> HTMLResponse:
-    return _password_page(purpose="password_reset", token=token)
+    return render_password_page(purpose="password_reset", token=token)
 
 
 async def _consume_password_form(
@@ -411,7 +333,7 @@ async def _consume_password_form(
     session: AsyncSession,
 ) -> HTMLResponse:
     if new_password != password_confirmation:
-        response = _password_page(
+        response = render_password_page(
             purpose=purpose,
             token=token,
             error="Пароли не совпадают",
@@ -425,21 +347,10 @@ async def _consume_password_form(
             new_password=new_password,
         )
     except IamError as exc:
-        response = _password_page(purpose=purpose, token=token, error=exc.public_detail)
+        response = render_password_page(purpose=purpose, token=token, error=exc.public_detail)
         response.status_code = exc.status_code
         return response
-    hint = (
-        "Пароль создан. Если учётная запись активна, теперь можно войти."
-        if purpose == "password_setup"
-        else "Теперь можно вернуться в AcomOfferDesk и войти с новым паролем."
-    )
-    return _page(
-        title="Пароль сохранён",
-        body=(
-            "<h1>Пароль сохранён</h1>"
-            f'<p class="hint">{hint}</p>'
-        ),
-    )
+    return render_password_saved_page(purpose=purpose)
 
 
 @router.post("/iam/password/setup", response_class=HTMLResponse)

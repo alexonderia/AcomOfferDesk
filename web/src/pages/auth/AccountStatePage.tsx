@@ -1,4 +1,4 @@
-import { Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Button, CircularProgress, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -7,6 +7,7 @@ import {
   updateMyRegistrationCompanyContacts,
   updateMyRegistrationProfile,
 } from '@shared/api/users/getCurrentUserProfile';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ROLE } from '@shared/constants/roles';
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
@@ -297,8 +298,7 @@ export const AccountStatePage = () => {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
-      <Paper sx={{ p: 4, width: { xs: '100%', sm: 720 } }}>
+    <AuthPageShell maxWidth={720}>
         {isLoading ? (
           <Stack alignItems="center" spacing={2}>
             <CircularProgress size={28} />
@@ -458,7 +458,6 @@ export const AccountStatePage = () => {
             </Stack>
           </Stack>
         )}
-      </Paper>
-    </Box>
+    </AuthPageShell>
   );
 };

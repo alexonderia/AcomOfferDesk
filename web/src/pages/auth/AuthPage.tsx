@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, Stack, TextField, Typography } from '@mui/material';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { requestPasswordReset } from '@shared/api/auth';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { TechnicalUnavailablePage } from '@pages/technical';
 
@@ -50,59 +51,45 @@ export const AuthPage = () => {
 
   if (!isResetFlow) {
     return (
-      <Box
-        role="status"
-        sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 3 }}
-      >
-        <Typography color="text.secondary">Перенаправляем на страницу входа...</Typography>
-      </Box>
+      <AuthPageShell>
+        <Box role="status" sx={{ display: 'grid', placeItems: 'center', py: 2 }}>
+          <Typography color="text.secondary">Перенаправляем на страницу входа...</Typography>
+        </Box>
+      </AuthPageShell>
     );
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 3,
-      }}
+    <AuthPageShell
+      title="Восстановление доступа"
+      subtitle="Введите логин или email. Мы отправим письмо для восстановления, если аккаунт найден."
     >
-      <Paper
-        elevation={0}
-        sx={(theme) => ({
-          width: { xs: '94%', sm: 460 },
-          borderRadius: 3,
-          border: `1px solid ${theme.palette.divider}`,
-          backgroundColor: theme.palette.background.paper,
-          padding: { xs: 4, sm: 5 },
-        })}
-      >
-        <Stack spacing={3} alignItems="center" textAlign="center">
-          <Typography variant="h5" fontWeight={700} color="text.primary">
-            Восстановление пароля
+      <Stack spacing={2.25} sx={{ width: '100%' }}>
+        <Stack spacing={1}>
+          <Typography
+            component="label"
+            htmlFor="reset-login"
+            variant="inherit"
+            sx={{ fontSize: '14px', fontWeight: 600, lineHeight: 1.25, color: '#1f2a44' }}
+          >
+            Логин или email
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Укажите логин или email. Если учётная запись существует, инструкция придёт на подтверждённый email.
-          </Typography>
-          <Stack spacing={1.5} sx={{ width: '100%' }}>
-            <TextField
-              label="Логин или email"
-              value={resetLogin}
-              onChange={(event) => setResetLogin(event.target.value)}
-              autoComplete="username"
-              fullWidth
-            />
-            <Button variant="contained" disabled={isResetting} onClick={() => void submitReset()}>
-              Отправить инструкцию
-            </Button>
-            <Button variant="text" onClick={() => beginLogin(nextPath)}>
-              Вернуться ко входу
-            </Button>
-          </Stack>
+          <TextField
+            id="reset-login"
+            hiddenLabel
+            value={resetLogin}
+            onChange={(event) => setResetLogin(event.target.value)}
+            autoComplete="username"
+            fullWidth
+          />
         </Stack>
-      </Paper>
-    </Box>
+        <Button variant="contained" fullWidth disabled={isResetting} onClick={() => void submitReset()}>
+          Отправить инструкцию
+        </Button>
+        <Button variant="text" onClick={() => beginLogin(nextPath)}>
+          Вернуться ко входу
+        </Button>
+      </Stack>
+    </AuthPageShell>
   );
 };

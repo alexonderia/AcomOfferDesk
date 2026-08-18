@@ -182,6 +182,8 @@ def test_password_confirmation_mismatch_does_not_consume_token() -> None:
     assert password not in mismatch.text
     assert consumed.status_code == 200
     assert "Пароль сохранён" in consumed.text
+    assert 'href="/login"' in consumed.text
+    assert "Войти" in consumed.text
     assert state.json()["auth_status"] == "pending"
     assert state.json()["password_set"] is True
 
@@ -267,6 +269,15 @@ def test_login_page_has_password_recovery_link() -> None:
 
     assert response.status_code == 200
     assert 'href="/login?reset=1"' in response.text
+    assert "Восстановить доступ" in response.text
+    assert 'class="aod-app-footer"' in response.text
+    assert 'aria-label="Перейти в Битрикс"' in response.text
+    assert 'aria-label="Открыть MAX"' in response.text
+    assert "img-src data:" in response.headers["content-security-policy"]
+    assert "script-src 'nonce-" in response.headers["content-security-policy"]
+    assert 'data-password-toggle' in response.text
+    assert 'aria-label="Показать пароль"' in response.text
+    assert "Безопасный вход" not in response.text
 
 
 def test_browser_logout_clears_its_own_session_cookie() -> None:

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
+import { Button, CircularProgress, IconButton, InputAdornment, Stack, TextField } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { inspectRegistrationInvitation, submitRegistration } from '@shared/api/auth/registration';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { useSystemToasts } from '@shared/ui/toasts';
@@ -26,6 +29,8 @@ export const RegisterPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loginLocked, setLoginLocked] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isPasswordConfirmationVisible, setIsPasswordConfirmationVisible] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -114,28 +119,22 @@ export const RegisterPage = () => {
   };
 
   if (isLoading) {
-    return null;
+    return (
+      <AuthPageShell title="Регистрация по приглашению" maxWidth={560}>
+        <Stack alignItems="center" sx={{ py: 2 }}>
+          <CircularProgress size={28} />
+        </Stack>
+      </AuthPageShell>
+    );
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 3 }}>
-      <Paper
-        elevation={0}
-        sx={(theme) => ({
-          width: { xs: '94%', sm: 560 },
-          borderRadius: 3,
-          border: `1px solid ${theme.palette.divider}`,
-          backgroundColor: theme.palette.background.paper,
-          padding: { xs: 4, sm: 5 },
-        })}
-      >
-        <Stack spacing={2.5}>
-          <Typography variant="h5" fontWeight={700} textAlign="center">
-            Регистрация по приглашению
-          </Typography>
-          <Typography variant="body2" color="text.secondary" textAlign="center">
-            Если email указан неверно, измените его до подтверждения. Пароль — от 12 до 128 символов.
-          </Typography>
+    <AuthPageShell
+      title="Регистрация по приглашению"
+      subtitle="Если email указан неверно, измените его до подтверждения. Пароль — от 12 до 128 символов."
+      maxWidth={560}
+    >
+      <Stack spacing={2.5}>
           <TextField
             label="Email"
             value={email}
@@ -153,19 +152,45 @@ export const RegisterPage = () => {
           />
           <TextField
             label={<RequiredFieldLabel isValid={passwordValid} label="Пароль" />}
-            type="password"
+            type={isPasswordVisible ? 'text' : 'password'}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="new-password"
             fullWidth
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    aria-label={isPasswordVisible ? 'Скрыть пароль' : 'Показать пароль'}
+                    edge="end"
+                    onClick={() => setIsPasswordVisible((current) => !current)}
+                  >
+                    {isPasswordVisible ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
           />
           <TextField
             label={<RequiredFieldLabel isValid={passwordsMatch} label="Повторите пароль" />}
-            type="password"
+            type={isPasswordConfirmationVisible ? 'text' : 'password'}
             value={passwordConfirmation}
             onChange={(event) => setPasswordConfirmation(event.target.value)}
             autoComplete="new-password"
             fullWidth
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    aria-label={isPasswordConfirmationVisible ? 'Скрыть пароль' : 'Показать пароль'}
+                    edge="end"
+                    onClick={() => setIsPasswordConfirmationVisible((current) => !current)}
+                  >
+                    {isPasswordConfirmationVisible ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
           />
           <TextField
             label={<RequiredFieldLabel isValid={Boolean(fullName.trim())} label="ФИО" />}
@@ -201,7 +226,6 @@ export const RegisterPage = () => {
             Отправить заявку
           </Button>
         </Stack>
-      </Paper>
-    </Box>
+    </AuthPageShell>
   );
 };

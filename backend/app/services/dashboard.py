@@ -72,7 +72,7 @@ class DashboardClosedRequestItem:
     initial_amount: float | None
     offer_amount: float | None
     final_amount: float | None
-    savings_amount: float | None
+    savings_amount: float
     closed_at: datetime | None
     plan_id: int | None
     plan_name: str | None
@@ -343,14 +343,14 @@ class DashboardService:
                     initial_amount=float(request.initial_amount) if request.initial_amount is not None else None,
                     offer_amount=float(chosen_offer.offer_amount) if chosen_offer and chosen_offer.offer_amount is not None else None,
                     final_amount=float(request.final_amount) if request.final_amount is not None else None,
-                    savings_amount=float(savings_amount) if savings_amount is not None else None,
+                    savings_amount=float(savings_amount),
                     closed_at=request.closed_at,
                     plan_id=request.id_plan,
                     plan_name=plan_name_by_id.get(request.id_plan) if request.id_plan is not None else None,
                 )
             )
 
-            if savings_amount is None:
+            if chosen_offer is None or savings_amount == Decimal("0"):
                 continue
 
             total_savings_amount += savings_amount
@@ -416,9 +416,9 @@ class DashboardService:
         initial_amount,
         offer_amount,
         final_amount,
-    ) -> Decimal | None:
+    ) -> Decimal:
         if initial_amount is None or offer_amount is None or final_amount is None:
-            return None
+            return Decimal("0")
 
         initial = Decimal(str(initial_amount))
         offer = Decimal(str(offer_amount))
@@ -426,8 +426,8 @@ class DashboardService:
 
         if final == initial:
             if offer > initial:
-                return None
+                return Decimal("0")
             return offer - initial
         if final == offer:
             return initial - offer
-        return None
+        return Decimal("0")

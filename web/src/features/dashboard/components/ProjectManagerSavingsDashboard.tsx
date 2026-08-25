@@ -140,32 +140,9 @@ const toSummaryListItem = (item: ResponsibilitySavingsItem | ResponsibilityClose
   key: `request-${item.request_id}`,
   title: `Заявка #${item.request_id}`,
   subtitle: `${item.owner_full_name || item.owner_user_id}${item.closed_at ? ` · ${formatDate(item.closed_at)}` : ''}`,
-  amount: typeof item.savings_amount === 'number' ? formatSignedAmount(item.savings_amount) : undefined,
-  amountColor:
-    typeof item.savings_amount === 'number'
-      ? item.savings_amount >= 0
-        ? 'success.main'
-        : 'error.main'
-      : undefined,
+  amount: formatSignedAmount(item.savings_amount),
+  amountColor: item.savings_amount > 0 ? 'success.main' : item.savings_amount < 0 ? 'error.main' : 'text.primary',
 });
-
-const toClosedSummaryListItem = (item: ResponsibilityClosedSavingsItem): SummaryListItem => {
-  const base = toSummaryListItem(item);
-
-  if (base.amount) {
-    return base;
-  }
-
-  if (item.offer_amount === null) {
-    return {
-      ...base,
-      amount: formatAmount(0),
-      amountColor: 'text.primary',
-    };
-  }
-
-  return base;
-};
 
 const SummaryListCard = ({
   title,
@@ -788,7 +765,7 @@ export const ProjectManagerSavingsDashboard = () => {
     );
   }, [tzSavingsItems]);
 
-  const closedItemsList = useMemo(() => itemsByClosed.map((item) => toClosedSummaryListItem(item)), [itemsByClosed]);
+  const closedItemsList = useMemo(() => itemsByClosed.map((item) => toSummaryListItem(item)), [itemsByClosed]);
 
   const withSavingsList = useMemo(() => itemsWithSavings.map((item) => toSummaryListItem(item)), [itemsWithSavings]);
 

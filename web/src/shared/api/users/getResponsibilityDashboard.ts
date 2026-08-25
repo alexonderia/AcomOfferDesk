@@ -49,7 +49,7 @@ export type ResponsibilityClosedSavingsItem = {
   initial_amount: number | null;
   offer_amount: number | null;
   final_amount: number | null;
-  savings_amount: number | null;
+  savings_amount: number;
   closed_at: string | null;
   plan_id: number | null;
   plan_name: string | null;

@@ -133,10 +133,13 @@ class _PreparedFileService:
         self._files = files
 
     async def prepare_upload(self, upload):
+        content_bytes = await upload.read()
         return SimpleNamespace(
             original_name=upload.filename,
-            content_bytes=await upload.read(),
+            content_bytes=content_bytes,
             mime_type=upload.content_type or "text/plain",
+            content_sha256="test-content-sha256",
+            size_bytes=len(content_bytes),
         )
 
     async def prepare_bytes(self, *, original_name, content_bytes, mime_type=None):
@@ -144,6 +147,8 @@ class _PreparedFileService:
             original_name=original_name,
             content_bytes=content_bytes,
             mime_type=mime_type or "text/plain",
+            content_sha256="test-content-sha256",
+            size_bytes=len(content_bytes),
         )
 
     async def create_request_file(self, *, request_id: str, upload):
@@ -496,14 +501,43 @@ class _OfferFilesUow:
 
 
 class _NormativeFilesRepo:
-    def __init__(self, *, existing_file_id: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        existing_file_id: int | None = None,
+        duplicate_normative_id: int | None = None,
+        existing_file_matches_upload: bool = False,
+    ) -> None:
         self.existing_file_id = existing_file_id
+        self.duplicate_normative_id = duplicate_normative_id
+        self.existing_file_matches_upload = existing_file_matches_upload
         self.upserts: list[tuple[int, int]] = []
         self.created: list[tuple[int, int, str]] = []
+        self.normative_name_locks: list[str] = []
+        self.normative_id_allocation_lock_calls = 0
+
+    async def acquire_normative_file_name_lock(self, *, original_name: str) -> None:
+        self.normative_name_locks.append(original_name)
+
+    async def acquire_normative_file_id_allocation_lock(self) -> None:
+        self.normative_id_allocation_lock_calls += 1
+
+    async def find_normative_file_id_by_original_name(self, **_kwargs):
+        return self.duplicate_normative_id
 
     async def get_normative_file_id(self, *, normative_id: int):
         _ = normative_id
         return self.existing_file_id
+
+    async def get_normative_file(self, *, normative_id: int):
+        if self.existing_file_id is None:
+            return None
+        return SimpleNamespace(
+            id=self.existing_file_id,
+            original_name="norm.txt",
+            content_sha256="test-content-sha256" if self.existing_file_matches_upload else "different-content-sha256",
+            size_bytes=14 if self.existing_file_matches_upload else 99,
+        )
 
     async def supports_normative_status_column(self):
         return True
@@ -1117,6 +1151,8 @@ def test_normative_file_upload_allows_create_permission(
     assert response.status_code == 200
     assert response.json() == {"data": {"normative_id": 1, "file_id": 701}}
     assert files_repo.created == [(1, 701, "actual")]
+    assert files_repo.normative_name_locks == ["norm.txt"]
+    assert files_repo.normative_id_allocation_lock_calls == 1
 
 
 @pytest.mark.parametrize(
@@ -1151,7 +1187,7 @@ def test_normative_file_upload_denies_forbidden_roles_and_statuses(
     assert response.status_code == 403
 
 
-def test_normative_file_upload_rejects_duplicate(
+def test_normative_file_replace_updates_existing_record(
     test_client,
     monkeypatch,
     set_current_user,
@@ -1159,15 +1195,62 @@ def test_normative_file_upload_rejects_duplicate(
     make_current_user,
 ):
     monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    files_repo = _NormativeFilesRepo(existing_file_id=100)
     set_current_user(make_current_user(permissions={PermissionCodes.NORMATIVE_FILES_CREATE}))
-    set_uow(_NormativeUow(_NormativeFilesRepo(existing_file_id=100)))
+    set_uow(_NormativeUow(files_repo))
 
     response = test_client.post(
         "/api/v1/normative-files/1",
         files={"file": ("norm.txt", b"normative text", "text/plain")},
     )
 
+    assert response.status_code == 200
+    assert response.json() == {"data": {"normative_id": 1, "file_id": 701}}
+    assert files_repo.upserts == [(1, 701)]
+
+
+def test_normative_file_create_rejects_duplicate_name_regardless_of_content(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    files_repo = _NormativeFilesRepo(duplicate_normative_id=1)
+    set_current_user(make_current_user(permissions={PermissionCodes.NORMATIVE_FILES_CREATE}))
+    set_uow(_NormativeUow(files_repo))
+
+    response = test_client.post(
+        "/api/v1/normative-files",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
     assert response.status_code == 409
+    assert files_repo.created == []
+    assert files_repo.normative_name_locks == ["norm.txt"]
+
+
+def test_normative_file_replace_with_current_content_reuses_current_file(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    files_repo = _NormativeFilesRepo(existing_file_id=100, existing_file_matches_upload=True)
+    set_current_user(make_current_user(permissions={PermissionCodes.NORMATIVE_FILES_CREATE}))
+    set_uow(_NormativeUow(files_repo))
+
+    response = test_client.post(
+        "/api/v1/normative-files/1",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"data": {"normative_id": 1, "file_id": 100}}
+    assert files_repo.upserts == []
 
 
 def test_normative_file_upload_denies_anonymous_user(api_app, test_client, monkeypatch, set_uow):

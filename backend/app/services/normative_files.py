@@ -68,18 +68,40 @@ class NormativeFileService:
         UserPolicy.ensure_can_create_normative_files(current_user)
 
         if normative_id is None:
+            await self._files.acquire_normative_file_name_lock(original_name=upload.original_name)
+            duplicate_id = await self._files.find_normative_file_id_by_original_name(
+                original_name=upload.original_name,
+            )
+            if duplicate_id is not None:
+                raise Conflict("Такой нормативный документ уже существует")
+            await self._files.acquire_normative_file_id_allocation_lock()
             normative_id = await self._files.get_next_normative_file_id()
+            is_replace = False
         else:
             existing_file_id = await self._files.get_normative_file_id(normative_id=normative_id)
-            if existing_file_id is not None:
-                raise Conflict("Normative file can be uploaded only once")
+            if existing_file_id is None:
+                raise NotFound("Normative file not found")
+
+            existing_file = await self._files.get_normative_file(normative_id=normative_id)
+            if existing_file is None:
+                raise NotFound("Normative file not found")
+            if (
+                existing_file.original_name == upload.original_name
+                and existing_file.content_sha256 == upload.content_sha256
+                and existing_file.size_bytes == upload.size_bytes
+            ):
+                return NormativeFileUpsertResult(normative_id=normative_id, file_id=existing_file_id)
+            is_replace = True
 
         new_file = await self._file_service.create_normative_file(upload=upload)
-        await self._files.create_normative_file_record(
-            normative_id=normative_id,
-            file_id=new_file.id,
-            status="actual",
-        )
+        if is_replace:
+            await self._files.upsert_normative_file(normative_id=normative_id, file_id=new_file.id)
+        else:
+            await self._files.create_normative_file_record(
+                normative_id=normative_id,
+                file_id=new_file.id,
+                status="actual",
+            )
 
         return NormativeFileUpsertResult(normative_id=normative_id, file_id=new_file.id)
 

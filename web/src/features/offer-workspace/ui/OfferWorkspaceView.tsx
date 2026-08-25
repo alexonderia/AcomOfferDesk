@@ -157,7 +157,9 @@ export const OfferWorkspaceView = () => {
   const canViewContractorInfo = Boolean(selectedOffer?.actions.view_contractor_info);
   const hasOfferUpdatePermission = Boolean(session?.permissions.includes('offers.update'));
   const hasDepartmentOfferUpdateDelegation = Boolean(session?.permissions.includes('department.offers.update'));
-  const canEnterOfferEditMode = (
+  const requestStatus = (workspace?.request.status ?? 'open') as RequestStatus;
+  const canModifyOffer = requestStatus !== 'closed' && requestStatus !== 'cancelled';
+  const canEnterOfferEditMode = canModifyOffer && (
     hasDepartmentOfferUpdateDelegation
     || hasOfferUpdatePermission
   ) && (
@@ -166,13 +168,13 @@ export const OfferWorkspaceView = () => {
     || canDeleteFile
     || canDeleteOwnOffer
   );
+  const canEditOfferDecision = canModifyOffer && canEditOfferStatus;
   const normalizedErrorMessage = (errorMessage ?? '').toLowerCase();
   const isChatAccessError = normalizedErrorMessage.includes('просмотра чата') || normalizedErrorMessage.includes('доступ') && normalizedErrorMessage.includes('чат');
   const visibleErrorMessage = !canViewMessages && isChatAccessError ? null : errorMessage;
 
   const canCreateNewOffer = Boolean(workspace?.request.actions.create_offer);
 
-  const requestStatus = (workspace?.request.status ?? 'open') as RequestStatus;
   const statusTone = requestStatus === 'open'
     ? 'success'
     : requestStatus === 'review'
@@ -536,7 +538,7 @@ export const OfferWorkspaceView = () => {
                       {offerItem.status === 'deleted' ? 'Отклик удален' : 'Удалить отклик'}
                     </Button>
                   ) : null}
-                  {canEditOfferStatus && isCurrent ? (
+                  {canEditOfferDecision && isCurrent ? (
                     <Select
                       size="small"
                       value={offerDecisionStatus}

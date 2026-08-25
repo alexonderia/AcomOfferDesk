@@ -595,6 +595,14 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
+    async def list_role_ids_by_user_ids(self, *, user_ids: list[str]) -> list[tuple[str, int]]:
+        """Load current owner roles for request-lifecycle eligibility in one query."""
+        if not user_ids:
+            return []
+        stmt = select(User.id, User.id_role).where(User.id.in_(user_ids))
+        result = await self._session.execute(stmt)
+        return [(str(user_id), int(role_id)) for user_id, role_id in result.all()]
+
     async def list_active_user_parent_pairs(self) -> list[tuple[str, str | None]]:
         stmt = (
             select(User.id, User.id_parent)

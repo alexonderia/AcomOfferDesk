@@ -294,12 +294,14 @@ class RequestService:
     ) -> tuple[str, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
+        if initial_amount is None:
+            raise Conflict("Укажите начальную сумму заявки")
         if normative_file_id is None:
             raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
         if not files:
             raise Conflict("Прикрепите файл заявки")
         if _normalize_to_utc(deadline_at) < _utcnow():
-            raise Conflict("Deadline cannot be in the past")
+            raise Conflict("Дедлайн заявки не может быть в прошлом")
         self._validate_amount(value=initial_amount, field_name="Initial amount")
         await self._ensure_plan_assignment_allowed(
             current_user=current_user,
@@ -312,9 +314,9 @@ class RequestService:
         if request_id is not None:
             normalized_request_id = request_id.strip()
             if not normalized_request_id:
-                raise Conflict("Request id cannot be empty")
+                raise Conflict("Укажите номер заявки")
             if await self._requests.exists_by_id(request_id=normalized_request_id):
-                raise Conflict("Request with this id already exists")
+                raise Conflict("Заявка с таким номером уже существует")
 
         request = await self._requests.create(
             request_id=normalized_request_id,
@@ -451,6 +453,8 @@ class RequestService:
         request_id: str,
         data: RequestEditInput,
     ) -> None:
+        if data.status is not None:
+            await self._requests.lock_offer_lifecycle(request_id=request_id)
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
@@ -508,12 +512,14 @@ class RequestService:
 
         if data.status is not None:
             if data.status not in EDITABLE_REQUEST_STATUSES:
-                raise Conflict("Unsupported request status")
+                raise Conflict("Выбран неподдерживаемый статус заявки")
             previous_status = request.status
             status_changed = data.status != request.status
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
             if data.status == "closed":
+                if await self._requests.has_submitted_offers(request_id=request.id):
+                    raise Conflict("Нельзя закрыть заявку, пока есть нерассмотренные коммерческие предложения.")
                 closed_at = _utcnow_naive()
                 chosen_offer_id = await self._requests.get_latest_accepted_offer_id(request_id=request.id)
                 accepted_offer = await self._offers.get_by_id(offer_id=chosen_offer_id) if chosen_offer_id is not None else None
@@ -672,27 +678,27 @@ class RequestService:
         if value is None:
             return
         if value < 0:
-            raise Conflict(f"{field_name} cannot be negative")
+            raise Conflict("Сумма заявки не может быть отрицательной")
 
     def _validate_closed_request_amounts(self, *, request, accepted_offer) -> None:
-        if request.initial_amount is None:
-            raise Conflict("Initial amount is required to close request")
         if request.final_amount is None:
-            raise Conflict("Final amount is required to close request")
+            raise Conflict("Укажите итоговую сумму перед закрытием заявки")
+        if request.initial_amount is None:
+            raise Conflict("Укажите начальную сумму перед закрытием заявки")
 
-        initial_amount = Decimal(str(request.initial_amount))
         final_amount = Decimal(str(request.final_amount))
-        if accepted_offer is None:
-            if final_amount != initial_amount:
-                raise Conflict("Final amount must match initial amount when request is closed without accepted offer")
+        initial_amount = Decimal(str(request.initial_amount))
+        if initial_amount == Decimal("0"):
+            if final_amount <= Decimal("0"):
+                raise Conflict("При нулевой начальной сумме итоговая сумма должна быть больше нуля")
             return
 
-        if accepted_offer.offer_amount is None:
-            raise Conflict("Accepted offer amount is required when request is closed with accepted offer")
+        allowed_amounts = {initial_amount}
+        if accepted_offer is not None and accepted_offer.offer_amount is not None:
+            allowed_amounts.add(Decimal(str(accepted_offer.offer_amount)))
 
-        offer_amount = Decimal(str(accepted_offer.offer_amount))
-        if final_amount != initial_amount and final_amount != offer_amount:
-            raise Conflict("Final amount must match initial amount or accepted offer amount")
+        if final_amount not in allowed_amounts:
+            raise Conflict("Итоговая сумма должна совпадать с начальной суммой или суммой принятого КП")
     
     async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: str) -> DeletedAlertViewedResult:
         require_permission(
@@ -875,9 +881,24 @@ class RequestService:
 
     async def list_open_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.ensure_can_view_open_requests(current_user)
+        rows = await self._requests.list_open_with_files_for_contractor(
+            contractor_user_id=current_user.user_id,
+        )
+        owner_role_ids = dict(
+            await self._users.list_role_ids_by_user_ids(
+                user_ids=list({request.id_user for request, _ in rows}),
+            )
+        )
+        rows = [
+            row
+            for row in rows
+            if RequestPolicy.is_contractor_request_lifecycle_eligible(
+                request_owner_role_id=owner_role_ids.get(row[0].id_user),
+            )
+        ]
         rows = await self._contractor_unit_service().filter_rows_by_request_owner_scope(
             contractor_user_id=current_user.user_id,
-            rows=await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id),
+            rows=rows,
             owner_user_id_getter=lambda row: row[0].id_user,
         )
         latest_offers_by_request_id = {

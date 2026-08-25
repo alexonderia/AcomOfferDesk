@@ -686,7 +686,7 @@ async def create_request(
     deadline_at: datetime = Form(...),
     normative_file_id: int = Form(...),
     description: str | None = Form(default=None),
-    initial_amount: float | None = Form(default=None),
+    initial_amount: float = Form(...),
     id_plan: int | None = Form(default=None),
     additional_emails: list[str] | None = Form(default=None),
     hidden_contractor_ids: list[str] | None = Form(default=None),
@@ -904,10 +904,14 @@ async def download_file(
                     request_id=request_id,
                     contractor_user_id=current_user.user_id,
                 ):
-                    linked_to_open_request = await ContractorUnitService(users=uow.users).can_contractor_access_request_owner(
-                        contractor_user_id=current_user.user_id,
-                        request_owner_user_id=request_owner_user_id,
-                    )
+                    request_owner = await uow.users.get_by_id(request_owner_user_id)
+                    if RequestPolicy.is_contractor_request_lifecycle_eligible(
+                        request_owner_role_id=request_owner.id_role if request_owner is not None else None,
+                    ):
+                        linked_to_open_request = await ContractorUnitService(users=uow.users).can_contractor_access_request_owner(
+                            contractor_user_id=current_user.user_id,
+                            request_owner_user_id=request_owner_user_id,
+                        )
             linked_to_own_offer = await uow.offers.is_file_linked_to_contractor(
                 contractor_user_id=current_user.user_id,
                 file_id=file_id,

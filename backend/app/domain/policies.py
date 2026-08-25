@@ -557,6 +557,14 @@ class UserPolicy:
 
 class RequestPolicy:
     @staticmethod
+    def is_contractor_request_lifecycle_eligible(*, request_owner_role_id: int | None) -> bool:
+        """Whether the current owner has moved a request past the Operator stage."""
+        return (
+            request_owner_role_id is not None
+            and request_owner_role_id != settings.operator_role_id
+        )
+
+    @staticmethod
     def can_edit(current_user: CurrentUser, *, request_owner_user_id: str) -> bool:
         return _is_allowed(
             lambda: RequestPolicy.ensure_can_edit(

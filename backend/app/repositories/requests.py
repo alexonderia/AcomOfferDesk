@@ -38,6 +38,13 @@ class RequestRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def lock_offer_lifecycle(self, *, request_id: str) -> None:
+        """Serialize request closure with contractor offer creation."""
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"request-offer-lifecycle:{request_id}"},
+        )
+
     async def add(self, request: Request) -> None:
         self._session.add(request)
 
@@ -105,6 +112,15 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def has_submitted_offers(self, *, request_id: str) -> bool:
+        stmt = (
+            select(Offer.id)
+            .where(Offer.id_request == request_id, Offer.status == "submitted")
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def update_status(
         self,

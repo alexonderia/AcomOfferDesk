@@ -343,6 +343,7 @@ class OfferService:
         )
 
     async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: str) -> None:
+        """Authorize historical offer access without reapplying discovery eligibility."""
         if current_user.role_id != settings.contractor_role_id:
             return
         request = await self._requests.get_by_id(request_id=request_id)
@@ -359,6 +360,22 @@ class OfferService:
             request_owner_user_id=request.id_user,
         ):
             raise NotFound("Request not found")
+
+    async def _is_request_available_for_contractor_discovery(self, *, current_user: CurrentUser, request) -> bool:
+        owner = await self._users.get_by_id(request.id_user)
+        if not RequestPolicy.is_contractor_request_lifecycle_eligible(
+            request_owner_role_id=owner.id_role if owner is not None else None,
+        ):
+            return False
+        return await self._contractor_unit_service().can_contractor_access_request_owner(
+            contractor_user_id=current_user.user_id,
+            request_owner_user_id=request.id_user,
+        )
+
+    @staticmethod
+    def _ensure_request_is_open_for_offer_mutation(*, request_status: str) -> None:
+        if request_status in {"closed", "cancelled"}:
+            raise Conflict("КП нельзя изменить, если заявка уже закрыта или отклонена")
 
     async def _load_offer_and_request(self, *, offer_id: int, current_user: CurrentUser | None = None):
         offer = await self._offers.get_by_id(offer_id=offer_id)
@@ -636,15 +653,15 @@ class OfferService:
             message="Insufficient permissions to view contractor request details",
         )
 
-        request = await self._requests.get_visible_by_id_for_contractor(
+        request = await self._requests.get_visible_open_by_id_for_contractor(
             request_id=request_id,
             contractor_user_id=current_user.user_id,
         )
         if request is None:
             raise NotFound("Request not found")
-        if not await self._contractor_unit_service().can_contractor_access_request_owner(
-            contractor_user_id=current_user.user_id,
-            request_owner_user_id=request.id_user,
+        if not await self._is_request_available_for_contractor_discovery(
+            current_user=current_user,
+            request=request,
         ):
             raise NotFound("Request not found")
 
@@ -688,18 +705,23 @@ class OfferService:
         UserPolicy.ensure_can_create_offer(current_user)
         self._validate_offer_amount(offer_amount)
 
+        await self._requests.lock_offer_lifecycle(request_id=request_id)
         request = await self._requests.get_visible_open_by_id_for_contractor(
             request_id=request_id,
             contractor_user_id=current_user.user_id,
         )
         if request is None:
             raise NotFound("Open request not found")
-        if not await self._contractor_unit_service().can_contractor_access_request_owner(
-            contractor_user_id=current_user.user_id,
-            request_owner_user_id=request.id_user,
+        if not await self._is_request_available_for_contractor_discovery(
+            current_user=current_user,
+            request=request,
         ):
             raise NotFound("Open request not found")
 
+        await self._offers.lock_contractor_offer_creation(
+            request_id=request.id,
+            contractor_user_id=current_user.user_id,
+        )
         existing_offer = await self._offers.get_contractor_offer_for_request(
             request_id=request.id,
             contractor_user_id=current_user.user_id,
@@ -950,6 +972,7 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,
             request_owner_user_id=request.id_user,
@@ -1034,6 +1057,7 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,
             request_owner_user_id=request.id_user,
@@ -1105,8 +1129,7 @@ class OfferService:
 
         if status not in EDITABLE_OFFER_STATUSES:
             raise Conflict("Unsupported offer status")
-        if request.status in {"closed", "cancelled"}:
-            raise Conflict("КП нельзя изменить, если заявка уже закрыта или отклонена")
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_status_scope = await self._ensure_can_update_offer_status(
             current_user=current_user,
             request_owner_user_id=request.id_user,
@@ -1151,6 +1174,7 @@ class OfferService:
 
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         self._validate_offer_amount(offer_amount)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,

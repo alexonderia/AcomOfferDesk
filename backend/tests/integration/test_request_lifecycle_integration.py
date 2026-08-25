@@ -25,12 +25,22 @@ def _now() -> datetime:
 
 
 class _MutableRequestsRepo:
-    def __init__(self, request_row: SimpleNamespace, *, accepted_offer_id: int | None = None) -> None:
+    def __init__(
+        self,
+        request_row: SimpleNamespace,
+        *,
+        accepted_offer_id: int | None = None,
+        has_submitted_offers: bool = False,
+    ) -> None:
         self.request_row = request_row
         self.accepted_offer_id = accepted_offer_id
+        self._has_submitted_offers = has_submitted_offers
 
     async def get_by_id(self, *, request_id: str):
         return self.request_row if str(self.request_row.id) == str(request_id) else None
+
+    async def lock_offer_lifecycle(self, *, request_id: str) -> None:
+        _ = request_id
 
     async def update_initial_amount(self, *, request, initial_amount: float) -> None:
         request.initial_amount = initial_amount
@@ -47,6 +57,10 @@ class _MutableRequestsRepo:
         _ = request_id
         return self.accepted_offer_id
 
+    async def has_submitted_offers(self, *, request_id: str) -> bool:
+        _ = request_id
+        return self._has_submitted_offers
+
     async def update_deadline(self, *, request, deadline_at: datetime) -> None:
         request.deadline_at = deadline_at
 
@@ -60,6 +74,10 @@ class _MutableRequestsRepo:
         _ = plan_id
         return "owner-1"
 
+    async def list_open_with_files_for_contractor(self, *, contractor_user_id: str):
+        _ = contractor_user_id
+        return [(self.request_row, None)] if self.request_row.status == "open" else []
+
 
 class _OffersRepo:
     def __init__(self, offers_by_id: dict[str, SimpleNamespace] | None = None) -> None:
@@ -70,6 +88,10 @@ class _OffersRepo:
 
     async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int):
         _ = (request_id, contractor_role_id)
+        return []
+
+    async def list_latest_contractor_offers_by_request_ids(self, *, contractor_user_id: str, request_ids: list[str]):
+        _ = (contractor_user_id, request_ids)
         return []
 
 
@@ -113,6 +135,13 @@ class _UsersRepo:
     async def get_by_id(self, user_id: str):
         return self._users_by_id.get(user_id)
 
+    async def list_role_ids_by_user_ids(self, *, user_ids: list[str]):
+        return [
+            (user_id, self._users_by_id[user_id].id_role)
+            for user_id in user_ids
+            if user_id in self._users_by_id
+        ]
+
     async def list_active_user_parent_pairs(self):
         return [
             (user.id, user.id_parent)
@@ -144,6 +173,13 @@ class _ContractorViewRequestsRepo:
         if str(request_id) != str(self._request_row.id):
             return None
         return self._request_row
+
+    async def get_visible_open_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
+        request = await self.get_visible_by_id_for_contractor(
+            request_id=request_id,
+            contractor_user_id=contractor_user_id,
+        )
+        return request if request is not None and request.status == "open" else None
 
     async def list_files(self, *, request_id: str):
         _ = request_id
@@ -252,15 +288,21 @@ class _RequestLifecycleUow:
         request_row: SimpleNamespace,
         *,
         accepted_offer_amount: float | None = None,
+        has_accepted_offer: bool = False,
+        has_submitted_offers: bool = False,
         users_by_id: dict[str, SimpleNamespace] | None = None,
     ) -> None:
-        accepted_offer_id = 501 if accepted_offer_amount is not None else None
+        accepted_offer_id = 501 if has_accepted_offer or accepted_offer_amount is not None else None
         offers_by_id = (
             {accepted_offer_id: SimpleNamespace(id=accepted_offer_id, offer_amount=accepted_offer_amount)}
             if accepted_offer_id is not None
             else {}
         )
-        self.requests = _MutableRequestsRepo(request_row, accepted_offer_id=accepted_offer_id)
+        self.requests = _MutableRequestsRepo(
+            request_row,
+            accepted_offer_id=accepted_offer_id,
+            has_submitted_offers=has_submitted_offers,
+        )
         self.files = object()
         self.users = _UsersRepo(
             users_by_id=users_by_id
@@ -369,6 +411,7 @@ def test_allowed_roles_can_create_request(test_client, monkeypatch, set_current_
             "id": "REQ-700",
             "deadline_at": _future_dt().isoformat(),
             "description": "Created in test",
+            "initial_amount": "0",
             "normative_file_id": "1",
         },
         files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
@@ -376,6 +419,22 @@ def test_allowed_roles_can_create_request(test_client, monkeypatch, set_current_
 
     assert response.status_code == 200
     assert response.json()["data"]["request_id"] == "700"
+
+
+def test_request_creation_requires_initial_amount(test_client, set_current_user, make_current_user):
+    set_current_user(_role_user(make_current_user, settings.lead_economist_role_id))
+
+    response = test_client.post(
+        "/api/v1/requests",
+        data={
+            "id": "REQ-701",
+            "deadline_at": _future_dt().isoformat(),
+            "normative_file_id": "1",
+        },
+        files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize(
@@ -417,6 +476,7 @@ def test_forbidden_roles_cannot_create_request(test_client, monkeypatch, set_cur
             "id": "REQ-700",
             "deadline_at": _future_dt().isoformat(),
             "description": "Created in test",
+            "initial_amount": "0",
             "normative_file_id": "1",
         },
         files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
@@ -432,6 +492,57 @@ def test_contractor_cannot_access_internal_request_representation(test_client, s
     response = test_client.get("/api/v1/requests/1")
 
     assert response.status_code == 403
+
+
+def test_operator_request_becomes_visible_to_contractor_only_after_assignment(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = _request_row(owner_user_id="operator-1")
+    users_by_id = {
+        "pm-1": SimpleNamespace(id="pm-1", id_parent=None, id_role=settings.project_manager_role_id),
+        "lead-1": SimpleNamespace(id="lead-1", id_parent="pm-1", id_role=settings.lead_economist_role_id),
+        "econ-1": SimpleNamespace(id="econ-1", id_parent="lead-1", id_role=settings.economist_role_id),
+        "operator-1": SimpleNamespace(id="operator-1", id_parent=None, id_role=settings.operator_role_id),
+        "contractor-1": SimpleNamespace(id="contractor-1", id_parent=None, id_role=settings.contractor_role_id),
+    }
+    uow = _RequestLifecycleUow(request_row, users_by_id=users_by_id)
+    uow.users._memberships.append(("operator-1", 1))
+    set_uow(uow)
+
+    contractor = make_current_user(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.REQUESTS_OPEN_READ},
+    )
+    set_current_user(contractor)
+    before_assignment = test_client.get("/api/v1/requests/open")
+
+    assert before_assignment.status_code == 200
+    assert before_assignment.json()["data"]["items"] == []
+
+    assigner = make_current_user(
+        user_id="superadmin-1",
+        role_id=settings.superadmin_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.REQUESTS_OWNER_CHANGE,
+            PermissionCodes.REQUESTS_READ,
+        },
+    )
+    set_current_user(assigner)
+    assignment = test_client.patch("/api/v1/requests/1", json={"owner_user_id": "econ-1"})
+
+    assert assignment.status_code == 200
+    assert request_row.id_user == "econ-1"
+
+    set_current_user(contractor)
+    after_assignment = test_client.get("/api/v1/requests/open")
+
+    assert after_assignment.status_code == 200
+    assert [item["request_id"] for item in after_assignment.json()["data"]["items"]] == ["1"]
 
 
 def test_contractor_can_access_contractor_view_only_when_permission_allows(
@@ -849,6 +960,175 @@ def test_request_can_be_closed_with_accepted_offer_amount(
     )
 
     assert response.status_code == 200
+
+
+def test_request_can_be_closed_with_initial_amount_when_offer_is_accepted(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", initial=100.0, final=100.0)
+    set_uow(_RequestLifecycleUow(request_row, accepted_offer_amount=80.0))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/requests/1", json={"status": "closed"})
+
+    assert response.status_code == 200
+    assert request_row.status == "closed"
+    assert request_row.id_offer == 501
+
+
+@pytest.mark.parametrize(
+    ("accepted_offer_amount", "final_amount"),
+    [(80.0, 90.0), (None, 90.0)],
+)
+def test_request_closure_rejects_final_amount_outside_allowed_values(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+    accepted_offer_amount,
+    final_amount,
+):
+    request_row = _request_row(status="open", initial=100.0, final=final_amount)
+    set_uow(_RequestLifecycleUow(request_row, accepted_offer_amount=accepted_offer_amount))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/requests/1", json={"status": "closed"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Итоговая сумма должна совпадать с начальной суммой или суммой принятого КП"
+    assert request_row.status == "open"
+    assert request_row.closed_at is None
+    assert request_row.id_offer is None
+
+
+def test_request_can_be_closed_with_initial_amount_when_accepted_offer_has_no_amount(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", initial=100.0, final=100.0)
+    set_uow(_RequestLifecycleUow(request_row, has_accepted_offer=True))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/requests/1", json={"status": "closed"})
+
+    assert response.status_code == 200
+    assert request_row.id_offer == 501
+
+
+def test_request_with_zero_initial_amount_can_be_closed_with_positive_final_amount(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", initial=0.0, final=123.45)
+    set_uow(_RequestLifecycleUow(request_row))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/requests/1", json={"status": "closed"})
+
+    assert response.status_code == 200
+    assert request_row.status == "closed"
+
+
+def test_request_without_initial_amount_cannot_be_closed(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", initial=None, final=123.45)
+    set_uow(_RequestLifecycleUow(request_row))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/requests/1", json={"status": "closed"})
+
+    assert response.status_code == 409
+    assert request_row.status == "open"
+    assert request_row.closed_at is None
+    assert request_row.id_offer is None
+
+
+def test_request_with_zero_initial_amount_rejects_non_positive_final_amount(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", initial=0.0, final=0.0)
+    set_uow(_RequestLifecycleUow(request_row))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/requests/1", json={"status": "closed"})
+
+    assert response.status_code == 409
+    assert request_row.status == "open"
+
+
+def test_request_cannot_be_closed_while_submitted_offer_exists(
+    test_client,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    request_row = _request_row(status="open", initial=100.0, final=100.0)
+    set_uow(_RequestLifecycleUow(request_row, has_submitted_offers=True))
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_STATUS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/requests/1", json={"status": "closed"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Нельзя закрыть заявку, пока есть нерассмотренные коммерческие предложения."
+    assert request_row.status == "open"
+    assert request_row.closed_at is None
+    assert request_row.id_offer is None
 
 
 def test_deleted_and_rejected_offers_do_not_break_request_stats_payload(

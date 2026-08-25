@@ -78,6 +78,7 @@ const buildWorkspaceHookState = (overrides?:
     offerDelete: boolean;
     errorMessage: string | null;
     permissions: string[];
+    requestStatus: "open" | "review" | "closed" | "cancelled";
   }>) => {
   const selectedOffer = {
     offer_id: 101,
@@ -113,7 +114,7 @@ const buildWorkspaceHookState = (overrides?:
       request: {
         request_id: 17,
         description: "Workspace request",
-        status: "open",
+        status: overrides?.requestStatus ?? "open",
         status_label: "Open",
         owner_full_name: "Owner One",
         owner_phone: "+7 900 222-33-44",
@@ -265,6 +266,33 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
 
     expect(screen.getByText("Выберите статус")).toBeInTheDocument();
   });
+
+  it.each(["closed", "cancelled"] as const)(
+    "renders offer workspace read-only when request is %s",
+    (requestStatus) => {
+      useOfferWorkspaceMock.mockReturnValue(
+        buildWorkspaceHookState({
+          isContractor: false,
+          canEditOfferStatus: true,
+          canEditOfferAmount: true,
+          canUpload: true,
+          canDeleteFile: true,
+          canDeleteOwnOffer: true,
+          offerAccept: true,
+          offerReject: true,
+          permissions: ["offers.update", "offers.amount.update"],
+          requestStatus,
+        })
+      );
+
+      renderWithTheme();
+
+      expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
+      expect(screen.queryByText("Выберите статус")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Добавить файлы")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Сохранить" })).not.toBeInTheDocument();
+    }
+  );
 
   it("does not render chat when view_messages is denied", () => {
     useOfferWorkspaceMock.mockReturnValue(

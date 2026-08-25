@@ -252,6 +252,7 @@ The backend permission codes are grouped by domain:
   `root_unit_ids: number[]`
 - Backend action flags must expose `can_manage_contractor_unit_bindings` for contractor rows/cards so the frontend can render the checkbox section without inventing its own permission logic.
 - Contractor-visible request lists, contractor request view/file access, outbound notifications, and offer-related contractor fanout must filter recipients by the contractor's bound root-unit scope.
+- `ContractorUnitService` is organizational-scope-only: it calculates effective root units and their intersections, but does not inspect Request lifecycle, assignment state, or the request owner's role. `RequestPolicy.is_contractor_request_lifecycle_eligible(...)` denies contractor discovery while the current owner is an Operator; this is a negative lifecycle invariant, not a whitelist of publishable roles.
 - Manual contractor creation must check duplicates by full name, INN, company name, or email before creating a new user.
 - If a duplicate contractor already exists in another root-unit scope, the system must add the creator's effective root-unit binding instead of creating a second contractor.
 - If no duplicate exists, the newly created manual contractor must be bound to the creator's effective root-unit scope immediately.
@@ -274,6 +275,7 @@ The backend permission codes are grouped by domain:
 - Backend unit: manual contractor creation reuses an existing contractor and binds it to the creator's effective root-unit scope.
 - Backend unit/integration: request-created notification fanout excludes contractors outside the bound root-unit subtree.
 - Backend integration: additional email mapped to an economist-created contractor account is still filtered by root-unit scope.
+- Backend integration: an Operator-owned request is hidden from a same-root Contractor in the list, detail, create-offer and request-file paths; after the normal owner-assignment action to a non-Operator, normal root-scope and hidden checks decide access.
 - Frontend unit: contractor details dialog loads root-unit bindings, toggles checkboxes, and submits `root_unit_ids`.
 - Frontend type/DTO checks: contractor actions mapping keeps `manage_contractor_unit_bindings` aligned with backend payloads.
 

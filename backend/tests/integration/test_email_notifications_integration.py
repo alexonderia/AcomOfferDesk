@@ -259,7 +259,7 @@ async def test_create_request_triggers_email_notification_event(make_current_use
         current_user=user,
         deadline_at=_future_dt().replace(tzinfo=None),
         description="Новая заявка",
-        initial_amount=None,
+        initial_amount=0,
         id_plan=None,
         normative_file_id=1,
         files=[
@@ -282,6 +282,33 @@ async def test_create_request_triggers_email_notification_event(make_current_use
             "hidden_contractor_ids": [],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_create_request_rejects_missing_initial_amount(make_current_user):
+    service = RequestService(
+        requests=_FakeRequestRepoForCreate(),
+        files=_FakeFilesRepo(),
+        users=_FakeUsersRepo(),
+        offers=_FakeOffersRepo(),
+        user_status_periods=_FakeUserStatusPeriodsRepo(),
+        file_service=_FakeFileServiceForCreate(),
+    )
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions=set(get_role_permissions_map()[settings.lead_economist_role_id]),
+    )
+
+    with pytest.raises(Conflict, match="Укажите начальную сумму заявки"):
+        await service.create_request(
+            current_user=user,
+            deadline_at=_future_dt().replace(tzinfo=None),
+            description="Новая заявка",
+            initial_amount=None,
+            id_plan=None,
+            normative_file_id=1,
+            files=[],
+        )
 
 
 @pytest.mark.asyncio

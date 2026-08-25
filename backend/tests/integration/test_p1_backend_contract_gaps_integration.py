@@ -1539,6 +1539,52 @@ def test_file_download_allows_contractor_for_linked_open_request(
     assert response.content == b"linked-content"
 
 
+def test_file_download_denies_contractor_for_operator_owned_request_in_shared_root(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"must-not-be-used"
+
+    users_repo = _DownloadUsersRepo(
+        users={
+            "operator-1": SimpleNamespace(
+                id="operator-1",
+                id_role=settings.operator_role_id,
+                id_parent=None,
+            ),
+            "contractor-1": SimpleNamespace(
+                id="contractor-1",
+                id_role=settings.contractor_role_id,
+                id_parent=None,
+            ),
+        }
+    )
+    users_repo._memberships.append(("operator-1", 1))
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    set_uow(
+        _DownloadUow(
+            requests_repo=_DownloadRequestsRepo(linked=True, owner_user_id="operator-1"),
+            users_repo=users_repo,
+        )
+    )
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 403
+
+
 def test_file_download_denies_contractor_for_unlinked_foreign_file(
     test_client,
     monkeypatch,

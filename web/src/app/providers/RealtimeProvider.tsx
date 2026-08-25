@@ -22,7 +22,6 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
   const [connectionState, setConnectionState] = useState<RealtimeConnectionState>(
     realtimeSocketClient.getState()
   );
-  const refreshAttemptInFlightRef = useRef(false);
   const previousConnectionStateRef = useRef<RealtimeConnectionState>(realtimeSocketClient.getState());
   const syncInFlightRef = useRef<Promise<void> | null>(null);
   const lastSyncAtRef = useRef(0);
@@ -65,18 +64,11 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
       }
 
       if (event.type === 'error' && event.data.code === 'auth_failed') {
-        if (refreshAttemptInFlightRef.current) {
-          return;
-        }
-        refreshAttemptInFlightRef.current = true;
         void refresh('ws_4401')
-          .then((ok: boolean) => {
-            if (!ok) {
+          .then((result) => {
+            if (result.kind === 'terminal') {
               logout();
             }
-          })
-          .finally(() => {
-            refreshAttemptInFlightRef.current = false;
           });
         return;
       }

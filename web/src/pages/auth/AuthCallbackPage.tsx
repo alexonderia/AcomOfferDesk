@@ -4,11 +4,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { AuthPageShell } from '@shared/components/AuthPageShell';
 import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
+import { TechnicalUnavailablePage } from '@pages/technical';
 
 export const AuthCallbackPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { refresh, session, isAuthenticated } = useAuth();
+  const { refresh, session, isAuthenticated, status } = useAuth();
   const nextPath = useMemo(() => {
     const raw = searchParams.get('next');
     return raw && raw.startsWith('/') ? raw : '/';
@@ -23,8 +24,8 @@ export const AuthCallbackPage = () => {
     }
 
     let cancelled = false;
-    void refresh('bootstrap').then((restored) => {
-      if (!restored && !cancelled) {
+    void refresh('bootstrap').then((result) => {
+      if (result.kind === 'terminal' && !cancelled) {
         navigate('/login?auth_error=login_failed', { replace: true });
       }
     });
@@ -44,6 +45,10 @@ export const AuthCallbackPage = () => {
     }
     navigate(resolveAuthenticatedPath(nextPath, session), { replace: true });
   }, [isAuthenticated, navigate, nextPath, session]);
+
+  if (status === 'unavailable') {
+    return <TechnicalUnavailablePage />;
+  }
 
   return (
     <AuthPageShell title="Завершаем вход">

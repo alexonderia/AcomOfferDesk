@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { setAuthRuntime } from '@shared/api/client';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { setAuthRuntime, type AuthRefreshResult } from '@shared/api/client';
 import {
   getWebSession,
   issueCsrfToken,
@@ -29,7 +29,7 @@ type AuthContextValue = {
   session: AuthSession | null;
   isAuthenticated: boolean;
   beginLogin: (nextPath?: string, options?: { forcePrompt?: boolean }) => void;
-  refresh: (reason: RefreshReason) => Promise<boolean>;
+  refresh: (reason: RefreshReason) => Promise<AuthRefreshResult>;
   logout: () => void;
 };
 
@@ -47,27 +47,46 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
   permissions: response.data.permissions ?? [],
 });
 
-const isUnavailableError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  return message.includes('недоступ') || message.includes('сеть') || message.includes('соединен');
-};
-
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [status, setStatus] = useState<AuthStatus>('authenticating');
   const [session, setSession] = useState<AuthSession | null>(null);
+  const refreshPromiseRef = useRef<Promise<AuthRefreshResult> | null>(null);
+  const logoutPromiseRef = useRef<Promise<void> | null>(null);
 
-  const refresh = useCallback(async (_reason: RefreshReason): Promise<boolean> => {
-    try {
-      await issueCsrfToken();
-      const restored = mapSession(await refreshWebSession());
-      setSession(restored);
-      setStatus('authenticated');
-      return true;
-    } catch (error) {
-      setSession(null);
-      setStatus(isUnavailableError(error) ? 'unavailable' : 'unauthenticated');
-      return false;
+  const refresh = useCallback((_reason: RefreshReason): Promise<AuthRefreshResult> => {
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
     }
+
+    const task = (async (): Promise<AuthRefreshResult> => {
+      try {
+        await issueCsrfToken();
+        const result = await refreshWebSession();
+        if (result.kind === 'success') {
+          setSession(mapSession(result.session));
+          setStatus('authenticated');
+          return { kind: 'success' };
+        }
+        if (result.kind === 'terminal') {
+          setSession(null);
+          setStatus('unauthenticated');
+          return result;
+        }
+        setStatus('unavailable');
+        return result;
+      } catch {
+        setStatus('unavailable');
+        return { kind: 'unavailable' };
+      }
+    })();
+
+    refreshPromiseRef.current = task;
+    void task.finally(() => {
+      if (refreshPromiseRef.current === task) {
+        refreshPromiseRef.current = null;
+      }
+    });
+    return task;
   }, []);
 
   const beginLogin = useCallback((nextPath = '/', _options?: { forcePrompt?: boolean }) => {
@@ -76,7 +95,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const logout = useCallback(() => {
-    void (async () => {
+    if (logoutPromiseRef.current) {
+      return;
+    }
+    setSession(null);
+    setStatus('unauthenticated');
+    const task = (async () => {
       try {
         await issueCsrfToken();
         await logoutWebSession();
@@ -86,11 +110,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } catch {
           // Local BFF cookies are already cleared; the next login will not reuse a stale app session.
         }
-        setSession(null);
-        setStatus('unauthenticated');
         window.location.assign('/login');
       }
     })();
+    logoutPromiseRef.current = task;
+    void task.finally(() => {
+      if (logoutPromiseRef.current === task) {
+        logoutPromiseRef.current = null;
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -119,7 +147,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     setAuthRuntime({
       refresh,
-      canAttemptSilentRefresh: () => status === 'authenticated',
+      canAttemptSilentRefresh: () => status === 'authenticated' && !logoutPromiseRef.current,
       forceLogout: logout,
     });
     return () => setAuthRuntime(null);

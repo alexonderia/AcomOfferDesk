@@ -1,4 +1,4 @@
-import { fetchEmpty, fetchJson } from '../client';
+import { apiFetch, fetchEmpty, fetchJson } from '../client';
 
 export type AuthSessionResponse = {
   data: {
@@ -13,6 +13,11 @@ export type AuthSessionResponse = {
     permissions?: string[];
   };
 };
+
+export type RefreshWebSessionResult =
+  | { kind: 'success'; session: AuthSessionResponse }
+  | { kind: 'terminal' }
+  | { kind: 'unavailable' };
 
 export const getWebSession = async (): Promise<AuthSessionResponse> =>
   fetchJson<AuthSessionResponse>(
@@ -31,15 +36,23 @@ export const issueCsrfToken = async (): Promise<void> => {
   );
 };
 
-export const refreshWebSession = async (): Promise<AuthSessionResponse> =>
-  fetchJson<AuthSessionResponse>(
-    '/api/v1/auth/refresh',
-    {
-      method: 'POST'
-    },
-    'Не удалось восстановить сессию',
-    false
-  );
+export const refreshWebSession = async (): Promise<RefreshWebSessionResult> => {
+  try {
+    const response = await apiFetch('/api/v1/auth/refresh', { method: 'POST' });
+    if (response.status === 401) {
+      return { kind: 'terminal' };
+    }
+    if (!response.ok) {
+      return { kind: 'unavailable' };
+    }
+    return {
+      kind: 'success',
+      session: await response.json() as AuthSessionResponse,
+    };
+  } catch {
+    return { kind: 'unavailable' };
+  }
+};
 
 export const logoutWebSession = async (): Promise<void> =>
   fetchEmpty(

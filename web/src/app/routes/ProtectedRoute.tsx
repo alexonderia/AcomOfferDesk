@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
+import { TechnicalUnavailablePage } from '@pages/technical';
 
 export const ProtectedRoute = () => {
   const { isAuthenticated, status, session } = useAuth();
@@ -7,6 +8,10 @@ export const ProtectedRoute = () => {
 
   if (status === 'authenticating') {
     return null;
+  }
+
+  if (status === 'unavailable') {
+    return <TechnicalUnavailablePage />;
   }
 
   if (!session || !isAuthenticated) {

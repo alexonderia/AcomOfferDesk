@@ -38,7 +38,7 @@ describe("ProtectedRoute", () => {
     "redirects anonymous users to login for %s",
     (path) => {
       useAuthMock.mockReturnValue({
-        status: "unavailable",
+        status: "unauthenticated",
         isAuthenticated: false,
         session: null,
       });
@@ -80,7 +80,7 @@ describe("ProtectedRoute", () => {
     expect(screen.getByText("protected-page")).toBeInTheDocument();
   });
 
-  it("redirects unavailable authentication to login", () => {
+  it("keeps the protected URL and shows controlled unavailability", () => {
     useAuthMock.mockReturnValue({
       status: "unavailable",
       isAuthenticated: false,
@@ -89,6 +89,6 @@ describe("ProtectedRoute", () => {
 
     renderProtectedRoutes("/protected");
 
-    expect(screen.getByText("login-page")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Обновить страницу" })).toBeInTheDocument();
   });
 });

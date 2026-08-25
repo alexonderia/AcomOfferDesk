@@ -1,0 +1,27 @@
+services:
+  production_tunnel:
+    image: cloudflare/cloudflared:2026.6.1
+    container_name: acom_prodlike_tunnel
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://gateway:80"]
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - project_net
+
+  storage_tunnel:
+    image: cloudflare/cloudflared:2026.6.1
+    container_name: acom_prodlike_storage_tunnel
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://minio:9000"]
+    restart: unless-stopped
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - project_net
+
+networks:
+  project_net:
+    name: project_net
+    external: true

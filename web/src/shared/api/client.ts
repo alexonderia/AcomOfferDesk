@@ -9,8 +9,13 @@
 } from '@shared/lib/errors/userFacing';
 
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
+export type AuthRefreshResult =
+  | { kind: 'success' }
+  | { kind: 'terminal' }
+  | { kind: 'unavailable' };
+
 type AuthRuntime = {
-  refresh: (reason: RefreshReason) => Promise<boolean>;
+  refresh: (reason: RefreshReason) => Promise<AuthRefreshResult>;
   canAttemptSilentRefresh: (reason: Exclude<RefreshReason, 'bootstrap'>) => boolean;
   forceLogout: () => void;
 };
@@ -257,11 +262,13 @@ export const apiFetch = async (
     && authRuntime
     && authRuntime.canAttemptSilentRefresh('http_401')
   ) {
-    const refreshed = await authRuntime.refresh('http_401');
-    if (refreshed) {
+    const refreshResult = await authRuntime.refresh('http_401');
+    if (refreshResult.kind === 'success') {
       return await apiFetch(url, init, withAuth, false);
     }
-    authRuntime.forceLogout();
+    if (refreshResult.kind === 'terminal') {
+      authRuntime.forceLogout();
+    }
   }
 
   return response;

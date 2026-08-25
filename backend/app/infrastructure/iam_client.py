@@ -19,6 +19,12 @@ class IamTokenBundle:
 
 
 @dataclass(frozen=True, slots=True)
+class IamBrowserPage:
+    status_code: int
+    html: str
+
+
+@dataclass(frozen=True, slots=True)
 class IamAccount:
     id: str
     login: str
@@ -128,6 +134,49 @@ class IamClient:
             "/internal/logout",
             json={"refresh_token": refresh_token, "reason": reason},
         )
+
+    async def render_password_action_page(
+        self,
+        *,
+        action: str,
+        token: str | None = None,
+        form: dict[str, str] | None = None,
+    ) -> IamBrowserPage:
+        """Use IAM's private network path while the browser stays on BFF URLs."""
+
+        if action not in {"setup", "reset"}:
+            raise ValueError("Unsupported password action")
+        path = f"/iam/password/{action}"
+        headers = {
+            "X-Acom-Service-Token": settings.iam_internal_service_token,
+            REQUEST_ID_HEADER: get_request_id() or str(uuid.uuid4()),
+        }
+        try:
+            if self._client is not None:
+                response = await self._client.request(
+                    "POST" if form is not None else "GET",
+                    path,
+                    params={"token": token} if token is not None else None,
+                    data=form,
+                    headers=headers,
+                )
+            else:
+                async with httpx.AsyncClient(
+                    base_url=settings.iam_internal_base_url,
+                    timeout=settings.iam_http_timeout_seconds,
+                ) as client:
+                    response = await client.request(
+                        "POST" if form is not None else "GET",
+                        path,
+                        params={"token": token} if token is not None else None,
+                        data=form,
+                        headers=headers,
+                    )
+        except httpx.HTTPError as exc:
+            raise AuthenticationUnavailable() from exc
+        if response.status_code >= 500:
+            raise AuthenticationUnavailable()
+        return IamBrowserPage(status_code=response.status_code, html=response.text)
 
     async def put_account(
         self,

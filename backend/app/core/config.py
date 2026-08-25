@@ -220,6 +220,9 @@ class Settings(BaseSettings):
         if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
             self.refresh_cookie_samesite = "lax"
 
+        if "*" in self.resolved_cors_allow_origins:
+            raise ValueError("CORS_ALLOW_ORIGINS must not contain '*' when credentials are enabled")
+
         public_bases = [self.public_backend_base_url, self.web_base_url]
         if self.app_env == "production" or any(
             (base or "").strip().lower().startswith("https://") for base in public_bases
@@ -357,5 +360,9 @@ class Settings(BaseSettings):
     def iam_callback_url(self) -> str:
         base = (self.public_backend_base_url or self.web_base_url or "http://localhost:8080").rstrip("/")
         return f"{base}/api/v1/auth/callback"
+
+    @property
+    def iam_bff_auth_base_url(self) -> str:
+        return self.iam_callback_url.rsplit("/callback", 1)[0]
 
 settings = Settings()

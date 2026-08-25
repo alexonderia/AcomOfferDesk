@@ -149,6 +149,13 @@ def test_rejects_conflicting_public_keys_for_same_kid(rsa_keys, monkeypatch) -> 
         settings._normalize()
 
 
+def test_rejects_wildcard_cors_when_cookie_credentials_are_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "cors_allow_origins", ["*"])
+
+    with pytest.raises(ValueError, match="CORS_ALLOW_ORIGINS"):
+        settings._normalize()
+
+
 def test_rejects_signature_from_wrong_rsa_private_key(rsa_keys) -> None:
     wrong_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     wrong_private = wrong_key.private_bytes(

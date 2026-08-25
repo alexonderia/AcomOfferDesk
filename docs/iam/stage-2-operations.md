@@ -92,8 +92,8 @@ quality gate можно добавить `--strict`: при найденном d
   configuration. Docker healthcheck использует readiness.
 - `GET /health` IAM сохранён как совместимый alias readiness; `GET /health`
   backend возвращает `200`.
-- `/iam/authorize`, `/iam/login`, `/iam/password/setup`,
-  `/iam/password/reset` и `/iam/.well-known/jwks.json` доступны через gateway.
+- `/iam/authorize`, `/iam/login` и `/iam/.well-known/jwks.json` доступны через gateway.
+  Password setup/reset идут только через `/api/v1/auth/password/{setup|reset}` BFF.
 - `/iam/internal/*`, `/internal/*` и остальные IAM URL через gateway не
   доступны.
 - Вход завершается callback AcomOfferDesk, после которого браузер получает

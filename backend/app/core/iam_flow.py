@@ -5,7 +5,7 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from jose import JWTError, jwt
 
@@ -22,9 +22,19 @@ def _random(bytes_length: int) -> str:
 
 def sanitize_next_path(next_path: str | None) -> str:
     candidate = (next_path or "/").strip()
-    if not candidate.startswith("/") or candidate.startswith("//"):
-        return "/"
-    return candidate
+    decoded_candidate = candidate
+    for _ in range(5):
+        if (
+            not decoded_candidate.startswith("/")
+            or decoded_candidate.startswith("//")
+            or "\\" in decoded_candidate
+        ):
+            return "/"
+        next_decoded_candidate = unquote(decoded_candidate)
+        if next_decoded_candidate == decoded_candidate:
+            return candidate
+        decoded_candidate = next_decoded_candidate
+    return "/"
 
 
 @dataclass(frozen=True, slots=True)

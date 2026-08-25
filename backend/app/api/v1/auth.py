@@ -6,7 +6,7 @@ import time
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from shared.client_ip import resolve_client_ip
@@ -15,6 +15,7 @@ from shared.rate_limiter import SlidingWindowRateLimiter
 from app.api.dependencies import get_current_user, get_uow, resolve_iam_current_user
 from app.core.auth_cookies import (
     clear_csrf_cookie,
+    clear_iam_browser_session_cookie,
     clear_iam_access_cookie,
     clear_iam_flow_cookie,
     clear_iam_flow_recovery_cookie,
@@ -30,7 +31,7 @@ from app.core.iam_flow import FLOW_TTL_SECONDS, build_iam_authorize_url, create_
 from app.core.uow import UnitOfWork
 from app.domain.authentication import decode_iam_access_token
 from app.domain.auth_context import CurrentUser
-from app.domain.exceptions import AuthenticationUnavailable, Conflict, Unauthorized
+from app.domain.exceptions import AuthenticationUnavailable, Conflict, NotFound, Unauthorized
 from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.domain.policies import UserPolicy
@@ -45,6 +46,9 @@ from app.services.users import UserRegistrationService
 
 
 router = APIRouter()
+# This route intentionally lives below /iam so a browser can accept a deletion
+# for the path-scoped IAM UI cookie. It is served by Acom's backend, not IAM.
+iam_bff_router = APIRouter()
 MAX_PASSWORD_RESET_RATE_LIMIT_BUCKETS = 10_000
 
 
@@ -157,6 +161,32 @@ def _clear_session_cookies(response: Response) -> None:
     clear_csrf_cookie(response)
 
 
+def _password_action_name(action: str) -> str:
+    if action not in {"setup", "reset"}:
+        raise NotFound("Password action not found")
+    return action
+
+
+async def _proxy_password_action_page(
+    *,
+    action: str,
+    token: str | None = None,
+    form: dict[str, str] | None = None,
+) -> HTMLResponse:
+    page = await IamClient().render_password_action_page(
+        action=_password_action_name(action),
+        token=token,
+        form=form,
+    )
+    body = page.html.replace(
+        f'action="/iam/password/{action}"',
+        f'action="/api/v1/auth/password/{action}"',
+    )
+    response = HTMLResponse(content=body, status_code=page.status_code)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def _restart_iam_login(*, error: str) -> RedirectResponse:
     location = f"{settings.resolved_iam_public_base_url}/login?{urlencode({'error': error})}"
     response = RedirectResponse(location, status_code=303)
@@ -264,6 +294,33 @@ async def logout_session(request: Request) -> Response:
             )
     _clear_session_cookies(response)
     return response
+
+
+@iam_bff_router.post("/iam/acom/logout", status_code=204)
+async def clear_iam_browser_session() -> Response:
+    """Clear the path-scoped IAM UI cookie after BFF logout."""
+    response = Response(status_code=204)
+    clear_iam_browser_session_cookie(response)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.get("/auth/password/{action}", response_class=HTMLResponse)
+async def password_action_page(
+    action: str,
+    token: str = Query(min_length=20, max_length=512),
+) -> HTMLResponse:
+    return await _proxy_password_action_page(action=action, token=token)
+
+
+@router.post("/auth/password/{action}", response_class=HTMLResponse)
+async def submit_password_action(request: Request, action: str) -> HTMLResponse:
+    submitted = await request.form()
+    form = {
+        field: str(submitted.get(field) or "")
+        for field in ("token", "new_password", "password_confirmation")
+    }
+    return await _proxy_password_action_page(action=action, form=form)
 
 
 @router.post(

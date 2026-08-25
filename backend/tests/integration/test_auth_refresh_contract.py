@@ -8,12 +8,13 @@ from app.api.v1 import auth as auth_api
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import AuthenticationUnavailable, ServiceUnavailable, Unauthorized
-from app.infrastructure.iam_client import IamTokenBundle
+from app.infrastructure.iam_client import IamBrowserPage, IamTokenBundle
 
 
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(auth_api.router, prefix="/api/v1")
+    app.include_router(auth_api.iam_bff_router)
 
     @app.exception_handler(Unauthorized)
     async def unauthorized_handler(request, exc):
@@ -108,6 +109,7 @@ def test_expired_or_revoked_refresh_clears_auth_cookies(monkeypatch) -> None:
     set_cookies = response.headers.get_list("set-cookie")
     assert any(settings.iam_access_cookie_name in value and "Max-Age=0" in value for value in set_cookies)
     assert any(settings.iam_refresh_cookie_name in value and "Max-Age=0" in value for value in set_cookies)
+    assert all(settings.iam_browser_session_cookie_name not in value for value in set_cookies)
 
 
 def test_iam_unavailable_returns_typed_503_without_clearing_refresh_cookie(monkeypatch) -> None:
@@ -145,5 +147,88 @@ def test_identity_rejected_after_iam_refresh_is_terminal(monkeypatch) -> None:
     assert response.status_code == 401
     assert any(
         settings.iam_refresh_cookie_name in value and "Max-Age=0" in value
+        for value in response.headers.get_list("set-cookie")
+    )
+
+
+def test_password_setup_form_is_proxied_through_bff(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class _IamClient:
+        async def render_password_action_page(self, *, action, token=None, form=None):
+            observed.update(action=action, token=token, form=form)
+            return IamBrowserPage(
+                status_code=200,
+                html='<form method="post" action="/iam/password/setup">',
+            )
+
+    monkeypatch.setattr(auth_api, "IamClient", _IamClient)
+
+    with TestClient(_build_app()) as client:
+        response = client.get(
+            "/api/v1/auth/password/setup",
+            params={"token": "setup-action-token-123456"},
+        )
+
+    assert response.status_code == 200
+    assert observed == {
+        "action": "setup",
+        "token": "setup-action-token-123456",
+        "form": None,
+    }
+    assert 'action="/api/v1/auth/password/setup"' in response.text
+    assert '/iam/password/setup' not in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+    with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/v1/auth/password/setup",
+            data={
+                "token": "setup-action-token-123456",
+                "new_password": "correct-horse-battery-staple",
+                "password_confirmation": "correct-horse-battery-staple",
+            },
+        )
+
+    assert response.status_code == 200
+    assert observed == {
+        "action": "setup",
+        "token": None,
+        "form": {
+            "token": "setup-action-token-123456",
+            "new_password": "correct-horse-battery-staple",
+            "password_confirmation": "correct-horse-battery-staple",
+        },
+    }
+
+
+def test_logout_clears_local_cookies_when_iam_is_unavailable(monkeypatch) -> None:
+    class _IamClient:
+        async def logout(self, _refresh_token: str) -> None:
+            raise AuthenticationUnavailable()
+
+    monkeypatch.setattr(auth_api, "IamClient", _IamClient)
+
+    with TestClient(_build_app()) as client:
+        _set_refresh_cookie(client)
+        response = client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 503
+    set_cookies = response.headers.get_list("set-cookie")
+    assert all("Max-Age=0" in value for value in set_cookies)
+    assert any(settings.iam_access_cookie_name in value and "Path=/" in value for value in set_cookies)
+    assert any(settings.iam_refresh_cookie_name in value and "Path=/api/v1/auth" in value for value in set_cookies)
+    assert all(settings.iam_browser_session_cookie_name not in value for value in set_cookies)
+    assert any(settings.iam_csrf_cookie_name in value and "Path=/" in value for value in set_cookies)
+
+
+def test_iam_bff_logout_route_clears_path_scoped_iam_ui_cookie() -> None:
+    with TestClient(_build_app()) as client:
+        response = client.post("/iam/acom/logout")
+
+    assert response.status_code == 204
+    assert response.headers["cache-control"] == "no-store"
+    assert any(
+        settings.iam_browser_session_cookie_name in value and "Path=/iam" in value and "Max-Age=0" in value
         for value in response.headers.get_list("set-cookie")
     )

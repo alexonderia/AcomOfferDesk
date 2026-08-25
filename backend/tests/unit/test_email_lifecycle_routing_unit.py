@@ -58,6 +58,10 @@ async def test_password_setup_and_reset_use_sensitive_direct_smtp(monkeypatch) -
     assert len(observed) == 2
     assert "raw-setup-token" in observed[0]["text_content"]
     assert "raw-reset-token" in observed[1]["text_content"]
+    assert "/api/v1/auth/password/setup?token=" in observed[0]["text_content"]
+    assert "/api/v1/auth/password/reset?token=" in observed[1]["text_content"]
+    assert "/iam/password/" not in observed[0]["text_content"]
+    assert "/iam/password/" not in observed[1]["text_content"]
 
 
 def test_iam_app_does_not_send_smtp_itself() -> None:

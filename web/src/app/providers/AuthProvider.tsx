@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { setAuthRuntime, type AuthRefreshResult } from '@shared/api/client';
 import {
+  clearIamBrowserSession,
   getWebSession,
   issueCsrfToken,
-  logoutIamBrowserSession,
   logoutWebSession,
   refreshWebSession,
   type AuthSessionResponse,
@@ -106,9 +106,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         await logoutWebSession();
       } finally {
         try {
-          await logoutIamBrowserSession();
+          await clearIamBrowserSession();
         } catch {
-          // Local BFF cookies are already cleared; the next login will not reuse a stale app session.
+          // The primary BFF logout has already run; always continue to login.
         }
         window.location.assign('/login');
       }

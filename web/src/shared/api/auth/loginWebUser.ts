@@ -61,15 +61,12 @@ export const logoutWebSession = async (): Promise<void> =>
       method: 'POST'
     },
     'Не удалось завершить сессию',
-    false
   );
 
-export const logoutIamBrowserSession = async (): Promise<void> =>
+export const clearIamBrowserSession = async (): Promise<void> =>
   fetchEmpty(
-    '/iam/logout',
-    {
-      method: 'POST',
-    },
-    'Не удалось завершить сессию авторизации',
-    false,
+    '/iam/acom/logout',
+    { method: 'POST' },
+    'Не удалось завершить сессию IAM',
+    false
   );

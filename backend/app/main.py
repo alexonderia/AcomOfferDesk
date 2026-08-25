@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.csrf import csrf_failure_reason
 from app.core.request_id import RequestIdMiddleware
 from app.api.v1 import router as v1_router
+from app.api.v1.auth import iam_bff_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, ServiceUnavailable, Unauthorized, UploadRejected
 from app.infrastructure.db import engine
 from app.infrastructure.email_delivery_consumer import EmailDeliveryConsumerRuntime
@@ -263,6 +264,7 @@ if cors_allow_origins:
         allow_headers=["*"],
     )
 app.include_router(v1_router)
+app.include_router(iam_bff_router)
 
 
 @app.get("/health")

@@ -22,7 +22,7 @@ async def send_iam_password_action_email(
     purpose: PasswordActionPurpose,
 ) -> None:
     path = "setup" if purpose == "password_setup" else "reset"
-    action_url = f"{settings.resolved_iam_public_base_url}/password/{path}?token={quote(raw_token, safe='')}"
+    action_url = f"{settings.iam_bff_auth_base_url}/password/{path}?token={quote(raw_token, safe='')}"
     payload = build_iam_password_setup_email(
         setup_url=action_url,
         is_reset=purpose == "password_reset",

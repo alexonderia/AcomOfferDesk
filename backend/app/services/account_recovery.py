@@ -94,9 +94,7 @@ class AccountRecoveryService:
 
         from app.core.config import settings
 
-        return (
-            f"{settings.resolved_iam_public_base_url}/password/setup?token={quote(action.token, safe='')}"
-        )
+        return f"{settings.iam_bff_auth_base_url}/password/setup?token={quote(action.token, safe='')}"
 
     async def _resolve_user(self, identifier: str):
         normalized = identifier.strip()

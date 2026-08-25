@@ -7,6 +7,7 @@ from app.core.config import settings
 
 ACCESS_COOKIE_PATH = "/"
 AUTH_COOKIE_PATH = "/api/v1/auth"
+IAM_BROWSER_SESSION_COOKIE_PATH = "/iam"
 
 
 def set_iam_access_cookie(response: Response, token: str, *, max_age: int) -> None:
@@ -91,6 +92,18 @@ def clear_iam_flow_recovery_cookie(response: Response) -> None:
     response.delete_cookie(
         key=settings.iam_flow_recovery_cookie_name,
         path=AUTH_COOKIE_PATH,
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+    )
+
+
+def clear_iam_browser_session_cookie(response: Response) -> None:
+    """Clear the IAM UI session through the BFF response, never browser JS."""
+
+    response.delete_cookie(
+        key=settings.iam_browser_session_cookie_name,
+        path=IAM_BROWSER_SESSION_COOKIE_PATH,
         httponly=True,
         secure=settings.refresh_cookie_secure,
         samesite=settings.refresh_cookie_samesite,

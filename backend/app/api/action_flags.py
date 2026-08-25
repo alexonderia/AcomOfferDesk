@@ -118,6 +118,8 @@ class OfferActionBuilder:
         contractor_user_id: str,
         offer_status: str,
         can_manage_in_scope: bool,
+        request_status: str | None = None,
+        has_other_accepted_offer: bool = False,
         has_department_offer_update_scope: bool = False,
         can_accept_in_scope: bool | None = None,
         can_reject_in_scope: bool | None = None,
@@ -174,6 +176,7 @@ class OfferActionBuilder:
             can_accept_in_scope = can_manage_request_offer
         if can_reject_in_scope is None:
             can_reject_in_scope = can_manage_request_offer
+        can_mutate_offer = request_status not in {"closed", "cancelled"}
         return OfferActionsSchema(
             can_open_workspace=OfferPolicy.can_access_offer_workspace(
                 current_user,
@@ -198,32 +201,36 @@ class OfferActionBuilder:
             and (
                 current_user.role_id != settings.contractor_role_id
                 or offer_status not in {"accepted", "rejected"}
-            ),
+            ) and can_mutate_offer,
             can_accept=(
                 can_accept_in_scope
                 and offer_status != "accepted"
+                and not has_other_accepted_offer
                 and (True if has_custom_accept_scope else can_update_status)
+                and can_mutate_offer
             ),
             can_reject=(
                 can_reject_in_scope
                 and offer_status != "rejected"
                 and (True if has_custom_reject_scope else can_update_status)
+                and can_mutate_offer
             ),
             can_delete=(
                 can_update_status
                 and offer_status != "deleted"
                 and (can_manage_request_offer or can_manage_own_offer)
+                and can_mutate_offer
             ),
             can_upload_files=(
                 can_upload_files_for_contractor
                 if is_contractor
                 else (can_upload_files_by_permission or has_department_offer_update_scope)
-            ),
+            ) and can_mutate_offer,
             can_delete_files=(
                 can_delete_files_for_contractor
                 if is_contractor
                 else (can_delete_files_by_permission or has_department_offer_update_scope)
-            ),
+            ) and can_mutate_offer,
         )
 
 
@@ -620,6 +627,10 @@ class OfferActionResolver:
             current_user=current_user,
             request_owner_user_id=request.id_user,
         )
+        has_other_accepted_offer = await self._requests.has_accepted_offer_for_request(
+            request_id=request.id,
+            exclude_offer_id=offer.id,
+        )
 
         offer_actions = OfferActionBuilder.build(
             current_user,
@@ -627,7 +638,9 @@ class OfferActionResolver:
             request_owner_user_id=request.id_user,
             contractor_user_id=offer.id_user,
             offer_status=offer.status,
+            request_status=request.status,
             can_manage_in_scope=can_manage_offer_in_scope,
+            has_other_accepted_offer=has_other_accepted_offer,
             has_department_offer_update_scope=has_department_offer_update_scope,
             can_accept_in_scope=can_accept_in_scope,
             can_reject_in_scope=can_reject_in_scope,

@@ -113,6 +113,18 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def has_accepted_offer_for_request(
+        self,
+        *,
+        request_id: str,
+        exclude_offer_id: int | None = None,
+    ) -> bool:
+        stmt = select(Offer.id).where(Offer.id_request == request_id, Offer.status == "accepted")
+        if exclude_offer_id is not None:
+            stmt = stmt.where(Offer.id != exclude_offer_id)
+        result = await self._session.execute(stmt.limit(1))
+        return result.scalar_one_or_none() is not None
+
     async def has_submitted_offers(self, *, request_id: str) -> bool:
         stmt = (
             select(Offer.id)

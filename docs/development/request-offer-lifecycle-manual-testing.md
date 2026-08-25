@@ -45,3 +45,24 @@
 3. Contractor открывает workspace чужого КП и workspace собственного КП после переназначения владельца на Operator в том же root scope.
 
 Ожидание: чтение собственного исторического workspace сохраняется в допустимом scope; stale mutations после закрытия не выполняются и не показывают ложный успех. Чужой workspace не открывается. При изменении роли, root scope или hidden-флага результат определяется повторной серверной проверкой на каждом запросе.
+
+## WORK-002 / REQ-005
+
+1. Для открытой Request с `initial_amount = 1 000 000` создайте несколько submitted КП, включая КП на `850 000`.
+2. Примите КП на `850 000`, обновите workspace и Request detail. Убедитесь, что статус КП — `accepted`, а `final_amount` не изменён автоматически.
+3. Попробуйте принять второе КП той же Request через UI и прямой PATCH API.
+4. Установите `final_amount = 850 000` и закройте Request. Полностью обновите Request detail, workspace и список заявок.
+5. Отдельно повторите шаги 1–4 с `final_amount = 1 000 000`.
+6. После каждого закрытия из оставшейся открытой вкладки попробуйте изменить сумму, статус и файлы выбранного КП.
+
+Ожидание: для одной Request существует не более одного accepted КП; попытка принять второе возвращает ошибку без изменения ранее принятого КП. Close сохраняет `status=closed`, `closed_at`, `chosen_offer_id` выбранного КП и введённый допустимый `final_amount`. При `final_amount = 850 000` данные сохраняются после reload. При `final_amount = initial_amount` accepted КП также сохраняется выбранным, но не переписывает final amount. После close все мутации КП отклоняются сервером и не предлагаются в UI.
+
+## DASH-002
+
+1. Откройте Savings Dashboard после успешного WORK-002 с `initial_amount = 1 000 000`, accepted Offer `850 000` и `final_amount = 850 000`.
+2. Сверьте Request, chosen Offer и dashboard после полной перезагрузки страницы.
+3. Повторите для `final_amount = 1 000 000` при том же accepted Offer `850 000`.
+4. Повторите для `final_amount = 1 000 000` и accepted Offer с суммой выше `1 000 000`.
+5. Закройте Request без accepted Offer с `final_amount = initial_amount` и проверьте общий closed dataset.
+
+Ожидание: dashboard читает Offer только по persisted `Request.chosen_offer_id`. В первом варианте savings равна `150 000`. Во втором отображается упущенная экономия `−150 000`. В третьем Offer не участвует в savings calculation. Во всех вариантах Request остаётся в общем наборе закрытых заявок, включая Request без выбранного КП.

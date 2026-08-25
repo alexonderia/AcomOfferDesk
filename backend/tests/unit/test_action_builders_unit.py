@@ -105,6 +105,55 @@ def test_offer_action_builder_contractor_does_not_get_internal_accept_reject(mak
     assert actions.can_reject is False
 
 
+def test_offer_action_builder_hides_mutations_for_closed_request(make_current_user):
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.OFFERS_UPDATE,
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
+            PermissionCodes.OFFERS_DETAILS_UPDATE,
+            PermissionCodes.OFFERS_STATUS_UPDATE,
+            PermissionCodes.REQUESTS_UPDATE,
+        },
+    )
+
+    actions = OfferActionBuilder.build(
+        user,
+        offer_owner_user_id="contractor-1",
+        request_owner_user_id="owner-1",
+        contractor_user_id="contractor-1",
+        offer_status="submitted",
+        request_status="closed",
+        can_manage_in_scope=True,
+    )
+
+    assert actions.can_edit_amount is False
+    assert actions.can_accept is False
+    assert actions.can_reject is False
+    assert actions.can_delete is False
+    assert actions.can_upload_files is False
+    assert actions.can_delete_files is False
+
+
+def test_offer_action_builder_hides_accept_when_another_offer_is_accepted(make_current_user):
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.OFFERS_STATUS_UPDATE, PermissionCodes.REQUESTS_UPDATE},
+    )
+
+    actions = OfferActionBuilder.build(
+        user,
+        offer_owner_user_id="contractor-2",
+        request_owner_user_id="owner-1",
+        contractor_user_id="contractor-2",
+        offer_status="submitted",
+        can_manage_in_scope=True,
+        has_other_accepted_offer=True,
+    )
+
+    assert actions.can_accept is False
+
+
 def test_chat_action_builder_reflects_chat_permissions(make_current_user):
     user = make_current_user(
         role_id=settings.lead_economist_role_id,

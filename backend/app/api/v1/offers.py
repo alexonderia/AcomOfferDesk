@@ -128,6 +128,7 @@ async def get_contractor_request_view(
                         request_owner_user_id=item.owner_user_id,
                         contractor_user_id=current_user.user_id,
                         offer_status=item.existing_offer.status,
+                        request_status=item.status,
                         can_manage_in_scope=True,
                     ),
                 }
@@ -316,7 +317,12 @@ async def get_offer_workspace(
                         request_owner_user_id=item.request.owner_user_id,
                         contractor_user_id=request_offer.owner_user_id,
                         offer_status=request_offer.status,
+                        request_status=item.request.status,
                         can_manage_in_scope=getattr(resolved, "can_manage_offer_in_scope", False),
+                        has_other_accepted_offer=any(
+                            other.offer_id != request_offer.offer_id and other.status == "accepted"
+                            for other in item.offers
+                        ),
                         has_department_offer_update_scope=getattr(
                             resolved,
                             "has_department_offer_update_scope",

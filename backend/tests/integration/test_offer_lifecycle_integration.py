@@ -26,6 +26,7 @@ class _OfferRequestsRepo:
         request_row: SimpleNamespace | None = None,
         visible_open: bool = True,
         hidden_for_contractor: bool = False,
+        has_accepted_offer: bool = False,
     ) -> None:
         self._request_row = request_row or SimpleNamespace(
             id=10,
@@ -45,6 +46,8 @@ class _OfferRequestsRepo:
         )
         self._visible_open = visible_open
         self._hidden_for_contractor = hidden_for_contractor
+        self._has_accepted_offer = has_accepted_offer
+        self.lifecycle_lock_calls: list[str] = []
 
     async def get_visible_open_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
@@ -57,7 +60,11 @@ class _OfferRequestsRepo:
         return self._request_row
 
     async def lock_offer_lifecycle(self, *, request_id: str) -> None:
-        _ = request_id
+        self.lifecycle_lock_calls.append(str(request_id))
+
+    async def has_accepted_offer_for_request(self, *, request_id: str, exclude_offer_id: int | None = None) -> bool:
+        _ = (request_id, exclude_offer_id)
+        return self._has_accepted_offer
 
     async def get_visible_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
@@ -260,11 +267,13 @@ class _OfferLifecycleUow:
         request_row: SimpleNamespace | None = None,
         visible_open: bool = True,
         hidden_for_contractor: bool = False,
+        has_accepted_offer: bool = False,
     ) -> None:
         self.requests = _OfferRequestsRepo(
             request_row=request_row,
             visible_open=visible_open,
             hidden_for_contractor=hidden_for_contractor,
+            has_accepted_offer=has_accepted_offer,
         )
         self.offers = _OfferRepo()
         self.chats = _NoopChatsRepo()
@@ -482,11 +491,13 @@ def test_closed_request_rejects_existing_offer_amount_mutation_without_write(
     created = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0})
     offer_id = created.json()["data"]["offer_id"]
 
+    uow.requests.lifecycle_lock_calls.clear()
     uow.requests._request_row.status = "closed"
     rejected = test_client.patch(f"/api/v1/offers/{offer_id}", json={"offer_amount": 91.0})
 
     assert rejected.status_code == 409
     assert uow.offers._offers[offer_id].offer_amount == 90.0
+    assert uow.requests.lifecycle_lock_calls == ["10"]
 
 
 def test_hidden_contractor_cannot_access_assigned_request(
@@ -931,9 +942,37 @@ def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app
     assert response.status_code == 401
 
 
-# NOTE: Auto-reject of sibling submitted offers is enforced by external DB trigger
-# `offers_accept_reject_others` in order_database and is intentionally verified
-# in DB-backed tests there, not in this in-memory integration contour.
+def test_cannot_accept_second_offer_for_same_request(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = _OfferLifecycleUow(has_accepted_offer=True)
+    uow.offers._offers[231] = SimpleNamespace(
+        id=231,
+        id_request="10",
+        id_user="contractor-2",
+        status="submitted",
+        offer_amount=90.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.OFFERS_STATUS_UPDATE, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/offers/231/status", json={"status": "accepted"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Для заявки уже выбрано принятое КП"
+    assert uow.offers._offers[231].status == "submitted"
+    assert uow.requests.lifecycle_lock_calls == ["10"]
 
 
 def test_cannot_accept_offer_for_closed_or_cancelled_request(

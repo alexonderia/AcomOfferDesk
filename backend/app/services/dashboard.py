@@ -425,6 +425,8 @@ class DashboardService:
         final = Decimal(str(final_amount))
 
         if final == initial:
+            if offer > initial:
+                return None
             return offer - initial
         if final == offer:
             return initial - offer

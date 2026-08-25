@@ -1126,6 +1126,8 @@ class OfferService:
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        await self._requests.lock_offer_lifecycle(request_id=request.id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
 
         if status not in EDITABLE_OFFER_STATUSES:
             raise Conflict("Unsupported offer status")
@@ -1151,6 +1153,12 @@ class OfferService:
                 )
         status_changed = offer.status != status
         previous_status = offer.status
+        if status == "accepted" and status_changed:
+            if await self._requests.has_accepted_offer_for_request(
+                request_id=request.id,
+                exclude_offer_id=offer.id,
+            ):
+                raise Conflict("Для заявки уже выбрано принятое КП")
         await self._offers.update_status(offer=offer, status=status)
 
         if status_changed and status in {"accepted", "rejected", "deleted"}:
@@ -1173,6 +1181,8 @@ class OfferService:
         return offer.status
 
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        await self._requests.lock_offer_lifecycle(request_id=request.id)
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         self._validate_offer_amount(offer_amount)

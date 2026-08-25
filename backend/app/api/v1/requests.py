@@ -179,7 +179,12 @@ def _open_request_item_schema(
                     request_owner_user_id=item.owner_user_id,
                     contractor_user_id=current_user.user_id,
                     offer_status=offer.status,
+                    request_status=item.status,
                     can_manage_in_scope=True,
+                    has_other_accepted_offer=any(
+                        other.offer_id != offer.offer_id and other.status == "accepted"
+                        for other in item.offers
+                    ),
                 ),
             )
             for offer in item.offers
@@ -642,7 +647,12 @@ async def get_request_details(
                     request_owner_user_id=item.owner_user_id,
                     contractor_user_id=offer.contractor_user_id,
                     offer_status=offer.status,
+                    request_status=item.status,
                     can_manage_in_scope=can_manage_offer,
+                    has_other_accepted_offer=any(
+                        other.offer_id != offer.offer_id and other.status == "accepted"
+                        for other in item.offers
+                    ),
                     has_department_offer_update_scope=has_department_offer_update_scope,
                     can_accept_in_scope=can_accept_in_scope,
                     can_reject_in_scope=can_reject_in_scope,

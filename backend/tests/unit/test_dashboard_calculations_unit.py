@@ -118,7 +118,8 @@ def test_dashboard_savings_calculation_handles_core_edge_cases():
     )
 
     assert service._calculate_savings(initial_amount=100, offer_amount=90, final_amount=90) == Decimal("10")
-    assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=100) == Decimal("20")
+    assert service._calculate_savings(initial_amount=100, offer_amount=90, final_amount=100) == Decimal("-10")
+    assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=100) is None
     assert service._calculate_savings(initial_amount=0, offer_amount=0, final_amount=0) == Decimal("0")
     assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=120) == Decimal("-20")
     assert service._calculate_savings(initial_amount=None, offer_amount=120, final_amount=120) is None

@@ -11,6 +11,12 @@ class InvalidCredentials(IamError):
     public_detail = "Неверный логин или пароль"
 
 
+class AccountUnavailable(InvalidCredentials):
+    """Credentials are not usable because the account is not approved/active."""
+
+    public_detail = "Доступ ограничен. Ожидайте подтверждения или обратитесь к администратору"
+
+
 class Unauthorized(IamError):
     status_code = 401
     public_detail = "Сессия недействительна или истекла"

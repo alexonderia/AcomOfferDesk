@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.core.registration_invite import RegistrationInviteClaims, RegistrationInviteTokenCodec
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser
-from app.domain.authorization import require_any_permission
+from app.domain.authorization import require_permission
 from app.domain.contractor_validation import validate_optional_email
 from app.domain.exceptions import Conflict, Forbidden, Unauthorized
 from app.domain.permissions import PermissionCodes
@@ -38,12 +38,9 @@ class RegistrationInvitationService:
         email: str,
         unit_id: int | None = None,
     ) -> str:
-        require_any_permission(
+        require_permission(
             current_user,
-            (
-                PermissionCodes.CONTRACTORS_MANUAL_CREATE,
-                PermissionCodes.USERS_REGISTRATION_INVITE,
-            ),
+            PermissionCodes.USERS_REGISTRATION_INVITE,
             message="Недостаточно прав для приглашения к регистрации",
         )
         if current_user.role_id == settings.contractor_role_id:
@@ -155,6 +152,10 @@ class RegistrationInvitationService:
         if binding is not None:
             return binding.id_user
         return None
+
+    async def resolve_existing_user_id(self, email: str) -> str | None:
+        """Return the MAIN identity linked to an email, when it already exists."""
+        return await self._resolve_user_id(email.strip().lower())
 
     def parse(self, raw_token: str) -> RegistrationInviteClaims:
         return self._codec.parse(raw_token)

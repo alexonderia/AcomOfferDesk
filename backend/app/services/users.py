@@ -103,7 +103,9 @@ async def _is_descendant_user(
     )
 
 def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
-    if has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY):
+    if current_user.role_id == settings.superadmin_role_id and has_permission(
+        current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY
+    ):
         return {
             settings.admin_role_id,
             settings.contractor_role_id,
@@ -113,6 +115,12 @@ def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
             settings.economist_role_id,
             settings.operator_role_id,
         }
+    if current_user.role_id == settings.admin_role_id and has_permission(
+        current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY
+    ):
+        # Contractor onboarding is a separate flow; Admin may only assign the
+        # two staff roles explicitly approved for this role.
+        return {settings.economist_role_id, settings.operator_role_id}
     if not has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):
         return set()
     if current_user.role_id == settings.project_manager_role_id:
@@ -234,6 +242,8 @@ class UserRegistrationService:
         target_role = await self._users.get_role_by_id(role_id)
         if target_role is None:
             raise Conflict("Роль недоступна для создания")
+        if role_id == settings.contractor_role_id:
+            raise Conflict("Контрагента нельзя создавать через регистрацию сотрудника")
         if current_user.role_id == settings.superadmin_role_id and role_id == settings.superadmin_role_id:
             raise Forbidden("Суперадминистратор не может создавать суперадминистраторов")
         if current_user.role_id == settings.lead_economist_role_id and role_id != settings.economist_role_id:
@@ -1168,9 +1178,26 @@ class UserRoleService:
         self,
         users: UserRepository,
         user_auth_accounts: UserAuthAccountRepository,
+        units: UnitRepository | None = None,
     ):
         self._users = users
         self._user_auth_accounts = user_auth_accounts
+        self._units = units
+
+    async def _ensure_target_root_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+    ) -> None:
+        """Role permissions are never a substitute for organizational scope."""
+        if current_user.role_id == settings.superadmin_role_id or self._units is None:
+            return
+        scope = ContractorUnitService(users=self._users, units=self._units)
+        actor_root_ids = await scope.list_effective_root_unit_ids_for_user(user_id=current_user.user_id)
+        target_root_ids = await scope.list_effective_root_unit_ids_for_user(user_id=target_user_id)
+        if not actor_root_ids or not target_root_ids or not (actor_root_ids & target_root_ids):
+            raise Forbidden("Пользователь находится вне разрешенной зоны управления")
 
     async def update_role(
         self,
@@ -1190,7 +1217,12 @@ class UserRoleService:
 
         allowed_role_ids = _role_update_options_for_user(current_user)
         if role_id not in allowed_role_ids:
-            raise Conflict("Выбранная роль недоступна для обновления")
+            raise Forbidden("Выбранная роль недоступна для назначения")
+
+        await self._ensure_target_root_scope(
+            current_user=current_user,
+            target_user_id=user.id,
+        )
 
         has_role_update_any = has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY)
         if not has_role_update_any and has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):

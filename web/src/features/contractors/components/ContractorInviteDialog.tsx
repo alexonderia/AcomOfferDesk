@@ -15,10 +15,7 @@ import {
   Stack,
   Typography
 } from '@mui/material';
-import {
-  inviteContractors,
-  type InviteContractorsFailure
-} from '@shared/api/contractors/inviteContractors';
+import { inviteContractors } from '@shared/api/contractors/inviteContractors';
 import { getNormativeFiles } from '@shared/api/normative/getNormativeFiles';
 import type { NormativeFileItem } from '@shared/api/normative/types';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
@@ -27,12 +24,6 @@ import { useSystemToasts } from '@shared/ui/toasts';
 type ContractorInviteDialogProps = {
   open: boolean;
   onClose: () => void;
-};
-
-type InviteResult = {
-  sent: string[];
-  failed: InviteContractorsFailure[];
-  invalid: string[];
 };
 
 const PRESENTATION_FILE_PATTERN = /(презентац|presentation)/i;
@@ -111,7 +102,6 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const [emails, setEmails] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [result, setResult] = useState<InviteResult | null>(null);
   const [normativeFiles, setNormativeFiles] = useState<NormativeFileItem[]>([]);
   const [isLoadingNormativeFiles, setIsLoadingNormativeFiles] = useState(false);
   const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
@@ -196,26 +186,22 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
     }
 
     setIsSubmitting(true);
-    setResult(null);
 
     try {
       const response = await inviteContractors({
         emails: nextEmails,
         normativeFileId: selectedNormativeFileId
       });
-      const nextResult: InviteResult = {
-        sent: response.data.sent,
-        failed: response.data.failed,
-        invalid: response.data.invalid
-      };
-      setResult(nextResult);
+      const sentCount = response.data.sent.length;
+      const failedCount = response.data.failed.length;
+      const invalidCount = response.data.invalid.length;
 
-      if (nextResult.sent.length > 0) {
-        showSuccessToast(`Приглашения отправлены: ${nextResult.sent.length}`);
+      if (sentCount > 0) {
+        showSuccessToast(`Приглашения отправлены: ${sentCount}`);
       }
 
-      if (nextResult.sent.length === 0 && (nextResult.failed.length > 0 || nextResult.invalid.length > 0)) {
-        showErrorToast('Не удалось отправить приглашения: проверьте детали ниже');
+      if (sentCount === 0 && (failedCount > 0 || invalidCount > 0)) {
+        showErrorToast('Не удалось отправить приглашения. Проверьте детали в центре уведомлений.');
       }
     } catch (error) {
       showErrorToast(error instanceof Error ? error.message : 'Не удалось отправить приглашения');
@@ -230,7 +216,6 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
     }
 
     setEmails([]);
-    setResult(null);
     setNormativeFiles([]);
     setNormativeFilesError(null);
     setSelectedNormativeFileId(null);
@@ -311,9 +296,6 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
             emails={emails}
             onChange={(nextEmails) => {
               setEmails(nextEmails);
-              if (result) {
-                setResult(null);
-              }
             }}
             hideHeader
             addButtonVariant="icon"
@@ -323,25 +305,6 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
             containerSx={{ mt: 0 }}
           />
 
-          {result ? (
-            <Alert severity={result.failed.length === 0 && result.invalid.length === 0 ? 'success' : 'info'}>
-              Отправлено: {result.sent.length}. Ошибки: {result.failed.length}. Некорректные: {result.invalid.length}.
-              {result.failed.length > 0 ? (
-                <Box mt={1}>
-                  {result.failed.map((item) => (
-                    <Typography key={item.email} variant="body2">
-                      {item.email}: {item.reason}
-                    </Typography>
-                  ))}
-                </Box>
-              ) : null}
-              {result.invalid.length > 0 ? (
-                <Box mt={1}>
-                  <Typography variant="body2">Некорректные email: {result.invalid.join(', ')}</Typography>
-                </Box>
-              ) : null}
-            </Alert>
-          ) : null}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>

@@ -139,6 +139,20 @@ def test_staff_roles_can_read_contractors_without_status_update_rights() -> None
         assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE not in permissions
 
 
+def test_economist_roles_can_invite_contractors() -> None:
+    role_map = get_role_permissions_map()
+
+    for role_id in (settings.lead_economist_role_id, settings.economist_role_id):
+        assert PermissionCodes.USERS_REGISTRATION_INVITE in role_map[role_id]
+
+
+def test_admin_can_read_normative_files_for_contractor_invites() -> None:
+    role_map = get_role_permissions_map()
+
+    assert PermissionCodes.USERS_REGISTRATION_INVITE in role_map[settings.admin_role_id]
+    assert PermissionCodes.NORMATIVE_FILES_READ in role_map[settings.admin_role_id]
+
+
 def test_security_officer_role_has_only_expected_permissions() -> None:
     role_map = get_role_permissions_map()
 
@@ -152,6 +166,7 @@ def test_security_officer_role_has_only_expected_permissions() -> None:
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
             PermissionCodes.USERS_REGISTRATION_INVITE,
             PermissionCodes.USERS_REGISTRATION_APPROVE,
+            PermissionCodes.NORMATIVE_FILES_READ,
         }
     )
 
@@ -189,4 +204,5 @@ def test_units_permissions_are_granted_to_hierarchy_roles_for_subtree_management
         PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
         PermissionCodes.USERS_REGISTRATION_INVITE,
         PermissionCodes.USERS_REGISTRATION_APPROVE,
+        PermissionCodes.NORMATIVE_FILES_READ,
     }

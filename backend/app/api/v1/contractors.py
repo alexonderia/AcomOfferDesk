@@ -9,7 +9,7 @@ from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import Conflict
 from app.domain.iam_status import iam_auth_status_for_user_status
-from app.domain.policies import CurrentUser
+from app.domain.policies import CurrentUser, UserPolicy
 from app.infrastructure.iam_client import IamClient
 from app.schemas.contractors import (
     ContractorInviteData,
@@ -225,10 +225,12 @@ async def invite_contractors(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorInviteResponse:
+    UserPolicy.ensure_can_invite_registration(current_user)
     async with uow:
         service = ContractorInvitationService(
             attachment_service=NormativeEmailAttachmentService(uow.files),
-            invitation_service=RegistrationInvitationService(),
+            invitation_service=RegistrationInvitationService(uow),
+            uow=uow,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.invite_contractors(

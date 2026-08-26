@@ -42,8 +42,8 @@ class RegistrationInspectResponse(BaseModel):
 class RegistrationSubmitRequest(BaseModel):
     token: str = Field(..., min_length=20, max_length=4096)
     login: str = Field(..., min_length=3, max_length=128)
-    password: str = Field(..., min_length=12, max_length=128)
-    password_confirmation: str = Field(..., min_length=12, max_length=128)
+    password: str | None = Field(default=None, min_length=12, max_length=128)
+    password_confirmation: str | None = Field(default=None, min_length=12, max_length=128)
     email: str = Field(..., min_length=5, max_length=255)
     full_name: str = Field(..., min_length=1, max_length=256)
     phone: str = Field(..., min_length=1, max_length=64)

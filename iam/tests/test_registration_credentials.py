@@ -76,7 +76,7 @@ async def test_registration_credentials_are_strictly_idempotent_and_audited(
     assert state.role_name == ROLE
     assert state.password_set is True
 
-    with pytest.raises(InvalidCredentials):
+    with pytest.raises(InvalidCredentials) as unavailable_error:
         await service.authenticate_and_create_code(
             login="pending.registration",
             password=PASSWORD,
@@ -84,6 +84,7 @@ async def test_registration_credentials_are_strictly_idempotent_and_audited(
             pkce_challenge=pkce_s256(VERIFIER),
             redirect_uri=REDIRECT_URI,
         )
+    assert "Доступ ограничен" in unavailable_error.value.public_detail
 
     for changed in (
         {"initial_password": "different registration password"},

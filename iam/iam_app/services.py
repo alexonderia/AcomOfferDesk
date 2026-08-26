@@ -23,7 +23,7 @@ from iam_app.core.security import (
     utc_now,
     verify_password,
 )
-from iam_app.errors import Conflict, Forbidden, InvalidCredentials, NotFound, Unauthorized
+from iam_app.errors import AccountUnavailable, Conflict, Forbidden, InvalidCredentials, NotFound, Unauthorized
 from iam_app.models import (
     Account,
     AccountCredential,
@@ -587,7 +587,7 @@ class IamService:
                 success=False,
                 details={"account_id": str(account.id), "reason": "account_unavailable"},
             )
-            raise InvalidCredentials()
+            raise AccountUnavailable()
 
         if credential.locked_until is not None and as_utc(credential.locked_until) > now:
             self._structured_security_log(

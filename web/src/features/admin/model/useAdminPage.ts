@@ -241,6 +241,9 @@ export const useAdminPage = () => {
 
   const roleUpdateOptions = useMemo(() => {
     if (canUpdateRoleAny) {
+      if (session?.roleId === ROLE.ADMIN) {
+        return [ROLE.ECONOMIST, ROLE.OPERATOR];
+      }
       return [
         ROLE.ADMIN,
         ROLE.CONTRACTOR,

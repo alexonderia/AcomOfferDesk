@@ -362,15 +362,49 @@ class OfferService:
             raise NotFound("Request not found")
 
     async def _is_request_available_for_contractor_discovery(self, *, current_user: CurrentUser, request) -> bool:
+        return await self._is_request_available_for_contractor_user(
+            contractor_user_id=current_user.user_id,
+            request=request,
+        )
+
+    async def _is_request_available_for_contractor_user(self, *, contractor_user_id: str, request) -> bool:
+        """Return the BL-002 discovery eligibility for a concrete contractor.
+
+        Manual offer creation acts on behalf of a contractor, therefore it must
+        use exactly the same visibility/lifecycle/root-unit rule as the
+        contractor's own request discovery flow.
+        """
         owner = await self._users.get_by_id(request.id_user)
         if not RequestPolicy.is_contractor_request_lifecycle_eligible(
             request_owner_role_id=owner.id_role if owner is not None else None,
         ):
             return False
         return await self._contractor_unit_service().can_contractor_access_request_owner(
-            contractor_user_id=current_user.user_id,
+            contractor_user_id=contractor_user_id,
             request_owner_user_id=request.id_user,
         )
+
+    async def _ensure_contractor_can_create_offer_for_request(
+        self,
+        *,
+        contractor_user_id: str,
+        request,
+    ) -> None:
+        contractor_user = await self._users.get_by_id(contractor_user_id)
+        if contractor_user is None or contractor_user.id_role != settings.contractor_role_id:
+            raise NotFound("Контрагент не найден")
+        if getattr(contractor_user, "status", "active") != "active":
+            raise Conflict("Контрагент неактивен и не может быть выбран для коммерческого предложения")
+        if await self._requests.is_hidden_for_contractor(
+            request_id=request.id,
+            contractor_user_id=contractor_user_id,
+        ) or not await self._is_request_available_for_contractor_user(
+            contractor_user_id=contractor_user_id,
+            request=request,
+        ):
+            raise Forbidden(
+                "Контрагент не имеет доступа к данной заявке и не может быть выбран для коммерческого предложения"
+            )
 
     @staticmethod
     def _ensure_request_is_open_for_offer_mutation(*, request_status: str) -> None:
@@ -653,18 +687,15 @@ class OfferService:
             message="Insufficient permissions to view contractor request details",
         )
 
-        request = await self._requests.get_visible_open_by_id_for_contractor(
+        # A contractor may open a historical (closed/cancelled) request when
+        # they already have an offer on it. Discovery and offer creation remain
+        # restricted to open requests below.
+        request = await self._requests.get_visible_by_id_for_contractor(
             request_id=request_id,
             contractor_user_id=current_user.user_id,
         )
         if request is None:
             raise NotFound("Request not found")
-        if not await self._is_request_available_for_contractor_discovery(
-            current_user=current_user,
-            request=request,
-        ):
-            raise NotFound("Request not found")
-
         owner_profile = await self._profiles.get_by_id(request.id_user)
         request_files = await self._requests.list_files(request_id=request.id)
         request_file_items = [RequestFileItem(id=f.id, path=f.path, name=f.name) for f in request_files]
@@ -672,6 +703,16 @@ class OfferService:
             request_id=request.id,
             contractor_user_id=current_user.user_id,
         )
+        if request.status == "open":
+            if not await self._is_request_available_for_contractor_discovery(
+                current_user=current_user,
+                request=request,
+            ):
+                raise NotFound("Request not found")
+        elif existing_offer is None:
+            # Closed requests without this contractor's offer must not become
+            # a way to bypass the normal contractor discovery scope.
+            raise NotFound("Request not found")
         existing_offer_preview: ExistingOfferPreview | None = None
         if existing_offer is not None:
             offer_files = await self._offers.list_offer_files(offer_id=existing_offer.id)
@@ -796,20 +837,12 @@ class OfferService:
             )
         else:
             assert normalized_contractor_user_id is not None
-            contractor_user = await self._users.get_by_id(normalized_contractor_user_id)
-            if contractor_user is None:
-                raise NotFound("Contractor not found")
-            if contractor_user.id_role != settings.contractor_role_id:
-                raise Conflict("Selected user is not contractor")
-            if contractor_user.status != "active":
-                raise Conflict("Selected contractor must be active")
-            is_hidden = await self._requests.is_hidden_for_contractor(
-                request_id=request.id,
-                contractor_user_id=normalized_contractor_user_id,
-            )
-            if is_hidden:
-                raise Conflict("Selected contractor is hidden for this request")
             resolved_contractor_user_id = normalized_contractor_user_id
+
+        await self._ensure_contractor_can_create_offer_for_request(
+            contractor_user_id=resolved_contractor_user_id,
+            request=request,
+        )
 
         existing_offer = await self._offers.get_contractor_offer_for_request(
             request_id=request.id,

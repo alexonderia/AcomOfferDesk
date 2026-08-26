@@ -146,11 +146,9 @@ describe('ContractorInviteDialog', () => {
     fireEvent.click(screen.getByLabelText('Добавить email'));
     fireEvent.click(screen.getByRole('button', { name: 'Отправить' }));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Отправлено: 0/)).toBeInTheDocument();
-      expect(screen.getByText('valid@example.com: queue failed')).toBeInTheDocument();
-    });
-    expect(showErrorToastMock).toHaveBeenCalled();
+    await waitFor(() => expect(showErrorToastMock).toHaveBeenCalled());
+    expect(screen.queryByText(/Отправлено:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('valid@example.com: queue failed')).not.toBeInTheDocument();
   });
 
   it('shows inline validation for invalid email token', async () => {

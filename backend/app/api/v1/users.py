@@ -81,6 +81,7 @@ from app.services.users import (
     UserSelfService,
     UserStatusService,
 )
+from app.services.account_recovery import AccountRecoveryService
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
 from app.services.user_contractor_delegations import UserContractorDelegationsService
@@ -864,11 +865,7 @@ async def create_manual_contractor(
             provider="iam",
             include_inactive=True,
         )
-        account_id = (
-            stable_iam_account_id(created_user_id)
-            if binding is None
-            else binding.external_subject_id
-        )
+        account_id = stable_iam_account_id(created_user_id) if binding is None else binding.external_subject_id
         account = await IamClient().put_account(
             account_id=account_id,
             login=created_user_id,
@@ -887,7 +884,8 @@ async def create_manual_contractor(
             await uow.user_auth_accounts.add(binding)
         else:
             binding.is_active = True
-
+        if payload.company_mail:
+            await AccountRecoveryService(uow).request_recovery(identifier=created_user_id)
     return ManualContractorCreateResponse(
         data={"user_id": created_user_id},
     )
@@ -931,6 +929,9 @@ async def update_user_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserStatusUpdateResponse:
     async with uow:
+        target_user = await uow.users.get_by_id(user_id)
+        if target_user is not None and target_user.id_role == settings.contractor_role_id:
+            raise Forbidden("Статус контрагента изменяется только через /contractors/{contractor_id}/status")
         service = UserStatusService(
             uow.users,
             uow.profiles,
@@ -978,7 +979,7 @@ async def update_user_role(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserRoleUpdateResponse:
     async with uow:
-        service = UserRoleService(uow.users, uow.user_auth_accounts)
+        service = UserRoleService(uow.users, uow.user_auth_accounts, uow.units)
         result = await service.update_role(
             current_user=current_user,
             user_id=user_id,

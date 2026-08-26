@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import Visibility from '@mui/icons-material/Visibility';
-import VisibilityOff from '@mui/icons-material/VisibilityOff';
-import { Button, CircularProgress, IconButton, InputAdornment, Stack, TextField } from '@mui/material';
+import { Button, CircularProgress, Stack, TextField } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { inspectRegistrationInvitation, submitRegistration } from '@shared/api/auth/registration';
 import { AuthPageShell } from '@shared/components/AuthPageShell';
@@ -19,8 +17,6 @@ export const RegisterPage = () => {
   const token = searchParams.get('token')?.trim() ?? '';
   const [email, setEmail] = useState('');
   const [login, setLogin] = useState('');
-  const [password, setPassword] = useState('');
-  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -29,8 +25,6 @@ export const RegisterPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loginLocked, setLoginLocked] = useState(false);
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [isPasswordConfirmationVisible, setIsPasswordConfirmationVisible] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -78,11 +72,8 @@ export const RegisterPage = () => {
     };
   }, [navigate, token]);
 
-  const passwordValid = password.length >= 12 && password.length <= 128;
-  const passwordsMatch = password === passwordConfirmation && passwordValid;
   const canSubmit =
     login.trim().length >= 3 &&
-    passwordsMatch &&
     Boolean(fullName.trim()) &&
     isValidRuPhone(phone) &&
     Boolean(companyName.trim()) &&
@@ -100,8 +91,6 @@ export const RegisterPage = () => {
       const result = await submitRegistration({
         token,
         login: login.trim(),
-        password,
-        password_confirmation: passwordConfirmation,
         email,
         full_name: fullName.trim(),
         phone: phone.trim(),
@@ -131,7 +120,7 @@ export const RegisterPage = () => {
   return (
     <AuthPageShell
       title="Регистрация по приглашению"
-      subtitle="Если email указан неверно, измените его до подтверждения. Пароль — от 12 до 128 символов."
+      subtitle="После подтверждения email вы зададите пароль на защищённой странице Acom."
       maxWidth={560}
     >
       <Stack spacing={2.5}>
@@ -149,48 +138,6 @@ export const RegisterPage = () => {
             autoComplete="username"
             InputProps={{ readOnly: loginLocked }}
             fullWidth
-          />
-          <TextField
-            label={<RequiredFieldLabel isValid={passwordValid} label="Пароль" />}
-            type={isPasswordVisible ? 'text' : 'password'}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="new-password"
-            fullWidth
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    aria-label={isPasswordVisible ? 'Скрыть пароль' : 'Показать пароль'}
-                    edge="end"
-                    onClick={() => setIsPasswordVisible((current) => !current)}
-                  >
-                    {isPasswordVisible ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-          />
-          <TextField
-            label={<RequiredFieldLabel isValid={passwordsMatch} label="Повторите пароль" />}
-            type={isPasswordConfirmationVisible ? 'text' : 'password'}
-            value={passwordConfirmation}
-            onChange={(event) => setPasswordConfirmation(event.target.value)}
-            autoComplete="new-password"
-            fullWidth
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    aria-label={isPasswordConfirmationVisible ? 'Скрыть пароль' : 'Показать пароль'}
-                    edge="end"
-                    onClick={() => setIsPasswordConfirmationVisible((current) => !current)}
-                  >
-                    {isPasswordConfirmationVisible ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
           />
           <TextField
             label={<RequiredFieldLabel isValid={Boolean(fullName.trim())} label="ФИО" />}

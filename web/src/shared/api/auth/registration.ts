@@ -18,8 +18,6 @@ export type RegistrationInspectResponse = {
 export type RegistrationSubmitPayload = {
   token: string;
   login: string;
-  password: string;
-  password_confirmation: string;
   email: string;
   full_name: string;
   phone: string;

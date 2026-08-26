@@ -111,6 +111,15 @@ class ContractorService:
             )
             for user, profile, company, legacy_user, legacy_account_id in rows
         ]
+        if self._units is not None:
+            items = [
+                item
+                for item in items
+                if await self._contractor_unit_service().can_access_contractor(
+                    current_user=current_user,
+                    contractor_user_id=item.user_id,
+                )
+            ]
         if self._units is not None and items:
             bindings_by_user = await self._contractor_unit_service().list_bindings_for_users(
                 current_user=current_user,
@@ -150,6 +159,12 @@ class ContractorService:
         if user.id_role != settings.contractor_role_id:
             raise Conflict("Пользователь не является контрагентом")
 
+        if self._units is not None:
+            await self._contractor_unit_service().ensure_can_access_contractor(
+                current_user=current_user,
+                contractor_user_id=contractor_id,
+            )
+
         created_at = str(user.created_at) if user.created_at is not None else None
         return ContractorProfileResult(
             user_id=user.id,
@@ -176,6 +191,11 @@ class ContractorService:
         status_service: UserStatusService,
     ) -> UserStatusUpdateResult:
         UserPolicy.ensure_can_update_contractor_profile_status(current_user)
+        if self._units is not None:
+            await self._contractor_unit_service().ensure_can_access_contractor(
+                current_user=current_user,
+                contractor_user_id=contractor_id,
+            )
         return await status_service.update_statuses(
             current_user=current_user,
             user_id=contractor_id,

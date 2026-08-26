@@ -35,8 +35,7 @@ async def create_registration_invitation(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> RegistrationInviteResponse:
     UserPolicy.ensure_can_invite_registration(current_user)
-    service = RegistrationInvitationService()
-    raw_token = service.create_contractor_invitation(
+    raw_token = RegistrationInvitationService().create_contractor_invitation(
         current_user=current_user,
         email=payload.email,
         unit_id=payload.unit_id,

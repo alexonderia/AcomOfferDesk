@@ -48,7 +48,7 @@ async def test_invite_contractors_parses_dedupes_and_reports_invalid(make_curren
     )
     current_user = make_current_user(
         role_id=settings.economist_role_id,
-        permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE},
+        permissions={PermissionCodes.USERS_REGISTRATION_INVITE},
     )
 
     result = await service.invite_contractors(
@@ -78,7 +78,7 @@ async def test_invite_contractors_keeps_partial_success_on_send_errors(make_curr
     )
     current_user = make_current_user(
         role_id=settings.economist_role_id,
-        permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE},
+        permissions={PermissionCodes.USERS_REGISTRATION_INVITE},
     )
 
     result = await service.invite_contractors(
@@ -120,7 +120,7 @@ async def test_invite_contractors_requires_attachment_for_manual_flow(make_curre
     )
     current_user = make_current_user(
         role_id=settings.economist_role_id,
-        permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE},
+        permissions={PermissionCodes.USERS_REGISTRATION_INVITE},
     )
 
     with pytest.raises(Conflict):
@@ -140,7 +140,7 @@ async def test_invite_contractors_blocks_when_limit_exceeded(make_current_user, 
     )
     current_user = make_current_user(
         role_id=settings.economist_role_id,
-        permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE},
+        permissions={PermissionCodes.USERS_REGISTRATION_INVITE},
     )
 
     with pytest.raises(Conflict):
@@ -149,3 +149,4 @@ async def test_invite_contractors_blocks_when_limit_exceeded(make_current_user, 
             emails=["first@example.com second@example.com"],
             normative_file_id=1,
         )
+

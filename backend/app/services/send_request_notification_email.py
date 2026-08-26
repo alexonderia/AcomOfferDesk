@@ -322,11 +322,9 @@ class SendRequestNotificationEmailUseCase:
     ) -> str:
         if recipient.user_login or not inviter_id:
             return self._resolve_portal_url()
-        raw_token = self._invitation_service.issue_contractor_registration_token(
-            email=recipient.email,
-            inviter_id=inviter_id,
-        )
-        return self._invitation_service.registration_portal_url(raw_token)
+        # Request notifications are not staff-authorized registration invites.
+        # Do not mint a registration URL without the persistent invite state.
+        return self._resolve_portal_url()
 
     def _resolve_portal_url(self) -> str:
         if settings.invitation_portal_url:

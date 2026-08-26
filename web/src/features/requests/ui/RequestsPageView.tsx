@@ -55,7 +55,9 @@ export const RequestsPageView = () => {
         isLoading={isLoading}
         onRowClick={(request) =>
           navigate(
-            isContractor ? `/requests/${request.id}/contractor` : `/requests/${request.id}`,
+            isContractor
+              ? `/requests/${request.id}/contractor?tab=${shouldLoadOpenRequests ? 'open' : 'my'}`
+              : `/requests/${request.id}`,
             isContractor ? undefined : { state: { request } }
           )
         }

@@ -11,7 +11,7 @@ from app.domain.iam_roles import technical_role_name
 from app.infrastructure.iam_client import IamClient
 from app.models.auth_models import UserAuthAccount
 from app.models.orm_models import CompanyContact, Profile, User
-from app.services.email_verification import EmailVerificationService
+from app.services.account_recovery import AccountRecoveryService
 from app.services.registration_admin_notify import schedule_registration_review_required_notification
 from app.services.registration_invitations import RegistrationInvitationService
 
@@ -37,8 +37,8 @@ class RegistrationSubmitService:
         *,
         token: str,
         login: str,
-        password: str,
-        password_confirmation: str,
+        password: str | None = None,
+        password_confirmation: str | None = None,
         email: str,
         full_name: str,
         phone: str,
@@ -52,10 +52,6 @@ class RegistrationSubmitService:
         normalized_login = login.strip()
         if not 3 <= len(normalized_login) <= 128:
             raise Conflict("Логин должен содержать от 3 до 128 символов")
-        if password != password_confirmation:
-            raise Conflict("Пароли не совпадают")
-        if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
-            raise Conflict("Пароль должен содержать от 12 до 128 символов")
         try:
             normalized_email = validate_optional_email(email.strip().lower(), allow_placeholder=False)
             normalized_full_name = full_name.strip()
@@ -98,7 +94,6 @@ class RegistrationSubmitService:
                 company=in_progress[2],
                 role_name=role_name,
                 login=normalized_login,
-                password=password,
                 email=normalized_email,
                 full_name=normalized_full_name,
                 phone=normalized_phone,
@@ -118,11 +113,10 @@ class RegistrationSubmitService:
             raise Conflict("Эта электронная почта уже используется")
 
         account_id = stable_iam_account_id(normalized_login)
-        account = await self._iam_client.provision_registration_credentials(
+        account = await self._iam_client.put_account(
             account_id=account_id,
             login=normalized_login,
             role=role_name,
-            password=password,
             auth_status="pending",
         )
 
@@ -168,17 +162,7 @@ class RegistrationSubmitService:
                 is_active=True,
             )
         )
-        await EmailVerificationService(
-            self._uow.profiles,
-            self._uow.user_contact_channels,
-            user_auth_accounts=self._uow.user_auth_accounts,
-            iam_client=self._iam_client,
-        ).request_profile_verification(
-            user_id=normalized_login,
-            email=normalized_email,
-            purpose="verify_email",
-            account_id=account.id,
-        )
+        await AccountRecoveryService(self._uow).request_recovery(identifier=normalized_login)
         schedule_registration_review_required_notification(
             after_commit_hook_registrar=getattr(self._uow, "add_after_commit_hook", None),
             user_id=normalized_login,
@@ -200,7 +184,6 @@ class RegistrationSubmitService:
         company,
         role_name: str,
         login: str,
-        password: str,
         email: str,
         full_name: str,
         phone: str,
@@ -223,13 +206,11 @@ class RegistrationSubmitService:
             provider="iam",
         )
         account_id = binding.external_subject_id if binding is not None else str(stable_iam_account_id(user.id))
-        await self._iam_client.provision_registration_credentials(
+        await self._iam_client.put_account(
             account_id=account_id,
             login=user.id,
             role=role_name,
-            password=password,
             auth_status="pending",
-            replace_password=True,
         )
         if profile is None:
             profile = Profile(id=user.id, full_name=full_name, phone=phone, mail=email)
@@ -259,17 +240,7 @@ class RegistrationSubmitService:
                 company.address = address.strip()
             if note is not None and note.strip():
                 company.note = note.strip()
-        await EmailVerificationService(
-            self._uow.profiles,
-            self._uow.user_contact_channels,
-            user_auth_accounts=self._uow.user_auth_accounts,
-            iam_client=self._iam_client,
-        ).request_profile_verification(
-            user_id=user.id,
-            email=email,
-            purpose="verify_email",
-            account_id=account_id,
-        )
+        await AccountRecoveryService(self._uow).request_recovery(identifier=user.id)
         return RegistrationSubmitResult(
             user_id=user.id,
             status="review",

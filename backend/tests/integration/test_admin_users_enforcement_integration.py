@@ -424,6 +424,35 @@ def test_superadmin_can_create_project_manager_without_manager(
     assert response.json()["data"]["user_id"] == "pm-new"
 
 
+def test_staff_registration_rejects_contractor_role(
+    test_client,
+    monkeypatch,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    _set_fake_iam(monkeypatch)
+    set_uow(_UsersUow())
+    set_current_user(
+        make_current_user(
+            user_id="root-1",
+            role_id=settings.superadmin_role_id,
+            permissions={PermissionCodes.USERS_CREATE},
+        )
+    )
+
+    response = test_client.post(
+        "/api/v1/users/register",
+        json={
+            "login": "contractor-through-staff",
+            "role_id": settings.contractor_role_id,
+            "mail": "contractor-through-staff@example.com",
+        },
+    )
+
+    assert response.status_code == 409
+
+
 def test_superadmin_cannot_create_project_manager_with_lead_as_manager(
     test_client,
     monkeypatch,
@@ -590,6 +619,46 @@ def test_superadmin_can_update_user_role(test_client, monkeypatch, set_uow, set_
 
     assert response.status_code == 200
     assert response.json()["data"]["role_id"] == settings.operator_role_id
+
+
+def test_admin_cannot_escalate_role_through_direct_api(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
+    set_uow(_UsersUow())
+    set_current_user(
+        make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={PermissionCodes.USERS_ROLE_UPDATE_ANY},
+        )
+    )
+
+    for role_id in (
+        settings.superadmin_role_id,
+        settings.lead_economist_role_id,
+        settings.project_manager_role_id,
+    ):
+        response = test_client.patch("/api/v1/users/eco-1/role", json={"role_id": role_id})
+        assert response.status_code == 403
+
+
+def test_admin_can_assign_allowed_role_only_in_shared_root_scope(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user
+):
+    _set_fake_iam(monkeypatch)
+    set_uow(_UsersUow())
+    set_current_user(
+        make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={PermissionCodes.USERS_ROLE_UPDATE_ANY},
+        )
+    )
+
+    allowed = test_client.patch("/api/v1/users/eco-1/role", json={"role_id": settings.operator_role_id})
+    foreign = test_client.patch("/api/v1/users/pm-2/role", json={"role_id": settings.operator_role_id})
+
+    assert allowed.status_code == 200
+    assert foreign.status_code == 403
 
 
 def test_user_without_role_update_permission_cannot_change_role(

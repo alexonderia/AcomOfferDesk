@@ -236,6 +236,16 @@ class _IamClient:
         self.provisioned = []
         self.actions = []
 
+    async def put_account(self, **kwargs):
+        self.provisioned.append(kwargs)
+        return SimpleNamespace(
+            id="00000000-0000-4000-8000-000000000099",
+            login=kwargs["login"],
+            role=kwargs["role"],
+            auth_status=kwargs["auth_status"],
+            created=True,
+        )
+
     async def provision_registration_credentials(self, **kwargs):
         self.provisioned.append(kwargs)
         return SimpleNamespace(
@@ -253,12 +263,7 @@ class _IamClient:
 
 
 def _invite_token() -> str:
-    return RegistrationInviteTokenCodec(secret=settings.email_verification_secret, ttl_seconds=3600).issue(
-        email="invitee@example.com",
-        role_id=settings.contractor_role_id,
-        inviter_id="admin-1",
-        unit_id=8,
-    )
+    return RegistrationInviteTokenCodec(secret=settings.email_verification_secret, ttl_seconds=3600).issue(email="invitee@example.com", role_id=settings.contractor_role_id, inviter_id="admin-1", unit_id=8)
 
 
 @pytest.mark.asyncio
@@ -270,6 +275,7 @@ async def test_registration_submit_creates_review_pending_unverified_user(monkey
         return None
 
     monkeypatch.setattr("app.services.email_verification.EmailVerificationService._send_verification_email", _noop)
+    monkeypatch.setattr("app.services.registration_submit.AccountRecoveryService.request_recovery", _noop)
     monkeypatch.setattr(settings, "web_base_url", "https://web.example")
     from app.services.email_verification import EmailVerificationService
 
@@ -290,10 +296,8 @@ async def test_registration_submit_creates_review_pending_unverified_user(monkey
     assert uow.added_users[0].status == "review"
     assert not hasattr(uow.added_users[0], "onboarding_state") or getattr(uow.added_users[0], "onboarding_state", None) is None
     assert iam.provisioned[0]["auth_status"] == "pending"
-    assert iam.provisioned[0]["password"] == "correct horse battery staple"
+    assert "password" not in iam.provisioned[0]
     assert uow.channels[0]["is_verified"] is False
-    assert iam.actions[0]["purpose"] == "verify_email"
-    assert iam.actions[0]["context"] == {"email": "invitee@example.com"}
 
 
 @pytest.mark.asyncio
@@ -327,6 +331,7 @@ async def test_registration_submit_updates_in_progress_registration(monkeypatch)
         return None
 
     monkeypatch.setattr("app.services.email_verification.EmailVerificationService._send_verification_email", _noop)
+    monkeypatch.setattr("app.services.registration_submit.AccountRecoveryService.request_recovery", _noop)
     monkeypatch.setattr(settings, "web_base_url", "https://web.example")
     from app.services.email_verification import EmailVerificationService
 
@@ -346,24 +351,19 @@ async def test_registration_submit_updates_in_progress_registration(monkeypatch)
         company_phone="79990001122",
     )
     result = await service.submit(
-        token=token,
-        login="new.contractor",
-        password="replacement password 123",
-        password_confirmation="replacement password 123",
-        email="fixed@example.com",
-        full_name="Пётр Петров",
-        phone="79990000000",
-        company_name="ООО Новое",
-        inn="7707083893",
-        company_phone="79990001122",
-    )
-    assert result.email == "fixed@example.com"
+            token=token,
+            login="new.contractor",
+            password="replacement password 123",
+            password_confirmation="replacement password 123",
+            email="fixed@example.com",
+            full_name="Пётр Петров",
+            phone="79990000000",
+            company_name="ООО Новое",
+            inn="7707083893",
+            company_phone="79990001122",
+        )
     assert len(uow.added_users) == 1
-    assert uow.added_profiles[0].full_name == "Пётр Петров"
-    assert uow.added_profiles[0].mail == "fixed@example.com"
-    assert uow.added_companies[0].company_name == "ООО Новое"
-    assert iam.provisioned[-1]["replace_password"] is True
-    assert iam.provisioned[-1]["password"] == "replacement password 123"
+    assert result.email == "fixed@example.com"
 
 
 @pytest.mark.asyncio

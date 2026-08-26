@@ -46,7 +46,7 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
         permissions=frozenset({"contractors.manual.create"}),
     )
 
-    user_id = await service.create_manual_contractor(
+    result = await service.create_manual_contractor(
         current_user=current_user,
         data=ManualContractorCreateInput(
             company_name="ООО Ромашка",
@@ -56,7 +56,8 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
         ),
     )
 
-    assert user_id == "contractor-existing"
+    assert result.user_id == "contractor-existing"
+    assert result.created is False
     units_repo.add_member.assert_awaited_once()
     added_membership = units_repo.add_member.await_args.args[0]
     assert added_membership.id_unit == 101

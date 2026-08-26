@@ -14,6 +14,9 @@ from app.schemas.offers import (
     ContractorInfoResponse,
     ContractorRequestViewResponse,
     ManualOfferCreateResponse,
+    ManualOfferEligibleContractorItem,
+    ManualOfferEligibleContractorListData,
+    ManualOfferEligibleContractorListResponse,
     ManualContractorCreatePayload,
     OfferCreatePayload,
     OfferCreateResponse,
@@ -247,6 +250,27 @@ async def create_manual_offer(
             "contractor_user_id": result.contractor_user_id,
             "contractor_created": result.contractor_created,
         },
+    )
+
+
+@router.get(
+    "/requests/{request_id}/offers/manual/eligible-contractors",
+    response_model=ManualOfferEligibleContractorListResponse,
+)
+async def list_eligible_manual_offer_contractors(
+    request_id: str = PathParam(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualOfferEligibleContractorListResponse:
+    async with uow:
+        items = await build_offer_service(uow).list_eligible_contractors_for_manual_offer(
+            current_user=current_user,
+            request_id=request_id,
+        )
+    return ManualOfferEligibleContractorListResponse(
+        data=ManualOfferEligibleContractorListData(
+            items=[ManualOfferEligibleContractorItem(**item.__dict__) for item in items]
+        )
     )
 
 

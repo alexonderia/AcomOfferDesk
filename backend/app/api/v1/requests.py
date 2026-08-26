@@ -19,6 +19,9 @@ from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPol
 from app.schemas.requests import (
     DeletedAlertViewed,
     DeletedAlertViewedResponse,
+    EligibleRequestOwnerListData,
+    EligibleRequestOwnerListResponse,
+    EligibleRequestOwnerSchema,
     OfferItemSchema,
     OfferedRequestOfferSchema,
     OpenRequestItemSchema,
@@ -55,6 +58,41 @@ router = APIRouter()
 
 def _request_id_as_str(value: str | int) -> str:
     return str(value)
+
+
+@router.get("/requests/{request_id}/eligible-owners", response_model=EligibleRequestOwnerListResponse)
+async def list_eligible_request_owners(
+    request_id: str = PathParam(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> EligibleRequestOwnerListResponse:
+    async with uow:
+        items = await _build_request_service(uow).list_eligible_request_owners(
+            current_user=current_user,
+            request_id=request_id,
+        )
+    return EligibleRequestOwnerListResponse(
+        data=EligibleRequestOwnerListData(
+            items=[
+                EligibleRequestOwnerSchema(
+                    user_id=item.user_id,
+                    full_name=item.full_name,
+                    role=item.role,
+                    unavailable_period=(
+                        {
+                            "id": item.unavailable_period.id,
+                            "status": item.unavailable_period.status,
+                            "started_at": item.unavailable_period.started_at,
+                            "ended_at": item.unavailable_period.ended_at,
+                        }
+                        if item.unavailable_period is not None
+                        else None
+                    ),
+                )
+                for item in items
+            ],
+        ),
+    )
 
 
 def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:

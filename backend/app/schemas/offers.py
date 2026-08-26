@@ -265,6 +265,22 @@ class ManualOfferCreateResponse(BaseModel):
     data: ManualOfferCreateResponseData
 
 
+class ManualOfferEligibleContractorItem(BaseModel):
+    user_id: str
+    full_name: str | None = None
+    company_name: str | None = None
+    mail: str | None = None
+    company_mail: str | None = None
+
+
+class ManualOfferEligibleContractorListData(BaseModel):
+    items: list[ManualOfferEligibleContractorItem]
+
+
+class ManualOfferEligibleContractorListResponse(BaseModel):
+    data: ManualOfferEligibleContractorListData
+
+
 class OfferEditPayload(BaseModel):
     offer_amount: float
 

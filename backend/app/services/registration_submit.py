@@ -89,20 +89,12 @@ class RegistrationSubmitService:
 
         if in_progress is not None:
             return await self._update_in_progress(
-                user=in_progress[0],
-                profile=in_progress[1],
-                company=in_progress[2],
-                role_name=role_name,
-                login=normalized_login,
-                email=normalized_email,
-                full_name=normalized_full_name,
-                phone=normalized_phone,
-                company_name=normalized_company,
-                inn=normalized_inn,
-                company_phone=normalized_company_phone,
-                company_mail=normalized_company_mail,
-                address=address,
-                note=note,
+                user=in_progress[0], profile=in_progress[1], company=in_progress[2],
+                role_name=role_name, login=normalized_login, email=normalized_email,
+                full_name=normalized_full_name, phone=normalized_phone,
+                company_name=normalized_company, inn=normalized_inn,
+                company_phone=normalized_company_phone, company_mail=normalized_company_mail,
+                address=address, note=note,
             )
 
         if await self._uow.users.exists(normalized_login):

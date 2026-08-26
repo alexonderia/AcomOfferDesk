@@ -28,6 +28,9 @@ from app.schemas.users import (
     NotificationPreferencesResponse,
     ManualContractorCreateRequest,
     ManualContractorCreateResponse,
+    ManualContractorDuplicateItemSchema,
+    ManualContractorDuplicateListData,
+    ManualContractorDuplicateListResponse,
     ManualContractorUpdateRequest,
     ManualContractorUpdateResponse,
     MeData,
@@ -35,9 +38,6 @@ from app.schemas.users import (
     RequestContractorItemSchema,
     RequestContractorListData,
     RequestContractorListResponse,
-    RequestEconomistItemSchema,
-    RequestEconomistListData,
-    RequestEconomistListResponse,
     SetMyUnavailabilityPeriodRequest,
     SetMyUnavailabilityPeriodResponse,
     SetSubordinateUnavailabilityPeriodRequest,
@@ -790,23 +790,6 @@ async def set_subordinate_unavailability_period(
     )
 
 
-@router.get("/users/request-economists", response_model=RequestEconomistListResponse)
-@router.get("/users/request-economists/", response_model=RequestEconomistListResponse, include_in_schema=False)
-async def list_request_economists(
-    current_user: CurrentUser = Depends(get_current_user),
-    uow: UnitOfWork = Depends(get_uow),
-) -> RequestEconomistListResponse:
-    async with uow:
-        service = UserQueryService(uow.users, uow.user_status_periods)
-        users = await service.list_request_economists(current_user=current_user)
-
-    return RequestEconomistListResponse(
-        data=RequestEconomistListData(
-            items=[RequestEconomistItemSchema(**asdict(item)) for item in users],
-        ),
-    )
-
-
 @router.get("/users/request-contractors", response_model=RequestContractorListResponse)
 @router.get("/users/request-contractors/", response_model=RequestContractorListResponse, include_in_schema=False)
 async def list_request_contractors(
@@ -849,7 +832,7 @@ async def create_manual_contractor(
             user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
-        created_user_id = await service.create_manual_contractor(
+        result = await service.create_manual_contractor(
             current_user=current_user,
             data=ManualContractorCreateInput(
                 company_name=payload.company_name,
@@ -860,34 +843,73 @@ async def create_manual_contractor(
                 note=payload.note,
             ),
         )
-        binding = await uow.user_auth_accounts.get_by_user_provider(
-            user_id=created_user_id,
-            provider="iam",
-            include_inactive=True,
-        )
-        account_id = stable_iam_account_id(created_user_id) if binding is None else binding.external_subject_id
-        account = await IamClient().put_account(
-            account_id=account_id,
-            login=created_user_id,
-            role="contractor",
-            auth_status="active",
-        )
-        if binding is None:
-            binding = UserAuthAccount(
-                id_user=created_user_id,
+        if result.created:
+            binding = await uow.user_auth_accounts.get_by_user_provider(
+                user_id=result.user_id,
                 provider="iam",
-                external_subject_id=account.id,
-                external_username=created_user_id,
-                external_email=payload.company_mail,
-                is_active=True,
+                include_inactive=True,
             )
-            await uow.user_auth_accounts.add(binding)
-        else:
-            binding.is_active = True
-        if payload.company_mail:
-            await AccountRecoveryService(uow).request_recovery(identifier=created_user_id)
+            account_id = stable_iam_account_id(result.user_id) if binding is None else binding.external_subject_id
+            account = await IamClient().put_account(
+                account_id=account_id,
+                login=result.user_id,
+                role="contractor",
+                auth_status="active",
+            )
+            if binding is None:
+                binding = UserAuthAccount(
+                    id_user=result.user_id,
+                    provider="iam",
+                    external_subject_id=account.id,
+                    external_username=result.user_id,
+                    external_email=payload.company_mail,
+                    is_active=True,
+                )
+                await uow.user_auth_accounts.add(binding)
+            else:
+                binding.is_active = True
+            if payload.company_mail:
+                await AccountRecoveryService(uow).request_recovery(identifier=result.user_id)
     return ManualContractorCreateResponse(
-        data={"user_id": created_user_id},
+        data={
+            "user_id": result.user_id,
+            "outcome": "created" if result.created else "duplicate_found",
+            "duplicate": None if result.created else {
+                "company_name": result.company_name,
+                "inn": result.inn,
+                "company_mail": result.company_mail,
+            },
+        },
+    )
+
+
+@router.get("/users/manual-contractor-duplicates", response_model=ManualContractorDuplicateListResponse)
+async def list_manual_contractor_duplicates(
+    company_name: str | None = Query(default=None, max_length=256),
+    inn: str | None = Query(default=None, max_length=32),
+    company_mail: str | None = Query(default=None, max_length=256),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualContractorDuplicateListResponse:
+    async with uow:
+        service = ManualContractorService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_auth_accounts,
+            uow.units,
+            user_contact_channels=uow.user_contact_channels,
+        )
+        items = await service.list_possible_duplicates(
+            current_user=current_user,
+            company_name=company_name,
+            inn=inn,
+            company_mail=company_mail,
+        )
+    return ManualContractorDuplicateListResponse(
+        data=ManualContractorDuplicateListData(
+            items=[ManualContractorDuplicateItemSchema(**item.__dict__) for item in items],
+        ),
     )
 
 

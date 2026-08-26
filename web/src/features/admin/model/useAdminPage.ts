@@ -472,6 +472,11 @@ export const useAdminPage = () => {
           note: values.note?.trim() || undefined
         });
 
+        if (response.outcome === 'duplicate_found' && response.duplicate) {
+          const email = response.duplicate.companyMail ? `, e-mail: ${response.duplicate.companyMail}` : '';
+          showErrorToast(`Найден существующий контрагент: ИНН ${response.duplicate.inn}, ${response.duplicate.companyName}${email}.`);
+          return;
+        }
         showSuccessToast(`Контрагент ${response.userId} создан.`);
       } else {
         const response = await registerUser({

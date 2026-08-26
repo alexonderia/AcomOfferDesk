@@ -19,6 +19,7 @@ import { useAuth } from '@app/providers/AuthProvider';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { ContractorInviteDialog } from '@features/contractors/components/ContractorInviteDialog';
 import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
+import { ManualContractorDuplicatePanel } from '@features/contractors/components/ManualContractorDuplicatePanel';
 import { ROLE } from '@shared/constants/roles';
 import { hasPermission } from '@shared/auth/permissions';
 import { ActionButton } from '@shared/components/ActionButton';
@@ -203,12 +204,12 @@ export const AdminPageView = () => {
       <Dialog
         open={isDialogOpen}
         onClose={handleClose}
-        maxWidth="sm"
+        maxWidth={isContractorRole ? 'lg' : 'sm'}
         fullWidth
         PaperProps={{ sx: dialogPaperSx }}
       >
-        <DialogContent sx={dialogContentSx}>
-          <Box component="form" onSubmit={handleSubmit(onSubmit)}>
+        <DialogContent sx={{ ...dialogContentSx, display: 'flex', gap: 3, alignItems: 'flex-start', flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
+          <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ flex: 1, minWidth: 0 }}>
             <Stack spacing={2}>
               <Typography variant="h5" fontWeight={600} lineHeight={1}>
                 {isContractorRole
@@ -412,6 +413,14 @@ export const AdminPageView = () => {
               </Button>
             </Stack>
           </Box>
+          {isContractorRole ? (
+            <ManualContractorDuplicatePanel
+              open={isDialogOpen}
+              companyName={companyNameValue}
+              inn={innValue}
+              companyMail={watch('company_mail')}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
 

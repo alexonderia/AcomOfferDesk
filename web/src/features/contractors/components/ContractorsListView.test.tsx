@@ -282,6 +282,20 @@ describe('ContractorsListView editing', () => {
     });
   });
 
+  it('does not open contractor details when changing inline status', async () => {
+    renderView();
+
+    const statusCombobox = await screen.findByRole('combobox', { name: 'contractor-1-status' });
+    fireEvent.mouseDown(statusCombobox);
+    const statusOptions = await screen.findAllByRole('option');
+    fireEvent.click(statusOptions[1]);
+
+    await waitFor(() => {
+      expect(updateContractorStatusMock).toHaveBeenCalledWith('contractor-1', { user_status: 'active' });
+    });
+    expect(screen.queryByText('РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР°')).not.toBeInTheDocument();
+  });
+
   it('locks the status field in edit mode when status access is missing', async () => {
     renderView({
       contractors: [{

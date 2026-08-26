@@ -11,6 +11,7 @@ import {
 
 type AuthStatus = 'unauthenticated' | 'authenticating' | 'authenticated' | 'unavailable';
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
+const PERMISSION_REFRESH_INTERVAL_MS = 60_000;
 
 export type AuthSession = {
   userId: string;
@@ -143,6 +144,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       cancelled = true;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      void refresh('bootstrap');
+    }, PERMISSION_REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [refresh, status]);
 
   useEffect(() => {
     setAuthRuntime({

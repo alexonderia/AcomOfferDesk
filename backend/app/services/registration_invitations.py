@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 from app.core.config import settings
 from app.core.registration_invite import RegistrationInviteClaims, RegistrationInviteTokenCodec
 from app.core.uow import UnitOfWork
@@ -83,8 +82,7 @@ class RegistrationInvitationService:
         try:
             claims = self.parse(raw_token)
         except Unauthorized as exc:
-            detail = str(exc)
-            if "истёк" in detail:
+            if "истёк" in str(exc):
                 return InvitationInspectResult(status="expired")
             return InvitationInspectResult(status="invalid")
         if self._uow is not None:

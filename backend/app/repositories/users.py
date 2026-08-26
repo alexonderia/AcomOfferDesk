@@ -475,7 +475,11 @@ class UserRepository:
         contractor_role_id: int,
     ) -> list[tuple[User, Profile | None, CompanyContact | None, TgUser | None, str | None]]:
         stmt, _, _ = self._build_contractors_stmt(contractor_role_id=contractor_role_id)
-        stmt = stmt.order_by(User.id)
+        # Keep the non-paginated fallback in the same order as the paginated
+        # contractors endpoint. This path is used by Admin when the dedicated
+        # contractors.read permission is unavailable, so newly created manual
+        # contractors must still appear at the top of the first page.
+        stmt = stmt.order_by(User.created_at.desc().nulls_last(), User.id.desc())
         result = await self._session.execute(stmt)
         return self._map_contractor_rows(result.all())
 
@@ -518,9 +522,9 @@ class UserRepository:
         }
         sort_column = sort_columns.get(sort_by, User.created_at)
         if (sort_order or "").lower() == "asc":
-            stmt = stmt.order_by(sort_column.asc(), User.id.asc())
+            stmt = stmt.order_by(sort_column.asc().nulls_last(), User.id.asc())
         else:
-            stmt = stmt.order_by(sort_column.desc(), User.id.asc())
+            stmt = stmt.order_by(sort_column.desc().nulls_last(), User.id.desc())
         stmt = stmt.limit(limit).offset(offset)
 
         count_max_account = aliased(UserAuthAccount)

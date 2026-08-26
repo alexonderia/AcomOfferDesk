@@ -93,10 +93,12 @@ describe('RequestsTable states', () => {
           requests={[nonEditableOwner]}
           isLoading={false}
           canEditOwner
-          ownerOptions={[
-            { id: 'owner-1', label: 'Owner One' },
-            { id: 'owner-2', label: 'Owner Two' },
-          ]}
+          ownerOptionsByRequestId={{
+            '202': [
+              { id: 'owner-1', label: 'Owner One' },
+              { id: 'owner-2', label: 'Owner Two' },
+            ],
+          }}
         />
       </ThemeProvider>
     );
@@ -109,10 +111,12 @@ describe('RequestsTable states', () => {
           requests={[nonEditableOwner, editableOwner]}
           isLoading={false}
           canEditOwner
-          ownerOptions={[
-            { id: 'owner-1', label: 'Owner One' },
-            { id: 'owner-2', label: 'Owner Two' },
-          ]}
+          ownerOptionsByRequestId={{
+            '202': [
+              { id: 'owner-1', label: 'Owner One' },
+              { id: 'owner-2', label: 'Owner Two' },
+            ],
+          }}
         />
       </ThemeProvider>
     );

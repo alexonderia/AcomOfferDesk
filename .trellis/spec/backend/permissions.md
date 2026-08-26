@@ -64,6 +64,23 @@ The backend permission codes are grouped by domain:
 - `delegation.*` strings are legacy Acom API/UI compatibility codes only. Never seed them as IAM roles or treat them as effective permissions.
 - Do not add a parallel permission system in the frontend.
 
+## Scenario: Request-Scoped Eligible Owners
+
+The owner-picker is intentionally request-scoped. `GET
+/api/v1/requests/{request_id}/eligible-owners` returns only active Lead
+Economists and Economists to whom the caller can assign that exact request.
+The service applies the same permission, current-owner, hierarchy, and unit
+subtree checks used by the owner-change mutation, so an individual
+`requests.owner.change` grant does not require the unrelated global
+`users.read` permission.
+
+The frontend must request the list separately for every editable request and
+must use the returned options only for that request. The old global
+`/users/request-economists` endpoint must not be restored: it could reveal
+staff outside the request-specific management scope. The owner-change mutation
+still performs its own authorization; an options list is never authorization
+proof.
+
 ## Scenario: IAM Individual Permission Grants
 
 ### 1. Scope / Trigger

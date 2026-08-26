@@ -280,7 +280,7 @@ export const RequestDetailsView = () => {
         }
 
         try {
-            const economists = await getRequestEconomists();
+            const economists = await getRequestEconomists(requestId);
             setOwnerOptions(
                 economists.map((item) => ({
                     id: item.user_id,
@@ -297,7 +297,7 @@ export const RequestDetailsView = () => {
         } catch {
             setOwnerOptions([]);
         }
-    }, [canEditOwner]);
+    }, [canEditOwner, requestId]);
 
 
     useEffect(() => {

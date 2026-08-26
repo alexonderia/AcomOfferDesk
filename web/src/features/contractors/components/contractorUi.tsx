@@ -3,7 +3,7 @@ import { formatRuPhone } from '@shared/lib/phone';
 import { StatusPill as BaseStatusPill } from '@shared/ui/StatusPill';
 import { normalizeAnyStatus, toStatusLabel, userStatusLabelByValue } from '@features/admin/components/UserCardPrimitives';
 
-const contractorStatusToneByValue: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
+export const contractorStatusToneByValue: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   review: 'warning',
   active: 'success',
   inactive: 'neutral',
@@ -11,6 +11,9 @@ const contractorStatusToneByValue: Record<string, 'success' | 'warning' | 'error
   approved: 'success',
   disapproved: 'error',
 };
+
+export const getContractorStatusTone = (value: string | null | undefined) =>
+  contractorStatusToneByValue[normalizeAnyStatus(value)] ?? 'info';
 
 export const formatPhoneForView = (value: string | null | undefined) => {
   if (!value) {
@@ -20,7 +23,7 @@ export const formatPhoneForView = (value: string | null | undefined) => {
 };
 
 export const ContractorStatusPill = ({ value }: { value: string | null | undefined }) => (
-  <BaseStatusPill label={toStatusLabel(value)} tone={contractorStatusToneByValue[normalizeAnyStatus(value)] ?? 'info'} />
+  <BaseStatusPill label={toStatusLabel(value)} tone={getContractorStatusTone(value)} />
 );
 
 export const statusLabelForFilter = (value: string | null | undefined): string => {

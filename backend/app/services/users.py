@@ -869,6 +869,32 @@ class ManualContractorCreateInput:
     note: str | None = None
 
 
+@dataclass(frozen=True)
+class ManualContractorCreateResult:
+    user_id: str
+    created: bool
+    company_name: str
+    inn: str
+    company_mail: str | None
+
+
+@dataclass(frozen=True)
+class ManualContractorDuplicateItem:
+    user_id: str
+    full_name: str | None
+    phone: str | None
+    mail: str | None
+    company_name: str | None
+    inn: str | None
+    company_phone: str | None
+    company_mail: str | None
+    address: str | None
+    note: str | None
+    status: str
+    created_at: str | None
+    updated_at: str | None
+
+
 class ManualContractorService:
     def __init__(
         self,
@@ -1075,7 +1101,7 @@ class ManualContractorService:
         *,
         current_user: CurrentUser,
         data: ManualContractorCreateInput,
-    ) -> str:
+    ) -> ManualContractorCreateResult:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
@@ -1087,14 +1113,99 @@ class ManualContractorService:
                 current_user=current_user,
                 contractor_user_id=existing_contractor_user_id,
             )
-            return existing_contractor_user_id
+            return ManualContractorCreateResult(
+                user_id=existing_contractor_user_id,
+                created=False,
+                # These are the normalized values submitted by the actor, not
+                # additional fields read from the existing contractor profile.
+                company_name=normalized_data.company_name,
+                inn=normalized_data.inn,
+                company_mail=normalized_data.company_mail,
+            )
 
         login = await self._create_manual_contractor(data=normalized_data)
         await self._bind_to_creator_root_units_if_needed(
             current_user=current_user,
             contractor_user_id=login,
         )
-        return login
+        return ManualContractorCreateResult(
+            user_id=login,
+            created=True,
+            company_name=normalized_data.company_name,
+            inn=normalized_data.inn,
+            company_mail=normalized_data.company_mail,
+        )
+
+    async def list_possible_duplicates(
+        self,
+        *,
+        current_user: CurrentUser,
+        company_name: str | None = None,
+        inn: str | None = None,
+        company_mail: str | None = None,
+    ) -> list[ManualContractorDuplicateItem]:
+        UserPolicy.ensure_can_create_manual_contractors(current_user)
+
+        search_values = [
+            value.strip()
+            for value in (company_name, inn, company_mail)
+            if value is not None and value.strip()
+        ]
+        search_values = [value for value in search_values if len(value) >= 2]
+        if not search_values:
+            return []
+
+        normalized_name = (company_name or '').strip().lower()
+        normalized_inn = (inn or '').strip().lower()
+        normalized_mail = (company_mail or '').strip().lower()
+        items: dict[str, ManualContractorDuplicateItem] = {}
+        for search_value in search_values:
+            rows, _ = await self._users.list_contractors_page(
+                contractor_role_id=settings.contractor_role_id,
+                search=search_value,
+                sort_by='created_at',
+                sort_order='desc',
+                limit=50,
+                offset=0,
+            )
+            for user, profile, company, _legacy_user, _legacy_account_id in rows:
+                company_name_value = (company.company_name if company else None) or ''
+                inn_value = (company.inn if company else None) or ''
+                company_mail_value = (company.mail if company else None) or ''
+                if not any(
+                    candidate and candidate in source
+                    for candidate, source in (
+                        (normalized_name, company_name_value.lower()),
+                        (normalized_inn, inn_value.lower()),
+                        (normalized_mail, company_mail_value.lower()),
+                    )
+                ):
+                    continue
+                if self._units is not None and not await self._contractor_unit_service().can_access_contractor(
+                    current_user=current_user,
+                    contractor_user_id=user.id,
+                ):
+                    continue
+                items[user.id] = ManualContractorDuplicateItem(
+                    user_id=user.id,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                    company_name=company.company_name if company else None,
+                    inn=company.inn if company else None,
+                    company_phone=company.phone if company else None,
+                    company_mail=company.mail if company else None,
+                    address=company.address if company else None,
+                    note=company.note if company else None,
+                    status=user.status,
+                    created_at=str(user.created_at) if user.created_at is not None else None,
+                    updated_at=str(user.updated_at) if user.updated_at is not None else None,
+                )
+
+        return sorted(
+            items.values(),
+            key=lambda item: ((item.company_name or '').lower(), item.user_id),
+        )
 
     def _normalize_value(self, value: str | None) -> str | None:
         if value is None:

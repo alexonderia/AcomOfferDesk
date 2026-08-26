@@ -19,7 +19,7 @@ export const RequestsPageView = () => {
     handleOwnerChange,
     isContractor,
     isLoading,
-    ownerOptions,
+    ownerOptionsByRequestId,
     requests,
     successToastEvent,
     shouldLoadOpenRequests
@@ -62,7 +62,7 @@ export const RequestsPageView = () => {
           )
         }
         chatAlertsMap={chatAlertsMap}
-        ownerOptions={ownerOptions}
+        ownerOptionsByRequestId={ownerOptionsByRequestId}
         canEditOwner={canEditOwner}
         onOwnerChange={(request, ownerUserId) => void handleOwnerChange(request, ownerUserId)}
         isContractor={isContractor}

@@ -234,6 +234,15 @@ class ManualOfferCreateResult:
     contractor_created: bool
 
 
+@dataclass(frozen=True)
+class ManualOfferEligibleContractor:
+    user_id: str
+    full_name: str | None
+    company_name: str | None
+    mail: str | None
+    company_mail: str | None
+
+
 class OfferService:
     def __init__(
         self,
@@ -891,6 +900,48 @@ class OfferService:
             contractor_user_id=resolved_contractor_user_id,
             contractor_created=contractor_created,
         )
+
+    async def list_eligible_contractors_for_manual_offer(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: str,
+    ) -> list[ManualOfferEligibleContractor]:
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
+        RequestPolicy.ensure_can_create_manual_offer(
+            current_user,
+            request_owner_user_id=request.id_user,
+        )
+        if request.status != "open":
+            return []
+
+        rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
+        eligible: list[ManualOfferEligibleContractor] = []
+        for contractor, profile, company, _tg_user, _legacy_account_id in rows:
+            if contractor.status != "active":
+                continue
+            if await self._requests.is_hidden_for_contractor(
+                request_id=request.id,
+                contractor_user_id=contractor.id,
+            ):
+                continue
+            if not await self._is_request_available_for_contractor_user(
+                contractor_user_id=contractor.id,
+                request=request,
+            ):
+                continue
+            eligible.append(
+                ManualOfferEligibleContractor(
+                    user_id=contractor.id,
+                    full_name=profile.full_name if profile else None,
+                    company_name=company.company_name if company else None,
+                    mail=profile.mail if profile else None,
+                    company_mail=company.mail if company else None,
+                )
+            )
+        return eligible
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)

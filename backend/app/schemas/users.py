@@ -362,12 +362,44 @@ class ManualContractorCreateRequest(BaseModel):
         return validate_optional_email(value, allow_placeholder=True)
 
 
+class ManualContractorDuplicateData(BaseModel):
+    company_name: str
+    inn: str
+    company_mail: str | None = None
+
+
 class ManualContractorCreateData(BaseModel):
     user_id: str
+    outcome: str
+    duplicate: ManualContractorDuplicateData | None = None
 
 
 class ManualContractorCreateResponse(BaseModel):
     data: ManualContractorCreateData
+
+
+class ManualContractorDuplicateItemSchema(BaseModel):
+    user_id: str
+    full_name: str | None = None
+    phone: str | None = None
+    mail: str | None = None
+    company_name: str | None = None
+    inn: str | None = None
+    company_phone: str | None = None
+    company_mail: str | None = None
+    address: str | None = None
+    note: str | None = None
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ManualContractorDuplicateListData(BaseModel):
+    items: list[ManualContractorDuplicateItemSchema] = Field(default_factory=list)
+
+
+class ManualContractorDuplicateListResponse(BaseModel):
+    data: ManualContractorDuplicateListData
 
 
 class ManualContractorUpdateRequest(BaseModel):

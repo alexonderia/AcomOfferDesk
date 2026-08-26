@@ -87,6 +87,14 @@ class RequestEditInput:
 
 
 @dataclass(frozen=True)
+class EligibleRequestOwnerItem:
+    user_id: str
+    full_name: str | None
+    role: str
+    unavailable_period: object | None
+
+
+@dataclass(frozen=True)
 class RequestFileItem:
     id: int
     path: str
@@ -277,6 +285,45 @@ class RequestService:
         if await self._requests.exists_by_id(request_id=normalized_id):
             return False, "already_exists"
         return True, None
+
+    async def list_eligible_request_owners(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: str,
+    ) -> list[EligibleRequestOwnerItem]:
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
+
+        rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+        )
+        active_rows = [row for row in rows if row[0].status == "active"]
+        eligible_rows = []
+        for user, profile, role in active_rows:
+            try:
+                await self._ensure_can_assign_request_owner(
+                    current_user=current_user,
+                    request_owner_user_id=request.id_user,
+                    new_owner_user_id=user.id,
+                )
+            except Forbidden:
+                continue
+            eligible_rows.append((user, profile, role))
+
+        unavailable_by_user = await self._user_status_periods.list_active_for_users(
+            user_ids=[user.id for user, _, _ in eligible_rows],
+        )
+        return [
+            EligibleRequestOwnerItem(
+                user_id=user.id,
+                full_name=profile.full_name if profile else None,
+                role=role.role,
+                unavailable_period=unavailable_by_user.get(user.id),
+            )
+            for user, profile, role in eligible_rows
+        ]
 
     async def create_request(
         self,
@@ -1363,26 +1410,42 @@ class RequestService:
 
         RequestPolicy.ensure_can_change_owner(current_user, request_owner_user_id=request_owner_user_id)
         if current_user.role_id in {
+            settings.superadmin_role_id,
+            settings.admin_role_id,
+        }:
+            return
+
+        if current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
         }:
-            operator_owned = await self._is_request_owned_by_operator(
+            request_owned_by_operator = await self._is_request_owned_by_operator(
                 request_owner_user_id=request_owner_user_id,
             )
-            if not operator_owned and not await self._is_inside_hierarchy_management_scope(
+            if not request_owned_by_operator and not await self._is_inside_hierarchy_management_scope(
                 current_user=current_user,
                 request_owner_user_id=request_owner_user_id,
             ):
                 raise Forbidden("Request is outside your management scope")
-            if new_owner_user_id != current_user.user_id:
-                # New owner must stay inside the current user's unit-based
-                # management contour.
-                is_subordinate = await self._is_inside_hierarchy_management_scope(
-                    current_user=current_user,
-                    request_owner_user_id=new_owner_user_id,
-                )
-                if not is_subordinate:
-                    raise Forbidden("Owner must be current user or current user's subordinate")
+            if new_owner_user_id != current_user.user_id and not await self._is_inside_hierarchy_management_scope(
+                current_user=current_user,
+                request_owner_user_id=new_owner_user_id,
+            ):
+                raise Forbidden("Owner must be current user or current user's subordinate")
+            return
+
+        candidate_ids = {request_owner_user_id, new_owner_user_id}
+        manageable_owner_ids = await self._staff_scope.resolve_manageable_owner_ids(
+            current_user=current_user,
+            candidate_owner_ids=candidate_ids,
+        )
+        request_owned_by_operator = await self._is_request_owned_by_operator(
+            request_owner_user_id=request_owner_user_id,
+        )
+        if request_owner_user_id not in manageable_owner_ids and not request_owned_by_operator:
+            raise Forbidden("Request is outside your management scope")
+        if new_owner_user_id not in manageable_owner_ids:
+            raise Forbidden("Owner is outside your management scope")
 
     async def _can_edit_department_requests(
         self,

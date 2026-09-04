@@ -59,7 +59,7 @@ describe('RegisterPage', () => {
     renderPage();
     await screen.findByDisplayValue('invite@example.com');
     fireEvent.change(screen.getByLabelText(/Логин/i), { target: { value: 'contractor1' } });
-    // PR #53 (Keycloak→IAM): registration form no longer collects a password;
+    // PR #53 (auth→IAM migration): registration form no longer collects a password;
     // credentials are handled by the IAM portal on first login.
     fireEvent.change(screen.getByLabelText(/ФИО/i), { target: { value: 'Иванов Иван' } });
     const phoneInputs = screen.getAllByLabelText(/Телефон/i);

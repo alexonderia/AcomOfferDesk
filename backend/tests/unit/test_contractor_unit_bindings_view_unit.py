@@ -17,6 +17,12 @@ def _build_service() -> ContractorUnitService:
     users_repo.get_by_id = AsyncMock(
         return_value=SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id),
     )
+    # PR #53 (Keycloak→IAM): zone check loads effective root units from
+    # memberships; without this stub the admin's zone is empty → Forbidden.
+    users_repo.list_active_units = AsyncMock(return_value=[(101, None), (202, None)])
+    users_repo.list_active_unit_memberships = AsyncMock(
+        return_value=[("admin-1", 101), ("contractor-1", 101)],
+    )
     units_repo = AsyncMock()
     units_repo.list_user_root_unit_ids = AsyncMock(return_value=[101])
     units_repo.list_units = AsyncMock(

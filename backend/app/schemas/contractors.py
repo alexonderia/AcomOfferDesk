@@ -18,12 +18,12 @@ class ContractorRootUnitBindingsData(BaseModel):
 
 class ContractorListItemSchema(BaseModel):
     user_id: str
-    max_user_id: str | None = None
     role_id: int
     status: str
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None
+    email_verified: bool = False
     company_name: str | None = None
     inn: str | None = None
     company_phone: str | None = None
@@ -32,7 +32,6 @@ class ContractorListItemSchema(BaseModel):
     note: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
-    registration_source: str | None = None
     actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
     root_unit_bindings: ContractorRootUnitBindingsData | None = None
 

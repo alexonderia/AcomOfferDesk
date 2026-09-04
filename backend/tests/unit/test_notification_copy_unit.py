@@ -7,7 +7,6 @@ from shared.notification_copy import (
     ACCESS_OPENED_BODY,
     AUTHORIZATION_BUTTON_LABEL,
     NOTIFICATION_BUTTON_LABEL,
-    REGISTRATION_BUTTON_LABEL,
     REGISTRATION_COMPLETED_BODY,
     message_created_body,
     new_request_outbound_body,
@@ -45,7 +44,6 @@ def test_offer_updated_and_status_use_same_request_wording() -> None:
 
 def test_notification_button_labels_are_stable() -> None:
     assert NOTIFICATION_BUTTON_LABEL == "Перейти в систему"
-    assert REGISTRATION_BUTTON_LABEL == "Перейти к регистрации"
     assert AUTHORIZATION_BUTTON_LABEL == "Перейти к авторизации"
 
 

@@ -120,16 +120,16 @@ const clickLoginCtaIfPresent = async (page) => {
   return false;
 };
 
-const ensureKeycloakFormVisible = async (page) => {
+const ensureIamFormVisible = async (page) => {
   if (await isExpiredSessionScreenVisible(page)) {
     await clickLoginCtaIfPresent(page);
   }
 };
 
 const login = async (page, username, password) => {
-  const oidcLoginUrl = `${BASE_URL}/api/v1/auth/oidc/login?next_path=%2F&prompt=login&login_hint=${encodeURIComponent(username)}`;
-  await page.goto(oidcLoginUrl, { waitUntil: "domcontentloaded" });
-  await ensureKeycloakFormVisible(page);
+  const iamLoginUrl = `${BASE_URL}/api/v1/auth/login?next=%2F`;
+  await page.goto(iamLoginUrl, { waitUntil: "domcontentloaded" });
+  await ensureIamFormVisible(page);
   await clickLoginCtaIfPresent(page);
 
   const usernameLocators = [

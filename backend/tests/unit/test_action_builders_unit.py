@@ -105,6 +105,55 @@ def test_offer_action_builder_contractor_does_not_get_internal_accept_reject(mak
     assert actions.can_reject is False
 
 
+def test_offer_action_builder_hides_mutations_for_closed_request(make_current_user):
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.OFFERS_UPDATE,
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
+            PermissionCodes.OFFERS_DETAILS_UPDATE,
+            PermissionCodes.OFFERS_STATUS_UPDATE,
+            PermissionCodes.REQUESTS_UPDATE,
+        },
+    )
+
+    actions = OfferActionBuilder.build(
+        user,
+        offer_owner_user_id="contractor-1",
+        request_owner_user_id="owner-1",
+        contractor_user_id="contractor-1",
+        offer_status="submitted",
+        request_status="closed",
+        can_manage_in_scope=True,
+    )
+
+    assert actions.can_edit_amount is False
+    assert actions.can_accept is False
+    assert actions.can_reject is False
+    assert actions.can_delete is False
+    assert actions.can_upload_files is False
+    assert actions.can_delete_files is False
+
+
+def test_offer_action_builder_hides_accept_when_another_offer_is_accepted(make_current_user):
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.OFFERS_STATUS_UPDATE, PermissionCodes.REQUESTS_UPDATE},
+    )
+
+    actions = OfferActionBuilder.build(
+        user,
+        offer_owner_user_id="contractor-2",
+        request_owner_user_id="owner-1",
+        contractor_user_id="contractor-2",
+        offer_status="submitted",
+        can_manage_in_scope=True,
+        has_other_accepted_offer=True,
+    )
+
+    assert actions.can_accept is False
+
+
 def test_chat_action_builder_reflects_chat_permissions(make_current_user):
     user = make_current_user(
         role_id=settings.lead_economist_role_id,
@@ -298,7 +347,6 @@ def test_user_action_builder_contractor_not_given_internal_controls(make_current
         contractor,
         target_user_id="lead-1",
         target_role_id=settings.lead_economist_role_id,
-        target_tg_user_id=None,
     )
 
     assert actions.can_update_status is False
@@ -429,7 +477,7 @@ def test_user_action_builder_economist_cannot_update_contractor_status_with_user
     assert actions.can_update_status is False
 
 
-def test_user_action_builder_delegated_lead_can_update_contractor_status(make_current_user):
+def test_user_action_builder_lead_with_explicit_permission_can_update_contractor_status(make_current_user):
     lead = make_current_user(
         user_id="lead-1",
         role_id=settings.lead_economist_role_id,
@@ -438,7 +486,6 @@ def test_user_action_builder_delegated_lead_can_update_contractor_status(make_cu
             PermissionCodes.CONTRACTORS_PROFILE_READ,
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
         },
-        keycloak_roles={"delegation.contractors.profile.status.update"},
     )
 
     actions = UserActionBuilder.build_list_item(
@@ -450,17 +497,16 @@ def test_user_action_builder_delegated_lead_can_update_contractor_status(make_cu
     assert actions.can_update_status is True
 
 
-def test_contractor_action_builder_allows_status_with_delegation_role_only(make_current_user):
+def test_contractor_action_builder_denies_status_without_iam_permission(make_current_user):
     lead = make_current_user(
         user_id="lead-1",
         role_id=settings.lead_economist_role_id,
         permissions=set(),
-        keycloak_roles={"delegation.contractors.profile.status.update"},
     )
 
     actions = ContractorActionBuilder.build_contractor_actions(lead, is_manual=False)
 
-    assert actions.can_update_status is True
+    assert actions.can_update_status is False
 
 
 def test_contractor_action_builder_allows_manual_edit_only_for_manual_rows(make_current_user):
@@ -476,12 +522,12 @@ def test_contractor_action_builder_allows_manual_edit_only_for_manual_rows(make_
     )
 
     manual_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=True)
-    telegram_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=False)
+    external_account_actions = ContractorActionBuilder.build_contractor_actions(current_user, is_manual=False)
 
     assert manual_actions.can_view_profile is True
     assert manual_actions.can_update_status is True
     assert manual_actions.can_manage_manual_contractor is True
-    assert telegram_actions.can_manage_manual_contractor is False
+    assert external_account_actions.can_manage_manual_contractor is False
 
 
 def test_contractor_action_builder_allows_status_with_delegation_permission(make_current_user):

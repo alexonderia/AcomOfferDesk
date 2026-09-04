@@ -3,7 +3,6 @@
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.authorization import has_permission, require_any_permission, require_permission
-from app.domain.contractor_delegations import user_has_contractor_status_delegation
 from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 
@@ -19,6 +18,8 @@ def _is_allowed(checker) -> bool:
 class UserPolicy:
     @staticmethod
     def can_manage_review_onboarding(current_user: CurrentUser) -> bool:
+        if current_user.status == "active" and current_user.onboarding_state == "first_login":
+            return True
         return current_user.role_id == settings.contractor_role_id and current_user.status == "review"
 
     @staticmethod
@@ -116,6 +117,30 @@ class UserPolicy:
         return has_permission(current_user, PermissionCodes.USERS_CREATE)
 
     @staticmethod
+    def ensure_can_invite_registration(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.USERS_REGISTRATION_INVITE,
+            message="Недостаточно прав для приглашения к регистрации",
+        )
+
+    @staticmethod
+    def can_invite_registration(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.USERS_REGISTRATION_INVITE)
+
+    @staticmethod
+    def ensure_can_approve_registration(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.USERS_REGISTRATION_APPROVE,
+            message="Недостаточно прав для подтверждения регистрации",
+        )
+
+    @staticmethod
+    def can_approve_registration(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.USERS_REGISTRATION_APPROVE)
+
+    @staticmethod
     def ensure_can_register_user(current_user: CurrentUser) -> None:
         require_permission(
             current_user,
@@ -182,10 +207,7 @@ class UserPolicy:
 
     @staticmethod
     def can_update_contractor_profile_status(current_user: CurrentUser) -> bool:
-        # security_officer app role, delegation expansion, or explicit delegation role in token
         if has_permission(current_user, PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE):
-            return True
-        if user_has_contractor_status_delegation(current_user.delegation_roles):
             return True
         # admin/superadmin manage contractor status via users.status.update
         return (
@@ -534,6 +556,14 @@ class UserPolicy:
 
 
 class RequestPolicy:
+    @staticmethod
+    def is_contractor_request_lifecycle_eligible(*, request_owner_role_id: int | None) -> bool:
+        """Whether the current owner has moved a request past the Operator stage."""
+        return (
+            request_owner_role_id is not None
+            and request_owner_role_id != settings.operator_role_id
+        )
+
     @staticmethod
     def can_edit(current_user: CurrentUser, *, request_owner_user_id: str) -> bool:
         return _is_allowed(

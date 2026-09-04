@@ -53,7 +53,7 @@ class _FakeRequestsRepo:
     async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user=self._owner_id)
 
-    async def list_active_keycloak_visible_contractor_user_ids(
+    async def list_active_visible_contractor_user_ids(
         self,
         *,
         request_id: str,
@@ -136,25 +136,6 @@ class _FakeUsersRepo:
         return list(self._unit_memberships)
 
 
-class _FakeUserAuthAccountsRepo:
-    def __init__(self, *, keycloak_user_ids: set[str]) -> None:
-        self._keycloak_user_ids = keycloak_user_ids
-
-    async def get_by_user_provider(
-        self,
-        *,
-        user_id: str,
-        provider: str,
-        include_inactive: bool = False,
-    ):
-        _ = include_inactive
-        if provider != "keycloak":
-            return None
-        if user_id not in self._keycloak_user_ids:
-            return None
-        return SimpleNamespace(id_user=user_id, provider=provider, is_active=True)
-
-
 class _FakeProfilesRepo:
     def __init__(
         self,
@@ -178,7 +159,6 @@ class _FakeUow:
         chat_recipients: list[str] | None = None,
         offers_by_request: dict[str, list[SimpleNamespace]] | None = None,
         role_by_user_id: dict[str, int] | None = None,
-        keycloak_user_ids: set[str] | None = None,
         visible_contractors_by_request: dict[str, list[str]] | None = None,
         profiles_repo: _FakeProfilesRepo | None = None,
         unit_memberships: list[tuple[str, int]] | None = None,
@@ -204,14 +184,6 @@ class _FakeUow:
                 "contractor-rejected": module.settings.contractor_role_id,
                 "target-1": module.settings.contractor_role_id,
             }
-        if keycloak_user_ids is None:
-            keycloak_user_ids = {
-                "contractor-1",
-                "contractor-submitted",
-                "contractor-accepted",
-                "target-1",
-            }
-
         self.notifications = repo
         self.requests = _FakeRequestsRepo(
             owner_id=owner_id,
@@ -223,7 +195,6 @@ class _FakeUow:
             role_by_user_id=role_by_user_id,
             unit_memberships=unit_memberships,
         )
-        self.user_auth_accounts = _FakeUserAuthAccountsRepo(keycloak_user_ids=keycloak_user_ids)
         self.profiles = profiles_repo or _FakeProfilesRepo()
 
     async def __aenter__(self):
@@ -446,12 +417,12 @@ async def test_handler_request_responsible_changed_skips_old_operator(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_handler_offer_status_event_filters_non_keycloak_contractor(monkeypatch):
+async def test_handler_offer_status_event_does_not_depend_on_legacy_auth_binding(monkeypatch):
     repo = _FakeNotificationsRepo()
     monkeypatch.setattr(
         module,
         "UnitOfWork",
-        lambda: _FakeUow(repo, owner_id="owner-2", keycloak_user_ids=set()),
+        lambda: _FakeUow(repo, owner_id="owner-2"),
     )
     handler = module.ProcessNotificationEventHandler()
 
@@ -460,14 +431,13 @@ async def test_handler_offer_status_event_filters_non_keycloak_contractor(monkey
         actor_user_id="actor-1",
         request_id=10,
         offer_id=100,
-        dedupe_key="offer.status_changed:100:accepted:no-keycloak",
+        dedupe_key="offer.status_changed:100:accepted:no-binding",
         payload={"recipient_user_ids": ["owner-2", "contractor-1"], "new_status": "accepted"},
     )
     await handler.handle(payload=event.to_payload())
 
-    assert len(repo.created) == 1
-    assert repo.created[0].user_id == "owner-2"
-    assert repo.created[0].type == "offer.status_changed"
+    assert [item.user_id for item in repo.created] == ["owner-2", "contractor-1"]
+    assert {item.type for item in repo.created} == {"offer.status_changed"}
 
 
 @pytest.mark.asyncio

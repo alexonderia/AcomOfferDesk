@@ -8,6 +8,7 @@ export type UserListItem = {
   full_name: string | null;
   phone: string | null;
   mail: string | null;
+  email_verified?: boolean;
   company_name: string | null;
   inn: string | null;
   company_phone: string | null;

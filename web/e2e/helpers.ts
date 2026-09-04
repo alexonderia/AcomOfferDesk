@@ -1,7 +1,6 @@
 ﻿import { expect, type Page, type TestInfo } from '@playwright/test';
 
 const STRICT_CREDENTIALS = process.env.E2E_STRICT_CREDENTIALS === 'true';
-const KEYCLOAK_E2E_MIDDLE_NAME = 'Autotest';
 
 export type Credentials = {
   username: string;
@@ -94,15 +93,14 @@ export const getCredentialsOrSkip = (
   return null;
 };
 
-export const loginViaKeycloak = async (page: Page, credentials: Credentials): Promise<void> => {
-  const loginUrl = '/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1';
+export const loginViaIam = async (page: Page, credentials: Credentials): Promise<void> => {
+  const loginUrl = '/api/v1/auth/login?next=%2F';
 
   const waitForPostLoginUrl = async (): Promise<void> => {
     await page.waitForURL(
       (url) =>
         !url.pathname.startsWith('/iam') &&
-        !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
-        !url.pathname.startsWith('/auth/callback') &&
+        !url.pathname.startsWith('/api/v1/auth/login') &&
         !url.pathname.startsWith('/api/v1/auth/callback'),
       { timeout: 30_000, waitUntil: 'domcontentloaded' }
     );
@@ -110,31 +108,7 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
 
   const usernameInput = page.locator('input[name="username"], input#username').first();
   const passwordInput = page.locator('input[name="password"], input#password').first();
-  const submitButton = page.locator('#kc-login, button[type="submit"], input[type="submit"]').first();
-  const profileUpdateHeading = page.getByRole('heading', {
-    name: /обновление информации учетной записи|update account information/i,
-  });
-  const middleNameInput = page
-    .locator('input[name="user.attributes.middleName"], input[name="middleName"]')
-    .or(page.getByLabel(/отчество|middle name/i))
-    .first();
-  const continueButton = page.getByRole('button', { name: /продолжить|continue/i }).first();
-
-  const completeProfileUpdateIfPresent = async (): Promise<boolean> => {
-    const profileUpdateVisible = await profileUpdateHeading
-      .isVisible({ timeout: 7_500 })
-      .catch(() => false);
-    if (!profileUpdateVisible) {
-      return false;
-    }
-
-    await middleNameInput.waitFor({ state: 'visible', timeout: 7_500 });
-    if (!(await middleNameInput.inputValue()).trim()) {
-      await middleNameInput.fill(KEYCLOAK_E2E_MIDDLE_NAME);
-    }
-    await continueButton.click();
-    return true;
-  };
+  const submitButton = page.locator('button[type="submit"], input[type="submit"]').first();
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await gotoWithRetry(page, loginUrl, {
@@ -150,7 +124,7 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
 
     if (!loginFormVisible) {
       if (attempt >= 3) {
-        throw new Error(`Keycloak login form is not visible after ${attempt} attempts (url: ${page.url()})`);
+        throw new Error(`IAM login form is not visible after ${attempt} attempts (url: ${page.url()})`);
       }
       await page.waitForTimeout(1_000 * attempt);
       continue;
@@ -165,8 +139,7 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
         .waitForURL(
           (url) =>
             !url.pathname.startsWith('/iam') &&
-            !url.pathname.startsWith('/api/v1/auth/oidc/login') &&
-            !url.pathname.startsWith('/auth/callback') &&
+            !url.pathname.startsWith('/api/v1/auth/login') &&
             !url.pathname.startsWith('/api/v1/auth/callback'),
           { timeout: 5_000, waitUntil: 'domcontentloaded' }
         )
@@ -174,7 +147,6 @@ export const loginViaKeycloak = async (page: Page, credentials: Credentials): Pr
         .catch(() => false);
 
       if (!redirectedImmediately) {
-        await completeProfileUpdateIfPresent();
         await waitForPostLoginUrl();
       }
       break;

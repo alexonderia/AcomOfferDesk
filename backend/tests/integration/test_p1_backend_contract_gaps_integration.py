@@ -1,7 +1,7 @@
 ﻿"""P1 backend contract coverage for existing API surface.
 
 These tests keep the integration contour in-memory: no SMTP, S3/MinIO,
-Keycloak, or external database is contacted.
+IAM, or external database is contacted.
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ from app.api.v1 import offers as offers_api
 from app.api.v1 import plans as plans_api
 from app.api.v1 import requests as requests_api
 from app.core.config import settings
-from app.core.email_token import EmailVerificationTokenCodec
 from app.domain.exceptions import Forbidden
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import UserPolicy
 from app.services import file_upload_guard as file_upload_guard_module
 from app.services import offers as offers_service_module
 from app.services import requests as requests_service_module
+from app.services import email_verification as email_verification_service
 
 
 def _dt() -> datetime:
@@ -133,10 +133,13 @@ class _PreparedFileService:
         self._files = files
 
     async def prepare_upload(self, upload):
+        content_bytes = await upload.read()
         return SimpleNamespace(
             original_name=upload.filename,
-            content_bytes=await upload.read(),
+            content_bytes=content_bytes,
             mime_type=upload.content_type or "text/plain",
+            content_sha256="test-content-sha256",
+            size_bytes=len(content_bytes),
         )
 
     async def prepare_bytes(self, *, original_name, content_bytes, mime_type=None):
@@ -144,6 +147,8 @@ class _PreparedFileService:
             original_name=original_name,
             content_bytes=content_bytes,
             mime_type=mime_type or "text/plain",
+            content_sha256="test-content-sha256",
+            size_bytes=len(content_bytes),
         )
 
     async def create_request_file(self, *, request_id: str, upload):
@@ -451,7 +456,6 @@ class _OfferFilesUsersRepo:
         return SimpleNamespace(
             id=resolved_user_id,
             id_role=settings.contractor_role_id,
-            tg_user_id=None,
             id_parent=None,
         )
 
@@ -497,14 +501,43 @@ class _OfferFilesUow:
 
 
 class _NormativeFilesRepo:
-    def __init__(self, *, existing_file_id: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        existing_file_id: int | None = None,
+        duplicate_normative_id: int | None = None,
+        existing_file_matches_upload: bool = False,
+    ) -> None:
         self.existing_file_id = existing_file_id
+        self.duplicate_normative_id = duplicate_normative_id
+        self.existing_file_matches_upload = existing_file_matches_upload
         self.upserts: list[tuple[int, int]] = []
         self.created: list[tuple[int, int, str]] = []
+        self.normative_name_locks: list[str] = []
+        self.normative_id_allocation_lock_calls = 0
+
+    async def acquire_normative_file_name_lock(self, *, original_name: str) -> None:
+        self.normative_name_locks.append(original_name)
+
+    async def acquire_normative_file_id_allocation_lock(self) -> None:
+        self.normative_id_allocation_lock_calls += 1
+
+    async def find_normative_file_id_by_original_name(self, **_kwargs):
+        return self.duplicate_normative_id
 
     async def get_normative_file_id(self, *, normative_id: int):
         _ = normative_id
         return self.existing_file_id
+
+    async def get_normative_file(self, *, normative_id: int):
+        if self.existing_file_id is None:
+            return None
+        return SimpleNamespace(
+            id=self.existing_file_id,
+            original_name="norm.txt",
+            content_sha256="test-content-sha256" if self.existing_file_matches_upload else "different-content-sha256",
+            size_bytes=14 if self.existing_file_matches_upload else 99,
+        )
 
     async def supports_normative_status_column(self):
         return True
@@ -548,10 +581,9 @@ class _ManualEmailNotifications:
         users=None,
         files=None,
         *,
-        notification_preferences=None,
         after_commit_hook_registrar=None,
     ) -> None:
-        _ = (profiles, requests, users, files, notification_preferences, after_commit_hook_registrar)
+        _ = (profiles, requests, users, files, after_commit_hook_registrar)
         self.calls: list[dict] = []
 
     async def notify_request_to_additional_emails(
@@ -613,16 +645,61 @@ class _ProfilesRepo:
         return self.update_result
 
 
+class _P1UsersRepo:
+    async def get_by_id(self, user_id: str):
+        return SimpleNamespace(id=user_id, status="active")
+
+
+class _P1AuthAccountsRepo:
+    async def get_by_provider_subject(self, *, provider: str, subject: str):
+        _ = provider
+        return SimpleNamespace(id_user="profile-1", external_subject_id=subject)
+
+    async def get_by_user_provider(self, **_kwargs):
+        return SimpleNamespace(external_subject_id="00000000-0000-4000-8000-000000000099")
+
+
 class _ProfilesUow:
     def __init__(self, repo: _ProfilesRepo) -> None:
         self.profiles = repo
         self.user_contact_channels = None
+        self.users = _P1UsersRepo()
+        self.user_auth_accounts = _P1AuthAccountsRepo()
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         _ = (exc_type, exc, tb)
+
+
+def _fake_iam_consume(monkeypatch, *, email: str, fail_after: int = 1):
+    calls = {"count": 0}
+
+    class _Client:
+        async def consume_action_token(self, *, token: str, purpose: str, new_password=None):
+            _ = (token, new_password)
+            if purpose != "verify_email":
+                from app.domain.exceptions import Unauthorized
+
+                raise Unauthorized("Ссылка подтверждения недействительна")
+            calls["count"] += 1
+            if calls["count"] > fail_after:
+                from app.domain.exceptions import Unauthorized
+
+                raise Unauthorized("Ссылка подтверждения недействительна")
+            return SimpleNamespace(
+                account_id="00000000-0000-4000-8000-000000000099",
+                purpose="verify_email",
+                auth_status="pending",
+                context={"email": email},
+            )
+
+        async def create_action_token(self, *, account_id, purpose, context=None):
+            _ = (account_id, purpose, context)
+            return SimpleNamespace(token="iam-verify-token-1234567890")
+
+    monkeypatch.setattr(email_verification_service, "IamClient", _Client)
 
 
 def _clear_current_user_override(api_app) -> None:
@@ -1074,6 +1151,8 @@ def test_normative_file_upload_allows_create_permission(
     assert response.status_code == 200
     assert response.json() == {"data": {"normative_id": 1, "file_id": 701}}
     assert files_repo.created == [(1, 701, "actual")]
+    assert files_repo.normative_name_locks == ["norm.txt"]
+    assert files_repo.normative_id_allocation_lock_calls == 1
 
 
 @pytest.mark.parametrize(
@@ -1108,7 +1187,7 @@ def test_normative_file_upload_denies_forbidden_roles_and_statuses(
     assert response.status_code == 403
 
 
-def test_normative_file_upload_rejects_duplicate(
+def test_normative_file_replace_updates_existing_record(
     test_client,
     monkeypatch,
     set_current_user,
@@ -1116,15 +1195,62 @@ def test_normative_file_upload_rejects_duplicate(
     make_current_user,
 ):
     monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    files_repo = _NormativeFilesRepo(existing_file_id=100)
     set_current_user(make_current_user(permissions={PermissionCodes.NORMATIVE_FILES_CREATE}))
-    set_uow(_NormativeUow(_NormativeFilesRepo(existing_file_id=100)))
+    set_uow(_NormativeUow(files_repo))
 
     response = test_client.post(
         "/api/v1/normative-files/1",
         files={"file": ("norm.txt", b"normative text", "text/plain")},
     )
 
+    assert response.status_code == 200
+    assert response.json() == {"data": {"normative_id": 1, "file_id": 701}}
+    assert files_repo.upserts == [(1, 701)]
+
+
+def test_normative_file_create_rejects_duplicate_name_regardless_of_content(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    files_repo = _NormativeFilesRepo(duplicate_normative_id=1)
+    set_current_user(make_current_user(permissions={PermissionCodes.NORMATIVE_FILES_CREATE}))
+    set_uow(_NormativeUow(files_repo))
+
+    response = test_client.post(
+        "/api/v1/normative-files",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
     assert response.status_code == 409
+    assert files_repo.created == []
+    assert files_repo.normative_name_locks == ["norm.txt"]
+
+
+def test_normative_file_replace_with_current_content_reuses_current_file(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    monkeypatch.setattr(normative_files_api, "FileService", _PreparedFileService)
+    files_repo = _NormativeFilesRepo(existing_file_id=100, existing_file_matches_upload=True)
+    set_current_user(make_current_user(permissions={PermissionCodes.NORMATIVE_FILES_CREATE}))
+    set_uow(_NormativeUow(files_repo))
+
+    response = test_client.post(
+        "/api/v1/normative-files/1",
+        files={"file": ("norm.txt", b"normative text", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"data": {"normative_id": 1, "file_id": 100}}
+    assert files_repo.upserts == []
 
 
 def test_normative_file_upload_denies_anonymous_user(api_app, test_client, monkeypatch, set_uow):
@@ -1426,19 +1552,16 @@ def test_offer_file_delete_denies_internal_user_outside_hierarchy_scope(
                 id="owner-1",
                 id_role=settings.economist_role_id,
                 id_parent="lead-2",
-                tg_user_id=None,
             ),
             "lead-2": SimpleNamespace(
                 id="lead-2",
                 id_role=settings.lead_economist_role_id,
                 id_parent="pm-1",
-                tg_user_id=None,
             ),
             "pm-1": SimpleNamespace(
                 id="pm-1",
                 id_role=settings.project_manager_role_id,
                 id_parent=None,
-                tg_user_id=None,
             ),
         }
     )
@@ -1497,6 +1620,52 @@ def test_file_download_allows_contractor_for_linked_open_request(
 
     assert response.status_code == 200
     assert response.content == b"linked-content"
+
+
+def test_file_download_denies_contractor_for_operator_owned_request_in_shared_root(
+    test_client,
+    monkeypatch,
+    set_current_user,
+    set_uow,
+    make_current_user,
+):
+    async def _fake_read_bytes(self, *, db_file):
+        _ = (self, db_file)
+        return b"must-not-be-used"
+
+    users_repo = _DownloadUsersRepo(
+        users={
+            "operator-1": SimpleNamespace(
+                id="operator-1",
+                id_role=settings.operator_role_id,
+                id_parent=None,
+            ),
+            "contractor-1": SimpleNamespace(
+                id="contractor-1",
+                id_role=settings.contractor_role_id,
+                id_parent=None,
+            ),
+        }
+    )
+    users_repo._memberships.append(("operator-1", 1))
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", _fake_read_bytes)
+    set_uow(
+        _DownloadUow(
+            requests_repo=_DownloadRequestsRepo(linked=True, owner_user_id="operator-1"),
+            users_repo=users_repo,
+        )
+    )
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.FILES_DOWNLOAD},
+        )
+    )
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == 403
 
 
 def test_file_download_denies_contractor_for_unlinked_foreign_file(
@@ -1741,7 +1910,6 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
         users,
         files=None,
         *,
-        notification_preferences=None,
         after_commit_hook_registrar=None,
     ):
         nonlocal fake_notifications
@@ -1750,7 +1918,6 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
             requests,
             users,
             files,
-            notification_preferences=notification_preferences,
             after_commit_hook_registrar=after_commit_hook_registrar,
         )
         return fake_notifications
@@ -1852,8 +2019,8 @@ def test_request_email_verification_uses_fake_mail_sender(
 
     auth_api.EmailVerificationService._request_locks.clear()
     monkeypatch.setattr(settings, "web_base_url", "https://web.acom.example")
-    monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     monkeypatch.setattr(auth_api.EmailVerificationService, "_send_verification_email", _fake_send)
+    _fake_iam_consume(monkeypatch, email="new@example.com")
     set_current_user(make_current_user(user_id="profile-1", permissions={PermissionCodes.PROFILE_MANAGE_OWN}))
     set_uow(_ProfilesUow(_ProfilesRepo()))
 
@@ -1865,7 +2032,7 @@ def test_request_email_verification_uses_fake_mail_sender(
     assert response.status_code == 200
     assert sent[0]["email"] == "new@example.com"
     assert sent[0]["verification_link"].startswith("https://web.acom.example/verify-email?token=")
-    assert sent[0]["recipient_context"] == {"user_login": "profile-1", "tg_id": None}
+    assert sent[0]["recipient_context"] == {"user_login": "profile-1"}
 
 
 @pytest.mark.parametrize("update_result", [True, False])
@@ -1878,53 +2045,39 @@ def test_verify_email_valid_token_updates_or_reports_repeat(
     monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     profiles = _ProfilesRepo(update_result=update_result)
     set_uow(_ProfilesUow(profiles))
-    token = asyncio.run(
-        EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=3600).create_profile_token(
-            user_id="profile-1",
-            email="verified@example.com",
-        )
-    )
+    token = "valid-email-action-token-123456"
+    _fake_iam_consume(monkeypatch, email="verified@example.com")
 
     response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
 
     assert response.status_code == 200
     assert profiles.updated == [("profile-1", "verified@example.com")]
-    if update_result:
-        assert "Email" in response.json()["detail"]
-    else:
-        assert "Email" in response.json()["detail"]
+    assert "Email" in response.json()["detail"]
 
 
-@pytest.mark.parametrize(
-    "token",
-    [
-        "not-a-valid-verification-token.value",
-        asyncio.run(
-            EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=-1).create_profile_token(
-                user_id="profile-1",
-                email="expired@example.com",
-            )
-        ),
-    ],
-)
-def test_verify_email_rejects_invalid_and_expired_tokens(test_client, monkeypatch, set_uow, token):
+def test_verify_email_rejects_invalid_and_expired_tokens(test_client, monkeypatch, set_uow):
     monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     set_uow(_ProfilesUow(_ProfilesRepo()))
+    _fake_iam_consume(monkeypatch, email="expired@example.com", fail_after=0)
 
-    response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
+    invalid = test_client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": "not-a-valid-verification-token.value"},
+    )
+    expired = test_client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": "expired-email-action-token-123456"},
+    )
 
-    assert response.status_code == 401
+    assert invalid.status_code == 401
+    assert expired.status_code == 401
 
 
 def test_verify_email_rejects_token_when_email_belongs_to_another_user(test_client, monkeypatch, set_uow):
     monkeypatch.setattr(settings, "email_verification_secret", "test-secret")
     set_uow(_ProfilesUow(_ProfilesRepo(mail_exists=True)))
-    token = asyncio.run(
-        EmailVerificationTokenCodec(secret="test-secret", ttl_seconds=3600).create_profile_token(
-            user_id="profile-1",
-            email="taken@example.com",
-        )
-    )
+    token = "taken-email-action-token-123456"
+    _fake_iam_consume(monkeypatch, email="taken@example.com")
 
     response = test_client.get("/api/v1/auth/verify-email", params={"token": token})
 

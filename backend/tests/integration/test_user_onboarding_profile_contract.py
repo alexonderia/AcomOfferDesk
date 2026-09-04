@@ -37,7 +37,6 @@ class _OnboardingUsersRepo:
             id="contractor-review-1",
             id_role=settings.contractor_role_id,
             status="review",
-            tg_user_id=None,
         )
 
     async def get_with_profile_and_company_contacts(self, *, user_id: str):
@@ -61,6 +60,14 @@ class _OnboardingUserAuthAccountsRepo:
         return None
 
 
+class _OnboardingContactChannelsRepo:
+    async def upsert_channel(self, **_kwargs):
+        return SimpleNamespace(is_verified=False)
+
+    async def get_primary_by_type(self, **_kwargs):
+        return None
+
+
 class _OnboardingUow:
     def __init__(self, *, profile=None, company_contact=None) -> None:
         self.profiles = _OnboardingProfilesRepo(profile)
@@ -71,6 +78,7 @@ class _OnboardingUow:
         )
         self.user_status_periods = _OnboardingPeriodsRepo()
         self.user_auth_accounts = _OnboardingUserAuthAccountsRepo()
+        self.user_contact_channels = _OnboardingContactChannelsRepo()
 
     async def __aenter__(self) -> "_OnboardingUow":
         return self

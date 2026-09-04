@@ -20,7 +20,14 @@ def _dt() -> datetime:
 
 
 class _OfferRequestsRepo:
-    def __init__(self, *, request_row: SimpleNamespace | None = None, visible_open: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        request_row: SimpleNamespace | None = None,
+        visible_open: bool = True,
+        hidden_for_contractor: bool = False,
+        has_accepted_offer: bool = False,
+    ) -> None:
         self._request_row = request_row or SimpleNamespace(
             id=10,
             id_user="owner-1",
@@ -38,16 +45,36 @@ class _OfferRequestsRepo:
             owner_mail=None,
         )
         self._visible_open = visible_open
+        self._hidden_for_contractor = hidden_for_contractor
+        self._has_accepted_offer = has_accepted_offer
+        self.lifecycle_lock_calls: list[str] = []
 
     async def get_visible_open_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
-        if not self._visible_open:
+        if not self._visible_open or self._hidden_for_contractor:
             return None
         if str(request_id) != str(self._request_row.id):
             return None
         if self._request_row.status != "open":
             return None
         return self._request_row
+
+    async def lock_offer_lifecycle(self, *, request_id: str) -> None:
+        self.lifecycle_lock_calls.append(str(request_id))
+
+    async def has_accepted_offer_for_request(self, *, request_id: str, exclude_offer_id: int | None = None) -> bool:
+        _ = (request_id, exclude_offer_id)
+        return self._has_accepted_offer
+
+    async def get_visible_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
+        _ = contractor_user_id
+        if self._hidden_for_contractor or str(request_id) != str(self._request_row.id):
+            return None
+        return self._request_row
+
+    async def list_files(self, *, request_id: str):
+        _ = request_id
+        return []
 
     async def get_by_id(self, *, request_id: str):
         return self._request_row if str(request_id) == str(self._request_row.id) else None
@@ -67,6 +94,9 @@ class _OfferRepo:
             if offer.id_request == request_id and offer.id_user == contractor_user_id:
                 return offer
         return None
+
+    async def lock_contractor_offer_creation(self, *, request_id: str, contractor_user_id: str) -> None:
+        _ = (request_id, contractor_user_id)
 
     async def create(self, *, request_id: str, contractor_user_id: str, offer_amount: float | None = None):
         offer = SimpleNamespace(
@@ -122,26 +152,31 @@ class _NoopUsersRepo:
             ("lead-1", 2),
             ("econ-1", 2),
             ("owner-1", 2),
+            ("operator-1", 1),
             ("lead-2", 3),
             ("econ-2", 3),
             ("contractor-1", 1),
             ("contractor-2", 1),
         ]
         self._users = {
-            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, tg_user_id=None),
-            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
-            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
-            "econ-1": SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1", tg_user_id=None),
-            "econ-2": SimpleNamespace(id="econ-2", id_role=settings.economist_role_id, id_parent="lead-2", tg_user_id=None),
-            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
-            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-1"),
-            "contractor-2": SimpleNamespace(id="contractor-2", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-2"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "econ-1": SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1"),
+            "econ-2": SimpleNamespace(id="econ-2", id_role=settings.economist_role_id, id_parent="lead-2"),
+            "operator-1": SimpleNamespace(id="operator-1", id_role=settings.operator_role_id, id_parent=None),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.lead_economist_role_id, id_parent="pm-1"),
+            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None),
+            "contractor-2": SimpleNamespace(id="contractor-2", id_role=settings.contractor_role_id, id_parent=None),
         }
 
     async def get_by_id(self, user_id: str | None = None):
         if user_id is None:
             return None
         return self._users.get(user_id)
+
+    async def has_legacy_messenger_account(self, *, user_id: str) -> bool:
+        return user_id in {"contractor-1", "contractor-2"}
 
     async def list_active_user_parent_pairs(self):
         return [
@@ -159,15 +194,6 @@ class _NoopUsersRepo:
 
     async def list_active_unit_memberships(self):
         return list(self._memberships)
-
-    async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int):
-        _ = (user_id, contractor_role_id)
-        return None
-
-    async def get_active_approved_contractor_max_id(self, *, user_id: str, contractor_role_id: int):
-        _ = (user_id, contractor_role_id)
-        return None
-
 
 class _NoopChatsRepo:
     async def get_chat_state_for_user(self, *, chat_id: int, user_id: str):
@@ -235,8 +261,20 @@ class _NullUserNotificationPreferencesRepo:
 
 
 class _OfferLifecycleUow:
-    def __init__(self, *, request_row: SimpleNamespace | None = None, visible_open: bool = True) -> None:
-        self.requests = _OfferRequestsRepo(request_row=request_row, visible_open=visible_open)
+    def __init__(
+        self,
+        *,
+        request_row: SimpleNamespace | None = None,
+        visible_open: bool = True,
+        hidden_for_contractor: bool = False,
+        has_accepted_offer: bool = False,
+    ) -> None:
+        self.requests = _OfferRequestsRepo(
+            request_row=request_row,
+            visible_open=visible_open,
+            hidden_for_contractor=hidden_for_contractor,
+            has_accepted_offer=has_accepted_offer,
+        )
         self.offers = _OfferRepo()
         self.chats = _NoopChatsRepo()
         self.files = object()
@@ -247,7 +285,6 @@ class _OfferLifecycleUow:
         self.units = object()
         self.user_status_periods = None
         self.feedback = None
-        self.tg_users = None
         self.user_auth_accounts = None
         self.user_contact_channels = _NullUserContactChannelsRepo()
         self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
@@ -293,6 +330,208 @@ def test_contractor_cannot_create_offer_when_request_is_not_visible(
     response = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0})
 
     assert response.status_code == 404
+
+
+def test_operator_owned_request_denies_contractor_view_and_offer_until_assignment(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="operator-1",
+        status="open",
+        description="Awaiting assignment",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+        owner_phone="+70000000000",
+        owner_mail="owner@example.test",
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.users._memberships = [membership for membership in uow.users._memberships if membership[0] != "operator-1"]
+    set_uow(uow)
+    contractor = make_current_user(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ, PermissionCodes.OFFERS_CREATE},
+    )
+    set_current_user(contractor)
+
+    assert test_client.get("/api/v1/requests/10/contractor-view").status_code == 404
+    assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 404
+
+    request_row.id_user = "econ-1"
+
+    visible_view = test_client.get("/api/v1/requests/10/contractor-view")
+    assert visible_view.status_code == 200
+    assert visible_view.json()["data"]["owner_user_id"] == "econ-1"
+    assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 200
+
+
+def test_closed_request_is_not_discoverable_or_offerable_to_contractor(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = _OfferRequestsRepo()._request_row
+    request_row.status = "closed"
+    uow = _OfferLifecycleUow(request_row=request_row)
+    set_uow(uow)
+    contractor = make_current_user(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ, PermissionCodes.OFFERS_CREATE},
+    )
+    set_current_user(contractor)
+
+    assert test_client.get("/api/v1/requests/10/contractor-view").status_code == 404
+    assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 404
+
+
+@pytest.mark.parametrize("assigned_owner_user_id", ["econ-1", "lead-1"])
+def test_operator_owned_request_becomes_discoverable_after_assignment_in_shared_root(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+    assigned_owner_user_id,
+):
+    request_row = _OfferRequestsRepo()._request_row
+    request_row.id_user = "operator-1"
+    set_uow(_OfferLifecycleUow(request_row=request_row))
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ, PermissionCodes.OFFERS_CREATE},
+        )
+    )
+
+    assert test_client.get("/api/v1/requests/10/contractor-view").status_code == 404
+    assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 404
+
+    request_row.id_user = assigned_owner_user_id
+
+    assert test_client.get("/api/v1/requests/10/contractor-view").status_code == 200
+    assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 200
+
+
+def test_request_owner_in_different_root_is_not_discoverable_to_contractor(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = _OfferRequestsRepo()._request_row
+    request_row.id_user = "econ-2"
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.users._units.append((4, None))
+    uow.users._memberships = [item for item in uow.users._memberships if item[0] != "econ-2"]
+    uow.users._memberships.append(("econ-2", 4))
+    set_uow(uow)
+    set_current_user(
+        make_current_user(
+            user_id="contractor-1",
+            role_id=settings.contractor_role_id,
+            permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ, PermissionCodes.OFFERS_CREATE},
+        )
+    )
+
+    assert test_client.get("/api/v1/requests/10/contractor-view").status_code == 404
+    assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 404
+
+
+def test_existing_contractor_offer_remains_accessible_after_reassignment_to_operator(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = _OfferLifecycleUow()
+    set_uow(uow)
+    contractor = make_current_user(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.OFFERS_CREATE, PermissionCodes.OFFERS_AMOUNT_UPDATE},
+    )
+    set_current_user(contractor)
+    created = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0})
+    assert created.status_code == 200
+    offer_id = created.json()["data"]["offer_id"]
+
+    uow.requests._request_row.id_user = "operator-1"
+    updated = test_client.patch(f"/api/v1/offers/{offer_id}", json={"offer_amount": 91.0})
+
+    assert updated.status_code == 200
+    assert uow.offers._offers[offer_id].offer_amount == 91.0
+
+
+def test_closed_request_rejects_existing_offer_amount_mutation_without_write(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = _OfferLifecycleUow()
+    set_uow(uow)
+    contractor = make_current_user(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.OFFERS_CREATE, PermissionCodes.OFFERS_AMOUNT_UPDATE},
+    )
+    set_current_user(contractor)
+    created = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0})
+    offer_id = created.json()["data"]["offer_id"]
+
+    uow.requests.lifecycle_lock_calls.clear()
+    uow.requests._request_row.status = "closed"
+    rejected = test_client.patch(f"/api/v1/offers/{offer_id}", json={"offer_amount": 91.0})
+
+    assert rejected.status_code == 409
+    assert uow.offers._offers[offer_id].offer_amount == 90.0
+    assert uow.requests.lifecycle_lock_calls == ["10"]
+
+
+def test_hidden_contractor_cannot_access_assigned_request(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-1",
+        status="open",
+        description="Hidden from contractor",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
+    )
+    set_uow(_OfferLifecycleUow(request_row=request_row, hidden_for_contractor=True))
+    contractor = make_current_user(
+        user_id="contractor-1",
+        role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ, PermissionCodes.OFFERS_CREATE},
+    )
+    set_current_user(contractor)
+
+    assert test_client.get("/api/v1/requests/10/contractor-view").status_code == 404
+    assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 404
 
 
 def test_contractor_can_edit_only_own_offer_amount(
@@ -703,9 +942,37 @@ def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app
     assert response.status_code == 401
 
 
-# NOTE: Auto-reject of sibling submitted offers is enforced by external DB trigger
-# `offers_accept_reject_others` in order_database and is intentionally verified
-# in DB-backed tests there, not in this in-memory integration contour.
+def test_cannot_accept_second_offer_for_same_request(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    uow = _OfferLifecycleUow(has_accepted_offer=True)
+    uow.offers._offers[231] = SimpleNamespace(
+        id=231,
+        id_request="10",
+        id_user="contractor-2",
+        status="submitted",
+        offer_amount=90.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    set_current_user(
+        make_current_user(
+            user_id="owner-1",
+            role_id=settings.lead_economist_role_id,
+            permissions={PermissionCodes.OFFERS_STATUS_UPDATE, PermissionCodes.REQUESTS_UPDATE},
+        )
+    )
+
+    response = test_client.patch("/api/v1/offers/231/status", json={"status": "accepted"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Для заявки уже выбрано принятое КП"
+    assert uow.offers._offers[231].status == "submitted"
+    assert uow.requests.lifecycle_lock_calls == ["10"]
 
 
 def test_cannot_accept_offer_for_closed_or_cancelled_request(

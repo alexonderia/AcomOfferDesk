@@ -102,7 +102,7 @@ export const useHeaderConfig = () => {
 
     if (contractorRequestId) {
       return [
-        { key: 'requests', label: 'Заявки', to: '/requests' },
+        { key: 'requests', label: 'Заявки', to: `/requests?tab=${contractorTab}` },
         { key: `contractor-request-${contractorRequestId}`, label: `Заявка №${contractorRequestId}` },
       ];
     }

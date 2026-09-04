@@ -8,6 +8,8 @@ from app.core.config import settings
 class PermissionCodes:
     USERS_READ = "users.read"
     USERS_CREATE = "users.create"
+    USERS_REGISTRATION_INVITE = "users.registration.invite"
+    USERS_REGISTRATION_APPROVE = "users.registration.approve"
     USERS_STATUS_UPDATE = "users.status.update"
     USERS_ROLE_UPDATE_ANY = "users.role.update_any"
     USERS_ROLE_UPDATE_ECONOMY = "users.role.update_economy"
@@ -78,6 +80,7 @@ class PermissionCodes:
     DEPARTMENT_OFFERS_ACCEPT = "department.offers.accept"
     DEPARTMENT_OFFERS_REJECT = "department.offers.reject"
     DEPARTMENT_CHATS_READ = "department.chats.read"
+    DEPARTMENT_CHATS_SEND_MESSAGE = "department.chats.send_message"
     DEPARTMENT_FILES_READ = "department.files.read"
     DEPARTMENT_FILES_UPLOAD = "department.files.upload"
     DEPARTMENT_FILES_DELETE = "department.files.delete"
@@ -178,6 +181,9 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | {
                 PermissionCodes.USERS_READ,
                 PermissionCodes.USERS_CREATE,
+                PermissionCodes.USERS_REGISTRATION_INVITE,
+                PermissionCodes.USERS_REGISTRATION_APPROVE,
+                PermissionCodes.NORMATIVE_FILES_READ,
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_ROLE_UPDATE_ANY,
                 PermissionCodes.USERS_LOGIN_UPDATE,
@@ -234,6 +240,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.PROFILE_MANAGE_ANY,
                 PermissionCodes.COMPANY_CONTACTS_MANAGE_ANY,
                 PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
+                PermissionCodes.USERS_REGISTRATION_INVITE,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
                 PermissionCodes.OFFERS_MANUAL_CREATE,
                 PermissionCodes.CONTRACTORS_MANUAL_CREATE,
@@ -251,6 +258,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_MANAGER_UPDATE,
+                PermissionCodes.USERS_REGISTRATION_INVITE,
                 PermissionCodes.NORMATIVE_FILES_READ,
                 PermissionCodes.DASHBOARD_PROCESS_READ,
                 PermissionCodes.DASHBOARD_SAVINGS_READ,
@@ -270,6 +278,9 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.CONTRACTORS_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_READ,
                 PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+                PermissionCodes.USERS_REGISTRATION_INVITE,
+                PermissionCodes.USERS_REGISTRATION_APPROVE,
+                PermissionCodes.NORMATIVE_FILES_READ,
             }
         ),
         settings.operator_role_id: frozenset(
@@ -291,5 +302,5 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
     }
 
 
-def get_permissions_for_role(role_id: int) -> frozenset[str]:
-    return get_role_permissions_map().get(role_id, frozenset())
+get_known_permissions.cache_clear()
+get_role_permissions_map.cache_clear()

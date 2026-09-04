@@ -26,17 +26,17 @@ class _UsersRepo:
     def __init__(self) -> None:
         self._session = object()
         self._users: dict[str, SimpleNamespace] = {
-            "superadmin-1": SimpleNamespace(id="superadmin-1", id_role=settings.superadmin_role_id, id_parent=None, status="active", tg_user_id=None),
-            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, status="active", tg_user_id=None),
-            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent="pm-1", status="active", tg_user_id=None),
-            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active", tg_user_id=None),
-            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="lead-1", status="active", tg_user_id=None),
-            "eco-1": SimpleNamespace(id="eco-1", id_role=settings.economist_role_id, id_parent="lead-1", status="active", tg_user_id=None),
-            "eco-2": SimpleNamespace(id="eco-2", id_role=settings.economist_role_id, id_parent="eco-1", status="active", tg_user_id=None),
-            "eco-3": SimpleNamespace(id="eco-3", id_role=settings.economist_role_id, id_parent="lead-2", status="active", tg_user_id=None),
-            "operator-1": SimpleNamespace(id="operator-1", id_role=settings.operator_role_id, id_parent="lead-1", status="active", tg_user_id=None),
-            "admin-1": SimpleNamespace(id="admin-1", id_role=settings.admin_role_id, id_parent=None, status="active", tg_user_id=None),
-            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, status="active", tg_user_id=None),
+            "superadmin-1": SimpleNamespace(id="superadmin-1", id_role=settings.superadmin_role_id, id_parent=None, status="active"),
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, status="active"),
+            "pm-2": SimpleNamespace(id="pm-2", id_role=settings.project_manager_role_id, id_parent="pm-1", status="active"),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", status="active"),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="lead-1", status="active"),
+            "eco-1": SimpleNamespace(id="eco-1", id_role=settings.economist_role_id, id_parent="lead-1", status="active"),
+            "eco-2": SimpleNamespace(id="eco-2", id_role=settings.economist_role_id, id_parent="eco-1", status="active"),
+            "eco-3": SimpleNamespace(id="eco-3", id_role=settings.economist_role_id, id_parent="lead-2", status="active"),
+            "operator-1": SimpleNamespace(id="operator-1", id_role=settings.operator_role_id, id_parent="lead-1", status="active"),
+            "admin-1": SimpleNamespace(id="admin-1", id_role=settings.admin_role_id, id_parent=None, status="active"),
+            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, status="active"),
         }
         self._profiles: dict[str, SimpleNamespace] = {
             user_id: SimpleNamespace(id=user_id, full_name=user_id, phone=None, mail=f"{user_id}@example.com")
@@ -119,6 +119,9 @@ class _UsersRepo:
             rows.append((user, self._profiles.get(user.id), None, None, None))
         return rows
 
+    async def map_primary_email_verified(self, *, user_ids: list[str]) -> dict[str, bool]:
+        return {user_id: False for user_id in user_ids}
+
     async def list_active_user_parent_pairs(self):
         return [
             (user.id, user.id_parent)
@@ -148,16 +151,33 @@ class _ProfilesRepo:
 
 
 class _UserAuthAccountsRepo:
+    def __init__(self) -> None:
+        self._bindings = {
+            user_id: SimpleNamespace(
+                id_user=user_id,
+                provider="iam",
+                external_subject_id=f"00000000-0000-4000-8000-{index:012d}",
+                is_active=True,
+            )
+            for index, user_id in enumerate(
+                (
+                    "superadmin-1", "pm-1", "pm-2", "lead-1", "lead-2", "eco-1",
+                    "eco-2", "eco-3", "operator-1", "admin-1", "contractor-1",
+                ),
+                start=1,
+            )
+        }
+
     async def get_conflicting_subject(self, *, provider: str, subject: str, exclude_user_id: str):
         _ = (provider, subject, exclude_user_id)
         return None
 
     async def get_by_user_provider(self, *, user_id: str, provider: str, include_inactive: bool = True):
-        _ = (user_id, provider, include_inactive)
-        return None
+        _ = include_inactive
+        return self._bindings.get(user_id) if provider == "iam" else None
 
     async def add(self, row) -> None:
-        _ = row
+        self._bindings[row.id_user] = row
 
 
 class _UserStatusPeriodsRepo:
@@ -174,6 +194,13 @@ class _NullUserContactChannelsRepo:
     async def get_primary_by_type(self, *, user_id: str, channel_type: str, include_inactive: bool = False):
         _ = (user_id, channel_type, include_inactive)
         return None
+
+    async def exists_primary_email(self, *, email: str, exclude_user_id: str | None = None) -> bool:
+        _ = (email, exclude_user_id)
+        return False
+
+    async def upsert_channel(self, **_kwargs):
+        return SimpleNamespace(is_verified=False)
 
 
 class _NullUserNotificationPreferencesRepo:
@@ -218,12 +245,11 @@ class _UsersUow:
         self.units = _UnitsRepo(self.users)
         self.profiles = _ProfilesRepo(self.users)
         self.user_auth_accounts = _UserAuthAccountsRepo()
-        self.tg_users = object()
-        self.max_users = None
         self.user_status_periods = _UserStatusPeriodsRepo()
         self.company_contacts = object()
         self.user_contact_channels = _NullUserContactChannelsRepo()
         self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
+        self.after_commit_hooks = []
 
     async def __aenter__(self):
         return self
@@ -231,28 +257,29 @@ class _UsersUow:
     async def __aexit__(self, exc_type, exc, tb):
         _ = (exc_type, exc, tb)
 
+    def add_after_commit_hook(self, hook) -> None:
+        self.after_commit_hooks.append(hook)
 
-def _set_fake_keycloak(monkeypatch) -> None:
-    async def _fake_ensure_user(
-        self,
-        *,
-        username: str,
-        email: str | None = None,
-        first_name: str | None = None,
-        last_name: str | None = None,
-        middle_name: str | None = None,
-        sync_names: bool = False,
-        email_verified: bool = False,
-    ):
-        _ = (self, username, email, first_name, last_name, middle_name, sync_names, email_verified)
-        return SimpleNamespace(id=f"kc-{username}")
 
-    async def _fake_sync_keycloak_app_role_for_user(*args, **kwargs) -> None:
-        _ = (args, kwargs)
+class _FakeIamClient:
+    async def put_account(self, *, account_id, login: str, role: str, auth_status: str):
+        return SimpleNamespace(
+            id=str(account_id), login=login, role=role, auth_status=auth_status, created=True
+        )
+
+    async def create_action_token(self, **_kwargs):
+        return SimpleNamespace(token="test-action-token", expires_at=0, purpose="password_setup")
+
+    async def update_status(self, **_kwargs):
         return None
 
-    monkeypatch.setattr(users_service.KeycloakAdminService, "ensure_user", _fake_ensure_user)
-    monkeypatch.setattr(users_service, "sync_keycloak_app_role_for_user", _fake_sync_keycloak_app_role_for_user)
+    async def update_role(self, **_kwargs):
+        return None
+
+
+def _set_fake_iam(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.v1.auth.IamClient", _FakeIamClient)
+    monkeypatch.setattr("app.api.v1.users.IamClient", _FakeIamClient)
 
 
 def test_admin_can_create_user_with_permission(
@@ -262,7 +289,7 @@ def test_admin_can_create_user_with_permission(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     admin = make_current_user(
         user_id="admin-1",
@@ -275,7 +302,6 @@ def test_admin_can_create_user_with_permission(
         "/api/v1/users/register",
         json={
             "login": "new-operator",
-            "password": "StrongPass1!",
             "role_id": settings.operator_role_id,
             "mail": "new-operator@example.com",
         },
@@ -292,7 +318,7 @@ def test_lead_economist_register_auto_assigns_creator_unit(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     uow = _UsersUow()
     set_uow(uow)
     lead = make_current_user(
@@ -323,7 +349,7 @@ def test_lead_economist_can_register_with_unit_in_scope(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     uow = _UsersUow()
     set_uow(uow)
     lead = make_current_user(
@@ -376,7 +402,7 @@ def test_superadmin_can_create_project_manager_without_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -398,6 +424,35 @@ def test_superadmin_can_create_project_manager_without_manager(
     assert response.json()["data"]["user_id"] == "pm-new"
 
 
+def test_staff_registration_rejects_contractor_role(
+    test_client,
+    monkeypatch,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    _set_fake_iam(monkeypatch)
+    set_uow(_UsersUow())
+    set_current_user(
+        make_current_user(
+            user_id="root-1",
+            role_id=settings.superadmin_role_id,
+            permissions={PermissionCodes.USERS_CREATE},
+        )
+    )
+
+    response = test_client.post(
+        "/api/v1/users/register",
+        json={
+            "login": "contractor-through-staff",
+            "role_id": settings.contractor_role_id,
+            "mail": "contractor-through-staff@example.com",
+        },
+    )
+
+    assert response.status_code == 409
+
+
 def test_superadmin_cannot_create_project_manager_with_lead_as_manager(
     test_client,
     monkeypatch,
@@ -405,7 +460,7 @@ def test_superadmin_cannot_create_project_manager_with_lead_as_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -434,7 +489,7 @@ def test_superadmin_can_create_lead_without_legacy_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -462,7 +517,7 @@ def test_superadmin_can_create_lead_with_lead_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -492,7 +547,7 @@ def test_superadmin_cannot_create_economist_with_project_manager_manager(
     set_current_user,
     make_current_user,
 ):
-    _set_fake_keycloak(monkeypatch)
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -516,10 +571,12 @@ def test_superadmin_cannot_create_economist_with_project_manager_manager(
 
 def test_lead_economist_can_update_subordinate_status(
     test_client,
+    monkeypatch,
     set_uow,
     set_current_user,
     make_current_user,
 ):
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     lead = make_current_user(
         user_id="lead-1",
@@ -548,7 +605,8 @@ def test_user_without_users_status_update_cannot_change_status(test_client, set_
     assert response.status_code == 403
 
 
-def test_superadmin_can_update_user_role(test_client, set_uow, set_current_user, make_current_user):
+def test_superadmin_can_update_user_role(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
     set_uow(_UsersUow())
     superadmin = make_current_user(
         user_id="root-1",
@@ -561,6 +619,46 @@ def test_superadmin_can_update_user_role(test_client, set_uow, set_current_user,
 
     assert response.status_code == 200
     assert response.json()["data"]["role_id"] == settings.operator_role_id
+
+
+def test_admin_cannot_escalate_role_through_direct_api(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
+    set_uow(_UsersUow())
+    set_current_user(
+        make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={PermissionCodes.USERS_ROLE_UPDATE_ANY},
+        )
+    )
+
+    for role_id in (
+        settings.superadmin_role_id,
+        settings.lead_economist_role_id,
+        settings.project_manager_role_id,
+    ):
+        response = test_client.patch("/api/v1/users/eco-1/role", json={"role_id": role_id})
+        assert response.status_code == 403
+
+
+def test_admin_can_assign_allowed_role_only_in_shared_root_scope(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user
+):
+    _set_fake_iam(monkeypatch)
+    set_uow(_UsersUow())
+    set_current_user(
+        make_current_user(
+            user_id="admin-1",
+            role_id=settings.admin_role_id,
+            permissions={PermissionCodes.USERS_ROLE_UPDATE_ANY},
+        )
+    )
+
+    allowed = test_client.patch("/api/v1/users/eco-1/role", json={"role_id": settings.operator_role_id})
+    foreign = test_client.patch("/api/v1/users/pm-2/role", json={"role_id": settings.operator_role_id})
+
+    assert allowed.status_code == 200
+    assert foreign.status_code == 403
 
 
 def test_user_without_role_update_permission_cannot_change_role(

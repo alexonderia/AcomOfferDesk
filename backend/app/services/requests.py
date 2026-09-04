@@ -30,9 +30,6 @@ from app.services.contractor_outbound_notifications import (
     RequestEventKind,
     notify_contractors_with_offers_about_request,
 )
-from app.services.max_notifications import notify_new_request as notify_max_new_request
-from app.services.tg_notifications import notify_new_request, notify_request_status_changed
-from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 PARTNER_CARD_NORMATIVE_ID = 1
@@ -87,6 +84,14 @@ class RequestEditInput:
     final_amount: float | None = None
     id_plan: int | None = None
     id_plan_provided: bool = False
+
+
+@dataclass(frozen=True)
+class EligibleRequestOwnerItem:
+    user_id: str
+    full_name: str | None
+    role: str
+    unavailable_period: object | None
 
 
 @dataclass(frozen=True)
@@ -224,7 +229,6 @@ class RequestService:
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
         notifications: NotificationService | None = None,
-        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
@@ -237,7 +241,6 @@ class RequestService:
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
         self._notifications = notifications
-        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
@@ -283,6 +286,45 @@ class RequestService:
             return False, "already_exists"
         return True, None
 
+    async def list_eligible_request_owners(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: str,
+    ) -> list[EligibleRequestOwnerItem]:
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
+
+        rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+        )
+        active_rows = [row for row in rows if row[0].status == "active"]
+        eligible_rows = []
+        for user, profile, role in active_rows:
+            try:
+                await self._ensure_can_assign_request_owner(
+                    current_user=current_user,
+                    request_owner_user_id=request.id_user,
+                    new_owner_user_id=user.id,
+                )
+            except Forbidden:
+                continue
+            eligible_rows.append((user, profile, role))
+
+        unavailable_by_user = await self._user_status_periods.list_active_for_users(
+            user_ids=[user.id for user, _, _ in eligible_rows],
+        )
+        return [
+            EligibleRequestOwnerItem(
+                user_id=user.id,
+                full_name=profile.full_name if profile else None,
+                role=role.role,
+                unavailable_period=unavailable_by_user.get(user.id),
+            )
+            for user, profile, role in eligible_rows
+        ]
+
     async def create_request(
         self,
         *,
@@ -299,12 +341,14 @@ class RequestService:
     ) -> tuple[str, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
+        if initial_amount is None:
+            raise Conflict("Укажите начальную сумму заявки")
         if normative_file_id is None:
             raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
         if not files:
             raise Conflict("Прикрепите файл заявки")
         if _normalize_to_utc(deadline_at) < _utcnow():
-            raise Conflict("Deadline cannot be in the past")
+            raise Conflict("Дедлайн заявки не может быть в прошлом")
         self._validate_amount(value=initial_amount, field_name="Initial amount")
         await self._ensure_plan_assignment_allowed(
             current_user=current_user,
@@ -317,9 +361,9 @@ class RequestService:
         if request_id is not None:
             normalized_request_id = request_id.strip()
             if not normalized_request_id:
-                raise Conflict("Request id cannot be empty")
+                raise Conflict("Укажите номер заявки")
             if await self._requests.exists_by_id(request_id=normalized_request_id):
-                raise Conflict("Request with this id already exists")
+                raise Conflict("Заявка с таким номером уже существует")
 
         request = await self._requests.create(
             request_id=normalized_request_id,
@@ -348,56 +392,6 @@ class RequestService:
             request_id=request.id,
             contractor_user_ids=normalized_hidden_contractor_ids,
         )
-
-        visible_contractor_user_ids = await self._contractor_unit_service().filter_contractor_user_ids_for_request_owner(
-            contractor_user_ids=await self._requests.list_active_keycloak_visible_contractor_user_ids(
-                request_id=request.id,
-                contractor_role_id=settings.contractor_role_id,
-            ),
-            request_owner_user_id=request.id_user,
-        )
-
-        if settings.telegram_legacy_enabled:
-            tg_recipients = await self._users.list_active_approved_contractor_tg_recipients(
-                contractor_role_id=settings.contractor_role_id,
-                exclude_user_ids=normalized_hidden_contractor_ids,
-            )
-            tg_ids = [
-                tg_id
-                for contractor_user_id, tg_id in tg_recipients
-                if contractor_user_id in set(visible_contractor_user_ids)
-            ]
-            await notify_new_request(
-                tg_ids=tg_ids,
-                request_id=request.id,
-                description=description,
-                deadline_at=deadline_at,
-            )
-
-        if settings.max_bot_enabled:
-            max_recipients = await self._users.list_active_approved_contractor_max_recipients(
-                contractor_role_id=settings.contractor_role_id,
-                exclude_user_ids=normalized_hidden_contractor_ids,
-            )
-            max_user_ids: list[str] = []
-            for contractor_user_id, max_user_id in max_recipients:
-                if contractor_user_id not in set(visible_contractor_user_ids):
-                    continue
-                if self._notification_preferences is not None:
-                    is_enabled = await self._notification_preferences.is_channel_enabled(
-                        user_id=contractor_user_id,
-                        channel_type="max",
-                        notification_type="request",
-                    )
-                    if not is_enabled:
-                        continue
-                max_user_ids.append(max_user_id)
-            await notify_max_new_request(
-                max_user_ids=max_user_ids,
-                request_id=request.id,
-                description=description,
-                deadline_at=deadline_at,
-            )
 
         if self._email_notifications is not None:
             await self._email_notifications.notify_new_request(
@@ -506,6 +500,8 @@ class RequestService:
         request_id: str,
         data: RequestEditInput,
     ) -> None:
+        if data.status is not None:
+            await self._requests.lock_offer_lifecycle(request_id=request_id)
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
@@ -563,12 +559,14 @@ class RequestService:
 
         if data.status is not None:
             if data.status not in EDITABLE_REQUEST_STATUSES:
-                raise Conflict("Unsupported request status")
+                raise Conflict("Выбран неподдерживаемый статус заявки")
             previous_status = request.status
             status_changed = data.status != request.status
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
             if data.status == "closed":
+                if await self._requests.has_submitted_offers(request_id=request.id):
+                    raise Conflict("Нельзя закрыть заявку, пока есть нерассмотренные коммерческие предложения.")
                 closed_at = _utcnow_naive()
                 chosen_offer_id = await self._requests.get_latest_accepted_offer_id(request_id=request.id)
                 accepted_offer = await self._offers.get_by_id(offer_id=chosen_offer_id) if chosen_offer_id is not None else None
@@ -583,18 +581,6 @@ class RequestService:
                 closed_at=closed_at,
                 chosen_offer_id=chosen_offer_id,
             )
-            if status_changed and settings.telegram_legacy_enabled:
-                tg_ids = await self._offers.list_contractor_tg_ids_for_request(
-                    request_id=request.id,
-                    contractor_role_id=settings.contractor_role_id,
-                )
-                for tg_id in tg_ids:
-                    await notify_request_status_changed(
-                        tg_id=tg_id,
-                        request_id=request.id,
-                        previous_status=previous_status,
-                        new_status=data.status,
-                    )
             if status_changed:
                 self._schedule_contractor_request_outbound(
                     request_id=request.id,
@@ -739,27 +725,27 @@ class RequestService:
         if value is None:
             return
         if value < 0:
-            raise Conflict(f"{field_name} cannot be negative")
+            raise Conflict("Сумма заявки не может быть отрицательной")
 
     def _validate_closed_request_amounts(self, *, request, accepted_offer) -> None:
-        if request.initial_amount is None:
-            raise Conflict("Initial amount is required to close request")
         if request.final_amount is None:
-            raise Conflict("Final amount is required to close request")
+            raise Conflict("Укажите итоговую сумму перед закрытием заявки")
+        if request.initial_amount is None:
+            raise Conflict("Укажите начальную сумму перед закрытием заявки")
 
-        initial_amount = Decimal(str(request.initial_amount))
         final_amount = Decimal(str(request.final_amount))
-        if accepted_offer is None:
-            if final_amount != initial_amount:
-                raise Conflict("Final amount must match initial amount when request is closed without accepted offer")
+        initial_amount = Decimal(str(request.initial_amount))
+        if initial_amount == Decimal("0"):
+            if final_amount <= Decimal("0"):
+                raise Conflict("При нулевой начальной сумме итоговая сумма должна быть больше нуля")
             return
 
-        if accepted_offer.offer_amount is None:
-            raise Conflict("Accepted offer amount is required when request is closed with accepted offer")
+        allowed_amounts = {initial_amount}
+        if accepted_offer is not None and accepted_offer.offer_amount is not None:
+            allowed_amounts.add(Decimal(str(accepted_offer.offer_amount)))
 
-        offer_amount = Decimal(str(accepted_offer.offer_amount))
-        if final_amount != initial_amount and final_amount != offer_amount:
-            raise Conflict("Final amount must match initial amount or accepted offer amount")
+        if final_amount not in allowed_amounts:
+            raise Conflict("Итоговая сумма должна совпадать с начальной суммой или суммой принятого КП")
     
     async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: str) -> DeletedAlertViewedResult:
         require_permission(
@@ -942,9 +928,24 @@ class RequestService:
 
     async def list_open_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.ensure_can_view_open_requests(current_user)
+        rows = await self._requests.list_open_with_files_for_contractor(
+            contractor_user_id=current_user.user_id,
+        )
+        owner_role_ids = dict(
+            await self._users.list_role_ids_by_user_ids(
+                user_ids=list({request.id_user for request, _ in rows}),
+            )
+        )
+        rows = [
+            row
+            for row in rows
+            if RequestPolicy.is_contractor_request_lifecycle_eligible(
+                request_owner_role_id=owner_role_ids.get(row[0].id_user),
+            )
+        ]
         rows = await self._contractor_unit_service().filter_rows_by_request_owner_scope(
             contractor_user_id=current_user.user_id,
-            rows=await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id),
+            rows=rows,
             owner_user_id_getter=lambda row: row[0].id_user,
         )
         latest_offers_by_request_id = {
@@ -1409,26 +1410,42 @@ class RequestService:
 
         RequestPolicy.ensure_can_change_owner(current_user, request_owner_user_id=request_owner_user_id)
         if current_user.role_id in {
+            settings.superadmin_role_id,
+            settings.admin_role_id,
+        }:
+            return
+
+        if current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
         }:
-            operator_owned = await self._is_request_owned_by_operator(
+            request_owned_by_operator = await self._is_request_owned_by_operator(
                 request_owner_user_id=request_owner_user_id,
             )
-            if not operator_owned and not await self._is_inside_hierarchy_management_scope(
+            if not request_owned_by_operator and not await self._is_inside_hierarchy_management_scope(
                 current_user=current_user,
                 request_owner_user_id=request_owner_user_id,
             ):
                 raise Forbidden("Request is outside your management scope")
-            if new_owner_user_id != current_user.user_id:
-                # New owner must stay inside the current user's unit-based
-                # management contour.
-                is_subordinate = await self._is_inside_hierarchy_management_scope(
-                    current_user=current_user,
-                    request_owner_user_id=new_owner_user_id,
-                )
-                if not is_subordinate:
-                    raise Forbidden("Owner must be current user or current user's subordinate")
+            if new_owner_user_id != current_user.user_id and not await self._is_inside_hierarchy_management_scope(
+                current_user=current_user,
+                request_owner_user_id=new_owner_user_id,
+            ):
+                raise Forbidden("Owner must be current user or current user's subordinate")
+            return
+
+        candidate_ids = {request_owner_user_id, new_owner_user_id}
+        manageable_owner_ids = await self._staff_scope.resolve_manageable_owner_ids(
+            current_user=current_user,
+            candidate_owner_ids=candidate_ids,
+        )
+        request_owned_by_operator = await self._is_request_owned_by_operator(
+            request_owner_user_id=request_owner_user_id,
+        )
+        if request_owner_user_id not in manageable_owner_ids and not request_owned_by_operator:
+            raise Forbidden("Request is outside your management scope")
+        if new_owner_user_id not in manageable_owner_ids:
+            raise Forbidden("Owner is outside your management scope")
 
     async def _can_edit_department_requests(
         self,

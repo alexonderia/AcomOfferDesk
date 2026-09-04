@@ -1,19 +1,20 @@
-﻿import { Box, Link, Stack, Typography } from '@mui/material';
+﻿import { Box, Link } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import bitrixLogo from '@shared/assets/bitrix24-logo.png';
 import maxLogo from '@shared/assets/max-logo-2025.png';
-import { useIsMobileViewport } from '@shared/lib/responsive';
 
 const BITRIX_LINK = 'https://team.alabuga.ru/company/structure.php?set_filter_structure=Y&structure_UF_DEPARTMENT=8304&filter=Y&set_filter=Y';
 const MAX_CONTACT_LINK = 'https://max.ru/u/f9LHodD0cOIA4s2RhH3dW5NoCLRn88NF67UYfQe_rOnnM6Y1a7VW_vOUt5I';
+const NARROW_FOOTER_QUERY = '(max-width: 640px)';
 
 const iconLinkSx = {
   width: 34,
   height: 34,
+  flex: '0 0 auto',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  borderRadius: 2.5,
+  borderRadius: '20px',
   border: '1px solid',
   borderColor: 'divider',
   backgroundColor: 'rgba(255, 255, 255, 0.86)',
@@ -22,14 +23,8 @@ const iconLinkSx = {
     borderColor: 'primary.main',
     backgroundColor: '#fff',
     transform: 'translateY(-1px) scale(1.02)',
-    boxShadow: '0 8px 16px rgba(15, 35, 75, 0.16)'
-  }
-};
-
-const compactIconLinkSx = {
-  ...iconLinkSx,
-  width: 30,
-  height: 30
+    boxShadow: '0 8px 16px rgba(15, 35, 75, 0.16)',
+  },
 };
 
 const iconImageSx = {
@@ -37,45 +32,64 @@ const iconImageSx = {
   width: 24,
   height: 24,
   objectFit: 'cover' as const,
-  borderRadius: 2
+  borderRadius: '16px',
 };
 
-const compactIconImageSx = {
-  ...iconImageSx,
-  width: 20,
-  height: 20,
-  borderRadius: 99
-};
-
-const CREATED_BY_LABEL = 'Created by "Цифровизация проектных задач"';
+const CREATED_BY_LABEL = 'Created by «Цифровизация проектных задач»';
 const SUPPORT_LABEL = 'По вопросам системы писать сюда';
 const BITRIX_ARIA_LABEL = 'Перейти в Битрикс';
 const MAX_ARIA_LABEL = 'Открыть MAX';
 
-type AppFooterProps = {
-  compact?: boolean;
+const sectionSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '10px',
+  minWidth: 0,
 };
 
-export const AppFooter = ({ compact = false }: AppFooterProps) => {
-  const isMobileViewport = useIsMobileViewport();
+const captionSx = {
+  color: '#4a5875',
+  fontFamily: 'Inter, "Segoe UI", sans-serif',
+  fontSize: '12px',
+  fontWeight: 500,
+  lineHeight: 1.55,
+};
+
+const brandSx = {
+  justifySelf: 'center',
+  color: '#1f2a44',
+  fontFamily: 'Inter, "Segoe UI", sans-serif',
+  fontSize: '14px',
+  fontWeight: 550,
+  letterSpacing: '0.1px',
+  lineHeight: 1.55,
+  whiteSpace: 'nowrap',
+};
+
+export const AppFooter = () => {
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const requiredRowWidthRef = useRef(0);
   const [shouldUseMobileLayout, setShouldUseMobileLayout] = useState(false);
-  const shouldUseCompactLayout = isMobileViewport || shouldUseMobileLayout;
 
   useEffect(() => {
-    if (compact) {
-      return;
-    }
-
     const element = layoutRef.current;
     if (!element) {
       return;
     }
 
+    const media = window.matchMedia?.(NARROW_FOOTER_QUERY) ?? {
+      matches: false,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
     const RECOVER_LAYOUT_GAP_PX = 28;
 
     const updateLayout = () => {
+      if (media.matches) {
+        setShouldUseMobileLayout(true);
+        return;
+      }
+
       setShouldUseMobileLayout((prev) => {
         if (!prev) {
           const hasOverflow = element.scrollWidth > element.clientWidth + 1;
@@ -88,214 +102,90 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
 
         const requiredRowWidth = requiredRowWidthRef.current;
         if (requiredRowWidth <= 0) {
-          return prev;
+          return false;
         }
 
-        const hasEnoughFreeSpace = element.clientWidth >= requiredRowWidth + RECOVER_LAYOUT_GAP_PX;
-        return hasEnoughFreeSpace ? false : prev;
+        return element.clientWidth < requiredRowWidth + RECOVER_LAYOUT_GAP_PX;
       });
     };
 
     updateLayout();
+    media.addEventListener('change', updateLayout);
 
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(() => {
         updateLayout();
       });
       observer.observe(element);
-      return () => observer.disconnect();
+      return () => {
+        observer.disconnect();
+        media.removeEventListener('change', updateLayout);
+      };
     }
 
     window.addEventListener('resize', updateLayout);
-    return () => window.removeEventListener('resize', updateLayout);
-  }, [compact]);
-
-  if (compact) {
-    return (
-      <Box
-        component="footer"
-        sx={{
-          width: '100%',
-          px: 0.5,
-          pt: 0.25,
-          pb: 0.75,
-          pr: { lg: 'var(--offer-workspace-chat-offset, 0px)' },
-          transition: 'padding-right 0.2s ease'
-        }}
-      >
-        <Box
-          sx={{
-            maxWidth: '100%',
-            mx: 'auto',
-          px: 1.2,
-          py: 0.7,
-          borderRadius: { xs: 1.5, sm: 2 },
-            border: '1px solid',
-            borderColor: 'divider',
-            backgroundColor: 'rgba(255, 255, 255, 0.88)'
-          }}
-        >
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) auto',
-              gridTemplateRows: 'auto auto',
-              columnGap: 1,
-              rowGap: 0.6,
-              alignItems: 'center'
-            }}
-          >
-            <Typography
-              variant="h6"
-              sx={{
-                gridColumn: 1,
-                gridRow: 1,
-                fontWeight: 650,
-                fontSize: { xs: 18, sm: 18 },
-                lineHeight: 1.1
-              }}
-            >
-              AcomOfferDesk
-            </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ gridColumn: 1, gridRow: 2, fontWeight: 500, fontSize: 12 }}
-            >
-              {CREATED_BY_LABEL}
-            </Typography>
-            <Stack
-              direction="row"
-              spacing={0.75}
-              sx={{
-                gridColumn: 2,
-                gridRow: '1 / span 2',
-                alignSelf: 'stretch',
-                alignItems: 'center',
-                justifyContent: 'flex-end'
-              }}
-            >
-              <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={compactIconLinkSx}>
-                <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={compactIconImageSx} />
-              </Link>
-              <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={compactIconLinkSx}>
-                <Box component="img" src={maxLogo} alt="MAX" sx={compactIconImageSx} />
-              </Link>
-            </Stack>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
+    return () => {
+      window.removeEventListener('resize', updateLayout);
+      media.removeEventListener('change', updateLayout);
+    };
+  }, []);
 
   return (
     <Box
       component="footer"
       sx={{
         width: '100%',
-        pr: { lg: 'var(--offer-workspace-chat-offset, 0px)' },
-        px: { xs: 0.5, md: 1.2 },
-        pt: { xs: 0.4, md: 0.6 },
-        pb: { xs: 0.9, md: 1.1 },
-        transition: 'padding-right 0.2s ease'
+        p: '6px 20px 18px',
+        pr: 'calc(20px + var(--offer-workspace-chat-offset, 0px))',
+        [NARROW_FOOTER_QUERY]: {
+          p: '0 12px 12px',
+          pr: 'calc(12px + var(--offer-workspace-chat-offset, 0px))',
+        },
       }}
     >
       <Box
+        ref={layoutRef}
         sx={{
-          maxWidth: '100%',
+          maxWidth: 1200,
           mx: 'auto',
-          px: { xs: 1.1, md: 1.45 },
-          py: { xs: 0.7, md: 0.8 },
-          borderRadius: { xs: 2, md: 2.5 },
-          backgroundColor: '#ffffff',
-          boxShadow: '0 4px 14px rgba(15, 35, 75, 0.04)',
-          position: 'relative',
-          zIndex: 0,
+          px: '14px',
+          py: '8px',
+          borderRadius: '28px',
+          backgroundColor: 'rgba(255, 255, 255, 0.82)',
+          boxShadow: '0 4px 14px rgba(15, 35, 75, 0.06)',
+          display: 'grid',
+          gridTemplateColumns: shouldUseMobileLayout ? '1fr' : 'minmax(0, 1fr) auto minmax(0, 1fr)',
+          gap: '12px',
+          alignItems: 'center',
+          [NARROW_FOOTER_QUERY]: {
+            px: '12px',
+            py: '10px',
+            borderRadius: '22px',
+            textAlign: 'center',
+          },
         }}
       >
-        {shouldUseCompactLayout ? (
-          <Stack ref={layoutRef} spacing={0.8}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-              <Typography variant="h6" sx={{ fontWeight: 650, fontSize: { xs: 20, md: 18 }, lineHeight: 1.1 }}>
-                AcomOfferDesk
-              </Typography>
-              <Stack direction="row" spacing={0.8}>
-                <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={compactIconLinkSx}>
-                  <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={compactIconImageSx} />
-                </Link>
-                <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={compactIconLinkSx}>
-                  <Box component="img" src={maxLogo} alt="MAX" sx={compactIconImageSx} />
-                </Link>
-              </Stack>
-            </Stack>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 12 }}>
-              {CREATED_BY_LABEL}
-            </Typography>
-          </Stack>
-        ) : (
-          <Stack
-            ref={layoutRef}
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            spacing={1.2}
-            sx={{ width: '100%' }}
-          >
-            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-start' }}>
-              <Stack direction="row" alignItems="center" spacing={1.1} useFlexGap flexWrap="nowrap" justifyContent="flex-start">
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{
-                    fontWeight: 500,
-                    fontSize: 12,
-                    textAlign: 'left',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {CREATED_BY_LABEL}
-                </Typography>
-                <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={iconLinkSx}>
-                  <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={iconImageSx} />
-                </Link>
-              </Stack>
-            </Box>
+        <Box sx={{ ...sectionSx, justifySelf: shouldUseMobileLayout ? 'center' : 'start' }}>
+          <Box component="span" sx={{ ...captionSx, whiteSpace: shouldUseMobileLayout ? 'normal' : 'nowrap' }}>
+            {CREATED_BY_LABEL}
+          </Box>
+          <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={iconLinkSx}>
+            <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={iconImageSx} />
+          </Link>
+        </Box>
 
-            <Typography
-              variant="body2"
-              color="text.primary"
-              sx={{
-                fontWeight: 550,
-                fontSize: { xs: 16, md: 14 },
-                letterSpacing: 0.1,
-                textTransform: 'none',
-                textAlign: 'center'
-              }}
-            >
-              AcomOfferDesk
-            </Typography>
+        <Box component="span" sx={brandSx}>
+          AcomOfferDesk
+        </Box>
 
-            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-              <Stack direction="row" alignItems="center" spacing={1.1} useFlexGap flexWrap="nowrap" justifyContent="flex-end">
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{
-                    fontWeight: 500,
-                    fontSize: 12,
-                    textAlign: 'right',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {SUPPORT_LABEL}
-                </Typography>
-                <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={iconLinkSx}>
-                  <Box component="img" src={maxLogo} alt="MAX" sx={iconImageSx} />
-                </Link>
-              </Stack>
-            </Box>
-          </Stack>
-        )}
+        <Box sx={{ ...sectionSx, justifySelf: shouldUseMobileLayout ? 'center' : 'end' }}>
+          <Box component="span" sx={{ ...captionSx, whiteSpace: shouldUseMobileLayout ? 'normal' : 'nowrap' }}>
+            {SUPPORT_LABEL}
+          </Box>
+          <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={iconLinkSx}>
+            <Box component="img" src={maxLogo} alt="MAX" sx={iconImageSx} />
+          </Link>
+        </Box>
       </Box>
     </Box>
   );

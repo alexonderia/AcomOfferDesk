@@ -97,6 +97,36 @@ class ContractorUnitService:
     async def list_direct_root_unit_ids_for_user(self, *, user_id: str) -> set[int]:
         return set(await self._require_units().list_user_root_unit_ids(user_id=user_id))
 
+    async def can_access_contractor(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_user_id: str,
+    ) -> bool:
+        """Security and platform administrators have global contractor visibility."""
+        if current_user.role_id in {
+            settings.superadmin_role_id,
+            settings.security_officer_role_id,
+        }:
+            return True
+        actor_root_ids = await self.list_effective_root_unit_ids_for_user(user_id=current_user.user_id)
+        if not actor_root_ids:
+            return False
+        contractor_root_ids = await self.list_effective_root_unit_ids_for_user(user_id=contractor_user_id)
+        return bool(actor_root_ids & contractor_root_ids)
+
+    async def ensure_can_access_contractor(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_user_id: str,
+    ) -> None:
+        if not await self.can_access_contractor(
+            current_user=current_user,
+            contractor_user_id=contractor_user_id,
+        ):
+            raise Forbidden("Контрагент находится вне разрешенной зоны управления")
+
     def can_manage_bindings(self, current_user: CurrentUser) -> bool:
         return UserPolicy.can_manage_contractor_unit_bindings(current_user)
 
@@ -177,6 +207,10 @@ class ContractorUnitService:
         ):
             raise Forbidden("Недостаточно прав для просмотра привязок контрагента к подразделениям")
         await self._ensure_contractor_exists(contractor_user_id=contractor_user_id)
+        await self.ensure_can_access_contractor(
+            current_user=current_user,
+            contractor_user_id=contractor_user_id,
+        )
 
         direct_root_ids = await self.list_direct_root_unit_ids_for_user(user_id=contractor_user_id)
         manageable_root_ids = await self.list_manageable_root_unit_ids(current_user=current_user)
@@ -287,6 +321,10 @@ class ContractorUnitService:
             raise Forbidden("Недостаточно прав для изменения привязок контрагента к подразделениям")
 
         await self._ensure_contractor_exists(contractor_user_id=contractor_user_id)
+        await self.ensure_can_access_contractor(
+            current_user=current_user,
+            contractor_user_id=contractor_user_id,
+        )
         manageable_root_ids = await self.list_manageable_root_unit_ids(current_user=current_user)
         if not manageable_root_ids:
             raise Forbidden("Недостаточно прав для изменения привязок контрагента к подразделениям")

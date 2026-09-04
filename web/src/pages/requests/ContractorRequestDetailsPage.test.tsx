@@ -38,7 +38,7 @@ const baseSession = {
   roleId: 3,
   role: "contractor",
   status: "active",
-  authProvider: "keycloak",
+  authProvider: "iam",
   businessAccess: true,
   onboardingState: null,
   permissions: [] as string[],

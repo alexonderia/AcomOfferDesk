@@ -6,6 +6,8 @@ export type DepartmentDelegationAccess = {
   group: string;
   label: string;
   enabled: boolean;
+  grantedViaRole: boolean;
+  grantedIndividually: boolean;
 };
 
 export type UserDepartmentDelegations = {
@@ -24,6 +26,8 @@ type DepartmentDelegationAccessPayload = {
   group: string;
   label: string;
   enabled: boolean;
+  granted_via_role: boolean;
+  granted_individually: boolean;
 };
 
 type UserDepartmentDelegationsPayload = {
@@ -51,6 +55,8 @@ const mapDelegations = (payload: UserDepartmentDelegationsPayload): UserDepartme
     group: item.group,
     label: item.label,
     enabled: item.enabled,
+    grantedViaRole: item.granted_via_role,
+    grantedIndividually: item.granted_individually,
   })),
   tokenRefreshRequired: Boolean(payload.token_refresh_required),
   warning: payload.warning ?? null,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Post-deploy gate on VPS: infrastructure smoke + Keycloak permission model (read-only).
-# Keycloak checker needs --env-file; this script writes /app/post-deploy-verify.env from compose
-# env already injected into backend (not from /app/backend/.env, which is not in the image).
+# Post-deploy gate on VPS: infrastructure smoke + active IAM RBAC report (read-only).
+# The smoke checker needs --env-file, so this script snapshots the environment already
+# injected into backend (not /app/backend/.env, which is not in the image).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,12 +28,10 @@ if [[ -z "$SMOKE_BASE_URL" ]]; then
   SMOKE_BASE_URL="http://127.0.0.1:8080"
 fi
 
-echo "=== post-deploy: smoke + Keycloak checks (single backend exec) ==="
+echo "=== post-deploy: smoke + IAM checks (single backend exec) ==="
 
 docker compose --env-file "$COMPOSE_ENV_FILE" exec -T \
   -e POST_DEPLOY_BASE_URL="$SMOKE_BASE_URL" \
-  -e KEYCLOAK_BOOTSTRAP_SH_PATH="${KEYCLOAK_BOOTSTRAP_SH_PATH:-/app/keycloak/bootstrap.sh}" \
-  -e KEYCLOAK_INTERNAL_BASE_URL="${KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080/iam}" \
   -e SMOKE_HTTP_TIMEOUT_SECONDS=8 \
   -e SMOKE_HTTP_RETRIES=1 \
   -e SMOKE_SKIP_RABBITMQ=true \
@@ -68,26 +66,35 @@ smoke_cmd = [
 if base_url:
     smoke_cmd.extend(["--base-url", base_url])
 
-print("=== smoke_services ===", flush=True)
-result = subprocess.run(smoke_cmd, check=False)
-if result.returncode != 0:
-    raise SystemExit(result.returncode)
-
-print("=== check_keycloak_permission_model ===", flush=True)
-result = subprocess.run(
-    [
-        sys.executable,
-        "-m",
-        "app.scripts.check_keycloak_permission_model",
-        "--env-file",
-        env_path,
-    ],
-    check=False,
-)
 try:
-    os.remove(env_path)
-except OSError:
-    pass
+    print("=== smoke_services ===", flush=True)
+    result = subprocess.run(smoke_cmd, check=False)
+    if result.returncode == 0:
+        print("=== IAM RBAC report ===", flush=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "app.scripts.seed_iam_rbac",
+                "--report",
+            ],
+            check=False,
+        )
+    if result.returncode == 0:
+        print("=== IAM account reconciliation ===", flush=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "app.scripts.reconcile_iam_accounts",
+            ],
+            check=False,
+        )
+finally:
+    try:
+        os.remove(env_path)
+    except OSError:
+        pass
 raise SystemExit(result.returncode)
 PY
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.core.datetime_utils import utc_now_naive
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.auth_models import UserAuthAccount
@@ -45,8 +45,37 @@ class UserAuthAccountRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_external_email(
+        self,
+        *,
+        provider: str,
+        email: str,
+        include_inactive: bool = False,
+    ) -> UserAuthAccount | None:
+        normalized = email.strip().lower()
+        if not normalized:
+            return None
+        stmt = select(UserAuthAccount).where(
+            UserAuthAccount.provider == provider,
+            func.lower(UserAuthAccount.external_email) == normalized,
+        )
+        if not include_inactive:
+            stmt = stmt.where(UserAuthAccount.is_active.is_(True))
+        stmt = stmt.order_by(UserAuthAccount.is_active.desc(), UserAuthAccount.id.asc()).limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_for_user(self, *, user_id: str) -> list[UserAuthAccount]:
         stmt = select(UserAuthAccount).where(UserAuthAccount.id_user == user_id).order_by(UserAuthAccount.id.asc())
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_for_provider(self, *, provider: str) -> list[UserAuthAccount]:
+        stmt = (
+            select(UserAuthAccount)
+            .where(UserAuthAccount.provider == provider)
+            .order_by(UserAuthAccount.id_user.asc(), UserAuthAccount.id.asc())
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

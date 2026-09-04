@@ -39,7 +39,7 @@ const baseSession = {
   roleId: 3,
   role: 'contractor',
   status: 'review',
-  authProvider: 'keycloak',
+  authProvider: 'iam',
   businessAccess: false,
   onboardingState: null,
   permissions: [] as string[],
@@ -66,6 +66,7 @@ describe('AccountStatePage', () => {
     useAuthMock.mockReturnValue({
       session: baseSession,
       logout: logoutMock,
+      refresh: vi.fn(),
     });
   });
 
@@ -88,7 +89,7 @@ describe('AccountStatePage', () => {
       unavailablePeriod: null,
       unavailablePeriods: [],
       permissions: [],
-      keycloakRoles: [],
+      identityRoles: [],
       appRoles: [],
       delegationRoles: [],
       actions: {
@@ -135,7 +136,7 @@ describe('AccountStatePage', () => {
       unavailablePeriod: null,
       unavailablePeriods: [],
       permissions: [],
-      keycloakRoles: [],
+      identityRoles: [],
       appRoles: [],
       delegationRoles: [],
       actions: {

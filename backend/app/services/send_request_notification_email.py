@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 from app.core.config import settings
-from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
 from app.domain.exceptions import NotFound
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.infrastructure.email.email_templates.email_contact_blocks import contact_info_from_invitation_settings
@@ -13,7 +12,6 @@ from app.infrastructure.email.email_templates.request_invited_contractor_email i
 )
 from app.infrastructure.email.email_templates.request_notification_email import (
     build_request_notification_email_payload,
-    build_request_registration_email_payload,
 )
 from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
 from app.infrastructure.email_service import SMTPEmailService
@@ -21,6 +19,7 @@ from app.repositories.profiles import ActiveContractorEmailRecipient, ProfileRep
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_units import ContractorUnitService
+from app.services.registration_invitations import RegistrationInvitationService
 from app.services.email_delivery_events import (
     BATCH_OPERATION_KIND_REQUEST_ADDITIONAL,
     record_email_batch_operation_state,
@@ -38,9 +37,7 @@ _GENERIC_QUEUE_ERROR_MESSAGE = "Не удалось поставить пись�
 class NotificationRecipient:
     email: str
     user_login: str | None
-    tg_id: int | None
     is_verified_user: bool
-    has_economist_created_account: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +61,7 @@ class SendRequestNotificationEmailUseCase:
         presentation_attachment_service: NormativeEmailAttachmentService | None = None,
         notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar=None,
+        invitation_service: RegistrationInvitationService | None = None,
     ) -> None:
         self._request_repository = request_repository
         self._profile_repository = profile_repository
@@ -74,6 +72,7 @@ class SendRequestNotificationEmailUseCase:
         self._presentation_attachment_service = presentation_attachment_service
         self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._invitation_service = invitation_service or RegistrationInvitationService()
 
     async def execute(
         self,
@@ -123,21 +122,15 @@ class SendRequestNotificationEmailUseCase:
             )
 
         token_codec = ReplyTokenCodec(secret=reply_secret) if reply_secret else None
-        invite_token_codec = RegistrationInviteTokenCodec(
-            secret=settings.email_verification_secret,
-            ttl_seconds=settings.tg_register_ttl_seconds,
-        )
         request_attachments, attachment_warning = await self._build_request_attachments(request_id=request_id)
         request_url = f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}"
-        tg_bot_url = settings.tg_bot_public_url if settings.telegram_legacy_enabled else None
-        registration_base_url = (settings.public_backend_base_url or self._app_url).rstrip("/")
         invitation_contact = contact_info_from_invitation_settings(
             contact_name=settings.invitation_contact_name,
             contact_email=settings.invitation_contact_email,
             contact_phone=settings.invitation_contact_phone,
         )
-        portal_url = self._resolve_portal_url()
         operation_id = generate_correlation_id() if initiator_user_id else None
+        inviter_id = (initiator_user_id or request.id_user or "").strip()
         immediate_failure_count = 0
         first_error_message: str | None = None
 
@@ -161,13 +154,16 @@ class SendRequestNotificationEmailUseCase:
                     attachment_warning=attachment_warning,
                 )
                 attachments = request_attachments
-            elif recipient.has_economist_created_account and portal_url:
+            else:
                 payload = build_request_invited_contractor_email_payload(
                     to_email=recipient.email,
                     request_id=request_id,
                     description=request.description,
                     deadline_at=request.deadline_at,
-                    portal_url=portal_url,
+                    portal_url=self._portal_url_for_invitee(
+                        recipient=recipient,
+                        inviter_id=inviter_id,
+                    ),
                     contact=invitation_contact,
                     attachment_warning=attachment_warning,
                 )
@@ -175,25 +171,6 @@ class SendRequestNotificationEmailUseCase:
                     request_attachments=request_attachments,
                     attachment_warning=attachment_warning,
                 )
-            else:
-                invite_token = invite_token_codec.create_token(email=recipient.email)
-                registration_url = (
-                    f"{registration_base_url}/api/v1/auth/oidc/register"
-                    f"?invite_token={quote(invite_token, safe='')}&next_path={quote('/account', safe='/')}"
-                )
-                payload = build_request_registration_email_payload(
-                    to_email=recipient.email,
-                    request_id=request_id,
-                    description=request.description,
-                    deadline_at=request.deadline_at,
-                    tg_bot_url=tg_bot_url,
-                    registration_url=registration_url,
-                    registration_ttl_seconds=settings.tg_register_ttl_seconds,
-                    contact=invitation_contact,
-                    attachment_warning=attachment_warning,
-                )
-                attachments = request_attachments
-
             try:
                 await self._email_service.send_email(
                     to_email=payload.to_email,
@@ -212,7 +189,6 @@ class SendRequestNotificationEmailUseCase:
                     operation_expected_total=len(recipients) if operation_id else None,
                     recipient_context={
                         "user_login": recipient.user_login,
-                        "tg_id": recipient.tg_id,
                     }
                     if recipient.user_login is not None
                     else None,
@@ -304,7 +280,6 @@ class SendRequestNotificationEmailUseCase:
             recipient = NotificationRecipient(
                 email=normalized_email,
                 user_login=contractor.user_id,
-                tg_id=contractor.tg_id,
                 is_verified_user=True,
             )
             recipients_by_email[normalized_email] = recipient
@@ -332,16 +307,26 @@ class SendRequestNotificationEmailUseCase:
                 NotificationRecipient(
                     email=normalized_email,
                     user_login=contractor_user_id,
-                    tg_id=None,
                     is_verified_user=False,
-                    has_economist_created_account=contractor_user_id is not None,
                 )
             )
             recipient_emails.add(normalized_email)
 
         return recipients
 
-    def _resolve_portal_url(self) -> str | None:
+    def _portal_url_for_invitee(
+        self,
+        *,
+        recipient: NotificationRecipient,
+        inviter_id: str,
+    ) -> str:
+        if recipient.user_login or not inviter_id:
+            return self._resolve_portal_url()
+        # Request notifications are not staff-authorized registration invites.
+        # Do not mint a registration URL without the persistent invite state.
+        return self._resolve_portal_url()
+
+    def _resolve_portal_url(self) -> str:
         if settings.invitation_portal_url:
             return settings.invitation_portal_url.rstrip("/")
         if settings.web_base_url:

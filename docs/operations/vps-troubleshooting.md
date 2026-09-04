@@ -13,7 +13,7 @@
 
 ---
 
-## Keycloak / OAuth: **500** на `/api/v1/auth/callback`, в логах `user_auth_accounts` does not exist
+## IAM callback: **500** и `user_auth_accounts does not exist`
 
 **Причина:** схема **`order_database`** на VPS не доведена миграциями Flyway (частый случай — **пустой** каталог **`/opt/order_database/flyway/sql`** при живом Postgres и только **baseline** в **`flyway_schema_history`**).
 

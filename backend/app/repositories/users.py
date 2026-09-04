@@ -43,6 +43,14 @@ class UserRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def list_all_with_profiles(self) -> list[tuple[User, Profile | None]]:
+        stmt = (
+            select(User, Profile)
+            .outerjoin(Profile, Profile.id == User.id)
+            .order_by(User.id.asc())
+        )
+        return list((await self._session.execute(stmt)).all())
+
     def _build_contractors_stmt(
         self,
         *,
@@ -192,6 +200,19 @@ class UserRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def has_legacy_messenger_account(self, *, user_id: str) -> bool:
+        stmt = (
+            select(UserAuthAccount.id)
+            .where(
+                UserAuthAccount.id_user == user_id,
+                UserAuthAccount.provider.in_(("telegram", "max")),
+                UserAuthAccount.is_active.is_(True),
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def get_role_by_id(self, role_id: int) -> Role | None:
         result = await self._session.execute(select(Role).where(Role.id == role_id))
@@ -426,12 +447,39 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
+    async def map_primary_email_verified(self, *, user_ids: list[str]) -> dict[str, bool]:
+        if not user_ids:
+            return {}
+        stmt = (
+            select(UserContactChannel.id_user, UserContactChannel.is_verified)
+            .where(
+                UserContactChannel.id_user.in_(user_ids),
+                UserContactChannel.channel_type == "email",
+                UserContactChannel.is_active.is_(True),
+            )
+            .order_by(
+                UserContactChannel.is_primary.desc(),
+                UserContactChannel.id.asc(),
+            )
+        )
+        result = await self._session.execute(stmt)
+        verified_by_user: dict[str, bool] = {}
+        for user_id, is_verified in result.all():
+            if user_id in verified_by_user:
+                continue
+            verified_by_user[user_id] = bool(is_verified)
+        return verified_by_user
+
     async def list_contractors(
         self,
         contractor_role_id: int,
     ) -> list[tuple[User, Profile | None, CompanyContact | None, TgUser | None, str | None]]:
         stmt, _, _ = self._build_contractors_stmt(contractor_role_id=contractor_role_id)
-        stmt = stmt.order_by(User.id)
+        # Keep the non-paginated fallback in the same order as the paginated
+        # contractors endpoint. This path is used by Admin when the dedicated
+        # contractors.read permission is unavailable, so newly created manual
+        # contractors must still appear at the top of the first page.
+        stmt = stmt.order_by(User.created_at.desc().nulls_last(), User.id.desc())
         result = await self._session.execute(stmt)
         return self._map_contractor_rows(result.all())
 
@@ -474,9 +522,9 @@ class UserRepository:
         }
         sort_column = sort_columns.get(sort_by, User.created_at)
         if (sort_order or "").lower() == "asc":
-            stmt = stmt.order_by(sort_column.asc(), User.id.asc())
+            stmt = stmt.order_by(sort_column.asc().nulls_last(), User.id.asc())
         else:
-            stmt = stmt.order_by(sort_column.desc(), User.id.asc())
+            stmt = stmt.order_by(sort_column.desc().nulls_last(), User.id.desc())
         stmt = stmt.limit(limit).offset(offset)
 
         count_max_account = aliased(UserAuthAccount)
@@ -550,6 +598,14 @@ class UserRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.all())
+
+    async def list_role_ids_by_user_ids(self, *, user_ids: list[str]) -> list[tuple[str, int]]:
+        """Load current owner roles for request-lifecycle eligibility in one query."""
+        if not user_ids:
+            return []
+        stmt = select(User.id, User.id_role).where(User.id.in_(user_ids))
+        result = await self._session.execute(stmt)
+        return [(str(user_id), int(role_id)) for user_id, role_id in result.all()]
 
     async def list_active_user_parent_pairs(self) -> list[tuple[str, str | None]]:
         stmt = (

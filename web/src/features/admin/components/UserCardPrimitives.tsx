@@ -1,3 +1,4 @@
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import { Box, Stack, Typography } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import type { ReactNode } from 'react';
@@ -74,12 +75,55 @@ export const UserStatusPill = ({ value }: { value: string | null | undefined }) 
   return <StatusPill label={toStatusLabel(value)} tone={tone} />;
 };
 
-export const InfoRow = ({ label, value }: { label: string; value: string | number | null }) => (
+export const EmailWithVerifiedMark = ({
+  mail,
+  verified = false,
+  showMark = false,
+}: {
+  mail: string | null | undefined;
+  verified?: boolean;
+  showMark?: boolean;
+}) => {
+  const text = mail?.trim() ? mail : '—';
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 0.4,
+        width: 'fit-content',
+        maxWidth: '100%',
+        verticalAlign: 'middle',
+      }}
+    >
+      {showMark && verified ? (
+        <CheckCircleRounded
+          sx={{ fontSize: 16, color: 'success.main', flexShrink: 0 }}
+          titleAccess="Почта подтверждена"
+        />
+      ) : null}
+      <Box
+        component="span"
+        sx={{
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {text}
+      </Box>
+    </Box>
+  );
+};
+
+export const InfoRow = ({ label, value }: { label: string; value: ReactNode }) => (
   <Stack spacing={0.2} sx={{ minWidth: 0 }}>
     <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
       {label}
     </Typography>
-    <Typography variant="body1" sx={{ fontWeight: 500, color: 'text.primary', overflowWrap: 'anywhere' }}>
+    <Typography variant="body1" component="div" sx={{ fontWeight: 500, color: 'text.primary', overflowWrap: 'anywhere' }}>
       {value ?? '—'}
     </Typography>
   </Stack>

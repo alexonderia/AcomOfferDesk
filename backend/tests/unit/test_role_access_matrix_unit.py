@@ -9,7 +9,6 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import settings
-from app.domain.auth_context import build_current_user_from_keycloak
 from app.domain.authorization import REVIEW_ALLOWED_PERMISSIONS, has_permission
 from app.domain.permissions import PermissionCodes, get_known_permissions, get_role_permissions_map
 
@@ -61,32 +60,6 @@ def test_role_map_contains_only_atomic_permissions() -> None:
 
     assert all(not permission.startswith("app.") for permission in flattened)
     assert all(not permission.startswith("delegation.") for permission in flattened)
-
-
-def test_matching_app_role_grants_role_ceiling_when_jwt_has_no_leaf_permissions() -> None:
-    current_user = build_current_user_from_keycloak(
-        user_id="user-app-only",
-        role_id=settings.superadmin_role_id,
-        status="active",
-        api_roles=frozenset({"app.superadmin", "app.admin"}),
-    )
-
-    assert current_user.permissions == get_known_permissions()
-    assert current_user.app_roles == frozenset({"app.superadmin", "app.admin"})
-
-
-def test_delegation_roles_do_not_grant_atomic_permissions_by_themselves() -> None:
-    current_user = build_current_user_from_keycloak(
-        user_id="user-delegation-only",
-        role_id=settings.project_manager_role_id,
-        status="active",
-        api_roles=frozenset({"delegation.request-reader", "delegation.offer-reader"}),
-    )
-
-    assert current_user.permissions == frozenset()
-    assert current_user.delegation_roles == frozenset(
-        {"delegation.request-reader", "delegation.offer-reader"}
-    )
 
 
 @pytest.mark.parametrize("permission", sorted(get_known_permissions()))
@@ -166,6 +139,20 @@ def test_staff_roles_can_read_contractors_without_status_update_rights() -> None
         assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE not in permissions
 
 
+def test_economist_roles_can_invite_contractors() -> None:
+    role_map = get_role_permissions_map()
+
+    for role_id in (settings.lead_economist_role_id, settings.economist_role_id):
+        assert PermissionCodes.USERS_REGISTRATION_INVITE in role_map[role_id]
+
+
+def test_admin_can_read_normative_files_for_contractor_invites() -> None:
+    role_map = get_role_permissions_map()
+
+    assert PermissionCodes.USERS_REGISTRATION_INVITE in role_map[settings.admin_role_id]
+    assert PermissionCodes.NORMATIVE_FILES_READ in role_map[settings.admin_role_id]
+
+
 def test_security_officer_role_has_only_expected_permissions() -> None:
     role_map = get_role_permissions_map()
 
@@ -177,6 +164,9 @@ def test_security_officer_role_has_only_expected_permissions() -> None:
             PermissionCodes.CONTRACTORS_READ,
             PermissionCodes.CONTRACTORS_PROFILE_READ,
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+            PermissionCodes.USERS_REGISTRATION_INVITE,
+            PermissionCodes.USERS_REGISTRATION_APPROVE,
+            PermissionCodes.NORMATIVE_FILES_READ,
         }
     )
 
@@ -212,4 +202,7 @@ def test_units_permissions_are_granted_to_hierarchy_roles_for_subtree_management
         PermissionCodes.CONTRACTORS_READ,
         PermissionCodes.CONTRACTORS_PROFILE_READ,
         PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
+        PermissionCodes.USERS_REGISTRATION_INVITE,
+        PermissionCodes.USERS_REGISTRATION_APPROVE,
+        PermissionCodes.NORMATIVE_FILES_READ,
     }

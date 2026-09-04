@@ -78,7 +78,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     }
     let isMounted = true;
     setIsLoadingContractors(true);
-    getRequestContractors()
+    getRequestContractors(requestId)
       .then((response) => {
         if (!isMounted) {
           return;
@@ -99,7 +99,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     return () => {
       isMounted = false;
     };
-  }, [open]);
+  }, [open, requestId]);
 
   const resetForm = () => {
     setContractorMode('existing');

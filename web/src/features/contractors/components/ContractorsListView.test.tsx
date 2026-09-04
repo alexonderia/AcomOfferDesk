@@ -13,7 +13,7 @@ const updateContractorRootUnitsMock = vi.fn();
 const showSystemToastMock = vi.fn();
 const showErrorToastMock = vi.fn();
 
-let mockSession: { roleId: number } = {
+let mockSession: { roleId: number; permissions?: string[] } = {
   roleId: ROLE.ADMIN,
 };
 
@@ -48,12 +48,12 @@ vi.mock('@shared/ui/toasts', () => ({
 
 const buildContractor = (): ContractorListItem => ({
   userId: 'contractor-1',
-  maxUserId: 'max-42',
   roleId: 3,
   status: 'На проверке',
   fullName: 'Иван Петров',
   phone: '+79990000000',
   mail: 'ivan@example.com',
+  emailVerified: false,
   companyName: 'ООО Ромашка',
   inn: '1234567890',
   companyPhone: '+79990000001',
@@ -62,7 +62,6 @@ const buildContractor = (): ContractorListItem => ({
   note: 'Тест',
   createdAt: '2026-06-01T10:00:00Z',
   updatedAt: '2026-06-10T11:00:00Z',
-  registrationSource: 'manual',
   actions: {
     view_profile: true,
     update_status: true,
@@ -134,7 +133,6 @@ describe('ContractorsListView editing', () => {
     expect(await screen.findByText('Иван Петров')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeInTheDocument();
     expect(screen.queryByLabelText('contractor-1-company_name')).not.toBeInTheDocument();
-    expect(screen.queryByText('max-42')).not.toBeInTheDocument();
   });
 
   it('keeps current page while editing a row on another page', async () => {
@@ -284,6 +282,20 @@ describe('ContractorsListView editing', () => {
     });
   });
 
+  it('does not open contractor details when changing inline status', async () => {
+    renderView();
+
+    const statusCombobox = await screen.findByRole('combobox', { name: 'contractor-1-status' });
+    fireEvent.mouseDown(statusCombobox);
+    const statusOptions = await screen.findAllByRole('option');
+    fireEvent.click(statusOptions[1]);
+
+    await waitFor(() => {
+      expect(updateContractorStatusMock).toHaveBeenCalledWith('contractor-1', { user_status: 'active' });
+    });
+    expect(screen.queryByText('РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР°')).not.toBeInTheDocument();
+  });
+
   it('locks the status field in edit mode when status access is missing', async () => {
     renderView({
       contractors: [{
@@ -331,7 +343,6 @@ describe('ContractorsListView editing', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }));
 
-    await screen.findByText('max-42');
     expect(screen.getAllByLabelText('Поле недоступно для редактирования').length).toBeGreaterThanOrEqual(3);
   });
 
@@ -400,5 +411,34 @@ describe('ContractorsListView editing', () => {
       severity: 'success',
       message: 'Привязки к подразделениям сохранены.',
     });
+  });
+
+  it('shows a check next to verified email for registration approvers', () => {
+    mockSession = {
+      roleId: ROLE.ADMIN,
+      permissions: ['users.registration.approve'],
+    };
+    renderView({
+      contractors: [
+        buildContractor(),
+        { ...buildContractor(), userId: 'contractor-2', emailVerified: true, mail: 'ok@example.com' },
+      ],
+    });
+
+    expect(screen.getByTitle('Почта подтверждена')).toBeInTheDocument();
+    expect(screen.getByText('ok@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('Подтверждение почты')).not.toBeInTheDocument();
+  });
+
+  it('hides email verification check without registration approve permission', () => {
+    mockSession = {
+      roleId: ROLE.ECONOMIST,
+      permissions: [],
+    };
+    renderView({
+      contractors: [{ ...buildContractor(), emailVerified: true }],
+    });
+
+    expect(screen.queryByTitle('Почта подтверждена')).not.toBeInTheDocument();
   });
 });

@@ -97,17 +97,16 @@ def test_user_policy_manage_requests_allowed_for_lead_with_permissions(make_curr
     assert UserPolicy.can_manage_requests(lead) is True
 
 
-def test_user_policy_contractor_status_via_delegation_role(make_current_user):
+def test_user_policy_contractor_status_denied_without_iam_permission(make_current_user):
     lead = make_current_user(
         role_id=settings.lead_economist_role_id,
         permissions=set(),
-        keycloak_roles={"delegation.contractors.profile.status.update"},
     )
 
-    assert UserPolicy.can_update_contractor_profile_status(lead) is True
+    assert UserPolicy.can_update_contractor_profile_status(lead) is False
 
 
-def test_user_policy_contractor_status_via_delegation_permission(make_current_user):
+def test_user_policy_contractor_status_via_explicit_iam_permission(make_current_user):
     pm = make_current_user(
         role_id=settings.project_manager_role_id,
         permissions={
@@ -115,7 +114,6 @@ def test_user_policy_contractor_status_via_delegation_permission(make_current_us
             PermissionCodes.CONTRACTORS_PROFILE_READ,
             PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE,
         },
-        keycloak_roles={"delegation.contractors.profile.status.update"},
     )
 
     assert UserPolicy.can_update_contractor_profile_status(pm) is True

@@ -7,14 +7,14 @@ import type { RealtimeConnectionState, RealtimeEnvelope } from '@shared/ws/realt
 type MockAuthState = {
   session: { token: string; businessAccess: boolean } | null;
   status: string;
-  refresh: any;
-  logout: any;
+  refresh: ReturnType<typeof vi.fn>;
+  logout: ReturnType<typeof vi.fn>;
 };
 
 let authState: MockAuthState = {
   session: { token: 'token', businessAccess: true },
   status: 'authenticated',
-  refresh: vi.fn().mockResolvedValue(true),
+  refresh: vi.fn().mockResolvedValue({ kind: 'success' }),
   logout: vi.fn(),
 };
 
@@ -71,7 +71,7 @@ describe('RealtimeProvider', () => {
     authState = {
       session: { token: 'token', businessAccess: true },
       status: 'authenticated',
-      refresh: vi.fn().mockResolvedValue(true),
+      refresh: vi.fn().mockResolvedValue({ kind: 'success' }),
       logout: vi.fn(),
     };
     currentState = 'idle';
@@ -88,7 +88,7 @@ describe('RealtimeProvider', () => {
     authState = {
       session: null,
       status: 'anonymous',
-      refresh: vi.fn().mockResolvedValue(false),
+      refresh: vi.fn().mockResolvedValue({ kind: 'terminal' }),
       logout: vi.fn(),
     };
 
@@ -106,7 +106,7 @@ describe('RealtimeProvider', () => {
     authState = {
       session: null,
       status: 'anonymous',
-      refresh: vi.fn().mockResolvedValue(false),
+      refresh: vi.fn().mockResolvedValue({ kind: 'terminal' }),
       logout: vi.fn(),
     };
     view.rerender(<div />);
@@ -116,7 +116,7 @@ describe('RealtimeProvider', () => {
     authState = {
       session: { token: 'token-2', businessAccess: true },
       status: 'authenticated',
-      refresh: vi.fn().mockResolvedValue(true),
+      refresh: vi.fn().mockResolvedValue({ kind: 'success' }),
       logout: vi.fn(),
     };
     view.rerender(<div />);
@@ -185,5 +185,49 @@ describe('RealtimeProvider', () => {
     await waitFor(() => {
       expect(syncNotificationsMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('uses the shared refresh result for websocket authentication failures', async () => {
+    const refresh = vi.fn().mockResolvedValue({ kind: 'terminal' });
+    const logout = vi.fn();
+    authState = {
+      session: { token: 'token', businessAccess: true },
+      status: 'authenticated',
+      refresh,
+      logout,
+    };
+    render(<div />, { wrapper: Wrapper });
+
+    emitRealtimeEvent({
+      type: 'error',
+      event_id: 'evt-auth-failed',
+      ts: '2026-05-18T12:00:00Z',
+      data: { code: 'auth_failed' },
+    });
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith('ws_4401'));
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not log out when websocket refresh is temporarily unavailable', async () => {
+    const refresh = vi.fn().mockResolvedValue({ kind: 'unavailable' });
+    const logout = vi.fn();
+    authState = {
+      session: { token: 'token', businessAccess: true },
+      status: 'authenticated',
+      refresh,
+      logout,
+    };
+    render(<div />, { wrapper: Wrapper });
+
+    emitRealtimeEvent({
+      type: 'error',
+      event_id: 'evt-auth-unavailable',
+      ts: '2026-05-18T12:00:00Z',
+      data: { code: 'auth_failed' },
+    });
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith('ws_4401'));
+    expect(logout).not.toHaveBeenCalled();
   });
 });

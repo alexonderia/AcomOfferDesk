@@ -3,6 +3,11 @@ from __future__ import annotations
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from app.infrastructure.email.email_templates.email_contact_blocks import (
+    build_contact_html_block,
+    build_contact_text_block,
+    contact_info_from_invitation_settings,
+)
 from shared.notification_copy import (
     ACCESS_CLOSED_BODY,
     ACCESS_OPENED_BODY,
@@ -119,12 +124,43 @@ def build_contractor_access_opened_email_payload(
     )
 
 
-def build_contractor_access_closed_email_payload(*, to_email: str) -> EmailMessagePayload:
+def build_contractor_access_closed_email_payload(
+    *,
+    to_email: str,
+    contact_name: str | None = None,
+    contact_email: str | None = None,
+    contact_phone: str | None = None,
+    contact_text: str | None = None,
+) -> EmailMessagePayload:
     subject = email_subject("доступ ограничен")
+    contact = contact_info_from_invitation_settings(
+        contact_name=contact_name,
+        contact_email=contact_email,
+        contact_phone=contact_phone,
+    )
+    contact_lines = build_contact_text_block(
+        contact=contact,
+        intro="Если удобнее, вы можете связаться с контактным лицом напрямую:",
+    )
+    if contact_text:
+        contact_lines.extend(["", contact_text])
+    contact_instruction = "\n".join(contact_lines)
+    contact_html = build_contact_html_block(contact=contact)
+    extra_text_html = (
+        f"""
+            <tr>
+              <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                {escape(contact_text)}
+              </td>
+            </tr>
+        """.rstrip()
+        if contact_text
+        else ""
+    )
     return EmailMessagePayload(
         to_email=to_email,
         subject=subject,
-        text_content=f"{ACCESS_CLOSED_BODY}\n",
+        text_content=f"{ACCESS_CLOSED_BODY}\n\n{contact_instruction}\n",
         html_content=f"""
 <!DOCTYPE html>
 <html lang="ru">
@@ -139,10 +175,12 @@ def build_contractor_access_closed_email_payload(*, to_email: str) -> EmailMessa
               </td>
             </tr>
             <tr>
-              <td style="padding:0 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
+              <td style="padding:0 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
                 {escape(ACCESS_CLOSED_BODY)}
               </td>
             </tr>
+            {contact_html}
+            {extra_text_html}
           </table>
         </td>
       </tr>

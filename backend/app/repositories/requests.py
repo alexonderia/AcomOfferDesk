@@ -25,8 +25,6 @@ from app.models.orm_models import (
     RequestOfferStats,
     User,
 )
-from app.models.auth_models import UserAuthAccount
-
 @dataclass(frozen=True)
 class PlanRequestStatsRow:
     total_requests: int
@@ -39,6 +37,13 @@ class PlanRequestStatsRow:
 class RequestRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    async def lock_offer_lifecycle(self, *, request_id: str) -> None:
+        """Serialize request closure with contractor offer creation."""
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"request-offer-lifecycle:{request_id}"},
+        )
 
     async def add(self, request: Request) -> None:
         self._session.add(request)
@@ -107,6 +112,27 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def has_accepted_offer_for_request(
+        self,
+        *,
+        request_id: str,
+        exclude_offer_id: int | None = None,
+    ) -> bool:
+        stmt = select(Offer.id).where(Offer.id_request == request_id, Offer.status == "accepted")
+        if exclude_offer_id is not None:
+            stmt = stmt.where(Offer.id != exclude_offer_id)
+        result = await self._session.execute(stmt.limit(1))
+        return result.scalar_one_or_none() is not None
+
+    async def has_submitted_offers(self, *, request_id: str) -> bool:
+        stmt = (
+            select(Offer.id)
+            .where(Offer.id_request == request_id, Offer.status == "submitted")
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def update_status(
         self,
@@ -289,7 +315,7 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_active_keycloak_visible_contractor_user_ids(
+    async def list_active_visible_contractor_user_ids(
         self,
         *,
         request_id: str,
@@ -297,14 +323,6 @@ class RequestRepository:
     ) -> list[str]:
         stmt = (
             select(User.id)
-            .join(
-                UserAuthAccount,
-                and_(
-                    UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "keycloak",
-                    UserAuthAccount.is_active.is_(True),
-                ),
-            )
             .outerjoin(
                 RequestHiddenContractor,
                 and_(

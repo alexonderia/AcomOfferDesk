@@ -1,77 +1,55 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+import hmac
+import secrets
 import time
-from urllib.parse import quote
-from urllib.parse import urlsplit
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
-from fastapi.responses import JSONResponse
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from app.api.action_flags import serialize_permissions
-from app.api.dependencies import build_current_user_from_keycloak_claims, get_current_user, get_uow
+from shared.client_ip import resolve_client_ip
+from shared.rate_limiter import SlidingWindowRateLimiter
+
+from app.api.dependencies import get_current_user, get_uow, resolve_iam_current_user
 from app.core.auth_cookies import (
-    clear_keycloak_refresh_cookie,
-    clear_keycloak_state_cookie,
-    set_keycloak_refresh_cookie,
-    set_keycloak_state_cookie,
+    clear_csrf_cookie,
+    clear_iam_browser_session_cookie,
+    clear_iam_access_cookie,
+    clear_iam_flow_cookie,
+    clear_iam_flow_recovery_cookie,
+    clear_iam_refresh_cookie,
+    set_csrf_cookie,
+    set_iam_access_cookie,
+    set_iam_flow_cookie,
+    set_iam_flow_recovery_cookie,
+    set_iam_refresh_cookie,
 )
 from app.core.config import settings
-from app.core.oidc_state_tokens import (
-    build_keycloak_login_url,
-    build_oidc_authorization_start,
-    decode_oidc_state_token,
-)
-from app.core.registration_invite_tokens import (
-    RegistrationInviteTokenCodec,
-    RegistrationInviteTokenExpiredError,
-    RegistrationInviteTokenInvalidError,
-)
+from app.core.iam_flow import FLOW_TTL_SECONDS, build_iam_authorize_url, create_iam_flow, decode_iam_flow
 from app.core.uow import UnitOfWork
+from app.domain.authentication import decode_iam_access_token
 from app.domain.auth_context import CurrentUser
-from app.domain.exceptions import Conflict, Forbidden, Unauthorized
+from app.domain.exceptions import AuthenticationUnavailable, Conflict, NotFound, Unauthorized
+from app.domain.iam_identity import stable_iam_account_id
+from app.domain.iam_roles import technical_role_name
 from app.domain.policies import UserPolicy
+from app.infrastructure.iam_client import IamClient
 from app.models.auth_models import UserAuthAccount
-from app.repositories.telegram_compat import telegram_subject_value
-from app.schemas.auth import (
-    LoginResponse,
-    RegisterUserRequest,
-    RegisterUserResponse,
-)
-from app.services.email_verification import EmailVerificationService
-from app.services.identity_sync import IdentitySyncService
-from app.services.keycloak_oidc import (
-    decode_keycloak_access_token,
-    exchange_code_for_tokens,
-    looks_like_keycloak_token,
-    logout_refresh_token,
-    refresh_tokens,
-)
-from app.services.keycloak_admin import KeycloakAdminService
-from app.services.contractor_email_notifications import notify_registration_completed_email
-from app.services.max_notifications import notify_registration_completed as notify_max_registration_completed
-from app.services.max_account_linking import link_max_account
-from app.services.max_registration_links import (
-    MaxRegistrationLinkExpiredError,
-    MaxRegistrationLinkInvalidError,
-    resolve_max_registration_token,
-)
-from app.services.tg_registration_links import (
-    TgRegistrationLinkExpiredError,
-    TgRegistrationLinkInvalidError,
-    resolve_tg_registration_token,
-)
-from app.services.registration_admin_notify import (
-    RegistrationNotifyContext,
-    notify_new_user_registration,
-    schedule_registration_review_required_notification,
-)
+from app.schemas.auth import AuthSessionData, AuthSessionResponse, RegisterUserRequest, RegisterUserResponse
+from app.services.account_recovery import AccountRecoveryService, GENERIC_RECOVERY_DETAIL
+from app.services.email_verification import FIRST_ACCESS_PURPOSE, EmailVerificationService
 from app.services.unit_hierarchy import UnitHierarchyService
-from app.services.users import UserRegistrationService
 from app.services.units import UnitService
+from app.services.users import UserRegistrationService
+
 
 router = APIRouter()
+# This route intentionally lives below /iam so a browser can accept a deletion
+# for the path-scoped IAM UI cookie. It is served by Acom's backend, not IAM.
+iam_bff_router = APIRouter()
+MAX_PASSWORD_RESET_RATE_LIMIT_BUCKETS = 10_000
 
 
 class RequestEmailVerificationRequest(BaseModel):
@@ -80,201 +58,293 @@ class RequestEmailVerificationRequest(BaseModel):
 
 class EmailVerificationActionResponse(BaseModel):
     detail: str
+    next_action: str | None = None
+    redirect_url: str | None = None
 
 
-def _normalize_host_with_port(*, host_value: str, fallback_host: str, forwarded_port: str) -> str:
-    candidate = (host_value or fallback_host or "").strip()
-    if not candidate:
-        return ""
-
-    parsed = urlsplit(f"//{candidate}")
-    fallback_parsed = urlsplit(f"//{fallback_host}") if fallback_host else None
-    hostname = (parsed.hostname or "").strip()
-    port = parsed.port or (fallback_parsed.port if fallback_parsed is not None else None)
-
-    forwarded_port_value = (forwarded_port or "").strip()
-    if port is None and forwarded_port_value.isdigit():
-        port = int(forwarded_port_value)
-
-    if not hostname:
-        return candidate
-
-    display_host = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
-    if port is not None:
-        return f"{display_host}:{port}"
-    return display_host
+class CsrfResponse(BaseModel):
+    csrf_token: str
 
 
-def _resolve_request_base_url(request: Request) -> str:
-    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
-    forwarded_port = (request.headers.get("x-forwarded-port") or "").split(",")[0].strip()
-    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
-    raw_host = (request.headers.get("host") or "").strip() or request.url.netloc
-    host = _normalize_host_with_port(
-        host_value=forwarded_host,
-        fallback_host=raw_host,
-        forwarded_port=forwarded_port,
+class PasswordResetRequest(BaseModel):
+    login: str = Field(..., min_length=3, max_length=255)
+
+
+class PasswordResetResponse(BaseModel):
+    detail: str
+
+
+class PasswordResetRateLimiter:
+    def __init__(
+        self,
+        *,
+        attempts: int = 5,
+        window_seconds: int = 900,
+        max_buckets: int = MAX_PASSWORD_RESET_RATE_LIMIT_BUCKETS,
+    ) -> None:
+        self._ip_limiter = SlidingWindowRateLimiter(
+            attempts=attempts,
+            window_seconds=window_seconds,
+            max_buckets=max_buckets,
+        )
+        self._login_limiter = SlidingWindowRateLimiter(
+            attempts=attempts,
+            window_seconds=window_seconds,
+            max_buckets=max_buckets,
+        )
+
+    @property
+    def bucket_count(self) -> int:
+        return self._ip_limiter.bucket_count + self._login_limiter.bucket_count
+
+    async def allow(self, *, client_ip: str, login: str) -> bool:
+        normalized_login = login.strip().casefold()
+        if not await self._ip_limiter.allow(client_ip):
+            return False
+        return await self._login_limiter.allow(normalized_login)
+
+
+password_reset_rate_limiter = PasswordResetRateLimiter()
+
+
+def _client_ip(request: Request) -> str:
+    return (
+        resolve_client_ip(
+            peer_host=request.client.host if request.client else None,
+            forwarded_for=request.headers.get("x-forwarded-for"),
+            real_ip=request.headers.get("x-real-ip"),
+            trusted_proxy_cidrs=settings.trusted_proxy_cidrs,
+        )
+        or "unknown"
     )
-    scheme = forwarded_proto or request.url.scheme or "http"
-    configured_public_base = (settings.public_backend_base_url or settings.web_base_url or "").strip().rstrip("/")
-    if configured_public_base:
-        configured_public = urlsplit(configured_public_base)
-        configured_host = (configured_public.netloc or "").strip().lower()
-        if configured_host and host.strip().lower() == configured_host:
-            scheme = configured_public.scheme or scheme
-    if host:
-        return f"{scheme}://{host}".rstrip("/")
-    return (settings.public_backend_base_url or settings.web_base_url or str(request.base_url)).rstrip("/")
 
 
-def _resolve_oidc_public_base_url(request: Request) -> str:
-    configured_public_base = (settings.public_backend_base_url or settings.web_base_url or "").strip().rstrip("/")
-    if configured_public_base:
-        return configured_public_base
-    return _resolve_request_base_url(request)
-
-
-def _extract_base_url_from_redirect_uri(redirect_uri: str) -> str:
-    parsed = urlsplit(redirect_uri)
-    if parsed.scheme and parsed.netloc:
-        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
-    return (settings.web_base_url or settings.public_backend_base_url or "http://localhost:8080").rstrip("/")
-
-
-def _build_registration_link_status_url(base_url: str, *, reason: str) -> str:
-    return f"{base_url.rstrip('/')}/auth/registration-link-status?reason={quote(reason, safe='')}"
-
-
-def _build_login_error_url(base_url: str, *, reason: str) -> str:
-    return f"{base_url.rstrip('/')}/login?auth_error={quote(reason, safe='')}"
-
-
-def _build_login_error_redirect(base_url: str, *, reason: str) -> RedirectResponse:
-    response = RedirectResponse(
-        url=_build_login_error_url(base_url, reason=reason),
-        status_code=status.HTTP_302_FOUND,
+def _session_response(current_user: CurrentUser) -> AuthSessionResponse:
+    onboarding_state = current_user.onboarding_state
+    if onboarding_state != "first_login" and current_user.status == "review":
+        onboarding_state = "review"
+    if onboarding_state == "completed":
+        onboarding_state = None
+    return AuthSessionResponse(
+        data=AuthSessionData(
+            user_id=current_user.user_id,
+            login=current_user.user_id,
+            role_id=current_user.role_id,
+            role=current_user.system_role,
+            status=current_user.status,
+            auth_provider="iam",
+            business_access=current_user.status == "active" and current_user.onboarding_state != "first_login",
+            onboarding_state=onboarding_state,
+            permissions=sorted(current_user.permissions),
+        )
     )
-    clear_keycloak_state_cookie(response)
-    clear_keycloak_refresh_cookie(response)
+
+
+def _set_session_cookies(response: Response, bundle) -> None:
+    now = int(time.time())
+    set_iam_access_cookie(
+        response,
+        bundle.access_token,
+        max_age=max(1, bundle.access_token_expires_at - now),
+    )
+    set_iam_refresh_cookie(
+        response,
+        bundle.refresh_token,
+        max_age=max(1, bundle.refresh_token_expires_at - now),
+    )
+    set_csrf_cookie(response, secrets.token_urlsafe(32), max_age=max(1, bundle.refresh_token_expires_at - now))
+
+
+def _clear_session_cookies(response: Response) -> None:
+    clear_iam_access_cookie(response)
+    clear_iam_refresh_cookie(response)
+    clear_csrf_cookie(response)
+
+
+def _password_action_name(action: str) -> str:
+    if action not in {"setup", "reset"}:
+        raise NotFound("Password action not found")
+    return action
+
+
+async def _proxy_password_action_page(
+    *,
+    action: str,
+    token: str | None = None,
+    form: dict[str, str] | None = None,
+) -> HTMLResponse:
+    page = await IamClient().render_password_action_page(
+        action=_password_action_name(action),
+        token=token,
+        form=form,
+    )
+    body = page.html.replace(
+        f'action="/iam/password/{action}"',
+        f'action="/api/v1/auth/password/{action}"',
+    )
+    response = HTMLResponse(content=body, status_code=page.status_code)
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
-def _onboarding_state(status_value: str) -> str | None:
-    return None if status_value == "active" else status_value
+def _restart_iam_login(*, error: str) -> RedirectResponse:
+    location = f"{settings.resolved_iam_public_base_url}/login?{urlencode({'error': error})}"
+    response = RedirectResponse(location, status_code=303)
+    clear_iam_flow_cookie(response)
+    clear_iam_flow_recovery_cookie(response)
+    return response
 
 
-async def _link_telegram_registration_context(
-    *,
-    uow: UnitOfWork,
-    user_id: str,
-    tg_id: int,
-) -> None:
-    subject = telegram_subject_value(tg_id)
-    linked_user = await uow.users.get_by_tg_user_id(tg_id)
-    if linked_user is not None and linked_user.id != user_id:
-        raise Conflict("Telegram account is already linked to another user")
+def _retry_expired_iam_flow(request: Request) -> RedirectResponse:
+    if request.cookies.get(settings.iam_flow_recovery_cookie_name) == "1":
+        return _restart_iam_login(error="session_expired")
+    response = RedirectResponse("/api/v1/auth/login", status_code=303)
+    clear_iam_flow_cookie(response)
+    set_iam_flow_recovery_cookie(response)
+    return response
 
-    telegram_account = await uow.user_auth_accounts.get_by_user_provider(
-        user_id=user_id,
-        provider="telegram",
-        include_inactive=True,
-    )
-    if telegram_account is None:
-        await uow.user_auth_accounts.add(
-            UserAuthAccount(
-                id_user=user_id,
-                provider="telegram",
-                external_subject_id=subject,
-                external_username=None,
-                external_email=None,
-                is_active=True,
-            )
+
+@router.get("/auth/login")
+async def begin_login(next: str | None = Query(default=None)) -> RedirectResponse:
+    flow = create_iam_flow(next)
+    response = RedirectResponse(build_iam_authorize_url(flow), status_code=302)
+    set_iam_flow_cookie(response, flow.cookie_token, max_age=FLOW_TTL_SECONDS)
+    return response
+
+
+@router.get("/auth/callback")
+async def auth_callback(
+    request: Request,
+    code: str = Query(min_length=20, max_length=512),
+    state: str = Query(min_length=16, max_length=512),
+) -> RedirectResponse:
+    bundle = None
+    try:
+        flow = decode_iam_flow(request.cookies.get(settings.iam_state_cookie_name, ""))
+        if not hmac.compare_digest(flow.state, state):
+            raise Unauthorized("Invalid IAM state")
+        bundle = await IamClient().exchange_code(
+            code=code,
+            verifier=flow.verifier,
+            redirect_uri=flow.redirect_uri,
+            ip_address=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
         )
-    else:
-        telegram_account.external_subject_id = subject
-        telegram_account.is_active = True
-
-    await uow.user_contact_channels.upsert_channel(
-        user_id=user_id,
-        channel_type="telegram",
-        channel_value=subject,
-        is_verified=False,
-        is_primary=True,
-    )
-
-
-async def _link_max_registration_context(
-    *,
-    uow: UnitOfWork,
-    user_id: str,
-    max_user_id: str,
-) -> None:
-    await link_max_account(
-        user_auth_accounts=uow.user_auth_accounts,
-        user_contact_channels=uow.user_contact_channels,
-        user_id=user_id,
-        max_user_id=max_user_id,
-        is_verified=True,
-    )
+        await resolve_iam_current_user(decode_iam_access_token(bundle.access_token))
+    except Unauthorized:
+        if bundle is not None:
+            try:
+                await IamClient().logout(bundle.refresh_token, reason="acom_identity_rejected")
+            except (AuthenticationUnavailable, Unauthorized):
+                pass
+        return _retry_expired_iam_flow(request)
+    except AuthenticationUnavailable:
+        return _restart_iam_login(error="service_unavailable")
+    response = RedirectResponse(flow.next_path, status_code=303)
+    _set_session_cookies(response, bundle)
+    clear_iam_flow_cookie(response)
+    clear_iam_flow_recovery_cookie(response)
+    return response
 
 
-def _build_auth_response(
-    *,
-    access_token: str,
-    access_token_expires_at: int,
-    user_id: str,
-    role_id: int,
-    status_value: str,
-    auth_provider: str,
-    keycloak_api_roles: frozenset[str] = frozenset(),
-) -> LoginResponse:
-    current_user = build_current_user_from_keycloak_claims(
-        user_id=user_id,
-        role_id=role_id,
-        status=status_value,
-        keycloak_api_roles=keycloak_api_roles,
-    )
-    return LoginResponse(
-        data={
-            "access_token": access_token,
-            "token_type": "bearer",
-            "access_token_expires_at": access_token_expires_at,
-            "user_id": user_id,
-            "login": user_id,
-            "role_id": role_id,
-            "status": status_value,
-            "auth_provider": auth_provider,
-            "business_access": status_value == "active",
-            "onboarding_state": _onboarding_state(status_value),
-            "permissions": serialize_permissions(current_user),
-            "app_roles": sorted(current_user.app_roles),
-            "delegation_roles": sorted(current_user.delegation_roles),
-        },
-    )
+@router.get("/auth/session", response_model=AuthSessionResponse)
+async def get_session(current_user: CurrentUser = Depends(get_current_user)) -> AuthSessionResponse:
+    return _session_response(current_user)
 
 
-async def _build_keycloak_auth_response(
-    *,
-    access_token: str,
-    uow: UnitOfWork,
-) -> LoginResponse:
-    claims = await decode_keycloak_access_token(access_token)
-    sync_service = IdentitySyncService(
-        users=uow.users,
-        user_auth_accounts=uow.user_auth_accounts,
-        user_contact_channels=uow.user_contact_channels,
-        profiles=uow.profiles,
-    )
-    synced = await sync_service.sync_keycloak_identity(claims, allow_user_creation=False)
-    return _build_auth_response(
-        access_token=access_token,
-        access_token_expires_at=claims.expires_at,
-        user_id=synced.user.id,
-        role_id=synced.user.id_role,
-        status_value=synced.user.status,
-        auth_provider="keycloak",
-        keycloak_api_roles=claims.api_roles,
-    )
+@router.get("/auth/csrf", response_model=CsrfResponse)
+async def issue_csrf(response: Response) -> CsrfResponse:
+    token = secrets.token_urlsafe(32)
+    set_csrf_cookie(response, token, max_age=43200)
+    return CsrfResponse(csrf_token=token)
+
+
+@router.post("/auth/refresh", response_model=AuthSessionResponse)
+async def refresh_session(request: Request, response: Response) -> AuthSessionResponse | JSONResponse:
+    raw_refresh = request.cookies.get(settings.iam_refresh_cookie_name, "").strip()
+    if not raw_refresh:
+        raise Unauthorized("Missing credentials")
+    try:
+        bundle = await IamClient().refresh(raw_refresh)
+        current_user = await resolve_iam_current_user(decode_iam_access_token(bundle.access_token))
+    except Unauthorized:
+        error_response = JSONResponse(status_code=401, content={"detail": "Сессия истекла. Войдите снова."})
+        _clear_session_cookies(error_response)
+        return error_response
+    _set_session_cookies(response, bundle)
+    return _session_response(current_user)
+
+
+@router.post("/auth/logout", status_code=204)
+async def logout_session(request: Request) -> Response:
+    response = Response(status_code=204)
+    raw_refresh = request.cookies.get(settings.iam_refresh_cookie_name, "").strip()
+    if raw_refresh:
+        try:
+            await IamClient().logout(raw_refresh)
+        except Unauthorized:
+            pass
+        except AuthenticationUnavailable:
+            response = JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Сервис авторизации временно недоступен.",
+                    "reason_code": "AUTH_SERVICE_UNAVAILABLE",
+                },
+            )
+    _clear_session_cookies(response)
+    return response
+
+
+@iam_bff_router.post("/iam/acom/logout", status_code=204)
+async def clear_iam_browser_session() -> Response:
+    """Clear the path-scoped IAM UI cookie after BFF logout."""
+    response = Response(status_code=204)
+    clear_iam_browser_session_cookie(response)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.get("/auth/password/{action}", response_class=HTMLResponse)
+async def password_action_page(
+    action: str,
+    token: str = Query(min_length=20, max_length=512),
+) -> HTMLResponse:
+    return await _proxy_password_action_page(action=action, token=token)
+
+
+@router.post("/auth/password/{action}", response_class=HTMLResponse)
+async def submit_password_action(request: Request, action: str) -> HTMLResponse:
+    submitted = await request.form()
+    form = {
+        field: str(submitted.get(field) or "")
+        for field in ("token", "new_password", "password_confirmation")
+    }
+    return await _proxy_password_action_page(action=action, form=form)
+
+
+@router.post(
+    "/auth/password-reset/request",
+    response_model=PasswordResetResponse,
+    status_code=202,
+)
+async def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    uow: UnitOfWork = Depends(get_uow),
+) -> PasswordResetResponse:
+    generic_detail = GENERIC_RECOVERY_DETAIL
+    normalized_login = payload.login.strip()
+    client_ip = _client_ip(request)
+    if not await password_reset_rate_limiter.allow(
+        client_ip=client_ip,
+        login=normalized_login,
+    ):
+        return PasswordResetResponse(detail=generic_detail)
+
+    async with uow:
+        result = await AccountRecoveryService(uow).request_recovery(identifier=normalized_login)
+    return PasswordResetResponse(detail=result.detail)
 
 
 @router.post("/auth/request-email-verification", response_model=EmailVerificationActionResponse)
@@ -285,20 +355,22 @@ async def request_email_verification(
 ) -> EmailVerificationActionResponse:
     UserPolicy.ensure_can_manage_own_profile(current_user)
     async with uow:
-        service = EmailVerificationService(uow.profiles, uow.user_contact_channels)
-        result = await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
+        service = EmailVerificationService(
+            uow.profiles,
+            uow.user_contact_channels,
+            user_auth_accounts=uow.user_auth_accounts,
+        )
+        result = await service.request_profile_verification(
+            user_id=current_user.user_id,
+            email=payload.email,
+            purpose="profile_change",
+        )
 
     if result == "same_email":
-        return EmailVerificationActionResponse(
-            detail="Указан текущий подтверждённый email"
-        )
+        return EmailVerificationActionResponse(detail="Указан текущий подтверждённый email")
     if result == "already_sent":
-        return EmailVerificationActionResponse(
-            detail="Письмо уже отправлено. Проверьте вашу почту"
-        )
-    return EmailVerificationActionResponse(
-        detail="Письмо для подтверждения email отправлено"
-    )
+        return EmailVerificationActionResponse(detail="Письмо уже отправлено. Проверьте вашу почту")
+    return EmailVerificationActionResponse(detail="Письмо для подтверждения email отправлено")
 
 
 @router.get("/auth/verify-email", response_model=EmailVerificationActionResponse)
@@ -307,381 +379,35 @@ async def verify_email(
     uow: UnitOfWork = Depends(get_uow),
 ) -> EmailVerificationActionResponse:
     async with uow:
-        service = EmailVerificationService(uow.profiles, uow.user_contact_channels)
-        updated = await service.confirm_profile_verification(token=token)
-
-    if updated:
-        return EmailVerificationActionResponse(detail="Email подтверждён")
-    return EmailVerificationActionResponse(detail="Email уже подтверждён")
-
-
-@router.get("/auth/oidc/login", response_class=RedirectResponse)
-async def begin_keycloak_login(
-    request: Request,
-    next_path: str | None = Query(default="/"),
-    force_prompt: bool = Query(default=False),
-) -> RedirectResponse:
-    if not settings.keycloak_enabled:
-        raise Forbidden("Keycloak authentication is disabled")
-
-    redirect_uri = f"{_resolve_oidc_public_base_url(request)}/api/v1/auth/callback"
-    start = build_oidc_authorization_start(next_path=next_path, flow="login", redirect_uri=redirect_uri)
-    response = RedirectResponse(
-        url=build_keycloak_login_url(
-            state=start.state,
-            code_challenge=start.code_challenge,
-            redirect_uri=start.redirect_uri,
-            prompt="login" if force_prompt else None,
-        ),
-        status_code=status.HTTP_302_FOUND,
-    )
-    set_keycloak_state_cookie(
-        response,
-        start.cookie_token,
-        max_age=max(0, start.expires_at - int(time.time())),
-    )
-    return response
-
-
-@router.get("/auth/oidc/register", response_class=RedirectResponse)
-async def begin_keycloak_registration(
-    request: Request,
-    next_path: str | None = Query(default="/account"),
-    tg_token: str | None = Query(default=None),
-    max_token: str | None = Query(default=None),
-    invite_token: str | None = Query(default=None),
-    uow: UnitOfWork = Depends(get_uow),
-) -> RedirectResponse:
-    if not settings.keycloak_enabled:
-        raise Forbidden("Keycloak authentication is disabled")
-
-    redirect_uri = f"{_resolve_oidc_public_base_url(request)}/api/v1/auth/callback"
-    web_base = _extract_base_url_from_redirect_uri(redirect_uri)
-    tg_registration_id: int | None = None
-    max_registration_id: str | None = None
-    registration_email: str | None = None
-
-    token_count = sum(1 for value in (tg_token, max_token, invite_token) if value)
-    if token_count != 1:
-        return RedirectResponse(
-            url=_build_registration_link_status_url(web_base, reason="invalid"),
-            status_code=status.HTTP_302_FOUND,
+        service = EmailVerificationService(
+            uow.profiles,
+            uow.user_contact_channels,
+            user_auth_accounts=uow.user_auth_accounts,
         )
+        result = await service.confirm_profile_verification(token=token)
+        next_action = result.next_action
+        redirect_url = result.redirect_url
+        if result.purpose == FIRST_ACCESS_PURPOSE:
+            from app.services.account_recovery import AccountRecoveryService
 
-    if tg_token:
-        if not settings.telegram_legacy_enabled:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
+            redirect_url = await AccountRecoveryService(uow).issue_setup_after_verified_access(
+                user_id=result.user_id,
+                email=result.email,
             )
-        try:
-            tg_registration_id = await resolve_tg_registration_token(tg_token)
-        except TgRegistrationLinkExpiredError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="expired"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        except TgRegistrationLinkInvalidError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-
-        async with uow:
-            linked_user = await uow.users.get_by_tg_user_id(tg_registration_id)
-        if linked_user is not None:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="already_registered"),
-                status_code=status.HTTP_302_FOUND,
-            )
-    elif max_token:
-        if not settings.max_bot_enabled:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        try:
-            max_registration_id = await resolve_max_registration_token(max_token)
-        except MaxRegistrationLinkExpiredError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="expired"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        except MaxRegistrationLinkInvalidError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-
-        async with uow:
-            conflicting_binding = await uow.user_auth_accounts.get_conflicting_subject(
-                provider="max",
-                subject=max_registration_id,
-            )
-        if conflicting_binding is not None:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="already_registered"),
-                status_code=status.HTTP_302_FOUND,
-            )
-    elif invite_token:
-        invite_codec = RegistrationInviteTokenCodec(
-            secret=settings.email_verification_secret,
-            ttl_seconds=settings.tg_register_ttl_seconds,
-        )
-        try:
-            invite_claims = invite_codec.parse_token(invite_token)
-        except RegistrationInviteTokenExpiredError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="expired"),
-                status_code=status.HTTP_302_FOUND,
-            )
-        except RegistrationInviteTokenInvalidError:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="invalid"),
-                status_code=status.HTTP_302_FOUND,
-            )
-
-        registration_email = invite_claims.email
-        async with uow:
-            existing_users = await uow.users.list_by_email(email=registration_email)
-        if existing_users:
-            return RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="already_registered"),
-                status_code=status.HTTP_302_FOUND,
-            )
-    else:
-        return RedirectResponse(
-            url=_build_registration_link_status_url(web_base, reason="invalid"),
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    start = build_oidc_authorization_start(
-        next_path=next_path,
-        flow="register",
-        redirect_uri=redirect_uri,
-        tg_registration_id=tg_registration_id,
-        max_registration_id=max_registration_id,
-        registration_email=registration_email,
-    )
-    response = RedirectResponse(
-        url=build_keycloak_login_url(
-            state=start.state,
-            code_challenge=start.code_challenge,
-            redirect_uri=start.redirect_uri,
-            prompt="create",
-        ),
-        status_code=status.HTTP_302_FOUND,
-    )
-    set_keycloak_state_cookie(
-        response,
-        start.cookie_token,
-        max_age=max(0, start.expires_at - int(time.time())),
-    )
-    return response
-
-
-@router.get("/auth/callback", response_class=RedirectResponse, response_model=None)
-async def keycloak_callback(
-    request: Request,
-    code: str | None = Query(default=None),
-    state: str | None = Query(default=None),
-    error: str | None = Query(default=None),
-    uow: UnitOfWork = Depends(get_uow),
-) -> RedirectResponse:
-    if not settings.keycloak_enabled:
-        raise Forbidden("Keycloak authentication is disabled")
-    request_base = _resolve_oidc_public_base_url(request)
-    if error:
-        return _build_login_error_redirect(request_base, reason="access_denied")
-    if not code or not state:
-        return _build_login_error_redirect(request_base, reason="session_expired")
-
-    state_cookie = (request.cookies.get(settings.keycloak_state_cookie_name) or "").strip()
-    if not state_cookie:
-        return _build_login_error_redirect(request_base, reason="session_expired")
-
-    try:
-        claims = decode_oidc_state_token(state_cookie)
-    except Unauthorized:
-        return _build_login_error_redirect(request_base, reason="session_expired")
-    if claims.state != state:
-        return _build_login_error_redirect(request_base, reason="session_expired")
-
-    try:
-        bundle = await exchange_code_for_tokens(
-            code=code,
-            code_verifier=claims.code_verifier,
-            redirect_uri=claims.redirect_uri,
-        )
-    except Unauthorized:
-        return _build_login_error_redirect(request_base, reason="login_failed")
-    web_base = _extract_base_url_from_redirect_uri(claims.redirect_uri)
-    try:
-        async with uow:
-            token_claims = await decode_keycloak_access_token(bundle.access_token)
-            if claims.registration_email is not None:
-                normalized_invite_email = claims.registration_email.strip().lower()
-                normalized_token_email = (token_claims.email or "").strip().lower()
-                if not normalized_token_email or normalized_token_email != normalized_invite_email:
-                    raise Forbidden("Registration invite email mismatch")
-
-                existing_users = await uow.users.list_by_email(email=normalized_invite_email)
-                if existing_users:
-                    raise Conflict("Registration already completed")
-
-            sync_service = IdentitySyncService(
-                users=uow.users,
-                user_auth_accounts=uow.user_auth_accounts,
-                user_contact_channels=uow.user_contact_channels,
-                profiles=uow.profiles,
-            )
-            synced = await sync_service.sync_keycloak_identity(
-                token_claims,
-                allow_user_creation=claims.flow == "register",
-            )
-            if claims.flow == "register" and getattr(synced, "created_local_user", False):
-                role = await uow.users.get_role_by_id(synced.user.id_role)
-                full_name: str | None = token_claims.full_name
-                if uow.profiles is not None:
-                    profile = await uow.profiles.get_by_id(synced.user.id)
-                    if profile is not None and (profile.full_name or "").strip():
-                        full_name = profile.full_name
-                await notify_new_user_registration(
-                    RegistrationNotifyContext(
-                        source="oidc_invite",
-                        user_id=synced.user.id,
-                        role_id=synced.user.id_role,
-                        role_name=role.role if role else None,
-                        status=synced.user.status,
-                        full_name=full_name,
-                        email=token_claims.email,
-                        keycloak_subject=token_claims.subject,
-                    )
-                )
-                if synced.user.id_role == settings.contractor_role_id and synced.user.status == "review":
-                    schedule_registration_review_required_notification(
-                        after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
-                        user_id=synced.user.id,
-                        actor_user_id=synced.user.id,
-                        role_id=synced.user.id_role,
-                        source="oidc_invite_registration",
-                    )
-                registration_email = (token_claims.email or "").strip().lower()
-                if registration_email and synced.user.id_role == settings.contractor_role_id:
-                    await notify_registration_completed_email(
-                        to_email=registration_email,
-                        recipient_user_id=synced.user.id,
-                    )
-            if claims.tg_registration_id is not None:
-                if not settings.telegram_legacy_enabled:
-                    raise Forbidden("Telegram legacy authentication is disabled")
-                await _link_telegram_registration_context(
-                    uow=uow,
-                    user_id=synced.user.id,
-                    tg_id=claims.tg_registration_id,
-                )
-            if claims.max_registration_id is not None:
-                if not settings.max_bot_enabled:
-                    raise Forbidden("MAX authentication is disabled")
-                await _link_max_registration_context(
-                    uow=uow,
-                    user_id=synced.user.id,
-                    max_user_id=claims.max_registration_id,
-                )
-                if claims.flow == "register":
-                    await notify_max_registration_completed(claims.max_registration_id)
-    except (Forbidden, Conflict) as exc:
-        if (
-            claims.tg_registration_id is not None
-            or claims.max_registration_id is not None
-            or claims.registration_email is not None
-        ):
-            reason = "already_registered" if isinstance(exc, Conflict) else "invalid"
-            response = RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason=reason),
-                status_code=status.HTTP_302_FOUND,
-            )
+            next_action = "password_setup"
         else:
-            response = RedirectResponse(url=f"{web_base}/auth/callback?error=not_linked", status_code=status.HTTP_302_FOUND)
-        clear_keycloak_state_cookie(response)
-        clear_keycloak_refresh_cookie(response)
-        return response
-
-    redirect_target = f"{web_base}/auth/callback?next={quote(claims.next_path, safe='/%?=&')}"
-    response = RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
-    clear_keycloak_state_cookie(response)
-    set_keycloak_refresh_cookie(response, bundle.refresh_token, max_age=max(0, bundle.refresh_expires_in))
-    return response
-
-
-@router.post("/auth/refresh", response_model=LoginResponse)
-async def refresh_session(
-    request: Request,
-    response: Response,
-    uow: UnitOfWork = Depends(get_uow),
-) -> LoginResponse:
-    if not settings.keycloak_enabled:
-        raise Unauthorized("Missing credentials")
-
-    keycloak_refresh_token = (request.cookies.get(settings.keycloak_refresh_cookie_name) or "").strip()
-    if not keycloak_refresh_token:
-        raise Unauthorized("Missing credentials")
-    try:
-        bundle = await refresh_tokens(refresh_token=keycloak_refresh_token)
-    except Unauthorized:
-        clear_keycloak_refresh_cookie(response)
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"detail": "Missing credentials"},
-            headers=dict(response.headers),
-        )
-
-    set_keycloak_refresh_cookie(response, bundle.refresh_token, max_age=max(0, bundle.refresh_expires_in))
-    async with uow:
-        return await _build_keycloak_auth_response(
-            access_token=bundle.access_token,
-            uow=uow,
-        )
-
-
-@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, response: Response) -> Response:
-    keycloak_refresh_token = (request.cookies.get(settings.keycloak_refresh_cookie_name) or "").strip()
-    keycloak_user_id: str | None = None
-
-    authorization = (request.headers.get("Authorization") or "").strip()
-    if authorization.startswith("Bearer "):
-        bearer_token = authorization.removeprefix("Bearer ").strip()
-        if bearer_token and looks_like_keycloak_token(bearer_token):
-            try:
-                claims = await decode_keycloak_access_token(bearer_token)
-                keycloak_user_id = claims.subject
-            except Unauthorized:
-                keycloak_user_id = None
-
-    if settings.keycloak_enabled and keycloak_refresh_token:
-        try:
-            await logout_refresh_token(refresh_token=keycloak_refresh_token)
-        except Forbidden:
-            # Local logout must succeed even if provider is temporarily unavailable.
-            pass
-
-    if settings.keycloak_enabled and keycloak_user_id:
-        try:
-            await KeycloakAdminService().logout_user_sessions(user_id=keycloak_user_id)
-        except Conflict:
-            # Local logout must succeed even if admin API is temporarily unavailable.
-            pass
-
-    clear_keycloak_state_cookie(response)
-    clear_keycloak_refresh_cookie(response)
-    response.status_code = status.HTTP_204_NO_CONTENT
-    return response
-
-
-@router.post("/auth/tg/exchange", deprecated=True)
-async def tg_exchange_disabled() -> dict[str, str]:
-    raise Forbidden("Telegram legacy authentication is disabled")
+            user = await uow.users.get_by_id(result.user_id)
+            if user is not None and user.status == "review":
+                next_action = "waiting_for_review"
+            elif result.purpose == "profile_change":
+                next_action = "login"
+            else:
+                next_action = "first_login"
+    return EmailVerificationActionResponse(
+        detail="Email подтверждён" if result.updated else "Email уже подтверждён",
+        next_action=next_action,
+        redirect_url=redirect_url,
+    )
 
 
 @router.post("/users/register", response_model=RegisterUserResponse)
@@ -691,47 +417,75 @@ async def register_user(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RegisterUserResponse:
     UserPolicy.ensure_can_register_user(current_user)
+    iam_client = IamClient()
+    normalized_login = payload.login.strip()
+    account_id = stable_iam_account_id(normalized_login)
+    role_name = technical_role_name(payload.role_id)
+    if role_name is None:
+        raise Conflict("Invalid role")
     async with uow:
-        service = UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts)
-        user = await service.register_user(
-            current_user,
-            user_id=payload.login.strip(),
-            password=payload.password.strip() if payload.password else None,
-            role_id=payload.role_id,
-            id_parent=payload.id_parent.strip() if payload.id_parent else None,
-            full_name=payload.full_name.strip() if payload.full_name else None,
-            phone=payload.phone.strip() if payload.phone else None,
-            mail=payload.mail.strip() if payload.mail else None,
+        user = await uow.users.get_by_id(normalized_login)
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=normalized_login,
+            provider="iam",
+            include_inactive=True,
         )
+        if user is not None and user.id_role != payload.role_id:
+            raise Conflict("Existing user has a different role")
+        if user is None:
+            service = UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts)
+            user = await service.register_user(
+                current_user,
+                user_id=normalized_login,
+                role_id=payload.role_id,
+                id_parent=payload.id_parent.strip() if payload.id_parent else None,
+                full_name=payload.full_name.strip() if payload.full_name else None,
+                phone=payload.phone.strip() if payload.phone else None,
+                mail=payload.mail.strip() if payload.mail else None,
+            )
+        delivery_email = (payload.mail or "").strip().lower()
+        if delivery_email:
+            await uow.user_contact_channels.upsert_channel(
+                user_id=user.id,
+                channel_type="email",
+                channel_value=delivery_email,
+                is_verified=False,
+                is_primary=True,
+            )
+        account = await iam_client.put_account(
+            account_id=binding.external_subject_id if binding is not None else account_id,
+            login=user.id,
+            role=role_name,
+            auth_status="active",
+        )
+        if binding is None:
+            binding = UserAuthAccount(
+                id_user=user.id,
+                provider="iam",
+                external_subject_id=account.id,
+                external_username=user.id,
+                external_email=payload.mail,
+                is_active=True,
+            )
+            await uow.user_auth_accounts.add(binding)
+        else:
+            binding.is_active = True
+
         unit_service = UnitService(uow.units, uow.users)
         if payload.unit_id is not None:
             if UserPolicy.can_manage_unit_members(current_user):
-                await unit_service.add_member(
-                    current_user=current_user,
-                    unit_id=payload.unit_id,
-                    user_id=user.id,
-                )
+                await unit_service.add_member(current_user=current_user, unit_id=payload.unit_id, user_id=user.id)
             else:
                 await unit_service.add_member_on_registration(
-                    current_user=current_user,
-                    unit_id=payload.unit_id,
-                    user_id=user.id,
+                    current_user=current_user, unit_id=payload.unit_id, user_id=user.id
                 )
         else:
             hierarchy = UnitHierarchyService(uow.users)
             seed_unit_ids = await hierarchy.get_management_seed_unit_ids(user_id=current_user.user_id)
             for seed_unit_id in sorted(seed_unit_ids):
                 await unit_service.add_member_on_registration(
-                    current_user=current_user,
-                    unit_id=seed_unit_id,
-                    user_id=user.id,
+                    current_user=current_user, unit_id=seed_unit_id, user_id=user.id
                 )
     return RegisterUserResponse(
-        data={
-            "user_id": user.id,
-            "role_id": user.id_role,
-            "status": user.status,
-        },
+        data={"user_id": user.id, "role_id": user.id_role, "status": user.status}
     )
-
-

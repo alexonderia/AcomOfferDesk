@@ -91,6 +91,30 @@ class _DashboardRequestsRepo:
                 SimpleNamespace(offer_amount=100.0),
                 SimpleNamespace(full_name="Economist One"),
             ),
+            (
+                SimpleNamespace(
+                    id=102,
+                    id_user="econ-1",
+                    initial_amount=100.0,
+                    final_amount=100.0,
+                    closed_at=_dt(),
+                    id_plan=10,
+                ),
+                SimpleNamespace(offer_amount=120.0),
+                SimpleNamespace(full_name="Economist One"),
+            ),
+            (
+                SimpleNamespace(
+                    id=103,
+                    id_user="econ-1",
+                    initial_amount=100.0,
+                    final_amount=100.0,
+                    closed_at=_dt(),
+                    id_plan=10,
+                ),
+                None,
+                SimpleNamespace(full_name="Economist One"),
+            ),
         ]
 
 
@@ -118,10 +142,11 @@ def test_dashboard_savings_calculation_handles_core_edge_cases():
     )
 
     assert service._calculate_savings(initial_amount=100, offer_amount=90, final_amount=90) == Decimal("10")
-    assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=100) == Decimal("20")
+    assert service._calculate_savings(initial_amount=100, offer_amount=90, final_amount=100) == Decimal("-10")
+    assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=100) == Decimal("0")
     assert service._calculate_savings(initial_amount=0, offer_amount=0, final_amount=0) == Decimal("0")
     assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=120) == Decimal("-20")
-    assert service._calculate_savings(initial_amount=None, offer_amount=120, final_amount=120) is None
+    assert service._calculate_savings(initial_amount=None, offer_amount=120, final_amount=120) == Decimal("0")
 
 
 @pytest.mark.asyncio
@@ -149,9 +174,16 @@ async def test_responsibility_dashboard_contains_status_counters_and_assigned_re
     assert node.in_progress_total == 3
     assert len(dashboard.assigned_requests) == 1
     assert dashboard.assigned_requests[0].owner_user_id == "econ-1"
-    assert dashboard.savings.total_closed_requests == 2
+    assert dashboard.savings.total_closed_requests == 4
     assert dashboard.savings.total_with_savings == 2
     assert dashboard.savings.total_savings_amount == pytest.approx(0.0)
+    assert {item.request_id: item.savings_amount for item in dashboard.savings.closed_items} == {
+        100: 20.0,
+        101: -20.0,
+        102: 0.0,
+        103: 0.0,
+    }
+    assert [item.request_id for item in dashboard.savings.items] == [100, 101]
 
 
 @pytest.mark.asyncio

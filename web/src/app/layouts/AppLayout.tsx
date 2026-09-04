@@ -67,7 +67,7 @@ export const AppLayout = () => {
               <Outlet />
             </Box>
 
-            <AppFooter compact />
+            <AppFooter />
           </Stack>
 
           <MobileBottomNavigation config={headerConfig} onLogout={logout} />

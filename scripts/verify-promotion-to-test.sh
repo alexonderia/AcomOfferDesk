@@ -19,15 +19,6 @@ if [ ! -f docker-compose.yml ]; then
   fail "docker-compose.yml not found (run from repository root)"
 fi
 
-# Regression: empty compose overrides block KC_BOOTSTRAP fallback in backend (2026-05-21).
-if grep -qE 'KEYCLOAK_ADMIN_USERNAME:\s*""' docker-compose.yml; then
-  fail 'docker-compose.yml must not set KEYCLOAK_ADMIN_USERNAME to "" (use env_file only)'
-fi
-if grep -qE 'KEYCLOAK_ADMIN_PASSWORD:\s*""' docker-compose.yml; then
-  fail 'docker-compose.yml must not set KEYCLOAK_ADMIN_PASSWORD to "" (use env_file only)'
-fi
-ok "docker-compose.yml has no empty KEYCLOAK_ADMIN_* overrides"
-
 PYTHON_CMD="python3"
 if [ -x "$ROOT_DIR/.venv/bin/python" ]; then
   PYTHON_CMD="$ROOT_DIR/.venv/bin/python"
@@ -46,13 +37,17 @@ export S3_ACCESS_KEY="${S3_ACCESS_KEY:-ci-access-key}"
 export S3_SECRET_KEY="${S3_SECRET_KEY:-ci-secret-key}"
 export S3_BUCKET="${S3_BUCKET:-ci-bucket}"
 
-"$PYTHON_CMD" -m pytest backend/tests/unit/test_keycloak_admin_settings_unit.py -q
-ok "Keycloak admin settings unit tests passed"
+"$PYTHON_CMD" -m pytest \
+  backend/tests/unit/test_iam_authentication_unit.py \
+  backend/tests/unit/test_iam_migration_unit.py -q
+ok "IAM authentication and migration contract tests passed"
 
 if command -v docker >/dev/null 2>&1; then
   ENV_TEMPLATE=".env.prod-like.example"
   if [ -f "$ENV_TEMPLATE" ]; then
     export APP_RUNTIME_ENV_FILE="./$ENV_TEMPLATE"
+    export IAM_RUNTIME_ENV_FILE="./.env.iam.example"
+    export IAM_MIGRATION_ENV_FILE="./.env.iam-db.example"
     if docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/dev/null 2>&1; then
       ok "docker compose config (prod stack) renders"
     else

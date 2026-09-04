@@ -7,22 +7,14 @@ import pytest
 
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
-from app.services import users as users_module
 from app.services.users import ManualContractorService, ManualContractorUpdateInput, PLACEHOLDER_TEXT
 
 
 @pytest.mark.asyncio
-async def test_update_manual_contractor_creates_missing_company_contacts(monkeypatch):
-    monkeypatch.setattr(users_module, "_bind_keycloak_account", AsyncMock())
-    monkeypatch.setattr(users_module, "_sync_keycloak_role_after_bind", AsyncMock())
-
-    keycloak_admin = AsyncMock()
-    keycloak_admin.ensure_user = AsyncMock(return_value=SimpleNamespace(id="kc-subject-1"))
-
+async def test_update_manual_contractor_creates_missing_company_contacts():
     user = SimpleNamespace(
         id="contractor-no-company",
         id_role=settings.contractor_role_id,
-        tg_user_id=None,
     )
     profile = SimpleNamespace(
         id="contractor-no-company",
@@ -37,6 +29,7 @@ async def test_update_manual_contractor_creates_missing_company_contacts(monkeyp
 
     users_repo = AsyncMock()
     users_repo.get_by_id = AsyncMock(return_value=user)
+    users_repo.has_legacy_messenger_account = AsyncMock(return_value=False)
 
     profiles_repo = AsyncMock()
     profiles_repo.get_by_id = AsyncMock(return_value=profile)
@@ -50,11 +43,13 @@ async def test_update_manual_contractor_creates_missing_company_contacts(monkeyp
         profiles=profiles_repo,
         company_contacts=company_contacts_repo,
         user_auth_accounts=AsyncMock(),
-        keycloak_admin=keycloak_admin,
     )
 
     current_user = CurrentUser(
         user_id="admin-1",
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="admin",
         role_id=settings.admin_role_id,
         status="active",
         permissions=frozenset({"contractors.manual.manage"}),

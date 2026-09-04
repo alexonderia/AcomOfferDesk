@@ -99,7 +99,7 @@ Workflow **`.github/workflows/deploy.yml`** (триггер: push в ветку 
 
 ## Рассинхрон: пустой `flyway/sql` на VPS (апрель 2026)
 
-**Симптомы:** после входа через Keycloak бэкенд отвечает **500** на **`/api/v1/auth/callback`**; в логах **`backend`** — `relation "user_auth_accounts" does not exist`. При этом в **`flyway_schema_history`** может быть только строка **baseline** (**`1.0.0`**), а каталог **`/opt/order_database/flyway/sql`** на диске **пустой** или без актуальных **`V*.sql`**.
+**Исторический симптом до миграции IAM:** auth callback отвечал **500**, а в логах **`backend`** было `relation "user_auth_accounts" does not exist`. Причина актуальна и для IAM callback: в **`flyway_schema_history`** может быть только строка **baseline** (**`1.0.0`**), а каталог **`/opt/order_database/flyway/sql`** на диске **пустой** или без актуальных **`V*.sql`**.
 
 **Причина:** дерево **`order_database`** на сервере неполное (ручное копирование, обрезанный архив, старый снимок). Flyway видит только baseline из **`flyway.conf`** и считает схему «догнанной», хотя версионные миграции из репозитория не подставлялись.
 
@@ -122,7 +122,7 @@ docker compose exec -T postgres psql -U order_admin -d order_database -c '\dt us
 
 **Не использовать** полный **`install-order-database-vps.sh`**, если нужно **сохранить** существующий volume: скрипт по дизайну делает **`docker compose down -v`** и пересоздаёт данные.
 
-**После успешной миграции:** повторный вход через Keycloak должен проходить без **500** на callback (подтверждено на production, апрель 2026).
+**После успешной миграции:** повторный вход через IAM должен проходить без **500** на callback.
 
 ---
 

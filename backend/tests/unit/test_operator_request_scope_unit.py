@@ -16,12 +16,12 @@ from app.services.requests import RequestService
 def _operator_user(*, user_id: str = "operator-1") -> CurrentUser:
     return CurrentUser(
         user_id=user_id,
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="operator",
         role_id=settings.operator_role_id,
         status="active",
         permissions=frozenset(),
-        keycloak_roles=frozenset(),
-        app_roles=frozenset(),
-        delegation_roles=frozenset(),
     )
 
 

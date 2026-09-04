@@ -8,9 +8,7 @@ ENV_FILE="${ENV_FILE:-.env.dev}"
 BASE_URL="${BASE_URL:-}"
 INCLUDE_E2E="${INCLUDE_E2E:-false}"
 STRICT_E2E="${STRICT_E2E:-false}"
-PROVISION_E2E_USERS="${PROVISION_E2E_USERS:-true}"
-KEEP_PROVISIONED_E2E_USERS="${KEEP_PROVISIONED_E2E_USERS:-false}"
-REPAIR_KEYCLOAK="${REPAIR_KEYCLOAK:-true}"
+REPAIR_IAM_RBAC="${REPAIR_IAM_RBAC:-true}"
 
 echo "== [1/8] backend unit tests =="
 "$ROOT_DIR/scripts/test-unit.sh"
@@ -25,11 +23,11 @@ else
   "$ROOT_DIR/scripts/smoke-infra.sh" "$ENV_FILE"
 fi
 
-echo "== [4/8] keycloak permission model checks =="
-if [[ "$REPAIR_KEYCLOAK" == "true" || "$REPAIR_KEYCLOAK" == "1" ]]; then
-  KEYCLOAK_PERMISSION_REPAIR=1 "$ROOT_DIR/scripts/check-keycloak.sh" "$ENV_FILE"
+echo "== [4/8] IAM RBAC and account reconciliation checks =="
+if [[ "$REPAIR_IAM_RBAC" == "true" || "$REPAIR_IAM_RBAC" == "1" ]]; then
+  IAM_RBAC_REPAIR=1 bash "$ROOT_DIR/scripts/check-iam.sh" "$ENV_FILE"
 else
-  "$ROOT_DIR/scripts/check-keycloak.sh" "$ENV_FILE"
+  bash "$ROOT_DIR/scripts/check-iam.sh" "$ENV_FILE"
 fi
 
 echo "== [5/8] frontend lint =="
@@ -46,12 +44,6 @@ if [[ "$INCLUDE_E2E" == "true" || "$INCLUDE_E2E" == "1" ]]; then
   e2e_env=(ENV_FILE="$ENV_FILE" BASE_URL="$BASE_URL")
   if [[ "$STRICT_E2E" == "true" || "$STRICT_E2E" == "1" ]]; then
     e2e_env+=(STRICT_CREDENTIALS=true)
-  fi
-  if [[ "$PROVISION_E2E_USERS" == "true" || "$PROVISION_E2E_USERS" == "1" ]]; then
-    e2e_env+=(PROVISION_USERS=true)
-  fi
-  if [[ "$KEEP_PROVISIONED_E2E_USERS" == "true" || "$KEEP_PROVISIONED_E2E_USERS" == "1" ]]; then
-    e2e_env+=(KEEP_PROVISIONED_USERS=true)
   fi
   env "${e2e_env[@]}" "$ROOT_DIR/scripts/e2e-smoke.sh"
 else

@@ -3,7 +3,6 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json* ./
 RUN npm install
 COPY web/ .
-COPY infra/keycloak/themes/acom-offerdesk/login/resources/css /app/infra/keycloak/themes/acom-offerdesk/login/resources/css
 RUN npm run build
 
 FROM nginx:1.27-alpine

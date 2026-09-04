@@ -12,11 +12,23 @@ export type CreateManualContractorPayload = {
 type ApiResponse = {
   data: {
     user_id: string;
+    outcome?: 'created' | 'duplicate_found';
+    duplicate?: {
+      company_name: string;
+      inn: string;
+      company_mail?: string | null;
+    } | null;
   };
 };
 
 export type CreateManualContractorResult = {
   userId: string;
+  outcome: 'created' | 'duplicate_found';
+  duplicate: {
+    companyName: string;
+    inn: string;
+    companyMail: string | null;
+  } | null;
 };
 
 export const createManualContractor = async (
@@ -32,6 +44,14 @@ export const createManualContractor = async (
   );
 
   return {
-    userId: response.data.user_id
+    userId: response.data.user_id,
+    outcome: response.data.outcome ?? 'created',
+    duplicate: response.data.duplicate
+      ? {
+          companyName: response.data.duplicate.company_name,
+          inn: response.data.duplicate.inn,
+          companyMail: response.data.duplicate.company_mail ?? null,
+        }
+      : null,
   };
 };

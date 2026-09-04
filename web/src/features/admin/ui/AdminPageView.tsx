@@ -11,15 +11,25 @@ import {
   Typography,
   type SelectChangeEvent
 } from '@mui/material';
+import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined';
+import { useTheme } from '@mui/material/styles';
+import { useMemo, useState } from 'react';
+import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
+import { useAuth } from '@app/providers/AuthProvider';
 import { UsersTable } from '@features/admin/components/UsersTable';
+import { ContractorInviteDialog } from '@features/contractors/components/ContractorInviteDialog';
 import { ContractorsListView } from '@features/contractors/components/ContractorsListView';
+import { ManualContractorDuplicatePanel } from '@features/contractors/components/ManualContractorDuplicatePanel';
 import { ROLE } from '@shared/constants/roles';
+import { hasPermission } from '@shared/auth/permissions';
+import { ActionButton } from '@shared/components/ActionButton';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { formatRuPhone } from '@shared/lib/phone';
 import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 import { sectionTitleSx } from '@shared/theme/sectionTitleSx';
 import { useToastMessageEffect } from '@shared/ui/toasts';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 import { employeePersonLabels, type UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
 
@@ -31,6 +41,10 @@ const inputFieldSx = {
 };
 
 export const AdminPageView = () => {
+  const { session } = useAuth();
+  const theme = useTheme();
+  const isMobileViewport = useIsMobileViewport();
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const {
     isLeadLike,
     canViewRoleIds,
@@ -100,6 +114,50 @@ export const AdminPageView = () => {
   const isInnFieldValid = hasValue(innValue) && !errors.inn;
   const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
   const selectedUnitOption = unitOptions.find((option) => option.unitId === selectedUnitId) ?? null;
+  const canInviteContractors = activeTab === 'contractors' && hasPermission(session, 'users.registration.invite');
+
+  const breadcrumbActions = useMemo(
+    () => {
+      if (!canInviteContractors) {
+        return null;
+      }
+      if (isMobileViewport) {
+        return (
+          <ActionButton
+            kind="outlined"
+            aria-label="Пригласить"
+            onClick={() => setIsInviteDialogOpen(true)}
+            sx={{
+              minHeight: 42,
+              height: 42,
+              width: 42,
+              minWidth: 42,
+              px: 0,
+              gap: 0,
+              justifyContent: 'center',
+              borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+              '& .MuiButton-startIcon': { margin: 0 },
+            }}
+            showNavigationIcons={false}
+            startIcon={<ForwardToInboxOutlined fontSize="small" />}
+          />
+        );
+      }
+      return (
+        <Button
+          variant="outlined"
+          onClick={() => setIsInviteDialogOpen(true)}
+          startIcon={<ForwardToInboxOutlined fontSize="small" />}
+          sx={{ textTransform: 'none' }}
+        >
+          Пригласить
+        </Button>
+      );
+    },
+    [canInviteContractors, isMobileViewport, theme]
+  );
+
+  useSetPageBreadcrumbActions(breadcrumbActions);
 
   useToastMessageEffect({ message: usersError });
 
@@ -146,12 +204,12 @@ export const AdminPageView = () => {
       <Dialog
         open={isDialogOpen}
         onClose={handleClose}
-        maxWidth="sm"
+        maxWidth={isContractorRole ? 'lg' : 'sm'}
         fullWidth
         PaperProps={{ sx: dialogPaperSx }}
       >
-        <DialogContent sx={dialogContentSx}>
-          <Box component="form" onSubmit={handleSubmit(onSubmit)}>
+        <DialogContent sx={{ ...dialogContentSx, display: 'flex', gap: 3, alignItems: 'flex-start', flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
+          <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ flex: 1, minWidth: 0 }}>
             <Stack spacing={2}>
               <Typography variant="h5" fontWeight={600} lineHeight={1}>
                 {isContractorRole
@@ -262,24 +320,6 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
                   <ValidatedTextField
-                    label="Пароль"
-                    type="password"
-                    fieldName="password"
-                    error={Boolean(getFieldError('password'))}
-                    helperText={getFieldError('password')}
-                    registration={register('password')}
-                    sx={{ display: 'none' }}
-                  />
-                  <ValidatedTextField
-                    label="Повторите пароль"
-                    type="password"
-                    fieldName="confirmPassword"
-                    error={Boolean(getFieldError('confirmPassword'))}
-                    helperText={getFieldError('confirmPassword')}
-                    registration={register('confirmPassword')}
-                    sx={{ display: 'none' }}
-                  />
-                  <ValidatedTextField
                     label={<RequiredFieldLabel label="E-mail" isValid={isMailFieldValid} />}
                     fieldName="mail"
                     error={Boolean(getFieldError('mail'))}
@@ -373,8 +413,21 @@ export const AdminPageView = () => {
               </Button>
             </Stack>
           </Box>
+          {isContractorRole ? (
+            <ManualContractorDuplicatePanel
+              open={isDialogOpen}
+              companyName={companyNameValue}
+              inn={innValue}
+              companyMail={watch('company_mail')}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
+
+      <ContractorInviteDialog
+        open={isInviteDialogOpen}
+        onClose={() => setIsInviteDialogOpen(false)}
+      />
     </Stack>
   );
 };

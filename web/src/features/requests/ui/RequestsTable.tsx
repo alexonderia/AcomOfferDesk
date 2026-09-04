@@ -21,7 +21,7 @@ type RequestsTableProps = {
     onRowClick?: (request: RequestWithOfferStats) => void;
     onAddClick?: () => void;
     chatAlertsMap?: Record<string, number>;
-    ownerOptions?: OwnerOption[];
+    ownerOptionsByRequestId?: Record<string, OwnerOption[]>;
     canEditOwner?: boolean;
     onOwnerChange?: (request: RequestWithOfferStats, ownerUserId: string) => void;
     isContractor?: boolean;
@@ -515,7 +515,7 @@ export const RequestsTable = ({
     onRowClick,
     onAddClick,
     chatAlertsMap,
-    ownerOptions = [],
+    ownerOptionsByRequestId = {},
     canEditOwner = false,
     onOwnerChange,
     isContractor = false,
@@ -641,12 +641,12 @@ export const RequestsTable = ({
                     <Select
                         size="small"
                         value={row.id_user}
-                        renderValue={(selected) => ownerOptions.find((option) => option.id === selected)?.label ?? row.owner_full_name ?? String(selected ?? '')}
+                        renderValue={(selected) => (ownerOptionsByRequestId[row.id] ?? []).find((option) => option.id === selected)?.label ?? row.owner_full_name ?? String(selected ?? '')}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onOwnerChange?.(row, event.target.value)}
                         sx={{ minWidth: 150 }}
                     >
-                        {ownerOptions.map((option) => (
+                        {(ownerOptionsByRequestId[row.id] ?? []).map((option) => (
                             <UnavailableAwareMenuItem
                                 key={option.id}
                                 value={option.id}
@@ -759,7 +759,7 @@ export const RequestsTable = ({
                     row={row}
                     canEditOwner={!isContractor && canEditOwner}
                     isContractor={isContractor}
-                    ownerOptions={ownerOptions}
+                    ownerOptions={ownerOptionsByRequestId[row.id] ?? []}
                     onOwnerChange={onOwnerChange}
                     isExpanded={Boolean(expandedCardsById[row.id])}
                     onToggleExpand={() => handleToggleCardExpand(row.id)}

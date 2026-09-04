@@ -20,9 +20,6 @@ type ProfilePayload = {
   note?: string | null;
   department_name?: string | null;
   permissions?: string[];
-  keycloak_roles?: string[];
-  app_roles?: string[];
-  delegation_roles?: string[];
   actions?: {
     can_manage_own_profile?: boolean;
     can_manage_credentials?: boolean;
@@ -70,10 +67,8 @@ type CurrentUserResponse = {
 type NotificationPreferencesPayload = {
   mode?: string;
   email_available?: boolean;
-  max_available?: boolean;
   email?: string | null;
-  max_user_id?: string | null;
-  preferences?: Record<string, { email?: boolean; max?: boolean }>;
+  preferences?: Record<string, { email?: boolean }>;
 };
 
 type NotificationPreferencesResponse = {
@@ -109,38 +104,24 @@ export type CurrentUserProfile = {
     endedAt: string;
   }>;
   permissions: string[];
-  keycloakRoles: string[];
-  appRoles: string[];
-  delegationRoles: string[];
   actions: UserActions;
 };
 
-export type NotificationPreferencesMode = 'all' | 'email_only' | 'max_only' | 'none' | 'custom';
+export type NotificationPreferencesMode = 'email_only' | 'none' | 'custom';
 
 export type NotificationPreferenceType = 'chat' | 'request' | 'offer' | 'system';
 
 export type NotificationPreferences = {
   mode: NotificationPreferencesMode;
   emailAvailable: boolean;
-  maxAvailable: boolean;
   email: string | null;
-  maxUserId: string | null;
-  preferences: Record<NotificationPreferenceType, { email: boolean; max: boolean }>;
-};
-
-type UpdateCredentialsPayload = {
-  current_password: string;
-  new_password: string;
+  preferences: Record<NotificationPreferenceType, { email: boolean }>;
 };
 
 type UpdateProfilePayload = {
   full_name?: string;
   phone?: string;
   mail?: string;
-};
-
-type LinkMyMaxAccountPayload = {
-  code: string;
 };
 
 type SetUnavailabilityPeriodPayload = {
@@ -160,7 +141,7 @@ type UpdateCompanyContactsPayload = {
 
 type UpdateNotificationPreferencesPayload = {
   mode?: Exclude<NotificationPreferencesMode, 'custom'>;
-  preferences?: Partial<Record<NotificationPreferenceType, { email?: boolean; max?: boolean }>>;
+  preferences?: Partial<Record<NotificationPreferenceType, { email?: boolean }>>;
 };
 
 const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfile => {
@@ -200,9 +181,6 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
       endedAt: period.ended_at
     })),
     permissions: data.permissions ?? [],
-    keycloakRoles: data.keycloak_roles ?? [],
-    appRoles: data.app_roles ?? [],
-    delegationRoles: data.delegation_roles ?? [],
     actions: normalizeUserActions(data.actions)
   };
 };
@@ -212,29 +190,23 @@ const mapNotificationPreferences = (response: NotificationPreferencesResponse): 
   const mode = data.mode;
   return {
     mode:
-      mode === 'all' || mode === 'email_only' || mode === 'max_only' || mode === 'none' || mode === 'custom'
+      mode === 'email_only' || mode === 'none' || mode === 'custom'
         ? mode
         : 'none',
     emailAvailable: Boolean(data.email_available),
-    maxAvailable: Boolean(data.max_available),
     email: data.email ?? null,
-    maxUserId: data.max_user_id ?? null,
     preferences: {
       chat: {
-        email: Boolean(data.preferences?.chat?.email),
-        max: Boolean(data.preferences?.chat?.max)
+        email: Boolean(data.preferences?.chat?.email)
       },
       request: {
-        email: Boolean(data.preferences?.request?.email),
-        max: Boolean(data.preferences?.request?.max)
+        email: Boolean(data.preferences?.request?.email)
       },
       offer: {
-        email: Boolean(data.preferences?.offer?.email),
-        max: Boolean(data.preferences?.offer?.max)
+        email: Boolean(data.preferences?.offer?.email)
       },
       system: {
-        email: Boolean(data.preferences?.system?.email),
-        max: Boolean(data.preferences?.system?.max)
+        email: Boolean(data.preferences?.system?.email)
       }
     }
   };
@@ -260,31 +232,11 @@ export const getRegistrationCurrentUserProfile = async (): Promise<CurrentUserPr
   return mapCurrentUserProfile(response);
 };
 
-export const updateMyCredentials = async (payload: UpdateCredentialsPayload): Promise<CurrentUserProfile> => {
-  const response = await fetchJson<CurrentUserResponse>(
-    '/api/v1/users/me/credentials',
-    { method: 'PATCH', body: JSON.stringify(payload) },
-    'Ошибка обновления пароля'
-  );
-
-  return mapCurrentUserProfile(response);
-};
-
 export const updateMyProfile = async (payload: UpdateProfilePayload): Promise<CurrentUserProfile> => {
   const response = await fetchJson<CurrentUserResponse>(
     '/api/v1/users/me/profile',
     { method: 'PATCH', body: JSON.stringify(payload) },
     'Ошибка обновления личных данных'
-  );
-
-  return mapCurrentUserProfile(response);
-};
-
-export const linkMyMaxAccount = async (payload: LinkMyMaxAccountPayload): Promise<CurrentUserProfile> => {
-  const response = await fetchJson<CurrentUserResponse>(
-    '/api/v1/users/me/max-link',
-    { method: 'POST', body: JSON.stringify(payload) },
-    'Не удалось привязать MAX'
   );
 
   return mapCurrentUserProfile(response);

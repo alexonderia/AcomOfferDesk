@@ -1,71 +1,12 @@
-﻿# Карта Событий Уведомлений
+# Notification event map
 
-## Назначение
+| Event | Получатели | Link |
+|---|---|---|
+| `request.created` | ответственный и видимые активные контрагенты | `/requests/{request_id}` |
+| `request.status_changed` | участники заявки по unit/domain scope | `/requests/{request_id}` |
+| `request.files_changed` | ответственный и релевантные авторы предложений | `/requests/{request_id}` |
+| `offer.created` / `offer.updated` | участники заявки по policy | request/offer route |
+| `message.created` | участники чата | chat route |
+| `user.review_required` | admin/superadmin/security officer по target role/source | `/admin/users` или `/contractors` |
 
-Документ фиксирует карту уведомлений в backend/frontend и классифицирует каждое событие как:
-
-- `system_ui` — локальная реакция интерфейса на текущей странице, не сохраняется в `user_notifications`.
-- `business` — бизнес-событие, важное независимо от открытой страницы; сохраняется в `user_notifications`, показывается в центре уведомлений и предназначено для доставки через realtime.
-
-## Правила Классификации
-
-- `system_ui`
-  - Пользователь сам инициировал действие и сразу видит результат в текущем сценарии.
-  - Не сохраняется в `user_notifications`.
-  - Целевое размещение: toast `top-center` (сейчас во многих местах используется inline `Alert`, см. статус и комментарии).
-
-- `business`
-  - Событие важно пользователю независимо от текущей страницы.
-  - Сохраняется в `user_notifications`.
-  - Целевое размещение: бизнес-toast `bottom-right` + центр уведомлений.
-  - Основной push-механизм: realtime доставка через `/api/v1/ws/realtime` (`notification.created`), polling остается только как sync/fallback.
-
-## Таблица Событий
-
-| event_type | категория | фиксировать в user_notifications | размещение toast | источник события | получатели | link_url | payload | текущий статус | комментарий |
-|---|---|---|---|---|---|---|---|---|---|
-| request.created | business | yes | bottom-right | `backend/app/services/requests.py:create_request` -> process event -> `process_notification_events.py` | Ответственный по заявке + активные контрагенты, у которых заявка не скрыта; автор исключается | `/requests/{request_id}` | `request_id`, `actor_user_id`, dedupe-ключи | implemented | Реализовано в handler: получатели вычисляются от состояния заявки. Для контрагентов применяется фильтр активной привязки `keycloak`. |
-| request.status_changed | business | yes | bottom-right | `backend/app/services/requests.py` -> process event -> `process_notification_events.py` | Владелец заявки (без автора события) | `/requests/{request_id}` | `old_status`, `new_status`, `actor_user_id`, dedupe-ключи | implemented | Реализовано: сохраняется и показывается в центре/пуш-слое. |
-| request.responsible_changed | business | yes | bottom-right | `backend/app/services/requests.py:update_request` -> process event -> `process_notification_events.py` | Старый ответственный (если он не оператор) + новый ответственный; автор исключается | `/requests/{request_id}` | `old_responsible_user_id`, `new_responsible_user_id`, `actor_user_id`, dedupe-ключи | implemented | Реализовано через publish-after-commit и dedupe; old operator исключается из получателей. |
-| request.deadline_changed | business | yes | bottom-right | `backend/app/services/requests.py:update_request` -> process event -> `process_notification_events.py` | Ответственный по заявке (без автора события) | `/requests/{request_id}` | `old_deadline`, `new_deadline`, `actor_user_id`, dedupe-ключи | implemented | Реализовано через publish-after-commit и dedupe. |
-| request.closed | business | yes | bottom-right | Покрыто через `request.status_changed` при `new_status=closed` | Ответственный по заявке; автор исключается | `/requests/{request_id}` | `old_status`, `new_status=closed` | implemented | Частный случай общего события смены статуса с отдельной матрицей получателей. |
-| request.cancelled | business | yes | bottom-right | Покрыто через `request.status_changed` при `new_status=cancelled` | Ответственный по заявке; автор исключается | `/requests/{request_id}` | `old_status`, `new_status=cancelled` | implemented | Частный случай общего события смены статуса с отдельной матрицей получателей. |
-| request.reopened | business | yes | bottom-right | Покрыто через `request.status_changed` при `new_status=open` | Ответственный + активные видимые контрагенты; автор исключается | `/requests/{request_id}` | `old_status`, `new_status=open` | implemented | Частный случай общего события смены статуса; для контрагентов действует фильтр активной привязки `keycloak`. |
-| offer.created | business | yes | bottom-right | `backend/app/services/offers.py:create_offer` -> process event -> `process_notification_events.py` | Владелец заявки (без автора события) | `/requests/{request_id}` или `/offers/{offer_id}/workspace` | `request_id`, `offer_id`, `actor_user_id`, dedupe-ключи | implemented | Реализовано: сохраняется и показывается в центре/пуш-слое. |
-| offer.status_changed | business | yes | bottom-right | `backend/app/services/offers.py:update_status` -> process event -> `process_notification_events.py` | Владелец КП и владелец заявки (без автора события) | `/offers/{offer_id}/workspace` | `offer_id`, `request_id`, `actor_user_id`, `old_status`, `new_status`, dedupe-ключи | implemented | Единый event type для `accepted/rejected/deleted`; заголовок пуша выбирается по `new_status`. |
-| offer.updated | business | yes | bottom-right | `OfferService.add_file/remove_file/update_amount` -> process event -> `process_notification_events.py` | Ответственный по заявке + автор КП; автор события исключается | `/offers/{offer_id}/workspace` | `request_id`, `offer_id`, `offer_author_user_id`, `file_ids`, `changed_file_count`, `old_offer_amount`, `new_offer_amount`, `actor_user_id`, dedupe-ключи | implemented | Единый event type для изменения файлов и суммы КП (бывший `offer.files_changed`). |
-| message.created | business | yes | bottom-right | `backend/app/services/offers.py:create_message` -> process event -> `process_notification_events.py` | Участники чата кроме автора (с учетом подавления в открытом чате) | `/offers/{offer_id}/workspace` | `request_id`, `offer_id`, `chat_id`, `message_id`, `actor_user_id` | implemented | Реализовано: сохраняется и показывается в центре/пуш-слое. |
-| message.read | system_ui | no | none | WebSocket-событие чата через единый канал `/api/v1/ws/realtime` (event type: `chat.message.read`) | Активные участники чата | none | `chat_id`, `user_id`, `message_ids`, `last_read_message_id` | implemented | Сигнал чата в реальном времени, не центр уведомлений. |
-| chat.participant_joined | business | yes | bottom-right | В контрактах ws/notification pipeline не найдено | Участники чата (требует уточнения) | `/offers/{offer_id}/workspace` | `chat_id`, `user_id` | todo | Не реализовано, применимость нужно уточнить. |
-| chat.participant_left | business | yes | bottom-right | В контрактах ws/notification pipeline не найдено | Участники чата (требует уточнения) | `/offers/{offer_id}/workspace` | `chat_id`, `user_id` | todo | Не реализовано, применимость нужно уточнить. |
-| request.files_changed | business | yes | bottom-right | `RequestService.attach_file/remove_file` -> process event -> `process_notification_events.py` | Ответственный + авторы КП в статусах `submitted/accepted`, без автора действия | `/requests/{request_id}` | `request_id`, `file_ids`, `changed_file_count`, `actor_user_id`, dedupe-ключи | implemented | Добавлено как часть изменения заявки. Для контрагентов применяется фильтр активной привязки `keycloak`. |
-| user.status_changed | mixed | admins/superadmins + security officer for contractor targets | bottom-right | `UserStatusService.update_statuses` -> process event -> `process_notification_events.py` | Центр: admins/superadmins без actor; для contractor-target дополнительно `security_officer`; target contractor получает email, target non-contractor email не получает | `/admin/users` или `/contractors` | `target_user_id`, `old_status`, `new_status`, `target_role`, `target_is_contractor`, `actor_user_id`, `email_notification_queued`, `email_notification_reason` | implemented | Contractor-target использует отдельный текст и ссылку `/contractors`; actor не уведомляется. |
-| email.sent | business | yes | bottom-right | `EmailDeliveryEventHandler` из `email.delivery.succeeded` | `recipient_user_id` из payload доставки | `/requests/{request_id}` или `/offers/{offer_id}/workspace` | `correlation_id`, `request_id/offer_id`, `to_email` | implemented | Реализовано: сохраняется и показывается в центре/пуш-слое. |
-| email.failed | business | yes | bottom-right | `EmailDeliveryEventHandler` из `email.delivery.failed` | `recipient_user_id` из payload доставки | `/requests/{request_id}` или `/offers/{offer_id}/workspace` | `correlation_id`, `safe_error_code`, безопасный текст ошибки | implemented | Реализовано: сохраняется и показывается в центре/пуш-слое. |
-| user.review_required | business | yes | bottom-right | `ContractorRegistrationService.register_contractor`, `ManualContractorService.create_manual_contractor` и `UserStatusService.update_statuses` (при переходе в `review`) -> process event -> `process_notification_events.py` | Администраторы, суперадмин и `security_officer` для contractor-target/source | `/admin/users` или `/contractors` | `target_user_id`, `target_role`, `actor_user_id`, `source`, dedupe-ключи | implemented | Для `contractor_tg`/`oidc_invite` текст: «Зарегистрирован новый контрагент ...», для `manual_contractor`: «Создан новый контрагент ...». |
-| plan.assigned | business | yes | bottom-right | `PlanService.create_subplan/delegate_plan` -> process event -> `process_notification_events.py` | `responsible_user_id` (кроме `actor_user_id`) | `/pm-dashboard/plan` | `plan_id`, `responsible_user_id`, `assigned_by_user_id`, `parent_plan_id`, `period(_start/_end)`, `plan_sum`, dedupe-ключи | implemented | Бизнес-уведомление получает назначенный пользователь; actor получает только локальный `system_ui` toast из plan dashboard flow. |
-| plan.updated | business | yes | bottom-right | `PlanService.update_plan` -> process event -> `process_notification_events.py` | `responsible_user_id` (кроме `actor_user_id`) | `/pm-dashboard/plan` | `plan_id`, `responsible_user_id`, `actor_user_id`, `old_plan_sum`, `new_plan_sum`, `old/new period_end`, `period`, dedupe-ключи | implemented | Реализовано через publish-after-commit; пустой recipient логируется и пропускается. |
-| plan.completed | business | yes | bottom-right | API закрытия плана есть, но отдельный event type `plan.completed` не публикуется | Владелец/менеджер плана (требует уточнения) | маршрут dashboard плана (требует уточнения) | `plan_id`, метаданные завершения | todo | Требует отдельного события завершения/закрытия плана; не смешивается с `plan.assigned`/`plan.updated`. |
-| plan.overdue | business | yes | bottom-right | Планировщик/producer просрочки не найден | Владелец/менеджер плана (требует уточнения) | маршрут dashboard плана (требует уточнения) | `plan_id`, дата срока, величина просрочки | todo | Требует фоновой/периодической проверки просрочки и отдельной публикации события; не смешивается с `plan.assigned`/`plan.updated`. |
-| system.warning | business | yes | bottom-right | Process handler `process_notification_events.py` + legacy `NotificationService.notify_system_warning` для точечных вызовов | Явно переданные получатели из payload | payload `link_url` или none | произвольный payload + `event_id`/`dedupe_key` | partial | Consumer-путь подключен; централизованный producer-поток из бизнес-сервисов пока точечный/неунифицированный. |
-| system.worker_failed | business | yes | bottom-right | Мост из ошибок воркера/фоновых процессов в notification pipeline не найден | admins/superadmins или отдельные ops-получатели (требует уточнения) | worker/admin route (требует уточнения) | `worker_name`, `error_code`, корреляционные поля | todo | Требуется отдельный bridge от ошибок worker/background в process notification pipeline и явная матрица получателей. |
-| ui.request.save.success | system_ui | no | top-center | local API result (`RequestDetailsView`) | Текущий пользователь страницы | none | локальный текст | implemented | Показывается через единый system toast facade. |
-| ui.request.save.error | system_ui | no | top-center | local API result (`RequestDetailsView`) | Текущий пользователь страницы | none | локальный текст ошибки | implemented | Показывается через единый system toast facade. |
-| ui.request.create.error | system_ui | no | top-center | local API result (`CreateRequestPage`) | Текущий пользователь страницы | none | локальный текст ошибки | implemented | Ошибка создания заявки показывается как system toast. |
-| ui.plan.mutation.success | system_ui | no | top-center | `web/src/features/dashboard/model/usePlanDashboard.ts` + `useSystemToasts` | Текущий пользователь страницы | none | локальный текст успеха | implemented | Локальные system-ui уведомления для create/update/delegate/close/remove без записи в `user_notifications`. |
-| ui.plan.mutation.error | system_ui | no | top-center | `web/src/features/dashboard/model/usePlanDashboard.ts` + `useSystemToasts` | Текущий пользователь страницы | none | локальный текст ошибки | implemented | Локальные system-ui ошибки без записи в `user_notifications`. |
-| ui.user.create.success | system_ui | no | top-center | local API result (`useAdminPage`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Показывается через единый system toast facade. |
-| ui.user.create.error | system_ui | no | top-center | local API result (`useAdminPage`) | Текущий пользователь страницы | none | локальный текст ошибки | implemented | Показывается через единый system toast facade. |
-| ui.profile.review.submit.success | system_ui | no | top-center | local API result (`AccountStatePage`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Отправка на проверку подтверждается system toast. |
-| ui.file.upload.normative.success | system_ui | no | top-center | local API result (`NormativeFileButton`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Компонент использует system toast facade для success/error. |
-| ui.feedback.submit.success | system_ui | no | top-center | local API result (`FeedbackButton`) | Текущий пользователь страницы | none | локальный текст успеха | implemented | Компонент использует system toast facade для success/error. |
-
-## Примечания
-
-- Бизнес-пуши реализованы через `NotificationsPushLayer` и приходят по realtime-событию `notification.created` (`/api/v1/ws/realtime`), без запуска push от роста unread-count polling.
-- `/api/v1/ws/chat` удален; frontend и backend работают через единый `/api/v1/ws/realtime`.
-- Прямые методы `NotificationService.notify_*` сохранены как compatibility fallback: основной путь — process pipeline, fallback используется только если scheduling process-event не удался в конкретном use-case.
-- Для получателей-контрагентов центр уведомлений отправляет события только при активной привязке `keycloak`; вручную созданные контрагенты без завершенной привязки в получатели не попадают.
-- Визуальные иконки в центре уведомлений сейчас явно сопоставлены в `web/src/features/notifications/ui/notificationVisuals.tsx` для типов: `offer.created`, `offer.updated`, `offer.status_changed`, `message.created`, `email.sent`, `email.failed`, `request.files_changed`, `request.status_changed`, `user.status_changed`, `user.review_required`, `system.warning`; остальные типы используют fallback-иконку.
-- `message.read`/`chat.message.read` — это сигнал чата в realtime-канале и его следует оставлять вне `user_notifications`, пока бизнес-требования не изменятся.
-- `message.file_attached` как отдельный process event не используется: вложения чата входят в payload `message.created`.
+Получатели вычисляются из текущего Acom business state, units, visibility и notification preferences. Доступ по ссылке требует действующую IAM session и повторно проверяется backend policy.

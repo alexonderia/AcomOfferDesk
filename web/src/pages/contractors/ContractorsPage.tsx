@@ -24,10 +24,11 @@ export const ContractorsPage = () => {
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
 
   const canManageContractors = hasPermission(session, 'contractors.manual.create');
+  const canInviteContractors = hasPermission(session, 'users.registration.invite');
 
   const breadcrumbActions = useMemo(
     () =>
-      canManageContractors ? (
+      canInviteContractors ? (
         isMobileViewport ? (
           <ActionButton
             kind="outlined"
@@ -60,7 +61,7 @@ export const ContractorsPage = () => {
           </Button>
         )
       ) : null,
-    [canManageContractors, isMobileViewport, theme]
+    [canInviteContractors, isMobileViewport, theme]
   );
 
   useSetPageBreadcrumbActions(breadcrumbActions);

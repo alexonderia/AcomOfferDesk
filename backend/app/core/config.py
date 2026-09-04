@@ -1,23 +1,12 @@
 from __future__ import annotations
 
-import os
+import ipaddress
+import json
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-_WEAK_SECRET_MARKERS = {
-    "change-me",
-    "changeme",
-    "change_me",
-    "top-secret",
-    "top_secret",
-    "secret",
-    "password",
-    "admin",
-    "test",
-    "example",
-}
 
 
 def _parse_int_list(value: str | list[int] | None) -> list[int]:
@@ -40,19 +29,6 @@ def _parse_str_list(value: str | list[str] | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _is_weak_secret(secret: str | None) -> bool:
-    normalized = (secret or "").strip().lower()
-    if not normalized:
-        return True
-    if normalized in _WEAK_SECRET_MARKERS:
-        return True
-    if normalized.startswith("change_me") or normalized.startswith("change-me"):
-        return True
-    if normalized.endswith("example"):
-        return True
-    return False
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
@@ -60,82 +36,42 @@ class Settings(BaseSettings):
     database_url: str = Field(..., validation_alias="DATABASE_URL")
     jwt_secret: str = Field(..., validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
-    jwt_exp_minutes: int = Field(default=60, validation_alias="JWT_EXP_MINUTES")
-    access_token_ttl_seconds: int = Field(default=300, validation_alias="ACCESS_TOKEN_TTL_SECONDS")
     ws_ticket_ttl_seconds: int = Field(default=30, validation_alias="WS_TICKET_TTL_SECONDS")
-    ws_legacy_query_token_enabled: bool = Field(default=False, validation_alias="WS_LEGACY_QUERY_TOKEN_ENABLED")
-    refresh_token_idle_ttl_seconds: int = Field(default=1800, validation_alias="REFRESH_TOKEN_IDLE_TTL_SECONDS")
-    refresh_token_max_ttl_seconds: int = Field(default=43200, validation_alias="REFRESH_TOKEN_MAX_TTL_SECONDS")
-    refresh_cookie_name: str = Field(default="acom_refresh_token", validation_alias="REFRESH_COOKIE_NAME")
     refresh_cookie_secure: bool = Field(default=False, validation_alias="REFRESH_COOKIE_SECURE")
     refresh_cookie_samesite: str = Field(default="lax", validation_alias="REFRESH_COOKIE_SAMESITE")
     refresh_cookie_domain: str | None = Field(default=None, validation_alias="REFRESH_COOKIE_DOMAIN")
     refresh_token_secret: str | None = Field(default=None, validation_alias="REFRESH_TOKEN_SECRET")
 
-    keycloak_enabled: bool = Field(default=False, validation_alias="KEYCLOAK_ENABLED")
-    keycloak_realm: str = Field(default="acom-offerdesk", validation_alias="KEYCLOAK_REALM")
-    keycloak_client_id: str = Field(
-        default="acom-web",
-        validation_alias=AliasChoices("KEYCLOAK_WEB_CLIENT_ID", "KEYCLOAK_CLIENT_ID"),
+    iam_internal_base_url: str = Field(default="http://iam:8100", validation_alias="IAM_INTERNAL_BASE_URL")
+    iam_public_base_url: str | None = Field(default=None, validation_alias="IAM_PUBLIC_BASE_URL")
+    iam_issuer: str | None = Field(default=None, validation_alias="IAM_ISSUER")
+    iam_audience: str = Field(default="acomofferdesk", validation_alias="IAM_AUDIENCE")
+    iam_signing_public_key: str | None = Field(default=None, validation_alias="IAM_SIGNING_PUBLIC_KEY")
+    iam_signing_kid: str = Field(default="iam-signing-1", validation_alias="IAM_SIGNING_KID")
+    iam_signing_verification_keys: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias="IAM_SIGNING_VERIFICATION_KEYS",
     )
-    keycloak_api_client_id: str = Field(default="acom-api", validation_alias="KEYCLOAK_API_CLIENT_ID")
-    keycloak_internal_base_url: str = Field(
-        default="http://keycloak:8080/iam",
-        validation_alias="KEYCLOAK_INTERNAL_BASE_URL",
+    iam_internal_service_token: str = Field(
+        default="development-only-iam-service-token-change-me",
+        validation_alias="IAM_INTERNAL_SERVICE_TOKEN",
     )
-    keycloak_public_base_url: str | None = Field(default=None, validation_alias="KEYCLOAK_PUBLIC_BASE_URL")
-    keycloak_issuer_url: str | None = Field(default=None, validation_alias="KEYCLOAK_ISSUER_URL")
-    keycloak_jwks_cache_ttl_seconds: int = Field(
-        default=300,
-        validation_alias="KEYCLOAK_JWKS_CACHE_TTL_SECONDS",
+    iam_http_timeout_seconds: float = Field(default=10.0, validation_alias="IAM_HTTP_TIMEOUT_SECONDS")
+    iam_access_cookie_name: str = Field(default="acom_iam_access", validation_alias="IAM_ACCESS_COOKIE_NAME")
+    iam_refresh_cookie_name: str = Field(default="acom_iam_refresh", validation_alias="IAM_REFRESH_COOKIE_NAME")
+    iam_state_cookie_name: str = Field(default="acom_iam_flow", validation_alias="IAM_STATE_COOKIE_NAME")
+    iam_flow_recovery_cookie_name: str = Field(
+        default="acom_iam_flow_recovery",
+        validation_alias="IAM_FLOW_RECOVERY_COOKIE_NAME",
     )
-    keycloak_http_timeout_seconds: float = Field(
-        default=10.0,
-        validation_alias="KEYCLOAK_HTTP_TIMEOUT_SECONDS",
+    iam_browser_session_cookie_name: str = Field(
+        default="iam_browser_session",
+        validation_alias="IAM_BROWSER_SESSION_COOKIE_NAME",
     )
-    keycloak_refresh_cookie_name: str = Field(
-        default="acom_oidc_refresh",
-        validation_alias="KEYCLOAK_REFRESH_COOKIE_NAME",
-    )
-    keycloak_state_cookie_name: str = Field(
-        default="acom_oidc_state",
-        validation_alias="KEYCLOAK_STATE_COOKIE_NAME",
-    )
-    keycloak_bootstrap_binding_enabled: bool = Field(
-        default=True,
-        validation_alias="KEYCLOAK_BOOTSTRAP_BINDING_ENABLED",
-    )
-    keycloak_bootstrap_app_username: str = Field(
-        default="superadmin",
-        validation_alias="KEYCLOAK_BOOTSTRAP_APP_USERNAME",
-    )
-    keycloak_admin_realm: str = Field(
-        default="master",
-        validation_alias=AliasChoices("KEYCLOAK_ADMIN_REALM", "KC_BOOTSTRAP_ADMIN_REALM"),
-    )
-    keycloak_admin_client_id: str = Field(
-        default="admin-cli",
-        validation_alias="KEYCLOAK_ADMIN_CLIENT_ID",
-    )
-    keycloak_admin_client_secret: str | None = Field(
-        default=None,
-        validation_alias="KEYCLOAK_ADMIN_CLIENT_SECRET",
-    )
-    keycloak_admin_username: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("KEYCLOAK_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_USERNAME"),
-    )
-    keycloak_admin_password: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("KEYCLOAK_ADMIN_PASSWORD", "KC_BOOTSTRAP_ADMIN_PASSWORD"),
-    )
-    keycloak_dev_auto_link_by_username_enabled: bool = Field(
-        default=False,
-        validation_alias="KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED",
-    )
-    keycloak_prod_auto_link_by_verified_email_enabled: bool = Field(
-        default=False,
-        validation_alias="KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED",
+    iam_csrf_cookie_name: str = Field(default="acom_csrf", validation_alias="IAM_CSRF_COOKIE_NAME")
+    trusted_proxy_cidrs_csv: str = Field(
+        default="127.0.0.0/8,::1/128,172.16.0.0/12",
+        validation_alias="TRUSTED_PROXY_CIDRS",
     )
 
     superadmin_role_id: int = 1
@@ -146,36 +82,21 @@ class Settings(BaseSettings):
     economist_role_id: int = 6
     operator_role_id: int = 7
     security_officer_role_id: int = 8
-    telegram_legacy_enabled: bool = Field(
-        default=False,
-        validation_alias="LEGACY_TELEGRAM_ENABLED",
-    )
-    max_bot_enabled: bool = Field(default=False, validation_alias="MAX_BOT_ENABLED")
-    max_bot_token: str | None = Field(default=None, validation_alias="MAX_BOT_TOKEN")
-    max_bot_public_url: str | None = Field(default=None, validation_alias="MAX_BOT_PUBLIC_URL")
-    max_link_secret: str | None = Field(default=None, validation_alias="MAX_LINK_SECRET")
-    bot_api_shared_secret: str | None = Field(default=None, validation_alias="BOT_API_SHARED_SECRET")
-    max_register_ttl_seconds: int = Field(default=86400, validation_alias="MAX_REGISTER_TTL_SECONDS")
-    max_auth_ttl_seconds: int = Field(default=600, validation_alias="MAX_AUTH_TTL_SECONDS")
-    max_request_ttl_seconds: int = Field(default=604800, validation_alias="MAX_REQUEST_TTL_SECONDS")
-    tg_link_secret: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("TG_LINK_SECRET", "TG_LINK_SALT"),
-    )
     public_backend_base_url: str | None = Field(default=None, validation_alias="PUBLIC_BACKEND_BASE_URL")
     web_base_url: str | None = Field(default=None, validation_alias="WEB_BASE_URL")
-    tg_bot_public_url: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("TG_BOT_PUBLIC_URL", "TG_BOT_LINK"),
-    )
     email_address: str = Field(..., validation_alias="EMAIL_ADDRESS")
     email_from_name: str = Field(default="AcomOfferDesk", validation_alias="EMAIL_FROM_NAME")
     email_app_password: str = Field(..., validation_alias="EMAIL_APP_PASSWORD")
     smtp_host: str = Field(..., validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=465, validation_alias="SMTP_PORT")
+    smtp_security: str = Field(default="auto", validation_alias="SMTP_SECURITY")
     rabbitmq_url: str = Field(default="amqp://guest:guest@rabbitmq:5672/", validation_alias="RABBITMQ_URL")
     email_verification_secret: str = Field(..., validation_alias="EMAIL_VERIFICATION_SECRET")
     email_verification_ttl_seconds: int = Field(default=3600, validation_alias="EMAIL_VERIFICATION_TTL_SECONDS")
+    registration_invite_ttl_seconds: int = Field(
+        default=86400,
+        validation_alias="REGISTRATION_INVITE_TTL_SECONDS",
+    )
     reply_email_token_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices("REPLY_EMAIL_TOKEN_SECRET", "EMAIL_REPLY_SECRET"),
@@ -239,35 +160,11 @@ class Settings(BaseSettings):
     file_guard_enabled: bool = Field(default=True, validation_alias="FILE_GUARD_ENABLED")
     file_guard_url: str = Field(default="http://file_guard:8080", validation_alias="FILE_GUARD_URL")
     file_guard_timeout_seconds: float = Field(default=10.0, validation_alias="FILE_GUARD_TIMEOUT_SECONDS")
-    tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
-    tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
-    tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
     allowed_creation_role_ids: list[int] = Field(default_factory=lambda: [2, 3, 4, 5, 6, 7])
     cors_allow_origins: list[str] = Field(
         default_factory=list,
         validation_alias="CORS_ALLOW_ORIGINS",
     )
-    registration_notify_enabled: bool = Field(
-        default=False,
-        validation_alias="REGISTRATION_NOTIFY_ENABLED",
-    )
-    registration_notify_url: str | None = Field(
-        default=None,
-        validation_alias="REGISTRATION_NOTIFY_URL",
-    )
-    registration_notify_token: str | None = Field(
-        default=None,
-        validation_alias="REGISTRATION_NOTIFY_TOKEN",
-    )
-    registration_notify_service: str = Field(
-        default="acom-registration",
-        validation_alias="REGISTRATION_NOTIFY_SERVICE",
-    )
-    registration_notify_timeout_seconds: float = Field(
-        default=20.0,
-        validation_alias="REGISTRATION_NOTIFY_TIMEOUT_SECONDS",
-    )
-
     @field_validator("allowed_creation_role_ids", mode="before")
     @classmethod
     def _validate_allowed_creation_role_ids(cls, value: str | list[int] | None) -> list[int]:
@@ -277,6 +174,35 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_cors_allow_origins(cls, value: str | list[str] | None) -> list[str]:
         return _parse_str_list(value)
+
+    @field_validator("iam_signing_verification_keys", mode="before")
+    @classmethod
+    def _validate_iam_signing_verification_keys(cls, value: object) -> dict[str, str]:
+        if value is None or value == "":
+            return {}
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "IAM_SIGNING_VERIFICATION_KEYS must be a JSON object"
+                ) from exc
+        if not isinstance(value, dict):
+            raise ValueError("IAM_SIGNING_VERIFICATION_KEYS must be a JSON object")
+        return {
+            str(kid).strip(): str(public_key).replace("\\n", "\n").strip()
+            for kid, public_key in value.items()
+        }
+
+    @field_validator("trusted_proxy_cidrs_csv")
+    @classmethod
+    def _validate_trusted_proxy_cidrs(cls, value: str) -> str:
+        cidrs = [item.strip() for item in value.split(",") if item.strip()]
+        if not cidrs:
+            raise ValueError("TRUSTED_PROXY_CIDRS must not be empty")
+        for cidr in cidrs:
+            ipaddress.ip_network(cidr, strict=False)
+        return ",".join(cidrs)
 
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
@@ -294,12 +220,66 @@ class Settings(BaseSettings):
         if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
             self.refresh_cookie_samesite = "lax"
 
-        public_bases = [self.public_backend_base_url, self.web_base_url, self.keycloak_public_base_url, self.keycloak_issuer_url]
-        if any((base or "").strip().lower().startswith("https://") for base in public_bases):
+        if "*" in self.resolved_cors_allow_origins:
+            raise ValueError("CORS_ALLOW_ORIGINS must not contain '*' when credentials are enabled")
+
+        public_bases = [self.public_backend_base_url, self.web_base_url]
+        if self.app_env == "production" or any(
+            (base or "").strip().lower().startswith("https://") for base in public_bases
+        ):
             self.refresh_cookie_secure = True
 
         if not self.refresh_token_secret:
             self.refresh_token_secret = self.jwt_secret
+
+        self.iam_internal_base_url = self.iam_internal_base_url.rstrip("/") or "http://iam:8100"
+        if self.iam_public_base_url is not None:
+            self.iam_public_base_url = self.iam_public_base_url.rstrip("/") or None
+        if self.iam_issuer is not None:
+            self.iam_issuer = self.iam_issuer.rstrip("/") or None
+        if self.iam_signing_public_key is not None:
+            self.iam_signing_public_key = self.iam_signing_public_key.replace("\\n", "\n").strip() or None
+        self.iam_signing_verification_keys = {
+            kid.strip(): public_key.replace("\\n", "\n").strip()
+            for kid, public_key in self.iam_signing_verification_keys.items()
+        }
+        self.iam_audience = self.iam_audience.strip() or "acomofferdesk"
+        self.iam_signing_kid = self.iam_signing_kid.strip() or "iam-signing-1"
+        configured_active_key = self.iam_signing_verification_keys.get(
+            self.iam_signing_kid
+        )
+        if (
+            self.iam_signing_public_key
+            and configured_active_key
+            and configured_active_key != self.iam_signing_public_key
+        ):
+            raise ValueError(
+                "IAM_SIGNING_PUBLIC_KEY conflicts with IAM_SIGNING_VERIFICATION_KEYS "
+                f"for kid {self.iam_signing_kid!r}"
+            )
+        if self.iam_http_timeout_seconds <= 0:
+            self.iam_http_timeout_seconds = 10.0
+        verification_keys = self.iam_verification_keys
+        if self.app_env == "production" and not verification_keys:
+            raise ValueError(
+                "IAM_SIGNING_PUBLIC_KEY or IAM_SIGNING_VERIFICATION_KEYS is required in production"
+            )
+        for kid, public_key in verification_keys.items():
+            if not kid:
+                raise ValueError("IAM signing verification key ids must not be empty")
+            try:
+                signing_key = serialization.load_pem_public_key(
+                    public_key.encode("utf-8")
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"IAM verification key {kid!r} must contain valid PEM data"
+                ) from exc
+            if not isinstance(signing_key, RSAPublicKey):
+                raise ValueError(f"IAM verification key {kid!r} must be an RSA public key")
+        if self.app_env == "production":
+            if self.iam_internal_service_token == "development-only-iam-service-token-change-me":
+                raise ValueError("IAM_INTERNAL_SERVICE_TOKEN must be configured in production")
 
         self.s3_endpoint = self.s3_endpoint.strip()
         if self.s3_public_endpoint is not None:
@@ -316,6 +296,9 @@ class Settings(BaseSettings):
         self.file_guard_url = self.file_guard_url.rstrip("/") or "http://file_guard:8080"
         if self.file_guard_timeout_seconds <= 0:
             self.file_guard_timeout_seconds = 10.0
+        self.smtp_security = self.smtp_security.strip().lower() or "auto"
+        if self.smtp_security not in {"auto", "ssl", "starttls", "plain"}:
+            raise ValueError("SMTP_SECURITY must be one of: auto, ssl, starttls, plain")
         if self.contractor_invite_max_emails_per_request <= 0:
             self.contractor_invite_max_emails_per_request = 50
         if self.invitation_portal_url is not None:
@@ -333,71 +316,6 @@ class Settings(BaseSettings):
         if self.ws_ticket_ttl_seconds > 60:
             self.ws_ticket_ttl_seconds = 60
 
-        self.keycloak_internal_base_url = self.keycloak_internal_base_url.rstrip("/")
-        self.keycloak_client_id = self.keycloak_client_id.strip() or "acom-web"
-        self.keycloak_api_client_id = self.keycloak_api_client_id.strip() or "acom-api"
-        if self.keycloak_public_base_url is not None:
-            self.keycloak_public_base_url = self.keycloak_public_base_url.rstrip("/") or None
-        if self.keycloak_issuer_url is not None:
-            self.keycloak_issuer_url = self.keycloak_issuer_url.rstrip("/") or None
-        self.keycloak_admin_realm = self.keycloak_admin_realm.strip() or "master"
-        self.keycloak_admin_client_id = self.keycloak_admin_client_id.strip() or "admin-cli"
-        if self.keycloak_admin_client_secret is not None:
-            self.keycloak_admin_client_secret = self.keycloak_admin_client_secret.strip() or None
-        if self.keycloak_admin_username is not None:
-            self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
-        if self.keycloak_admin_password is not None:
-            self.keycloak_admin_password = self.keycloak_admin_password.strip() or None
-        # Compose may set KEYCLOAK_ADMIN_*="" (overrides env_file). Fall back like bootstrap scripts.
-        if not self.keycloak_admin_username:
-            bootstrap_username = os.getenv("KC_BOOTSTRAP_ADMIN_USERNAME", "").strip()
-            if bootstrap_username:
-                self.keycloak_admin_username = bootstrap_username
-        if not self.keycloak_admin_password:
-            bootstrap_password = os.getenv("KC_BOOTSTRAP_ADMIN_PASSWORD", "").strip()
-            if bootstrap_password:
-                self.keycloak_admin_password = bootstrap_password
-        self.keycloak_bootstrap_app_username = self.keycloak_bootstrap_app_username.strip() or "superadmin"
-        if self.keycloak_jwks_cache_ttl_seconds <= 0:
-            self.keycloak_jwks_cache_ttl_seconds = 300
-        if self.keycloak_http_timeout_seconds <= 0:
-            self.keycloak_http_timeout_seconds = 10.0
-        if self.keycloak_dev_auto_link_by_username_enabled and self.keycloak_prod_auto_link_by_verified_email_enabled:
-            raise ValueError(
-                "KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED and "
-                "KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED cannot be enabled together"
-            )
-        if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
-            raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
-
-        if self.max_bot_enabled:
-            if not (self.max_bot_token or "").strip():
-                raise ValueError("MAX_BOT_TOKEN is required when MAX_BOT_ENABLED=true")
-            if not (self.max_link_secret or "").strip():
-                raise ValueError("MAX_LINK_SECRET is required when MAX_BOT_ENABLED=true")
-
-        # Bot ↔ backend endpoints (/api/v1/max/*, /api/v1/tg/*) must not be callable
-        # unauthenticated in production: they expose request data by messenger id.
-        if self.app_env == "production" and (self.max_bot_enabled or self.telegram_legacy_enabled):
-            if not (self.bot_api_shared_secret or "").strip():
-                raise ValueError(
-                    "BOT_API_SHARED_SECRET is required in production when a bot integration is enabled"
-                )
-
-        if self.keycloak_enabled and self.app_env == "production":
-            if not self.keycloak_public_base_url:
-                raise ValueError("KEYCLOAK_PUBLIC_BASE_URL is required when KEYCLOAK_ENABLED=true in production")
-            if not self.keycloak_issuer_url:
-                raise ValueError("KEYCLOAK_ISSUER_URL is required when KEYCLOAK_ENABLED=true in production")
-            if not self.keycloak_public_base_url.startswith("https://"):
-                raise ValueError("KEYCLOAK_PUBLIC_BASE_URL must use https:// in production")
-            if not self.keycloak_issuer_url.startswith("https://"):
-                raise ValueError("KEYCLOAK_ISSUER_URL must use https:// in production")
-            if _is_weak_secret(self.keycloak_admin_client_secret):
-                raise ValueError(
-                    "KEYCLOAK_ADMIN_CLIENT_SECRET must be configured with a strong secret in production"
-                )
-
         return self
 
     @property
@@ -408,51 +326,43 @@ class Settings(BaseSettings):
         return origins
 
     @property
+    def trusted_proxy_cidrs(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.trusted_proxy_cidrs_csv.split(",")
+            if item.strip()
+        ]
+
+    @property
     def resolved_refresh_token_secret(self) -> str:
         return self.refresh_token_secret or self.jwt_secret
 
     @property
-    def resolved_keycloak_public_base_url(self) -> str:
-        if self.keycloak_public_base_url:
-            return self.keycloak_public_base_url
+    def resolved_iam_public_base_url(self) -> str:
+        if self.iam_public_base_url:
+            return self.iam_public_base_url
         if self.web_base_url:
             return f"{self.web_base_url.rstrip('/')}/iam"
         return "http://localhost:8080/iam"
 
     @property
-    def resolved_keycloak_issuer_url(self) -> str:
-        if self.keycloak_issuer_url:
-            return self.keycloak_issuer_url
-        return f"{self.resolved_keycloak_public_base_url}/realms/{self.keycloak_realm}"
+    def resolved_iam_issuer(self) -> str:
+        return self.iam_issuer or self.resolved_iam_public_base_url
 
     @property
-    def keycloak_internal_realm_base_url(self) -> str:
-        return f"{self.keycloak_internal_base_url}/realms/{self.keycloak_realm}"
+    def iam_verification_keys(self) -> dict[str, str]:
+        keys = dict(self.iam_signing_verification_keys)
+        if self.iam_signing_public_key:
+            keys[self.iam_signing_kid] = self.iam_signing_public_key
+        return keys
 
     @property
-    def keycloak_token_endpoint(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/token"
-
-    @property
-    def keycloak_authorization_endpoint(self) -> str:
-        return f"{self.resolved_keycloak_issuer_url}/protocol/openid-connect/auth"
-
-    @property
-    def keycloak_logout_endpoint(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/logout"
-
-    @property
-    def keycloak_jwks_uri(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/certs"
-
-    @property
-    def keycloak_userinfo_endpoint(self) -> str:
-        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/userinfo"
-
-    @property
-    def keycloak_callback_url(self) -> str:
+    def iam_callback_url(self) -> str:
         base = (self.public_backend_base_url or self.web_base_url or "http://localhost:8080").rstrip("/")
         return f"{base}/api/v1/auth/callback"
 
+    @property
+    def iam_bff_auth_base_url(self) -> str:
+        return self.iam_callback_url.rsplit("/callback", 1)[0]
 
 settings = Settings()

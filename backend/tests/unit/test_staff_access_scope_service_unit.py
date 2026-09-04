@@ -66,6 +66,9 @@ class _UnitAwareUsersRepo(_UsersRepo):
 def _current_user(*, user_id: str, role_id: int, permissions: frozenset[str] | None = None) -> CurrentUser:
     return CurrentUser(
         user_id=user_id,
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="test-role",
         role_id=role_id,
         status="active",
         permissions=permissions or frozenset(),

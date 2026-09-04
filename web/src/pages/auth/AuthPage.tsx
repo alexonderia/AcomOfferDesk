@@ -1,123 +1,95 @@
-import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
-import { useEffect, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Box, Button, Stack, TextField, Typography } from '@mui/material';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
-import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
+import { requestPasswordReset } from '@shared/api/auth';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
+import { useSystemToasts } from '@shared/ui/toasts';
+import { TechnicalUnavailablePage } from '@pages/technical';
 
 export const AuthPage = () => {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { beginLogin, isAuthenticated, session, status } = useAuth();
-  const isLoggedOut = searchParams.get('logged_out') === '1';
-  const nextPath = useMemo(() => {
-    const raw = searchParams.get('next')?.trim();
-    return raw && raw.startsWith('/') ? raw : '/';
-  }, [searchParams]);
-
-  const authErrorMessage = useMemo(() => {
-    const reason = (searchParams.get('auth_error') ?? '').trim();
-    if (!reason) {
-      return null;
-    }
-    if (reason === 'session_expired') {
-      return 'Сессия входа истекла. Нажмите «Войти снова».';
-    }
-    if (reason === 'access_denied') {
-      return 'Вход отменен. Нажмите «Войти снова».';
-    }
-    if (reason === 'not_linked') {
-      return 'Не удалось завершить вход. Обратитесь к администратору, чтобы проверить доступ.';
-    }
-    if (reason === 'login_failed') {
-      return 'Не удалось завершить вход. Нажмите «Войти снова».';
-    }
-    return 'Не удалось завершить вход. Попробуйте еще раз.';
-  }, [searchParams]);
+  const { beginLogin, status } = useAuth();
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const nextPath = searchParams.get('next') ?? '/';
+  const isResetFlow = searchParams.get('reset') === '1';
+  const [resetLogin, setResetLogin] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+  const [isResetUnavailable, setIsResetUnavailable] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated || !session) {
-      return;
+    if (!isResetFlow) {
+      beginLogin(nextPath);
     }
-    if (!session.businessAccess) {
-      navigate('/account', { replace: true });
-      return;
-    }
-    navigate(resolveAuthenticatedPath(nextPath, session), { replace: true });
-  }, [isAuthenticated, navigate, nextPath, session]);
+  }, [beginLogin, isResetFlow, nextPath]);
 
-  useEffect(() => {
-    if (status !== 'anonymous') {
+  const submitReset = async () => {
+    if (resetLogin.trim().length < 3) {
+      showErrorToast('Укажите логин или email');
       return;
     }
-    if (isLoggedOut) {
-      return;
+    setIsResetting(true);
+    try {
+      showSuccessToast(await requestPasswordReset(resetLogin));
+      setResetLogin('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось запросить сброс пароля';
+      if (message.toLowerCase().includes('недоступ')) {
+        setIsResetUnavailable(true);
+      } else {
+        showErrorToast(message);
+      }
+    } finally {
+      setIsResetting(false);
     }
-    if (authErrorMessage) {
-      return;
-    }
-    beginLogin(nextPath);
-  }, [authErrorMessage, beginLogin, isLoggedOut, nextPath, status]);
+  };
+
+  if (status === 'unavailable' || isResetUnavailable) {
+    return <TechnicalUnavailablePage />;
+  }
+
+  if (!isResetFlow) {
+    return (
+      <AuthPageShell>
+        <Box role="status" sx={{ display: 'grid', placeItems: 'center', py: 2 }}>
+          <Typography color="text.secondary">Перенаправляем на страницу входа...</Typography>
+        </Box>
+      </AuthPageShell>
+    );
+  }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 3
-      }}
+    <AuthPageShell
+      title="Восстановление доступа"
+      subtitle="Введите логин или email. Мы отправим письмо для восстановления, если аккаунт найден."
     >
-      <Paper
-        elevation={0}
-        sx={(theme) => ({
-          width: { xs: '94%', sm: 460 },
-          borderRadius: 3,
-          border: `1px solid ${theme.palette.divider}`,
-          backgroundColor: theme.palette.background.paper,
-          padding: { xs: 4, sm: 5 }
-        })}
-      >
-        <Stack spacing={3} alignItems="center" textAlign="center">
-          <Typography variant="h5" fontWeight={700} color="text.primary">
-            Вход в AcomOfferDesk
+      <Stack spacing={2.25} sx={{ width: '100%' }}>
+        <Stack spacing={1}>
+          <Typography
+            component="label"
+            htmlFor="reset-login"
+            variant="inherit"
+            sx={{ fontSize: '14px', fontWeight: 600, lineHeight: 1.25, color: '#1f2a44' }}
+          >
+            Логин или email
           </Typography>
-          {authErrorMessage ? (
-            <>
-              <Alert severity="warning" sx={{ width: '100%' }}>
-                {authErrorMessage}
-              </Alert>
-              <Button
-                variant="contained"
-                onClick={() => beginLogin(nextPath, { forcePrompt: true })}
-                sx={{ borderRadius: 999, textTransform: 'none', px: 3 }}
-              >
-                Войти снова
-              </Button>
-            </>
-          ) : isLoggedOut ? (
-            <>
-              <Alert severity="info" sx={{ width: '100%' }}>
-                Вы вышли из системы.
-              </Alert>
-              <Button
-                variant="contained"
-                onClick={() => beginLogin(nextPath)}
-                sx={{ borderRadius: 999, textTransform: 'none', px: 3 }}
-              >
-                Войти
-              </Button>
-            </>
-          ) : (
-            <>
-              <Typography variant="body2" color="text.secondary">
-                Перенаправляем на страницу входа.
-              </Typography>
-              <CircularProgress size={28} />
-            </>
-          )}
+          <TextField
+            id="reset-login"
+            hiddenLabel
+            value={resetLogin}
+            onChange={(event) => setResetLogin(event.target.value)}
+            autoComplete="username"
+            fullWidth
+          />
         </Stack>
-      </Paper>
-    </Box>
+        <Button variant="contained" fullWidth disabled={isResetting} onClick={() => void submitReset()}>
+          Отправить инструкцию
+        </Button>
+        <Button variant="text" onClick={() => beginLogin(nextPath)}>
+          Вернуться ко входу
+        </Button>
+      </Stack>
+    </AuthPageShell>
   );
 };

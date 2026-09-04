@@ -9,20 +9,21 @@
 } from '@shared/lib/errors/userFacing';
 
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
+export type AuthRefreshResult =
+  | { kind: 'success' }
+  | { kind: 'terminal' }
+  | { kind: 'unavailable' };
+
 type AuthRuntime = {
-  refresh: (reason: RefreshReason) => Promise<boolean>;
+  refresh: (reason: RefreshReason) => Promise<AuthRefreshResult>;
   canAttemptSilentRefresh: (reason: Exclude<RefreshReason, 'bootstrap'>) => boolean;
   forceLogout: () => void;
 };
 
-let authToken: string | null = null;
 let authRuntime: AuthRuntime | null = null;
 
 const ERROR_TRANSLATIONS: Record<string, string> = {
-  'Не удалось авторизоваться в Keycloak Admin API': 'Не удалось авторизоваться в Keycloak Admin API',
-  'Unable to authenticate in Keycloak admin API': 'Не удалось авторизоваться в Keycloak Admin API',
-  'Unable to create Keycloak account': 'Не удалось создать учетную запись в Keycloak',
-  'Unable to query Keycloak users': 'Не удалось получить пользователей из Keycloak',
+  'Authentication service unavailable': 'Сервис авторизации временно недоступен',
   'User is not active': 'Пользователь неактивен',
   'User not found': 'Пользователь не найден',
   'Invalid credentials': 'Неверный логин или пароль',
@@ -106,7 +107,7 @@ const VALIDATION_TRANSLATIONS: Record<string, string> = {
 };
 
 const isLikelyMojibake = (value: string): boolean => {
-  // Common UTF-8 -> cp1251/latin1 mojibake markers (e.g. "РџРѕР»Рµ")
+  // Common UTF-8 -> cp1251/latin1 mojibake markers in corrupted Cyrillic text.
   return /(?:Р.|С.){2,}/.test(value);
 };
 
@@ -164,10 +165,6 @@ const extractDetailMessage = (detail: unknown): string | null => {
   return null;
 };
 
-export const setAuthToken = (token: string | null) => {
-  authToken = token;
-};
-
 export const setAuthRuntime = (runtime: AuthRuntime | null) => {
   authRuntime = runtime;
 };
@@ -217,6 +214,18 @@ const performFetch = async (url: string, init: RequestInit, headers: Headers): P
   });
 };
 
+const readCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  const prefix = `${encodeURIComponent(name)}=`;
+  const value = document.cookie
+    .split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix));
+  return value ? decodeURIComponent(value.slice(prefix.length)) : null;
+};
+
 export const apiFetch = async (
   url: string,
   init: RequestInit = {},
@@ -227,8 +236,12 @@ export const apiFetch = async (
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
   }
-  if (withAuth && authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (withAuth && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !headers.has('X-CSRF-Token')) {
+    const csrfToken = readCookie('acom_csrf');
+    if (csrfToken) {
+      headers.set('X-CSRF-Token', csrfToken);
+    }
   }
   if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
@@ -249,11 +262,13 @@ export const apiFetch = async (
     && authRuntime
     && authRuntime.canAttemptSilentRefresh('http_401')
   ) {
-    const refreshed = await authRuntime.refresh('http_401');
-    if (refreshed) {
+    const refreshResult = await authRuntime.refresh('http_401');
+    if (refreshResult.kind === 'success') {
       return await apiFetch(url, init, withAuth, false);
     }
-    authRuntime.forceLogout();
+    if (refreshResult.kind === 'terminal') {
+      authRuntime.forceLogout();
+    }
   }
 
   return response;

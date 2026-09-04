@@ -33,8 +33,6 @@ class DummyUow:
         self.profiles = None
         self.company_contacts = None
         self.feedback = None
-        self.tg_users = None
-        self.max_users = None
         self.user_auth_accounts = None
         self.user_contact_channels = None
         self.notifications = None
@@ -56,16 +54,19 @@ def make_current_user():
         role_id: int = 6,
         status: str = "active",
         permissions: set[str] | frozenset[str] | None = None,
+        onboarding_state: str | None = None,
     ) -> CurrentUser:
         normalized_permissions = frozenset(permissions or set())
+        required_actions = frozenset({"complete_profile"}) if onboarding_state == "first_login" else frozenset()
         return CurrentUser(
             user_id=user_id,
+            iam_account_id="00000000-0000-4000-8000-000000000001",
+            iam_session_id="00000000-0000-4000-8000-000000000002",
+            system_role="economist",
             role_id=role_id,
             status=status,
             permissions=normalized_permissions,
-            keycloak_roles=normalized_permissions,
-            app_roles=frozenset(),
-            delegation_roles=frozenset(),
+            required_actions=required_actions,
         )
 
     return _make_current_user

@@ -27,8 +27,6 @@ const schema = z
   .object({
     role_id: z.number({ required_error: 'Выберите роль' }),
     login: z.string().optional(),
-    password: z.string().optional(),
-    confirmPassword: z.string().optional(),
     mail: z.string().optional(),
     full_name: z.string().optional(),
     phone: z.string().optional(),
@@ -136,7 +134,7 @@ const schema = z
     if (!mail) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'E-mail обязателен для входа через Keycloak',
+        message: 'E-mail обязателен для будущей привязки учётной записи',
         path: ['mail']
       });
     } else if (!emailRegex.test(mail)) {
@@ -243,6 +241,9 @@ export const useAdminPage = () => {
 
   const roleUpdateOptions = useMemo(() => {
     if (canUpdateRoleAny) {
+      if (session?.roleId === ROLE.ADMIN) {
+        return [ROLE.ECONOMIST, ROLE.OPERATOR];
+      }
       return [
         ROLE.ADMIN,
         ROLE.CONTRACTOR,
@@ -278,8 +279,6 @@ export const useAdminPage = () => {
     defaultValues: {
       role_id: preferredCreateRoleId,
       login: '',
-      password: '',
-      confirmPassword: '',
       mail: '',
       full_name: '',
       phone: '',
@@ -420,8 +419,6 @@ export const useAdminPage = () => {
     reset({
       role_id: preferredCreateRoleId,
       login: '',
-      password: '',
-      confirmPassword: '',
       mail: '',
       full_name: '',
       phone: '',
@@ -475,6 +472,11 @@ export const useAdminPage = () => {
           note: values.note?.trim() || undefined
         });
 
+        if (response.outcome === 'duplicate_found' && response.duplicate) {
+          const email = response.duplicate.companyMail ? `, e-mail: ${response.duplicate.companyMail}` : '';
+          showErrorToast(`Найден существующий контрагент: ИНН ${response.duplicate.inn}, ${response.duplicate.companyName}${email}.`);
+          return;
+        }
         showSuccessToast(`Контрагент ${response.userId} создан.`);
       } else {
         const response = await registerUser({

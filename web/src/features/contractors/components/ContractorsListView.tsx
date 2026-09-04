@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
@@ -27,6 +27,7 @@ import {
   InfoRow,
   SourceSection,
   UserStatusPill,
+  EmailWithVerifiedMark,
   dialogContentSx,
   dialogPaperSx,
   normalizeUserStatus,
@@ -43,6 +44,8 @@ import {
 import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
 import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
+import { useAuth } from '@app/providers/AuthProvider';
+import { hasPermission } from '@shared/auth/permissions';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { ContractorMobileCard } from './ContractorMobileCard';
 import { ContractorUnitsCell } from './ContractorUnitsCell';
@@ -51,6 +54,7 @@ import {
   ContractorStatusPill,
   ContractorTableCell,
   formatPhoneForView,
+  getContractorStatusTone,
   statusLabelForFilter,
   statusMemoText,
 } from './contractorUi';
@@ -60,6 +64,27 @@ const statusSchema = z.object({
 });
 
 type StatusFormValues = z.infer<typeof statusSchema>;
+
+const inlineStatusOptions: StatusFormValues['user_status'][] = ['review', 'active', 'inactive', 'blacklist'];
+const userStatusLabelByValue: Record<StatusFormValues['user_status'], string> = {
+  review: 'На проверке',
+  active: 'Активен',
+  inactive: 'Неактивен',
+  blacklist: 'В черном списке',
+};
+
+const getStatusPillColor = (theme: Theme, status: string) => {
+  const tone = getContractorStatusTone(status);
+  return tone === 'success'
+    ? theme.palette.success.main
+    : tone === 'warning'
+      ? theme.palette.warning.main
+      : tone === 'error'
+        ? theme.palette.error.main
+        : tone === 'info'
+          ? theme.palette.info.main
+          : theme.palette.text.secondary;
+};
 
 const VIEW_COLUMN_IDS = [
   'status',
@@ -74,7 +99,6 @@ const VIEW_COLUMN_IDS = [
 
 const ALL_COLUMN_IDS = [
   ...VIEW_COLUMN_IDS,
-  'max_user_id',
   'company_name',
   'inn',
   'address',
@@ -91,6 +115,7 @@ const toUserListItem = (row: ContractorListItem): UserListItem => ({
   full_name: row.fullName,
   phone: row.phone,
   mail: row.mail,
+  email_verified: Boolean(row.emailVerified),
   company_name: row.companyName,
   inn: row.inn,
   company_phone: row.companyPhone,
@@ -136,8 +161,11 @@ export const ContractorsListView = ({
   onAddClick,
 }: ContractorsListViewProps) => {
   const theme = useTheme();
+  const { session } = useAuth();
+  const canViewEmailVerification = hasPermission(session, 'users.registration.approve');
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const [isEditMode, setIsEditMode] = useState(false);
+  const [inlineStatusSavingUserId, setInlineStatusSavingUserId] = useState<string | null>(null);
   const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([...VIEW_COLUMN_IDS]);
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
   const [selectedUserRootUnits, setSelectedUserRootUnits] = useState<ContractorRootUnitsResult | null>(null);
@@ -265,6 +293,28 @@ export const ContractorsListView = ({
     await handleSave();
   };
 
+  const handleInlineStatusChange = async (
+    row: ContractorListItem,
+    nextStatus: StatusFormValues['user_status'],
+  ) => {
+    if (nextStatus === row.status || inlineStatusSavingUserId !== null) {
+      return;
+    }
+    try {
+      setInlineStatusSavingUserId(row.userId);
+      await updateContractorStatus(row.userId, { user_status: nextStatus });
+      showSystemToast({
+        severity: 'success',
+        message: 'Статус успешно обновлён.',
+      });
+      await onStatusUpdated();
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : 'Не удалось обновить статус');
+    } finally {
+      setInlineStatusSavingUserId(null);
+    }
+  };
+
   const contractorStatusFilterOptions = useMemo(
     () => Array.from(new Set(contractors.map((row) => statusLabelForFilter(row.status)))).map((status) => ({
       label: status,
@@ -362,6 +412,57 @@ export const ContractorsListView = ({
         getSearchValue: (row) => statusLabelForFilter(row.status),
         getSortValue: (row) => statusLabelForFilter(row.status),
         renderCell: (row) => {
+          if (!isEditMode && row.actions.update_status) {
+            const statusColor = getStatusPillColor(theme, row.status);
+            return (
+              <Select
+                value={normalizeUserStatus(row.status)}
+                onChange={(event) => {
+                  void handleInlineStatusChange(row, event.target.value as StatusFormValues['user_status']);
+                }}
+                onClick={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                disabled={inlineStatusSavingUserId !== null}
+                variant="standard"
+                disableUnderline
+                aria-label={`${row.userId}-status`}
+                inputProps={{ 'aria-label': `${row.userId}-status` }}
+                sx={{
+                  width: '100%',
+                  minHeight: 30,
+                  px: 1.1,
+                  border: '1.5px solid',
+                  borderColor: statusColor,
+                  borderRadius: '999px',
+                  bgcolor: alpha(statusColor, 0.1),
+                  color: statusColor,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  '& .MuiSelect-select': {
+                    minHeight: 'unset !important',
+                    py: 0.45,
+                    px: 0,
+                    pr: 2.5,
+                    fontWeight: 600,
+                    color: statusColor,
+                  },
+                  '& .MuiSelect-icon': { color: statusColor, right: 4 },
+                  '&:before, &:after': { display: 'none' },
+                  '&.Mui-disabled': {
+                    opacity: 0.7,
+                    color: statusColor,
+                  },
+                }}
+              >
+                {inlineStatusOptions.map((status) => (
+                  <MenuItem key={status} value={status}>
+                    {userStatusLabelByValue[status]}
+                  </MenuItem>
+                ))}
+              </Select>
+            );
+          }
           if (!isEditMode) {
             return <ContractorStatusPill value={row.status} />;
           }
@@ -405,9 +506,21 @@ export const ContractorsListView = ({
         id: 'mail',
         header: 'E-mail',
         minWidth: 190,
+        width: '240px',
         getSearchValue: (row) => row.mail ?? '',
         getSortValue: (row) => row.mail ?? '',
-        renderCell: (row) => renderEditableField(row, 'mail', row.actions.manage_manual_contractor),
+        renderCell: (row) => {
+          if (isEditMode) {
+            return renderEditableField(row, 'mail', row.actions.manage_manual_contractor);
+          }
+          return (
+            <EmailWithVerifiedMark
+              mail={row.mail}
+              verified={Boolean(row.emailVerified)}
+              showMark={canViewEmailVerification}
+            />
+          );
+        },
       },
       {
         id: 'company_phone',
@@ -424,14 +537,6 @@ export const ContractorsListView = ({
         getSearchValue: (row) => row.companyMail ?? '',
         getSortValue: (row) => row.companyMail ?? '',
         renderCell: (row) => renderEditableField(row, 'company_mail', row.actions.manage_manual_contractor),
-      },
-      {
-        id: 'max_user_id',
-        header: 'MAX ID',
-        minWidth: 170,
-        getSearchValue: (row) => row.maxUserId ?? '',
-        getSortValue: (row) => row.maxUserId ?? '',
-        renderCell: (row) => renderLockedCell(<ContractorTableCell value={row.maxUserId} />),
       },
       {
         id: 'company_name',
@@ -480,7 +585,7 @@ export const ContractorsListView = ({
         renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField],
+    [contractorStatusFilterOptions, handleInlineStatusChange, inlineStatusSavingUserId, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField, canViewEmailVerification],
   );
 
   const openContractorDetails = (row: ContractorListItem) => {
@@ -644,6 +749,7 @@ export const ContractorsListView = ({
           return (
             <ContractorMobileCard
               row={userRow}
+              canViewEmailVerification={canViewEmailVerification}
               isContactExpanded={Boolean(expandedContractorCardsById[row.userId]?.contact)}
               isCompanyExpanded={Boolean(expandedContractorCardsById[row.userId]?.company)}
               onToggleContact={() =>
@@ -729,7 +835,16 @@ export const ContractorsListView = ({
                         }}
                       >
                         <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                        <InfoRow label="E-mail" value={selectedUser.mail} />
+                        <InfoRow
+                          label="E-mail"
+                          value={
+                            <EmailWithVerifiedMark
+                              mail={selectedUser.mail}
+                              verified={Boolean(selectedUser.email_verified)}
+                              showMark={canViewEmailVerification}
+                            />
+                          }
+                        />
                       </Box>
                     </Stack>
                   </SourceSection>

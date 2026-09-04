@@ -7,7 +7,10 @@ from fastapi import APIRouter, Body, Depends, Path, Query
 from app.api.action_flags import ContractorActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
-from app.domain.policies import CurrentUser
+from app.domain.exceptions import Conflict
+from app.domain.iam_status import iam_auth_status_for_user_status
+from app.domain.policies import CurrentUser, UserPolicy
+from app.infrastructure.iam_client import IamClient
 from app.schemas.contractors import (
     ContractorInviteData,
     ContractorInviteRequest,
@@ -28,7 +31,7 @@ from app.schemas.contractors import (
 from app.services.contractor_invitations import ContractorInvitationService
 from app.services.contractors import ContractorService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
-from app.services.user_notification_preferences import UserNotificationPreferencesService
+from app.services.registration_invitations import RegistrationInvitationService
 from app.services.users import UserStatusService
 
 router = APIRouter()
@@ -48,9 +51,10 @@ def _ru_user_status(status: str) -> str:
 def _contractor_list_item(current_user: CurrentUser, item) -> ContractorListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
+    is_manual = data.pop("is_manual")
     data["actions"] = ContractorActionBuilder.build_contractor_actions(
         current_user,
-        is_manual=data.get("registration_source") == "manual",
+        is_manual=is_manual,
     )
     return ContractorListItemSchema(**data)
 
@@ -145,15 +149,9 @@ async def update_contractor_status(
         contractor_service = ContractorService(uow.users, uow.profiles, uow.units)
         status_service = UserStatusService(
             uow.users,
-            uow.tg_users,
             uow.profiles,
             uow.user_auth_accounts,
-            uow.max_users,
-            notification_preferences=UserNotificationPreferencesService(
-                uow.user_contact_channels,
-                uow.user_notification_preferences,
-                profiles=uow.profiles,
-            ),
+            user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await contractor_service.update_contractor_status(
@@ -161,6 +159,18 @@ async def update_contractor_status(
             contractor_id=contractor_id,
             user_status=payload.user_status,
             status_service=status_service,
+        )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=contractor_id,
+            provider="iam",
+        )
+        if binding is None:
+            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+        await IamClient().update_status(
+            account_id=binding.external_subject_id,
+            auth_status=iam_auth_status_for_user_status(payload.user_status),
+            actor_account_id=current_user.iam_account_id,
+            actor_session_id=current_user.iam_session_id,
         )
 
     return ContractorStatusUpdateResponse(
@@ -215,9 +225,12 @@ async def invite_contractors(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorInviteResponse:
+    UserPolicy.ensure_can_invite_registration(current_user)
     async with uow:
         service = ContractorInvitationService(
             attachment_service=NormativeEmailAttachmentService(uow.files),
+            invitation_service=RegistrationInvitationService(uow),
+            uow=uow,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.invite_contractors(

@@ -15,63 +15,54 @@ class _ScopedUsersRepo:
                 id_role=settings.project_manager_role_id,
                 id_parent=None,
                 status="active",
-                tg_user_id=None,
             ),
             "lead-1": SimpleNamespace(
                 id="lead-1",
                 id_role=settings.lead_economist_role_id,
                 id_parent="pm-1",
                 status="active",
-                tg_user_id=None,
             ),
             "lead-2": SimpleNamespace(
                 id="lead-2",
                 id_role=settings.lead_economist_role_id,
                 id_parent="pm-1",
                 status="active",
-                tg_user_id=None,
             ),
             "eco-1": SimpleNamespace(
                 id="eco-1",
                 id_role=settings.economist_role_id,
                 id_parent="lead-1",
                 status="active",
-                tg_user_id=None,
             ),
             "eco-2": SimpleNamespace(
                 id="eco-2",
                 id_role=settings.economist_role_id,
                 id_parent="lead-1",
                 status="active",
-                tg_user_id=None,
             ),
             "eco-3": SimpleNamespace(
                 id="eco-3",
                 id_role=settings.economist_role_id,
                 id_parent="lead-2",
                 status="active",
-                tg_user_id=None,
             ),
             "operator-1": SimpleNamespace(
                 id="operator-1",
                 id_role=settings.operator_role_id,
                 id_parent="lead-1",
                 status="active",
-                tg_user_id=None,
             ),
             "operator-2": SimpleNamespace(
                 id="operator-2",
                 id_role=settings.operator_role_id,
                 id_parent="lead-2",
                 status="active",
-                tg_user_id=None,
             ),
             "admin-1": SimpleNamespace(
                 id="admin-1",
                 id_role=settings.admin_role_id,
                 id_parent=None,
                 status="active",
-                tg_user_id=None,
             ),
         }
         self._profiles = {
@@ -154,11 +145,22 @@ class _ScopedUsersRepo:
             if user.id_role == contractor_role_id
         ]
 
+    async def map_primary_email_verified(self, *, user_ids: list[str]) -> dict[str, bool]:
+        return {user_id: False for user_id in user_ids}
+
 
 class _EmptyUserStatusPeriodsRepo:
     async def list_active_for_users(self, *, user_ids):
         _ = user_ids
         return {}
+
+
+class _RequestLookupRepo:
+    def __init__(self, *, owner_user_id: str) -> None:
+        self._request = SimpleNamespace(id_user=owner_user_id)
+
+    async def get_by_id(self, *, request_id: str):
+        return self._request if request_id == "request-1" else None
 
 
 def test_economist_users_list_defaults_to_module_scope(
@@ -212,8 +214,6 @@ def test_economist_users_list_expands_to_department_scope_with_delegation(
     assert response.status_code == 200
     user_ids = {item["user_id"] for item in response.json()["data"]["items"]}
     assert user_ids == {"lead-1", "lead-2", "eco-1", "eco-2", "eco-3", "operator-1", "operator-2"}
-
-
 def test_project_manager_users_list_keeps_department_scope_and_leads(
     test_client,
     set_uow,
@@ -239,13 +239,16 @@ def test_project_manager_users_list_keeps_department_scope_and_leads(
     assert user_ids == {"lead-1", "lead-2", "eco-1", "eco-2", "eco-3", "operator-1", "operator-2"}
 
 
-def test_request_economists_for_lead_default_to_descendants_only(
+def test_eligible_request_owners_for_lead_use_request_scope_without_users_read(
     test_client,
     set_uow,
     set_current_user,
     make_current_user,
 ):
     uow = DummyUow()
+    uow.requests = _RequestLookupRepo(owner_user_id="eco-1")
+    uow.files = object()
+    uow.offers = object()
     uow.users = _ScopedUsersRepo()
     uow.user_status_periods = _EmptyUserStatusPeriodsRepo()
     set_uow(uow)
@@ -253,24 +256,30 @@ def test_request_economists_for_lead_default_to_descendants_only(
         make_current_user(
             user_id="lead-1",
             role_id=settings.lead_economist_role_id,
-            permissions={PermissionCodes.REQUESTS_OWNER_CHANGE},
+            permissions={
+                PermissionCodes.REQUESTS_READ,
+                PermissionCodes.REQUESTS_OWNER_CHANGE,
+            },
         )
     )
 
-    response = test_client.get("/api/v1/users/request-economists")
+    response = test_client.get("/api/v1/requests/request-1/eligible-owners")
 
     assert response.status_code == 200
     user_ids = {item["user_id"] for item in response.json()["data"]["items"]}
     assert user_ids == {"lead-1", "eco-1", "eco-2"}
 
 
-def test_request_economists_for_lead_expand_to_department_scope_with_assign_delegation(
+def test_eligible_request_owners_expand_to_department_with_assign_delegation(
     test_client,
     set_uow,
     set_current_user,
     make_current_user,
 ):
     uow = DummyUow()
+    uow.requests = _RequestLookupRepo(owner_user_id="eco-1")
+    uow.files = object()
+    uow.offers = object()
     uow.users = _ScopedUsersRepo()
     uow.user_status_periods = _EmptyUserStatusPeriodsRepo()
     set_uow(uow)
@@ -282,7 +291,7 @@ def test_request_economists_for_lead_expand_to_department_scope_with_assign_dele
         )
     )
 
-    response = test_client.get("/api/v1/users/request-economists")
+    response = test_client.get("/api/v1/requests/request-1/eligible-owners")
 
     assert response.status_code == 200
     user_ids = {item["user_id"] for item in response.json()["data"]["items"]}

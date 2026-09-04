@@ -5,6 +5,8 @@ import pytest
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Forbidden
+from app.infrastructure.iam_client import IamAccountPermissions
+from app.services.iam_permission_grants import ManagedPermissionGrantsResult
 from app.services.user_department_delegations import UserDepartmentDelegationsService
 
 
@@ -47,34 +49,52 @@ class _ProfilesRepo:
 class _UserAuthAccountsRepo:
     async def get_by_user_provider(self, *, user_id: str, provider: str, include_inactive: bool = False):
         _ = include_inactive
-        if provider != "keycloak":
+        if provider != "iam":
             return None
-        return SimpleNamespace(external_subject_id=f"kc-{user_id}")
+        return SimpleNamespace(external_subject_id=f"iam-{user_id}")
 
 
-class _KeycloakDelegations:
-    async def list_user_enabled_department_role_codes(self, *, keycloak_user_id: str):
-        _ = keycloak_user_id
-        return frozenset({"delegation.department.requests.read"})
-
-    async def sync_user_department_role_codes(self, *, keycloak_user_id: str, requested_role_codes: set[str]):
-        _ = keycloak_user_id
-        return SimpleNamespace(
-            enabled_role_codes=frozenset(requested_role_codes),
-            added_role_codes=frozenset(requested_role_codes),
-            removed_role_codes=frozenset(),
+class _IamPermissionGrants:
+    def __init__(self) -> None:
+        self.permissions = IamAccountPermissions(
+            permissions_from_role=frozenset({"department.requests.read"}),
+            individually_granted_permissions=frozenset({"department.offers.accept"}),
+            effective_permissions=frozenset(
+                {"department.requests.read", "department.offers.accept"}
+            ),
         )
+        self.requested_permissions: frozenset[str] | None = None
 
+    async def get(self, *, account_id: str):
+        assert account_id.startswith("iam-")
+        return self.permissions
 
-class _KeycloakAdmin:
-    async def logout_user_sessions(self, *, user_id: str):
-        _ = user_id
-        return None
+    async def replace_managed_grants(
+        self,
+        *,
+        account_id: str,
+        managed_permissions: frozenset[str],
+        requested_permissions: frozenset[str],
+    ):
+        assert account_id.startswith("iam-")
+        assert requested_permissions.issubset(managed_permissions)
+        self.requested_permissions = requested_permissions
+        self.permissions = IamAccountPermissions(
+            permissions_from_role=self.permissions.permissions_from_role,
+            individually_granted_permissions=requested_permissions,
+            effective_permissions=(
+                self.permissions.permissions_from_role | requested_permissions
+            ),
+        )
+        return ManagedPermissionGrantsResult(self.permissions, changed=True)
 
 
 def _user(*, user_id: str, role_id: int) -> CurrentUser:
     return CurrentUser(
         user_id=user_id,
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="test-role",
         role_id=role_id,
         status="active",
         permissions=frozenset(),
@@ -83,12 +103,12 @@ def _user(*, user_id: str, role_id: int) -> CurrentUser:
 
 @pytest.mark.asyncio
 async def test_project_manager_can_manage_user_inside_own_department():
+    iam_grants = _IamPermissionGrants()
     service = UserDepartmentDelegationsService(
         users=_UsersRepo(),
         profiles=_ProfilesRepo(),
         user_auth_accounts=_UserAuthAccountsRepo(),
-        keycloak_delegations=_KeycloakDelegations(),
-        keycloak_admin=_KeycloakAdmin(),
+        iam_permission_grants=iam_grants,
     )
 
     result = await service.get_state(
@@ -98,6 +118,25 @@ async def test_project_manager_can_manage_user_inside_own_department():
 
     assert result.can_manage is True
     assert any(item.enabled for item in result.accesses)
+    role_access = next(
+        item for item in result.accesses if item.permission_code == "department.requests.read"
+    )
+    individual_access = next(
+        item for item in result.accesses if item.permission_code == "department.offers.accept"
+    )
+    assert role_access.granted_via_role is True
+    assert role_access.granted_individually is False
+    assert individual_access.granted_individually is True
+
+    updated = await service.update_state(
+        current_user=_user(user_id="pm-1", role_id=settings.project_manager_role_id),
+        target_user_id="eco-1",
+        requested_access_codes=["delegation.department.requests.update"],
+    )
+    assert iam_grants.requested_permissions == frozenset({"department.requests.update"})
+    assert next(
+        item for item in updated.accesses if item.permission_code == "department.requests.read"
+    ).enabled is True
 
 
 @pytest.mark.asyncio
@@ -106,8 +145,7 @@ async def test_project_manager_cannot_manage_user_from_other_department():
         users=_UsersRepo(),
         profiles=_ProfilesRepo(),
         user_auth_accounts=_UserAuthAccountsRepo(),
-        keycloak_delegations=_KeycloakDelegations(),
-        keycloak_admin=_KeycloakAdmin(),
+        iam_permission_grants=_IamPermissionGrants(),
     )
 
     result = await service.get_state(
@@ -130,8 +168,7 @@ async def test_lead_economist_cannot_manage_department_delegations():
         users=_UsersRepo(),
         profiles=_ProfilesRepo(),
         user_auth_accounts=_UserAuthAccountsRepo(),
-        keycloak_delegations=_KeycloakDelegations(),
-        keycloak_admin=_KeycloakAdmin(),
+        iam_permission_grants=_IamPermissionGrants(),
     )
 
     result = await service.get_state(
@@ -148,8 +185,7 @@ async def test_admin_cannot_manage_delegations_for_self():
         users=_UsersRepo(),
         profiles=_ProfilesRepo(),
         user_auth_accounts=_UserAuthAccountsRepo(),
-        keycloak_delegations=_KeycloakDelegations(),
-        keycloak_admin=_KeycloakAdmin(),
+        iam_permission_grants=_IamPermissionGrants(),
     )
 
     result = await service.get_state(

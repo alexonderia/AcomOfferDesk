@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+/node_modules/
 web/node_modules/
 new_web/
 new_web/node_modules/
@@ -16,6 +17,8 @@ build/
 !.env.example
 !.env.dev.example
 !.env.prod-like.example
+!.env.iam.example
+!.env.iam-db.example
 *.log
 *.sqlite3
 *.tsbuildinfo
@@ -26,6 +29,7 @@ build/
 .agents/
 .trellis/
 artifacts/
+/backups/
 .tmp/
 .deploy-state/
 AGENTS.md

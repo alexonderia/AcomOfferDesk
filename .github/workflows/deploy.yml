@@ -63,21 +63,31 @@ jobs:
           # Official Actions API: latest completed CI for the exact candidate SHA
           # must be success (old green + newer fail must block).
           # https://docs.github.com/en/rest/actions/workflow-runs
-          RUN_JSON="$(
-            gh api \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=100"
-          )"
-          RUN_ID="$(
-            printf '%s' "${RUN_JSON}" | jq -r --arg sha "${SHA}" '
-              [.workflow_runs[]
-                | select(.head_sha == $sha and .status == "completed")]
-              | sort_by(.created_at)
-              | reverse
-              | .[0]
-              | select(.conclusion == "success")
-              | .id // empty'
-          )"
+          # Ретраи: событие workflow_run может прийти раньше, чем runs API
+          # проиндексирует завершение CI-рана (гонка 16:00:47→16:00:54, run 35118983918).
+          RUN_ID=""
+          attempt=1
+          while [ "${attempt}" -le 6 ]; do
+            RUN_JSON="$(
+              gh api \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=100"
+            )"
+            RUN_ID="$(
+              printf '%s' "${RUN_JSON}" | jq -r --arg sha "${SHA}" '
+                [.workflow_runs[]
+                  | select(.head_sha == $sha and .status == "completed")]
+                | sort_by(.created_at)
+                | reverse
+                | .[0]
+                | select(.conclusion == "success")
+                | .id // empty'
+            )"
+            [ -n "${RUN_ID}" ] && break
+            echo "CI run not indexed yet (attempt ${attempt}/6); retry in 10s"
+            attempt=$((attempt + 1))
+            if [ "${attempt}" -le 6 ]; then sleep 10; fi
+          done
           if [ -z "${RUN_ID}" ]; then
             echo "FAIL: no successful CI run for SHA ${SHA}; deploy blocked" >&2
             exit 1

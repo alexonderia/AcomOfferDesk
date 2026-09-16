@@ -195,8 +195,15 @@ jobs:
             kubectl -n "${NS}" delete job post-deploy-verify --ignore-not-found
             kubectl -n "${NS}" delete job db-verify --ignore-not-found
             kubectl -n "${NS}" apply -f deploy/k8s/acom/jobs/post-deploy-verify.job.yaml
-            kubectl -n "${NS}" wait --for=condition=complete job/post-deploy-verify --timeout=5m
-            kubectl -n "${NS}" wait --for=condition=complete job/db-verify --timeout=5m
+            kubectl -n "${NS}" wait --for=condition=complete job/post-deploy-verify --timeout=8m
+            kubectl -n "${NS}" wait --for=condition=complete job/db-verify --timeout=8m
+
+            # 11. Gateway smoke с хоста: netpol allow-edge-from-node пускает в edge только с node,
+            # поэтому gateway /health проверяем с VPS напрямую на ClusterIP (in-cluster Job это не может).
+            GW_IP="$(kubectl -n "${NS}" get svc gateway -o jsonpath='{.spec.clusterIP}')"
+            GW_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${GW_IP}/health")"
+            [ "${GW_CODE}" = "200" ] || { echo "FAIL: gateway /health via ClusterIP ${GW_IP} -> ${GW_CODE}" >&2; exit 1; }
+            echo "OK gateway /health (node→edge, ${GW_IP}) -> ${GW_CODE}"
 
             if ! git diff --quiet || ! git diff --cached --quiet; then
               echo "FAIL: deploy changed tracked files in checkout" >&2

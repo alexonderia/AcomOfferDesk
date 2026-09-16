@@ -35,21 +35,32 @@ spec:
             - |
               set -eu
               FAIL=0
-              check() { # name url expected_code
-                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$2" || echo 000)
-                if [ "$code" = "$3" ]; then echo "OK   $1 -> $code"; else echo "FAIL $1 -> $code (ждём $3)"; FAIL=1; fi
+              # Ретраи: Job стартует сразу после rollout — поды могут ещё прогреваться.
+              check() { # name url expected_code [retries]
+                local name="$1" url="$2" want="$3" tries="${4:-1}" i=1 code=000
+                while [ "$i" -le "$tries" ]; do
+                  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || echo 000)
+                  [ "$code" = "$want" ] && break
+                  echo "  (try $i/$tries) $name -> $code"
+                  i=$((i + 1))
+                  if [ "$i" -le "$tries" ]; then sleep 10; fi
+                done
+                if [ "$code" = "$want" ]; then echo "OK   $name -> $code"; else echo "FAIL $name -> $code (ждём $want)"; FAIL=1; fi
               }
-              check "backend /health"  "http://backend:8000/health"  200
-              check "web /"            "http://web:80/"              200
-              check "gateway /health"  "http://gateway:80/health"    200
+              check "backend /health"  "http://backend:8000/health"  200 6
+              check "web /"            "http://web:80/"              200 6
+              # gateway НЕ проверяем из кластера: netpol allow-edge-from-node пускает в edge
+              # только с node — проверка gateway /health выполняется на хосте в deploy.yml.
               # Keycloak НЕ проверяем: в k8s его нет (политика 23.07.2026 — см. kustomization.yaml).
               # Проверка входа появится вместе с переходом на корп. IAM (PR #53, dev).
               check "maintenance"      "http://maintenance:80/healthz"     200
               check "file-guard"       "http://file-guard:8080/health"     200
 
               echo "--- minio (HTTPS + CA, R-F2) ---"
+              # FQDN обязателен: SAN сертификата — minio.acom.svc.cluster.local, короткое
+              # имя minio не проходит hostname verification при проверке CA.
               code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-                     --cacert /etc/ssl/minio/ca.crt https://minio:9000/minio/health/ready || echo 000)
+                     --cacert /etc/ssl/minio/ca.crt https://minio.acom.svc.cluster.local:9000/minio/health/ready || echo 000)
               echo "minio /minio/health/ready -> $code"
               [ "$code" = "200" ] || { echo "FAIL: minio не отвечает 200 по HTTPS с проверкой CA"; FAIL=1; }
 
@@ -113,25 +124,25 @@ spec:
               set -eu
               FAIL=0
               echo "--- postgres ---"
-              pg_isready -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" || FAIL=1
-              TABLES=$(psql -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              pg_isready -h postgres.acom.svc.cluster.local -U "$POSTGRES_USER" -d "$POSTGRES_DB" || FAIL=1
+              TABLES=$(psql -h postgres.acom.svc.cluster.local -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
                 "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')")
               echo "tables=$TABLES"
               [ "${TABLES:-0}" -gt 0 ] || { echo "FAIL: в БД нет таблиц"; FAIL=1; }
-              CRON=$(psql -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              CRON=$(psql -h postgres.acom.svc.cluster.local -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
                 "select extname from pg_extension where extname='pg_cron'" || true)
               echo "pg_cron=$CRON"
               [ -n "$CRON" ] || { echo "FAIL: расширение pg_cron не установлено"; FAIL=1; }
 
               echo "--- схема keycloak в БД: АРТЕФАКТ ДАМПА (в k8s Keycloak НЕ разворачивается) ---"
-              KCT=$(psql -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              KCT=$(psql -h postgres.acom.svc.cluster.local -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
                 "select count(*) from information_schema.tables where table_schema='keycloak'" || echo 0)
               echo "keycloak_tables=$KCT (ожидаемо >0: пришло с дампом прод-БД; на вход в k8s не влияет)"
               # Политика `policy_acom_no_keycloak_cod_jul2026` (23.07.2026): realm/users
               # из k8s-контура не читаются — проверять их здесь смысла нет.
 
               echo "--- postgres TLS (R-D2) ---"
-              psql "host=postgres dbname=$POSTGRES_DB user=$POSTGRES_USER sslmode=verify-full sslrootcert=/etc/ssl/postgres/ca.crt" \
+              psql "host=postgres.acom.svc.cluster.local dbname=$POSTGRES_DB user=$POSTGRES_USER sslmode=verify-full sslrootcert=/etc/ssl/postgres/ca.crt" \
                    -Atc "select 'pg_tls_ok:' || ssl::text from pg_stat_ssl where pid=pg_backend_pid()" || FAIL=1
 
               if [ "$FAIL" = "0" ]; then echo "DB_VERIFY_K8S: all checks passed"; exit 0; fi

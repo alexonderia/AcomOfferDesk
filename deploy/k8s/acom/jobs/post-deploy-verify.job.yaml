@@ -124,8 +124,19 @@ spec:
               set -eu
               FAIL=0
               echo "--- postgres ---"
-              pg_isready -h postgres.acom.svc.cluster.local -U "$POSTGRES_USER" -d "$POSTGRES_DB" || FAIL=1
-              TABLES=$(psql -h postgres.acom.svc.cluster.local -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              # Ретраи: сразу после flyway-миграций readiness-проба postgres может кратко
+              # провалиться под нагрузкой → endpoint исчезает на секунды → connection refused.
+              PGHOST_FQDN=postgres.acom.svc.cluster.local
+              ok=0
+              i=1
+              while [ "$i" -le 6 ]; do
+                if pg_isready -h "$PGHOST_FQDN" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; then ok=1; break; fi
+                echo "  (try $i/6) postgres не готов, ждём 10s"
+                i=$((i + 1))
+                if [ "$i" -le 6 ]; then sleep 10; fi
+              done
+              [ "$ok" = "1" ] || { echo "FAIL: postgres не отвечает после 6 попыток"; FAIL=1; }
+              TABLES=$(psql -h "$PGHOST_FQDN" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
                 "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')")
               echo "tables=$TABLES"
               [ "${TABLES:-0}" -gt 0 ] || { echo "FAIL: в БД нет таблиц"; FAIL=1; }

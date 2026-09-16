@@ -27,7 +27,9 @@ spec:
           image: flyway/flyway:12.1.0
           imagePullPolicy: Never
           args:
-            - "-url=jdbc:postgresql://postgres.acom.svc.cluster.local:5432/order_database?sslmode=verify-full"
+            # sslrootcert обязателен: JDBC-драйвер при verify-full иначе ищет /root/.postgresql/root.crt
+            # (офиц. параметр postgres-JDBC; CA смонтирован из секрета postgres-tls).
+            - "-url=jdbc:postgresql://postgres.acom.svc.cluster.local:5432/order_database?sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
             - "-user=$(POSTGRES_USER)"
             - "-password=$(POSTGRES_PASSWORD)"
             - "-locations=filesystem:/flyway/sql"

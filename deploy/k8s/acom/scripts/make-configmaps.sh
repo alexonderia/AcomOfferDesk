@@ -8,7 +8,8 @@ set -euo pipefail
 NS="${NS:-acom}"
 KUBECTL="${KUBECTL:-kubectl}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SQL_DIR="${SQL_DIR:-${SCRIPT_DIR}/../../order_database/flyway/sql}"
+# scripts → acom → k8s → deploy: три уровня вверх до deploy/order_database/
+SQL_DIR="${SQL_DIR:-${SCRIPT_DIR}/../../../order_database/flyway/sql}"
 
 if [ ! -d "${SQL_DIR}" ]; then
   echo "FAIL: нет каталога миграций ${SQL_DIR}" >&2

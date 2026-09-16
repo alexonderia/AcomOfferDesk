@@ -1,0 +1,41 @@
+# Постоянные тома оверлея. Postgres держит том через volumeClaimTemplates StatefulSet,
+# rabbitmq/minio/clamav — одиночные PVC ниже.
+# Keycloak исключён (политика 23.07.2026) → PVC keycloak-data из оверлея убран;
+# compose-том `acome-offer-desk_keycloak_data` (H2-файл keycloakdb.mv.db) не трогаем.
+#
+# StorageClass local-path (k3s): данные узла, RWO, без репликации — на одноузловом
+# кластере это норма (официальный пример k8s + local-path-provisioner).
+# Решение Ф5-свод п.9: StatefulSet + PVC, НЕ emptyDir (грабля пилота: emptyDir → потеря схемы).
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi          # сейчас 16M; запас под объекты
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi          # очереди/definitions; в compose тома не было — это улучшение
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clamav-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi          # базы ClamAV: main.cvd 89M + daily.cld 86M + запас

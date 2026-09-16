@@ -1,0 +1,89 @@
+# file-guard (python:3.12-slim + clamav-daemon, порт 8080). Образ acom-file-guard:prod-1.
+#   * базы ClamAV — на PVC clamav-data (168 MB в проде; НЕ emptyDir — иначе каждая
+#     пересборка пода тянет ~180 MB из сети, а CDN ClamAV из РФ отдаёт 403);
+#   * non-root: образ официально гоняется от непривилегированного пользователя;
+#     clamd внутри пишет в /run/clamav — даём записываемый emptyDir.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-guard
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: file-guard
+  template:
+    metadata:
+      labels:
+        app: file-guard
+        acom.security/tier: app
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      containers:
+        - name: file-guard
+          image: acom-file-guard:prod-1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: acom-app-config
+            - secretRef:
+                name: acom-app-secrets
+                optional: true        # в проде file_guard не получал .env-переменных
+          startupProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: clamav
+              mountPath: /var/lib/clamav
+            - name: clamav-run
+              mountPath: /run/clamav
+            - name: shared
+              mountPath: /app/shared
+      volumes:
+        - name: clamav
+          persistentVolumeClaim:
+            claimName: clamav-data
+        - name: clamav-run
+          emptyDir: {}
+        - name: shared
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: file-guard
+spec:
+  type: ClusterIP
+  selector:
+    app: file-guard
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

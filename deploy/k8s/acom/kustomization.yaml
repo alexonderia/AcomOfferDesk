@@ -1,0 +1,61 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: acom
+
+# Метки добавляются только к metadata (includeSelectors: false) — селекторы
+# деплойментов остаются ровно такими, как в манифестах, и не «плывут» при
+# смене версии kustomize.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: acom-offer-desk
+      acom.deploy/environment: acom-vps
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  # rabbitmq.conf + enabled_plugins → монтируется в /etc/rabbitmq/conf.d
+  - name: rabbitmq-config
+    files:
+      - rabbitmq.conf=config/rabbitmq.conf
+      - enabled_plugins=config/rabbitmq-enabled_plugins
+  # k8s-версия конфига контейнера gateway (static proxy_pass вместо docker-DNS)
+  - name: gateway-nginx
+    files:
+      - default.conf=config/gateway-nginx.conf
+  # конфиг maintenance-заглушки «ведутся технические работы»
+  - name: maintenance-config
+    files:
+      - default.conf=config/maintenance-default.conf
+
+resources:
+  - namespace.yaml
+  - rbac/runtime-serviceaccounts.yaml
+  - config/app-configmap.yaml
+  - storage/pvcs.yaml
+  - data/postgres-statefulset.yaml
+  - workloads/rabbitmq.yaml
+  - workloads/minio.yaml
+  # Keycloak в k3s НЕ включаем — ПОЛИТИКА: `policy_acom_no_keycloak_cod_jul2026`
+  # (Тоток С.И. / СБ, 23.07.2026): «Keycloak полностью запрещён», альтернатива —
+  # мультифактор (корп. IAM); текущий OIDC на VPS — «не канон для ЦОД».
+  # PR #53 «without_keycloak_and_others» (dev, 04.09.2026) уже убрал Keycloak из кода.
+  # Манифест сохранён как история: excluded-by-policy/keycloak.yaml (в оверлей не входит).
+  - workloads/backend.yaml
+  - workloads/web.yaml
+  - workloads/gateway.yaml
+  - workloads/maintenance.yaml
+  - workloads/file-guard.yaml
+  - workloads/notifications-worker.yaml
+  - networking/networkpolicy.yaml
+
+# ВНИМАНИЕ: jobs/ в kustomization.yaml сознательно НЕ включены.
+#   jobs/restore-db.job.yaml      — одноразовый restore прод-дампа (Ф5-8), destructive
+#   jobs/flyway-migrate.job.yaml  — миграции схемы (Ф5-7), применять ПОСЛЕ Postgres Ready
+#   jobs/post-deploy-verify.job.yaml — проверка после раскатки (Ф5-10)
+# Их применение — вручную и по порядку из README.md («Порядок Ф5»).
+patches:
+  - path: patch-backend-shared.yaml
+  - path: patch-worker-shared.yaml
+  - path: patch-fileguard-clamav.yaml

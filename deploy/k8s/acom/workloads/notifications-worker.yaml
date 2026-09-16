@@ -1,0 +1,77 @@
+# notifications-worker (Celery/Python, `python -m app.main`).
+# Имя сервиса: в compose было `notifications_worker` — подчёркивание недопустимо в
+# DNS-именах k8s, поэтому `notifications-worker` (решение Ф5-свод п.3).
+# Healthcheck — как в проде: читаем /proc/1/cmdline (в python:3.12-slim нет pgrep).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-worker
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: notifications-worker
+  template:
+    metadata:
+      labels:
+        app: notifications-worker
+        acom.security/tier: app
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: worker
+          image: acom-notifications-worker:prod-1
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.main"]
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-app-config
+          env:
+            - name: RABBITMQ_SSL_CAFILE
+              value: /etc/ssl/rabbitmq/ca.crt
+            - name: RABBITMQ_SSL_CERTFILE
+              value: /etc/ssl/rabbitmq/tls.crt
+            - name: RABBITMQ_SSL_KEYFILE
+              value: /etc/ssl/rabbitmq/tls.key
+          startupProbe:
+            exec:
+              command: ["python", "-c", "import pathlib;c=pathlib.Path('/proc/1/cmdline').read_bytes().replace(b'\\x00',b' ').decode();raise SystemExit(0 if 'app.main' in c else 1)"]
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import pathlib;c=pathlib.Path('/proc/1/cmdline').read_bytes().replace(b'\\x00',b' ').decode();raise SystemExit(0 if 'app.main' in c else 1)"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: shared
+              mountPath: /app/shared
+            - name: rabbitmq-client
+              mountPath: /etc/ssl/rabbitmq
+              readOnly: true
+      volumes:
+        - name: shared
+          emptyDir: {}
+        - name: rabbitmq-client
+          secret:
+            secretName: rabbitmq-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: client.crt
+                path: tls.crt
+              - key: client.key
+                path: tls.key

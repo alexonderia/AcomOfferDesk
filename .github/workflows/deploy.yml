@@ -1,7 +1,10 @@
+# Deploy AcomOfferDesk to acom-VPS k3s after green CI.
+# SE 2.0 / MBO-2 Ф9: деплой возможен ТОЛЬКО для SHA с зелёным CI (gate-ci по head_sha).
+# workflow_dispatch — break-glass без CI-гейта (явное предупреждение в логе).
+# Флоу k3s (без registry): build 4 образов :sha-<short> → docker save | k3s ctr import
+# → apply -k deploy/k8s/acom → flyway Job → set image + rollout → verify Jobs.
 name: Deploy to VPS
 
-# Push to `test` no longer starts deploy directly — only after green CI (workflow "CI").
-# Manual: Actions → Deploy to VPS → Run workflow (break-glass; does not wait for CI).
 on:
   workflow_run:
     workflows: ["CI"]
@@ -10,36 +13,87 @@ on:
     branches:
       - test
   workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full commit SHA to deploy (empty = HEAD of test)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
   group: deploy-test-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    # Auto deploy: only when CI finished successfully on a push to test (not on PR CI).
-    if: >
+  gate-ci:
+    name: Require green CI for exact SHA
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'test' &&
-       github.event.workflow_run.event == 'push') ||
-      github.event_name == 'workflow_dispatch'
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
-      - name: CI gate context
-        if: github.event_name == 'workflow_run'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.sha || 'test' }}
+          fetch-depth: 0
+
+      - name: Resolve deploy SHA
+        id: resolve
         run: |
-          echo "Deploy triggered after CI success."
-          echo "CI run: ${{ github.event.workflow_run.html_url }}"
-          echo "Commit: ${{ github.event.workflow_run.head_sha }}"
-          echo "Branch: ${{ github.event.workflow_run.head_branch }}"
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=${SHA}" >> "${GITHUB_OUTPUT}"
+          echo "Deploy candidate SHA=${SHA} trigger=${{ github.event_name }}"
+
+      - name: Fail if no successful CI run for this SHA
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.resolve.outputs.sha }}"
+          # Official Actions API: latest completed CI for the exact candidate SHA
+          # must be success (old green + newer fail must block).
+          # https://docs.github.com/en/rest/actions/workflow-runs
+          RUN_JSON="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=100"
+          )"
+          RUN_ID="$(
+            printf '%s' "${RUN_JSON}" | jq -r --arg sha "${SHA}" '
+              [.workflow_runs[]
+                | select(.head_sha == $sha and .status == "completed")]
+              | sort_by(.created_at)
+              | reverse
+              | .[0]
+              | select(.conclusion == "success")
+              | .id // empty'
+          )"
+          if [ -z "${RUN_ID}" ]; then
+            echo "FAIL: no successful CI run for SHA ${SHA}; deploy blocked" >&2
+            exit 1
+          fi
+          echo "CI_GATE_OK: CI run ${RUN_ID} is green for ${SHA}"
 
       - name: Manual deploy notice
         if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "::warning::Manual deploy (workflow_dispatch) — CI gate was not required. Use only for break-glass."
+          echo "::warning::workflow_dispatch (break-glass) — CI gate skipped for this run."
 
+  deploy:
+    name: Deploy (k3s)
+    needs: gate-ci
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -49,200 +103,100 @@ jobs:
           port: 22
           command_timeout: 35m
           script: |
-            set -e
+            set -euo pipefail
+            SHA="${{ needs.gate-ci.outputs.sha }}"
+            SHORT="${SHA:0:7}"
+            TAG="sha-${SHORT}"
+            ROOT="/opt/acome-offer-desk"
+            NS="acom"
 
-            fail_order_db_prerequisite() {
-              echo "ORDER_DB_PREREQUISITE: $1" >&2
-              echo "See docs/order-database-vps.md (also: empty flyway/sql on VPS — sync flyway/sql from order_database main, then flyway migrate)." >&2
-              echo "Full reinstall (new volume): run install-order-database-vps.sh until INSTALL_SUCCESS." >&2
+            cd "${ROOT}"
+
+            origin_url="$(git remote get-url origin)"
+            case "${origin_url}" in
+              *github.com/alexonderia/AcomOfferDesk*|*github.com:alexonderia/AcomOfferDesk*|\
+              *github.com/vvv-web/AcomOfferDesk*|*github.com:vvv-web/AcomOfferDesk*) ;;
+              *)
+                echo "FAIL: origin must point to AcomOfferDesk (alexonderia or vvv-web), got ${origin_url}" >&2
+                exit 1
+                ;;
+            esac
+            if [[ -n "$(git status --porcelain)" ]]; then
+              echo "FAIL: VPS checkout is dirty; refusing to overwrite manual changes" >&2
+              git status --short
               exit 1
-            }
-
-            require_order_db_sql() {
-              local sql="$1"
-              local expected="$2"
-              local actual
-              actual="$(cd "$ORDER_DB_DIR" && docker compose exec -T postgres psql -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -tAc "$sql" | tr -d '[:space:]')"
-              if [ "$actual" != "$expected" ]; then
-                fail_order_db_prerequisite "Unexpected SQL check result. Expected '$expected', got '${actual:-<empty>}' for: $sql"
-              fi
-            }
-
-            sync_and_migrate_order_database() {
-              local migrations_src="/opt/acome-offer-desk/deploy/order_database/flyway/sql"
-              local backup_dir="$ORDER_DB_DIR/backups"
-              local backup_path
-              local timestamp
-
-              if [ ! -d "$migrations_src" ]; then
-                fail_order_db_prerequisite "Missing order_database migration snapshot: $migrations_src."
-              fi
-
-              set -- "$migrations_src"/V*.sql
-              if [ ! -e "$1" ]; then
-                fail_order_db_prerequisite "No V*.sql files in order_database migration snapshot: $migrations_src."
-              fi
-
-              mkdir -p "$ORDER_DB_DIR/flyway/sql" "$backup_dir"
-              cp -a "$@" "$ORDER_DB_DIR/flyway/sql/"
-
-              timestamp="$(date -u +'%Y%m%d_%H%M%S')"
-              backup_path="$backup_dir/order_database_${timestamp}.dump"
-              echo "ORDER_DB_BACKUP: creating $backup_path"
-              docker exec order-database-postgres pg_dump -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -F c > "$backup_path"
-              sha256sum "$backup_path" > "$backup_path.sha256"
-
-              # order-database-postgres: avoid DNS alias "postgres" (acome-monitoring also registers postgres on project_net).
-              run_flyway() {
-                (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm \
-                  -e "FLYWAY_URL=jdbc:postgresql://order-database-postgres:5432/${ORDER_DB_NAME}" \
-                  flyway "$@")
-              }
-              if ! run_flyway migrate; then
-                echo "FLYWAY_MIGRATE: migrate failed — repair checksums for already-applied scripts, then retry once"
-                run_flyway repair
-                run_flyway migrate
-              fi
-            }
-
-            cd /opt/acome-offer-desk
-            # Concurrent fetch (CI + manual) can corrupt refs/remotes/upstream/*:
-            # "cannot lock ref ... is at <sha> but expected <old-sha>".
-            git remote prune upstream 2>/dev/null || true
-            if ! git fetch upstream test dev 2>/dev/null; then
-              git update-ref -d refs/remotes/upstream/test 2>/dev/null || true
-              git update-ref -d refs/remotes/upstream/dev 2>/dev/null || true
-              git fetch upstream refs/heads/test:refs/remotes/upstream/test refs/heads/dev:refs/remotes/upstream/dev
             fi
-            git checkout test
-            # Совпадать с удалённой веткой целиком: иначе git pull падает, если на сервере
-            # остались локальные правки отслеживаемых файлов (например ручной scp поверх checkout).
-            git reset --hard upstream/test
-
-            ORDER_DB_DIR=/opt/order_database
-            APP_ENV_FILE=/opt/acome-offer-desk/backend/.env
-            COMPOSE_ENV_FILE=backend/.env
-            export APP_RUNTIME_ENV_FILE="./$COMPOSE_ENV_FILE"
-
-            if [ ! -f "$ORDER_DB_DIR/docker-compose.yml" ] || [ ! -f "$ORDER_DB_DIR/.env" ]; then
-              fail_order_db_prerequisite "order_database is not installed on VPS as documented."
+            git fetch --prune origin || true
+            if git remote get-url upstream >/dev/null 2>&1; then
+              git fetch --prune upstream || true
             fi
+            git cat-file -e "${SHA}^{commit}"
+            git checkout --detach "${SHA}"
 
-            if [ ! -f "$COMPOSE_ENV_FILE" ]; then
-              fail_order_db_prerequisite "$COMPOSE_ENV_FILE is missing; docker compose cannot load runtime env."
-            fi
+            # 1. Build app images (pinned infra images: nginx/rabbitmq/minio/postgres не трогаем).
+            docker build -t "acom-backend:${TAG}" -f backend/Dockerfile .
+            docker build -t "acom-file-guard:${TAG}" -f file_guard/Dockerfile .
+            docker build -t "acom-web:${TAG}" ./web
+            docker build -t "acom-notifications-worker:${TAG}" -f notifications_worker/Dockerfile .
 
-            if ! docker network inspect project_net >/dev/null 2>&1; then
-              fail_order_db_prerequisite "Docker network project_net is missing."
-            fi
-
-            if [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' order-database-postgres 2>/dev/null || true)" != "healthy" ]; then
-              echo "=== order_database compose ps ==="
-              (cd "$ORDER_DB_DIR" && docker compose ps) || true
-              echo "=== order_database postgres logs (tail) ==="
-              (cd "$ORDER_DB_DIR" && docker compose logs --tail=120 postgres) || true
-              fail_order_db_prerequisite "order-database-postgres is not healthy."
-            fi
-
-            ORDER_DB_USER="$(sed -n 's/^POSTGRES_USER=//p' "$ORDER_DB_DIR/.env" | head -n 1)"
-            ORDER_DB_NAME="$(sed -n 's/^POSTGRES_DB=//p' "$ORDER_DB_DIR/.env" | head -n 1)"
-
-            if [ -z "$ORDER_DB_USER" ] || [ -z "$ORDER_DB_NAME" ]; then
-              fail_order_db_prerequisite "POSTGRES_USER or POSTGRES_DB is missing in $ORDER_DB_DIR/.env."
-            fi
-
-            sync_and_migrate_order_database
-
-            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'flyway_schema_history';" "1"
-
-            # Пустой flyway/sql на диске давал только baseline без версионных миграций → нет user_auth_accounts и 500 на OAuth callback (см. docs/order-database-vps.md).
-            if [ ! -d "$ORDER_DB_DIR/flyway/sql" ]; then
-              fail_order_db_prerequisite "Missing directory $ORDER_DB_DIR/flyway/sql."
-            fi
-            migration_files="$(find "$ORDER_DB_DIR/flyway/sql" -maxdepth 1 -name 'V*.sql' 2>/dev/null | wc -l | tr -d '[:space:]')"
-            if [ "${migration_files:-0}" -eq 0 ]; then
-              fail_order_db_prerequisite "No V*.sql files under $ORDER_DB_DIR/flyway/sql — sync flyway/sql from order_database main, then flyway migrate."
-            fi
-
-            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_auth_accounts';" "1"
-            require_order_db_sql "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'requests' AND column_name = 'id_plan';" "1"
-            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('economy_plans', 'economy_plan_request_facts');" "2"
-
-            if [ ! -f "$APP_ENV_FILE" ] || ! grep -q '^DATABASE_URL=.*@order-database-postgres:5432/' "$APP_ENV_FILE"; then
-              fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
-            fi
-
-            ensure_runtime_flag() {
-              local key="$1" value="$2"
-              if grep -q "^${key}=" "$APP_ENV_FILE" 2>/dev/null; then
-                sed -i "s/^${key}=.*/${key}=${value}/" "$APP_ENV_FILE"
-              else
-                echo "${key}=${value}" >>"$APP_ENV_FILE"
-              fi
-            }
-            # MAX_BOT_ENABLED — только в backend/.env на VPS; деплой не перезаписывает (токен и флаг уже настроены вручную).
-            ensure_runtime_flag FILE_GUARD_ENABLED true
-
-            # Infra: no --force-recreate — Docker can return "No such container" mid-recreate
-            # when the old container ID is torn down while Compose still tracks it (#26146730081).
-            # App images: --force-recreate --no-deps per service + retries (no parallel infra churn).
-            compose_up_infra() {
-              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build "$@"
-              docker compose --env-file "$COMPOSE_ENV_FILE" up -d --wait "$@" 2>/dev/null || true
-            }
-
-            compose_up_app() {
-              local svc="$1"
-              local max="${COMPOSE_UP_RETRIES:-3}"
-              local delay="${COMPOSE_UP_RETRY_DELAY_SEC:-5}"
-              local attempt=1
-              while [ "$attempt" -le "$max" ]; do
-                if docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build --force-recreate --no-deps "$svc"; then
-                  return 0
-                fi
-                echo "COMPOSE_UP_RETRY: $svc attempt $attempt/$max"
-                sleep "$delay"
-                attempt=$((attempt + 1))
-              done
-              return 1
-            }
-
-            # file_guard must come up before backend (backend depends_on file_guard: service_healthy);
-            # the per-service app loop below uses --no-deps and would not start it otherwise,
-            # leaving uploads failing closed (503) until file_guard is running.
-            for infra_svc in rabbitmq minio keycloak file_guard maintenance; do
-              if ! compose_up_infra "$infra_svc"; then
-                echo "=== docker compose ps -a (infra: $infra_svc) ==="
-                docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
-                echo "=== $infra_svc logs (tail) ==="
-                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 "$infra_svc" || true
-                exit 1
-              fi
-            done
-            for app_svc in backend notifications_worker web; do
-              if ! compose_up_app "$app_svc"; then
-                echo "=== docker compose ps -a (app: $app_svc) ==="
-                docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
-                echo "=== $app_svc logs (tail) ==="
-                docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 "$app_svc" || true
-                exit 1
-              fi
+            # 2. Import в containerd (imagePullPolicy: Never — без импорта pod встанет в ErrImageNeverPull).
+            for img in acom-backend acom-file-guard acom-web acom-notifications-worker; do
+              docker save "${img}:${TAG}" | k3s ctr images import -
             done
 
-            # gateway depends_on maintenance; compose_up_infra starts deps and waits for health.
-            if ! compose_up_infra gateway; then
-              echo "=== docker compose ps -a (gateway) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
-              echo "=== gateway logs (tail) ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 gateway || true
-              exit 1
-            fi
+            # 3. TLS-секреты (если отсутствуют) + app-секреты (идемпотентно, из /opt/acome-offer-desk/.env).
+            for sec in postgres-tls rabbitmq-tls minio-tls; do
+              if ! kubectl -n "${NS}" get secret "${sec}" >/dev/null 2>&1; then
+                echo "TLS secret ${sec} missing — generating self-signed set"
+                bash deploy/k8s/acom/scripts/generate-tls.sh
+                break
+              fi
+            done
+            bash deploy/k8s/acom/scripts/apply-secrets.sh
 
-            # Keycloak: skip 20–30 min bootstrap when model OK + bootstrap.sh unchanged; repair on verify fail.
-            # Force full bootstrap: KEYCLOAK_BOOTSTRAP_FORCE=1 on VPS before deploy (workflow_dispatch).
-            chmod +x ./scripts/keycloak-init-deploy.sh ./scripts/keycloak-refresh-theme.sh ./scripts/run-keycloak-check-backend.sh ./scripts/post-deploy-verify.sh
-            if ! ./scripts/keycloak-init-deploy.sh "$COMPOSE_ENV_FILE"; then
-              echo "=== keycloak-init-deploy failed ==="
-              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
+            # 4. flyway-sql ConfigMap из чекаута (миграции едут вместе с SHA).
+            bash deploy/k8s/acom/scripts/make-configmaps.sh
+
+            # 5. Apply overlay (jobs/ в kustomization сознательно НЕ включены — см. kustomization.yaml).
+            kubectl apply -k deploy/k8s/acom/
+
+            # 6. Postgres должен быть Ready до миграций.
+            kubectl -n "${NS}" wait --for=condition=ready pod -l app=postgres --timeout=300s
+
+            # 7. Бэкап БД перед миграциями (паритет с compose-эрой: pg_dump + sha256).
+            BACKUP_DIR="/opt/order_database/backups"
+            mkdir -p "${BACKUP_DIR}"
+            BACKUP_PATH="${BACKUP_DIR}/order_database_$(date -u +'%Y%m%d_%H%M%S')_${SHORT}.dump"
+            kubectl -n "${NS}" exec postgres-0 -- \
+              sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -F c' > "${BACKUP_PATH}"
+            sha256sum "${BACKUP_PATH}" > "${BACKUP_PATH}.sha256"
+            [ -s "${BACKUP_PATH}" ] || { echo "FAIL: pg_dump produced empty backup" >&2; exit 1; }
+            echo "ORDER_DB_BACKUP: ${BACKUP_PATH}"
+
+            # 8. Flyway-миграции (идемпотентно: применённые версии пропускаются).
+            kubectl -n "${NS}" delete job flyway-migrate --ignore-not-found
+            kubectl apply -f deploy/k8s/acom/jobs/flyway-migrate.job.yaml
+            kubectl -n "${NS}" wait --for=condition=complete job/flyway-migrate --timeout=10m
+
+            # 9. Раскатка app-образов (container names: backend/web/file-guard/worker).
+            kubectl -n "${NS}" set image deployment/backend backend="acom-backend:${TAG}"
+            kubectl -n "${NS}" set image deployment/web web="acom-web:${TAG}"
+            kubectl -n "${NS}" set image deployment/file-guard file-guard="acom-file-guard:${TAG}"
+            kubectl -n "${NS}" set image deployment/notifications-worker worker="acom-notifications-worker:${TAG}"
+            for d in backend web file-guard notifications-worker; do
+              kubectl -n "${NS}" rollout status "deployment/${d}" --timeout=5m
+            done
+
+            # 10. Post-deploy verify (только чтение; образы внутри Job уже на VPS).
+            kubectl -n "${NS}" delete job post-deploy-verify --ignore-not-found
+            kubectl -n "${NS}" delete job db-verify --ignore-not-found
+            kubectl apply -f deploy/k8s/acom/jobs/post-deploy-verify.job.yaml
+            kubectl -n "${NS}" wait --for=condition=complete job/post-deploy-verify --timeout=5m
+            kubectl -n "${NS}" wait --for=condition=complete job/db-verify --timeout=5m
+
+            if [[ -n "$(git status --porcelain)" ]]; then
+              echo "FAIL: deploy changed tracked files in checkout" >&2
+              git status --short
               exit 1
             fi
+            echo "DEPLOY_JOB_PASS SHA=${SHA} TAG=${TAG}"

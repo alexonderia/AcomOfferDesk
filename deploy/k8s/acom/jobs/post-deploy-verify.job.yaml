@@ -1,0 +1,156 @@
+# Пост-деплой проверки (Ф5-10). Только чтение: ничего не меняют.
+# Ф5-3 ИСПРАВЛЕНО: раньше оба Job'а использовали образ order-database-postgres:with-cron —
+#   а в нём НЕТ curl (проверено: psql/pg_isready/pg_restore/openssl есть, curl нет).
+#   Все HTTP-проверки молча давали «000» и валили Job. Теперь проверки разделены
+#   по ВОЗМОЖНОСТЯМ образа:
+#     * http/tls (curl, openssl)      → acome-offer-desk-backend:latest   (curl=/usr/bin/curl, openssl есть)
+#     * db   (psql, pg_isready)       → order-database-postgres:with-cron  (psql, openssl)
+#   Роль контейнера выбирается по «что установлено в образе», а не по названию Job'а.
+# Ожидаемый вывод: строки POST_DEPLOY_VERIFY_K8S: all checks passed и DB_VERIFY_K8S: all checks passed.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: post-deploy-verify
+  labels:
+    acom.deploy/phase: "f5-10"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: post-deploy-verify
+        acom.security/tier: app
+    spec:
+      restartPolicy: Never
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      containers:
+        - name: http-verify
+          image: acome-offer-desk-backend:latest
+          imagePullPolicy: Never
+          command: ["sh", "-ec"]
+          args:
+            - |
+              set -eu
+              FAIL=0
+              check() { # name url expected_code
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$2" || echo 000)
+                if [ "$code" = "$3" ]; then echo "OK   $1 -> $code"; else echo "FAIL $1 -> $code (ждём $3)"; FAIL=1; fi
+              }
+              check "backend /health"  "http://backend:8000/health"  200
+              check "web /"            "http://web:80/"              200
+              check "gateway /health"  "http://gateway:80/health"    200
+              # Keycloak НЕ проверяем: в k8s его нет (политика 23.07.2026 — см. kustomization.yaml).
+              # Проверка входа появится вместе с переходом на корп. IAM (PR #53, dev).
+              check "maintenance"      "http://maintenance:80/healthz"     200
+              check "file-guard"       "http://file-guard:8080/health"     200
+
+              echo "--- minio (HTTPS + CA, R-F2) ---"
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+                     --cacert /etc/ssl/minio/ca.crt https://minio:9000/minio/health/ready || echo 000)
+              echo "minio /minio/health/ready -> $code"
+              [ "$code" = "200" ] || { echo "FAIL: minio не отвечает 200 по HTTPS с проверкой CA"; FAIL=1; }
+
+              echo "--- rabbitmq (AMQPS 5671, R-E2/E3) ---"
+              if timeout 10 openssl s_client -connect rabbitmq:5671 \
+                   -CAfile /etc/ssl/rabbitmq/ca.crt \
+                   -cert /etc/ssl/rabbitmq/tls.crt -key /etc/ssl/rabbitmq/tls.key \
+                   </dev/null 2>&1 | grep -q 'Verify return code: 0'; then
+                echo "OK: AMQPS с клиентским сертификатом проверен"
+              else
+                echo "FAIL: AMQPS/mTLS не подтверждён (R-E3)"; FAIL=1
+              fi
+
+              if [ "$FAIL" = "0" ]; then echo "POST_DEPLOY_VERIFY_K8S: all checks passed"; exit 0; fi
+              echo "POST_DEPLOY_VERIFY_K8S: FAILED"; exit 1
+          volumeMounts:
+            - name: minio-ca
+              mountPath: /etc/ssl/minio
+              readOnly: true
+            - name: rabbitmq-certs
+              mountPath: /etc/ssl/rabbitmq
+              readOnly: true
+      volumes:
+        - name: minio-ca
+          secret:
+            secretName: minio-tls
+            items: [{key: ca.crt, path: ca.crt}]
+        - name: rabbitmq-certs
+          secret:
+            secretName: rabbitmq-tls
+            items:
+              - {key: ca.crt, path: ca.crt}
+              - {key: client.crt, path: tls.crt}
+              - {key: client.key, path: tls.key}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-verify
+  labels:
+    acom.deploy/phase: "f5-10"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: db-verify
+        acom.security/tier: app
+    spec:
+      restartPolicy: Never
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      containers:
+        - name: db-verify
+          image: order-database-postgres:with-cron
+          imagePullPolicy: Never
+          command: ["sh", "-ec"]
+          args:
+            - |
+              set -eu
+              FAIL=0
+              echo "--- postgres ---"
+              pg_isready -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" || FAIL=1
+              TABLES=$(psql -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')")
+              echo "tables=$TABLES"
+              [ "${TABLES:-0}" -gt 0 ] || { echo "FAIL: в БД нет таблиц"; FAIL=1; }
+              CRON=$(psql -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "select extname from pg_extension where extname='pg_cron'" || true)
+              echo "pg_cron=$CRON"
+              [ -n "$CRON" ] || { echo "FAIL: расширение pg_cron не установлено"; FAIL=1; }
+
+              echo "--- схема keycloak в БД: АРТЕФАКТ ДАМПА (в k8s Keycloak НЕ разворачивается) ---"
+              KCT=$(psql -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "select count(*) from information_schema.tables where table_schema='keycloak'" || echo 0)
+              echo "keycloak_tables=$KCT (ожидаемо >0: пришло с дампом прод-БД; на вход в k8s не влияет)"
+              # Политика `policy_acom_no_keycloak_cod_jul2026` (23.07.2026): realm/users
+              # из k8s-контура не читаются — проверять их здесь смысла нет.
+
+              echo "--- postgres TLS (R-D2) ---"
+              psql "host=postgres dbname=$POSTGRES_DB user=$POSTGRES_USER sslmode=verify-full sslrootcert=/etc/ssl/postgres/ca.crt" \
+                   -Atc "select 'pg_tls_ok:' || ssl::text from pg_stat_ssl where pid=pg_backend_pid()" || FAIL=1
+
+              if [ "$FAIL" = "0" ]; then echo "DB_VERIFY_K8S: all checks passed"; exit 0; fi
+              echo "DB_VERIFY_K8S: FAILED"; exit 1
+          envFrom:
+            - secretRef:
+                name: acom-db-secret
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-db-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+      volumes:
+        - name: postgres-ca
+          secret:
+            secretName: postgres-tls
+            items: [{key: ca.crt, path: ca.crt}]

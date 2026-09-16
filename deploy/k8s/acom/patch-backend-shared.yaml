@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  template:
+    spec:
+      containers:
+        - name: backend
+          env:
+            - name: AWS_CA_BUNDLE
+              value: /etc/ssl/minio/ca.crt
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              # MinIO SDK/urllib3 валидирует через системный магазин /etc/ssl/certs
+              cat /etc/ssl/minio/ca.crt >> /etc/ssl/certs/ca-certificates.crt 2>/dev/null || true
+              CERTIFI=$(python3 -c "import certifi;print(certifi.where())" 2>/dev/null); [ -n "$CERTIFI" ] && cat /etc/ssl/minio/ca.crt >> "$CERTIFI" || true
+              exec gunicorn -k uvicorn.workers.UvicornWorker -w ${BACKEND_WORKERS:-1} -b 0.0.0.0:8000 app.main:app
+          volumeMounts:
+            - name: shared-code
+              mountPath: /app/shared
+              readOnly: true
+      volumes:
+        - name: shared-code
+          configMap:
+            name: acom-shared

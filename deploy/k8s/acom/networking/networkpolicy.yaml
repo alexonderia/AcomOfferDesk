@@ -1,0 +1,161 @@
+# Сегментация сети (R-A3). Метки `acom.security/tier`:
+#   edge  — gateway (единственный, кто принимает трафик извне кластера);
+#   app   — backend, web, maintenance, file-guard, notifications-worker;
+#   data  — postgres, rabbitmq, minio (данные; НЕТ выхода в интернет).
+#
+# ВАЖНО про источник трафика с хостового nginx: поды k3s ходят в ClusterIP как
+# packet из узла (см. host_k3s.txt: kube-proxy/iptables), поэтому в первом правиле
+# источник указан ipBlock узла, а не namespaceSelector. Если IP узла изменится —
+# поправить (или заменить на 0.0.0.0/0 с комментарием, т.к. ClusterIP всё равно
+# недостижим снаружи).
+---
+# 1. Всё входящее по умолчанию запрещено.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# 2. Вход в edge (gateway) — с узла (хостовый nginx), порт 80.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-edge-from-node
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: edge
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 155.212.160.162/32     # INTERNAL-IP узла acom-vps
+      ports:
+        - protocol: TCP
+          port: 80
+---
+# 3. Вход в app — только от edge (gateway) и от самой app-группы.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-from-edge
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: app
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              acom.security/tier: edge
+        - podSelector:
+            matchLabels:
+              acom.security/tier: app
+---
+# 4. Вход в data — только от app (backend/worker) и от edge (health-проверки).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-data-from-app
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: data
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              acom.security/tier: app
+        - podSelector:
+            matchLabels:
+              acom.security/tier: edge
+---
+# 5. Data-тир: egress только DNS + внутрь namespace. В интернет — НЕЛЬЗЯ (R-A3).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-data-egress
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: data
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector: {}
+---
+# 6. App-тир: egress — DNS + внутри namespace + интернет (backend обязан ходить
+#    в SMTP/IMAP/YouGile/IAM по внешним адресам, это его штатная работа).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-egress
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: app
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector: {}
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 993
+        - protocol: TCP
+          port: 25
+---
+# 7. Edge-тир: egress — DNS + внутрь namespace (нужен доступ к backend/web/maintenance).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-edge-egress
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: edge
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector: {}

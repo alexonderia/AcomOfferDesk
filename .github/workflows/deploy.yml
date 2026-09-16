@@ -121,9 +121,12 @@ jobs:
                 exit 1
                 ;;
             esac
-            if [[ -n "$(git status --porcelain)" ]]; then
-              echo "FAIL: VPS checkout is dirty; refusing to overwrite manual changes" >&2
-              git status --short
+            # Dirty-guard: блокируем только правки TRACKED-файлов (их перезапишет checkout).
+            # Untracked (backend/uploads/, deploy/monitoring/, docker-compose.monitoring.yml —
+            # операционные файлы VPS) не мешают checkout --detach и не удаляются.
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "FAIL: VPS checkout has modified tracked files; refusing to overwrite manual changes" >&2
+              git status --short | grep -v '^??' || true
               exit 1
             fi
             git fetch --prune origin || true
@@ -194,9 +197,9 @@ jobs:
             kubectl -n "${NS}" wait --for=condition=complete job/post-deploy-verify --timeout=5m
             kubectl -n "${NS}" wait --for=condition=complete job/db-verify --timeout=5m
 
-            if [[ -n "$(git status --porcelain)" ]]; then
+            if ! git diff --quiet || ! git diff --cached --quiet; then
               echo "FAIL: deploy changed tracked files in checkout" >&2
-              git status --short
+              git status --short | grep -v '^??' || true
               exit 1
             fi
             echo "DEPLOY_JOB_PASS SHA=${SHA} TAG=${TAG}"

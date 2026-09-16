@@ -1,0 +1,31 @@
+# Патч Ф5-7: initContainer сидирования баз ClamAV (по образцу фикса Ф4).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-guard
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: clamav-seed
+          image: acom-file-guard:prod-1
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -e
+              if [ -f /var/lib/clamav/daily.cvd ] || [ -f /var/lib/clamav/daily.cld ]; then
+                echo "seed: базы уже есть"; exit 0
+              fi
+              for f in main.cvd daily.cvd bytecode.cvd; do
+                curl -fsSL -o /var/lib/clamav/$f https://packages.microsoft.com/clamav/$f
+              done
+              sigtool --info /var/lib/clamav/daily.cvd | grep -q "Verification OK" || { echo "sigtool FAIL"; exit 1; }
+              echo "seed OK"
+          volumeMounts:
+            - name: clamav
+              mountPath: /var/lib/clamav
+      containers:
+        - name: file-guard
+          env:
+            - name: FILE_GUARD_CLAMAV_UPDATE_ON_START
+              value: "false"

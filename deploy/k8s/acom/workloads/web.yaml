@@ -1,0 +1,67 @@
+# web (SPA на nginx, build ./web, порт 80). Образ acom-web:prod-1.
+# liveness — pidof nginx (как в прод-healthcheck), readiness — отдача index.html.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        acom.security/tier: app
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      containers:
+        - name: web
+          image: acom-web:prod-1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 80
+          startupProbe:
+            tcpSocket:
+              port: 80
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pidof nginx >/dev/null"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

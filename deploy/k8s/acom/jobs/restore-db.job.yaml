@@ -1,0 +1,93 @@
+# Одноразовый restore прод-дампа в ЧИСТУЮ БД нового StatefulSet (Ф5-8).
+#
+# Почему так, а не initdb.d: скрипты /opt/order_database/init/*.sql срабатывают
+# только на пустом каталоге PGDATA и создают схему с нуля; дамп Ф5-pre содержит
+# уже готовую схему и данные → они бы конфликтовали. Порядок:
+#   1) PVC + postgres Running (initdb создал пустую БД order_database)
+#   2) kubectl -n acom create secret generic acom-db-secret ...   (POSTGRES_*)
+#   3) kubectl -n acom apply -f jobs/restore-db.job.yaml
+#   4) Job Complete  →  psql \dt / проверка счётчиков
+#   5) только потом flyway-migrate (idempotent) и раскатка приложения
+#
+# Дампы Ф5-pre (md5 в плане, реестр бэкапов):
+#   /root/mbo2-backups-20260915/order_database.dump  (pg_dump -Fc, 742 объекта)
+#   /root/mbo2-backups-20260915/roles_order_db.sql   (pg_dumpall -g)
+# Файлы копируются на узел и подкладываются в PVC ручного тома `acom-restore`
+# (см. scripts/restore-db.sh) — Job НЕ ходит в /root напрямую.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: acom-restore
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restore-db
+  labels:
+    acom.deploy/phase: "f5-8"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: restore-db
+        acom.security/tier: app
+    spec:
+      restartPolicy: Never
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      containers:
+        - name: restore
+          image: order-database-postgres:with-cron
+          imagePullPolicy: Never
+          command: ["sh", "-ec"]
+          args:
+            - |
+              set -eu
+              echo "restore: target=$POSTGRES_HOST db=$POSTGRES_DB"
+              echo "restore: ждём готовности postgres"
+              for i in $(seq 1 60); do
+                pg_isready -q -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" && break
+                sleep 5
+              done
+              echo "restore: roles"
+              psql -v ON_ERROR_STOP=0 -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres \
+                   -f /backup/roles_order_db.sql || true
+              echo "restore: дамп (Ф5-3: проверено в песочнице — exit 0 на копии прод-дампа)"
+              pg_restore --clean --if-exists --no-owner --no-privileges -j2 --exit-on-error \
+                         -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                         /backup/order_database.dump
+              echo "restore: счётчики"
+              psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                   "select 'tables=' || count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')"
+              echo "restore: схема keycloak — АРТЕФАКТ ДАМПА (в k8s Keycloak не разворачивается,"
+              echo "         политика 23.07.2026; печатаем только для полноты картины)"
+              psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                   "select 'keycloak_tables=' || count(*) from information_schema.tables where table_schema='keycloak'" || true
+              echo "RESTORE_OK=1"
+          envFrom:
+            - secretRef:
+                name: acom-db-secret
+          env:
+            - name: POSTGRES_HOST
+              value: postgres.acom.svc.cluster.local
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-db-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: backup
+              mountPath: /backup
+              readOnly: true
+      volumes:
+        - name: backup
+          persistentVolumeClaim:
+            claimName: acom-restore

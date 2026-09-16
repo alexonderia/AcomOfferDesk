@@ -1,0 +1,66 @@
+# Flyway-миграции схемы order_database (Ф5-7). Идемпотентно: уже применённые
+# версии пропускаются, таблица истории создаётся автоматически (официальная дока
+# red-gate/flyway, команда migrate). Запускать ПОСЛЕ postgres Ready и restore-db.
+#
+# SQL-локации — ConfigMap flyway-sql (собирает scripts/make-configmaps.sh из
+# /opt/acome-offer-desk/deploy/order_database/flyway/sql/: V1.0.1 … V1.0.5).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flyway-migrate
+  labels:
+    acom.deploy/phase: "f5-7"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: flyway-migrate
+        acom.security/tier: app
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      containers:
+        - name: flyway
+          image: flyway/flyway:12.1.0
+          imagePullPolicy: Never
+          args:
+            - "-url=jdbc:postgresql://postgres.acom.svc.cluster.local:5432/order_database?sslmode=verify-full"
+            - "-user=$(POSTGRES_USER)"
+            - "-password=$(POSTGRES_PASSWORD)"
+            - "-locations=filesystem:/flyway/sql"
+            - "-baselineOnMigrate=true"
+            - "-connectRetries=30"
+            - "migrate"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acom-db-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-db-secret
+                  key: POSTGRES_PASSWORD
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djavax.net.ssl.trustStorePassword=changeit"
+          volumeMounts:
+            - name: flyway-sql
+              mountPath: /flyway/sql
+              readOnly: true
+            - name: postgres-ca
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+      volumes:
+        - name: flyway-sql
+          configMap:
+            name: flyway-sql
+        - name: postgres-ca
+          secret:
+            secretName: postgres-tls
+            items:
+              - key: ca.crt
+                path: ca.crt

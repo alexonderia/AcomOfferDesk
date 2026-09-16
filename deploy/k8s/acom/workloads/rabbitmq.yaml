@@ -1,0 +1,135 @@
+# RabbitMQ (прод-образ rabbitmq:3-management, импортирован в containerd).
+#   * R-E2: plaintext-порт 5672 ВЫКЛЮЧЕН (listeners.tcp = none), только AMQPS 5671;
+#   * R-E3: mutual TLS (verify_peer + fail_if_no_peer_cert=true);
+#   * R-C3: НЕ используем RABBITMQ_DEFAULT_USER/PASS и не просто «guest» —
+#     учётка приходит из Secret-файла 05-credentials.conf;
+#   * probes: readiness — TCP 5671 (официальная рекомендация), liveness —
+#     rabbitmq-diagnostics НЕ чаще раза в 60 c (иначе 1000+ pids и всплеск CPU,
+#     как в проде: 197% CPU из-за healthcheck каждые 5 c).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # один RWO-том, две реплики не должны делить каталог
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        acom.security/tier: data
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 999        # rabbitmq UID в официальном образе (R-B2)
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3-management
+          imagePullPolicy: Never
+          ports:
+            - name: amqps
+              containerPort: 5671
+            - name: mgmt-tls
+              containerPort: 15672
+          volumeMounts:
+            - name: rabbitmq-config
+              mountPath: /etc/rabbitmq/conf.d/10-acom.conf
+              subPath: rabbitmq.conf
+              readOnly: true
+            # enabled_plugins читается ТОЛЬКО из /etc/rabbitmq/enabled_plugins
+            # (в conf.d его держать нельзя — rabbit_prelaunch его там не ищет).
+            - name: rabbitmq-config
+              mountPath: /etc/rabbitmq/enabled_plugins
+              subPath: enabled_plugins
+              readOnly: true
+            - name: rabbitmq-credentials
+              mountPath: /etc/rabbitmq/conf.d/05-credentials.conf
+              subPath: 05-credentials.conf
+              readOnly: true
+            - name: rabbitmq-certs
+              mountPath: /etc/rabbitmq/certs
+              readOnly: true
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
+          startupProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            periodSeconds: 10
+            timeoutSeconds: 15
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: 5671
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: rabbitmq-config
+          configMap:
+            name: rabbitmq-config
+            items:
+              - key: rabbitmq.conf
+                path: rabbitmq.conf
+              - key: enabled_plugins
+                path: enabled_plugins
+        - name: rabbitmq-credentials
+          secret:
+            secretName: rabbitmq-credentials
+            items:
+              - key: 05-credentials.conf
+                path: 05-credentials.conf
+        - name: rabbitmq-certs
+          secret:
+            secretName: rabbitmq-tls
+            # 0440 = root:999 (fsGroup) — нода Erlang работает от UID 999 и ДОЛЖНА
+            # прочитать ключ. С defaultMode 0600/root RabbitMQ падает:
+            #   ssl_options.keyfile invalid, file does not exist or cannot be read by the node
+            # (воспроизведено в песочнице Ф5-3, см. отчёт).
+            defaultMode: 0440
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: server.crt
+                path: server.crt
+              - key: server.key
+                path: server.key
+        - name: rabbitmq-data
+          persistentVolumeClaim:
+            claimName: rabbitmq-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  type: ClusterIP
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqps
+      port: 5671
+      targetPort: 5671
+    - name: mgmt-tls
+      port: 15672
+      targetPort: 15672

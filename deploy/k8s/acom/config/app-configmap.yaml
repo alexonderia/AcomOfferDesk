@@ -1,0 +1,62 @@
+# НЕсекретная конфигурация для подов приложения (backend / workers / file-guard).
+# Здесь только то, что появилось из-за переезда compose→k8s: DNS-имена сервисов,
+# порты после перехода на AMQPS/TLS и пути к сертификатам.
+#
+# ГРАНИЦА ОТВЕТСТВЕННОСТИ (важно):
+#   * всё, что было в /opt/acome-offer-desk/.env (пароли, JWT, SMTP, токены, адреса
+#     S3, RABBITMQ_URL, DATABASE_URL) живёт в Secret acom-app-secrets и создаётся
+#     ВНЕ git (R-C1/C2). Здесь этих ключей НЕТ, чтобы не было двух источников правды.
+#   * при переносе .env адреса обязательно переписать на k8s-DNS (иначе приложение
+#     будет искать docker-имена, которых в кластере нет):
+#       DATABASE_URL       → postgresql+psycopg://...@postgres.acom.svc.cluster.local:5432/order_database?sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt
+#       RABBITMQ_URL       → amqps://<user>:<pass>@rabbitmq.acom.svc.cluster.local:5671/   (R-E2: только amqps!)
+#       S3_ENDPOINT        → https://minio.acom.svc.cluster.local:9000        (R-F1: MinIO теперь TLS)
+#       S3_SECURE          → true
+#       KEYCLOAK_*=... → ПОЛИТИКА: Keycloak в контуре запрещён (23.07.2026, Тоток/СБ),
+#                       вход переходит на корп. IAM (PR #53, dev: `.env.iam.*`).
+#                       Адрес KC в k8s намеренно не прописан: Service не создаётся.
+#       PUBLIC_BACKEND_BASE_URL / WEB_BASE_URL / TG_BOT_PUBLIC_URL → https://app.acom-offer-desk.ru
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acom-app-config
+data:
+  # маркер контура (verify-job и мониторинг)
+  ACOM_DEPLOY_ENV: "acom-vps-k3s"
+
+  # --- Postgres: DNS внутри namespace + TLS (R-D1/D2) ---
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  PGSSLMODE: "verify-full"
+  PGSSLROOTCERT: "/etc/ssl/postgres/ca.crt"
+
+  # --- RabbitMQ: только AMQPS (R-E2), mutual TLS (R-E3) ---
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5671"
+  RABBITMQ_SSL_CAFILE: "/etc/ssl/rabbitmq/ca.crt"
+  RABBITMQ_SSL_CERTFILE: "/etc/ssl/rabbitmq/tls.crt"
+  RABBITMQ_SSL_KEYFILE: "/etc/ssl/rabbitmq/tls.key"
+
+  # --- MinIO: TLS + проверка CA клиентом (R-F1/F2) ---
+  MINIO_HOST: "minio"
+  MINIO_PORT: "9000"
+  AWS_CA_BUNDLE: "/etc/ssl/minio/ca.crt"
+  REQUESTS_CA_BUNDLE: "/etc/ssl/minio/ca.crt"
+
+  # --- Keycloak: ВЫКЛЮЧЕНО ПОЛИТИКОЙ (Keycloak в контуре запрещён, 23.07.2026) ---
+  # KEYCLOAK_INTERNAL_URL намеренно ОТСУТСТВУЕТ: Service `keycloak` в k8s не
+  # создаётся, а мёртвый DNS-адрес лишь маскировал бы поломку входа.
+  # Приложение получит auth-переменные корп. IAM (`.env.iam.*`, PR #53, dev).
+  # KEYCLOAK_INTERNAL_URL: "http://keycloak.acom.svc.cluster.local:8080"
+
+  # --- file-guard: лимиты и режим антивируса ---
+  # CLAMAV_UPDATE_ON_START=false осознанно: CDN ClamAV из РФ-сети отдаёт 403, базы
+  # заливаются на PVC из зеркала packages.microsoft.com (кейс Ф4), затем freshclam
+  # обновляет их штатно. true давал бы молчаливый «пустой» старт.
+  FILE_GUARD_CLAMAV_UPDATE_ON_START: "false"
+  FILE_GUARD_REQUIRE_ANTIVIRUS: "false"
+  FILE_GUARD_ALLOW_LIBMAGIC_FALLBACK: "true"
+  FILE_GUARD_CLAMD_SOCKET_PATH: "/run/clamav/clamd.sock"
+  FILE_GUARD_MAX_FILE_SIZE_BYTES: "5242880"
+  FILE_GUARD_SCAN_TIMEOUT_SECONDS: "30"
+  FILE_GUARD_ANTIVIRUS_TIMEOUT_SECONDS: "10"

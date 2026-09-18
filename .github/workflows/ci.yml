@@ -148,26 +148,28 @@ jobs:
   dependency-cve-scan:
     name: Dependency CVE scan (HIGH/CRITICAL)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Official Aqua action (docs: https://github.com/aquasecurity/trivy-action).
-      # Fails the build if any HIGH/CRITICAL vulnerability with an available fix
-      # shows up in dependency lock files (pip requirements, npm package-lock).
-      - name: Trivy fs scan
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
+      # Official Aqua scanner image, pinned by tag+digest (supply-chain practice:
+      # a mutable tag can be repointed, a digest cannot). Trivy binary downloads and
+      # the setup-trivy installer are deliberately avoided - the installer is broken
+      # upstream (aquasecurity/setup-trivy issue #30), which failed this job before.
+      # Fails the build when a fixable HIGH/CRITICAL dependency shows up in pip/npm
+      # lock files, so the dependency pin stays enforced rather than applied once.
+      # Docs: https://trivy.dev/latest/docs/references/configuration/cli/trivy_filesystem/
+      - name: Trivy fs scan (fail on HIGH/CRITICAL)
+        run: |
+          docker run --rm -v "$PWD:/w" \
+            aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
+            fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 /w
 
   file-guard:
     name: file_guard pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4

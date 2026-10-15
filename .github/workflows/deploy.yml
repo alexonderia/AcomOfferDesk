@@ -149,7 +149,7 @@ jobs:
             # 1. Build app images (pinned infra images: nginx/rabbitmq/minio/postgres не трогаем).
             docker build -t "acom-backend:${TAG}" -f backend/Dockerfile .
             docker build -t "acom-file-guard:${TAG}" -f file_guard/Dockerfile .
-            docker build -t "acom-web:${TAG}" ./web
+            docker build -t "acom-web:${TAG}" -f web/Dockerfile .
             docker build -t "acom-notifications-worker:${TAG}" -f notifications_worker/Dockerfile .
             docker build -t "acom-iam:${TAG}" -f iam/Dockerfile .
 

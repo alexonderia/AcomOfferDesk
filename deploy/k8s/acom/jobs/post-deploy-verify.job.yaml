@@ -52,7 +52,8 @@ spec:
               # gateway НЕ проверяем из кластера: netpol allow-edge-from-node пускает в edge
               # только с node — проверка gateway /health выполняется на хосте в deploy.yml.
               # Keycloak НЕ проверяем: в k8s его нет (политика 23.07.2026 — см. kustomization.yaml).
-              # Проверка входа появится вместе с переходом на корп. IAM (PR #53, dev).
+              # IAM (свой OIDC-сервис, PR #53/dev) — проверяем readiness-эндпоинт.
+              check "iam /health/ready" "http://iam:8100/health/ready" 200 6
               check "maintenance"      "http://maintenance:80/healthz"     200
               check "file-guard"       "http://file-guard:8080/health"     200
 

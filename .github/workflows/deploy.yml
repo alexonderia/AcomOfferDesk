@@ -151,9 +151,10 @@ jobs:
             docker build -t "acom-file-guard:${TAG}" -f file_guard/Dockerfile .
             docker build -t "acom-web:${TAG}" ./web
             docker build -t "acom-notifications-worker:${TAG}" -f notifications_worker/Dockerfile .
+            docker build -t "acom-iam:${TAG}" -f iam/Dockerfile .
 
             # 2. Import в containerd (imagePullPolicy: Never — без импорта pod встанет в ErrImageNeverPull).
-            for img in acom-backend acom-file-guard acom-web acom-notifications-worker; do
+            for img in acom-backend acom-file-guard acom-web acom-notifications-worker acom-iam; do
               docker save "${img}:${TAG}" | k3s ctr images import -
             done
 
@@ -176,6 +177,11 @@ jobs:
             # 6. Postgres должен быть Ready до миграций.
             kubectl -n "${NS}" wait --for=condition=ready pod -l app=postgres --timeout=300s
 
+            # 6b. БД acom_iam для IAM (идемпотентно; миграции — jobs/iam-migrations).
+            kubectl -n "${NS}" exec postgres-0 -- sh -ec \
+              'psql -U "$POSTGRES_USER" -lqt | cut -d\| -f1 | grep -qw acom_iam || psql -U "$POSTGRES_USER" -c "CREATE DATABASE acom_iam"'
+            echo "IAM_DB_OK acom_iam"
+
             # 7. Бэкап БД перед миграциями (паритет с compose-эрой: pg_dump + sha256).
             BACKUP_DIR="/opt/order_database/backups"
             mkdir -p "${BACKUP_DIR}"
@@ -192,12 +198,19 @@ jobs:
             kubectl -n "${NS}" apply -f deploy/k8s/acom/jobs/flyway-migrate.job.yaml
             kubectl -n "${NS}" wait --for=condition=complete job/flyway-migrate --timeout=10m
 
-            # 9. Раскатка app-образов (container names: backend/web/file-guard/worker).
+            # 8b. Flyway-миграции схемы IAM (БД acom_iam) — тем же pinned-образом.
+            # ConfigMap iam-sql собирается шагом 4 (make-configmaps.sh).
+            kubectl -n "${NS}" delete job iam-migrations --ignore-not-found
+            kubectl -n "${NS}" apply -f deploy/k8s/acom/jobs/iam-migrations.job.yaml
+            kubectl -n "${NS}" wait --for=condition=complete job/iam-migrations --timeout=8m
+
+            # 9. Раскатка app-образов (container names: backend/web/file-guard/worker/iam).
             kubectl -n "${NS}" set image deployment/backend backend="acom-backend:${TAG}"
             kubectl -n "${NS}" set image deployment/web web="acom-web:${TAG}"
             kubectl -n "${NS}" set image deployment/file-guard file-guard="acom-file-guard:${TAG}"
             kubectl -n "${NS}" set image deployment/notifications-worker worker="acom-notifications-worker:${TAG}"
-            for d in backend web file-guard notifications-worker; do
+            kubectl -n "${NS}" set image deployment/iam iam="acom-iam:${TAG}"
+            for d in backend web file-guard notifications-worker iam; do
               kubectl -n "${NS}" rollout status "deployment/${d}" --timeout=5m
             done
 

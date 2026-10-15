@@ -43,6 +43,7 @@ resources:
   # PR #53 «without_keycloak_and_others» (dev, 04.09.2026) уже убрал Keycloak из кода.
   # Манифест сохранён как история: excluded-by-policy/keycloak.yaml (в оверлей не входит).
   - workloads/backend.yaml
+  - workloads/iam.yaml
   - workloads/web.yaml
   - workloads/gateway.yaml
   - workloads/maintenance.yaml

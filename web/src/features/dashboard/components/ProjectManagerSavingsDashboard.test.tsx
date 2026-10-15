@@ -97,7 +97,10 @@ describe("ProjectManagerSavingsDashboard widget states", () => {
             offer_amount: 1_850_000,
             final_amount: 1_000_000,
             savings_amount: 0,
-            closed_at: "2026-08-25T10:00:00Z",
+            // Period filter defaults to the current month; a hardcoded date
+            // silently falls out of the filter as months pass (Sept 2026).
+            // toLocaleDateString('sv-SE') → local YYYY-MM-DD (matches dateFrom/dateTo).
+            closed_at: new Date().toLocaleDateString("sv-SE"),
             plan_id: null,
             plan_name: null,
           },

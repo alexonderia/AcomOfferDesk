@@ -10,6 +10,7 @@ const baseArgs = () => ({
   canLoadOpenRequests: false,
   canLoadOfferedRequests: false,
   canOpenUsersPage: false,
+  canOpenHierarchyPage: false,
   canOpenContractorsPage: false,
   canManageNormativeFiles: false,
   canViewFeedback: false,
@@ -24,6 +25,7 @@ const baseArgs = () => ({
   onNavigateToRequests: vi.fn(),
   onNavigateToRequestCreate: vi.fn(),
   onNavigateToAdmin: vi.fn(),
+  onNavigateToHierarchy: vi.fn(),
   onNavigateToContractors: vi.fn(),
   onNavigateToNormativeFiles: vi.fn(),
   onNavigateToAdminCreate: vi.fn(),
@@ -42,12 +44,13 @@ describe('buildHeaderConfig role navigation', () => {
       ...baseArgs(),
       roleId: ROLE.SUPERADMIN,
       canOpenUsersPage: true,
+      canOpenHierarchyPage: true,
       canViewDashboardProcess: true,
       canViewDashboardSavings: true,
       canViewDashboardPlans: true,
     });
 
-    expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'users']);
+    expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'users', 'hierarchy']);
   });
 
   it('shows dashboard tabs only for granted split-permissions', () => {
@@ -134,6 +137,34 @@ describe('buildHeaderConfig role navigation', () => {
     expect(moreNav?.children?.map((child) => child.key)).toEqual(
       expect.arrayContaining(['contractors'])
     );
+  });
+
+  it('highlights hierarchy tab for project manager on hierarchy page', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.PROJECT_MANAGER,
+      pathname: '/admin/hierarchy',
+      canOpenUsersPage: true,
+      canOpenHierarchyPage: true,
+      canViewDashboardProcess: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['dashboard', 'requests', 'employees', 'hierarchy']);
+    expect(config.activeTab).toBe('hierarchy');
+  });
+
+  it('highlights hierarchy tab for economist on hierarchy page', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ECONOMIST,
+      pathname: '/admin/hierarchy',
+      canOpenUsersPage: true,
+      canOpenHierarchyPage: true,
+      canViewDashboardPlans: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['plan', 'requests', 'economists', 'hierarchy']);
+    expect(config.activeTab).toBe('hierarchy');
   });
 
   it('hides admin section when users permission is missing', () => {
@@ -227,6 +258,19 @@ describe('buildHeaderConfig role navigation', () => {
     const usersNav = config.mobileNavItems?.find((item) => item.key === 'users');
     expect(usersNav?.label).toBe('Пользователи');
     expect(usersNav?.children).toBeUndefined();
+  });
+
+  it('shows hierarchy navigation for admin when units.read is granted', () => {
+    const config = buildHeaderConfig({
+      ...baseArgs(),
+      roleId: ROLE.ADMIN,
+      pathname: '/admin/hierarchy',
+      canOpenHierarchyPage: true,
+    });
+
+    expect(tabKeys(config)).toEqual(['hierarchy']);
+    expect(config.activeTab).toBe('hierarchy');
+    expect(mobileKeys(config)).toEqual(['hierarchy', 'more']);
   });
 
   it('shows only requests section for operator', () => {

@@ -20,16 +20,18 @@ import {
 } from '@mui/material';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { alpha, useTheme } from '@mui/material/styles';
-import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
-import { updateUserManager } from '@shared/api/users/updateUserManager';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
-import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
+import { getUserHierarchy, type UserHierarchy } from '@shared/api/users/getUserHierarchy';
+import { getUserHierarchyUnitsTree } from '@shared/api/users/getUserHierarchyUnitsTree';
+import type { UnitNode } from '@shared/api/units';
+import { UserHierarchyTree } from './UserHierarchyTree';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
 import {
@@ -51,6 +53,7 @@ import {
   normalizeUserStatus,
   userStatusLabelByValue,
   userStatusMemoText,
+  EmailWithVerifiedMark,
 } from './UserCardPrimitives';
 import {
   getSubordinateProfile,
@@ -68,6 +71,12 @@ import {
   type UserContractorDelegations,
 } from '@shared/api/users/getContractorDelegations';
 import { useAuth } from '@app/providers/AuthProvider';
+import { hasPermission } from '@shared/auth/permissions';
+import {
+  getIndividuallyGrantedAccessCodes,
+  permissionSourceLabel,
+  withIndividualGrant,
+} from '../model/delegationAccess';
 
 const statusSchema = z.object({
   user_status: z.enum(['review', 'active', 'inactive', 'blacklist'])
@@ -113,9 +122,13 @@ type UserRow = {
   full_name: string;
   phone: string;
   mail: string;
+  email_verified: boolean;
   id_role: number;
   role: string;
   status: StatusFormValues['user_status'];
+  units_count: number;
+  managers_count: number;
+  subordinates_count: number;
 };
 
 const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
@@ -187,21 +200,32 @@ const formatPhoneForView = (value: string | null | undefined) => {
 type UserMobileCardProps = {
   row: UserRow;
   canViewRoleIds: boolean;
+  canViewEmailVerification: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onOpenDetails?: (row: UserRow) => void;
 };
 
-const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpenDetails }: UserMobileCardProps) => {
+const UserMobileCard = ({ row, canViewRoleIds, canViewEmailVerification, isExpanded, onToggleExpand, onOpenDetails }: UserMobileCardProps) => {
   const theme = useTheme();
-  const detailRows = [
+  const detailRows: Array<{ key: string; label: string; value: ReactNode }> = [
     { key: 'login', label: 'Логин', value: row.id },
     { key: 'full_name', label: 'ФИО', value: row.full_name },
     { key: 'phone', label: 'Телефон', value: row.phone },
-    { key: 'mail', label: 'E-mail', value: row.mail },
+    {
+      key: 'mail',
+      label: 'E-mail',
+      value: (
+        <EmailWithVerifiedMark
+          mail={row.mail}
+          verified={row.email_verified}
+          showMark={canViewEmailVerification}
+        />
+      ),
+    },
     ...(canViewRoleIds ? [{ key: 'role_id', label: 'ID роли', value: String(row.id_role) }] : []),
     { key: 'role', label: 'Роль', value: row.role },
-    { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] }
+    { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] },
   ];
 
   const handleToggleExpand = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -314,7 +338,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -329,7 +353,7 @@ const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpe
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -480,7 +504,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -495,7 +519,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -563,7 +587,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: '0 0 44%',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: 'text.secondary',
                         textTransform: 'uppercase',
@@ -578,7 +602,7 @@ const ContractorMobileCard = ({
                       sx={{
                         minWidth: 0,
                         flex: 1,
-                        fontSize: 15,
+                        fontSize: 14,
                         lineHeight: 1.3,
                         fontWeight: 500,
                         color: detail.value === '—' ? 'text.secondary' : 'text.primary',
@@ -607,12 +631,6 @@ const delegationGroupTitles: Record<string, string> = {
   chats: 'Чаты',
   dashboard: 'Аналитика',
   plans: 'Планы',
-};
-
-const managerRoleNameById: Record<number, string> = {
-  [ROLE.PROJECT_MANAGER]: 'РП',
-  [ROLE.LEAD_ECONOMIST]: 'ВЭ',
-  [ROLE.ECONOMIST]: 'Экономист',
 };
 
 const PROJECT_MANAGER_STATUS_TARGET_ROLES: number[] = [
@@ -658,10 +676,10 @@ export const UsersTable = ({
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
   const [subordinateError, setSubordinateError] = useState<string | null>(null);
-  const [managerOptions, setManagerOptions] = useState<UserListItem[]>([]);
-  const [managerError, setManagerError] = useState<string | null>(null);
-  const [managerUserId, setManagerUserId] = useState('');
-  const [isUpdatingManager, setIsUpdatingManager] = useState(false);
+  const [userHierarchy, setUserHierarchy] = useState<UserHierarchy | null>(null);
+  const [userHierarchyUnitsTree, setUserHierarchyUnitsTree] = useState<UnitNode[]>([]);
+  const [userHierarchyError, setUserHierarchyError] = useState<string | null>(null);
+  const [isLoadingUserHierarchy, setIsLoadingUserHierarchy] = useState(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
   const [manualContractorDraft, setManualContractorDraft] = useState<ManualContractorDraft>(() => ({
     login: '',
@@ -675,7 +693,6 @@ export const UsersTable = ({
     address: '',
     note: ''
   }));
-  const [manualContractorPassword, setManualContractorPassword] = useState('');
   const [manualContractorError, setManualContractorError] = useState<string | null>(null);
   const [manualContractorSuccess, setManualContractorSuccess] = useState<string | null>(null);
   const [isUpdatingManualContractor, setIsUpdatingManualContractor] = useState(false);
@@ -688,6 +705,7 @@ export const UsersTable = ({
   const [isLoadingContractorDelegations, setIsLoadingContractorDelegations] = useState(false);
   const [isSavingContractorDelegations, setIsSavingContractorDelegations] = useState(false);
   const { session } = useAuth();
+  const canViewEmailVerification = hasPermission(session, 'users.registration.approve');
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const lastDelegationToastRef = useRef<string | null>(null);
 
@@ -735,15 +753,10 @@ export const UsersTable = ({
   }, [subordinateProfile, resetSubordinateUnavailability]);
 
   useEffect(() => {
-    setManagerUserId(selectedUser?.id_parent ?? '');
-  }, [selectedUser?.id_parent]);
-
-  useEffect(() => {
     if (!selectedUser) {
       return;
     }
     setManualContractorDraft(buildManualContractorDraft(selectedUser));
-    setManualContractorPassword('');
     setManualContractorError(null);
     setManualContractorSuccess(null);
   }, [selectedUser]);
@@ -770,11 +783,7 @@ export const UsersTable = ({
       };
     }
 
-    const { payload, trimmedDraft } = buildManualContractorPayload(
-      selectedUser,
-      manualContractorDraft,
-      manualContractorPassword
-    );
+    const { payload, trimmedDraft } = buildManualContractorPayload(selectedUser, manualContractorDraft);
     const { fieldErrors, firstError } = validateManualContractorPayload(payload);
 
     return {
@@ -784,7 +793,7 @@ export const UsersTable = ({
       fieldErrors,
       firstError
     };
-  }, [manualContractorDraft, manualContractorPassword, selectedUser]);
+  }, [manualContractorDraft, selectedUser]);
 
   const updateManualContractorField = <K extends keyof ManualContractorDraft>(
     field: K,
@@ -794,40 +803,6 @@ export const UsersTable = ({
     setManualContractorSuccess(null);
     setManualContractorDraft((prev) => ({ ...prev, [field]: value }));
   };
-
-  const handleManualContractorPasswordChange = (value: string) => {
-    setManualContractorError(null);
-    setManualContractorSuccess(null);
-    setManualContractorPassword(value);
-  };
-
-  useEffect(() => {
-    if (!selectedUser?.actions.update_manager) {
-      setManagerOptions([]);
-      setManagerError(null);
-      return;
-    }
-
-    let isCancelled = false;
-    setManagerError(null);
-    void getManagerCandidates(selectedUser.role_id, selectedUser.user_id)
-      .then((result) => {
-        if (!isCancelled) {
-          setManagerOptions(result.items);
-          setManagerError(null);
-        }
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          setManagerOptions([]);
-          setManagerError(error instanceof Error ? error.message : 'Не удалось загрузить список руководителей');
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedUser?.actions.update_manager, selectedUser?.role_id, selectedUser?.user_id]);
 
   const shouldLoadDepartmentDelegations = Boolean(
     selectedUser
@@ -877,22 +852,6 @@ export const UsersTable = ({
       isCancelled = true;
     };
   }, [selectedUser?.user_id, shouldLoadDepartmentDelegations]);
-
-  const availableManagerOptions = useMemo(() => {
-    if (!selectedUser) {
-      return [];
-    }
-    return managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id);
-  }, [managerOptions, selectedUser]);
-
-  const canShowManagerSection = Boolean(
-    selectedUser?.actions.update_manager
-    && !managerError
-    && (
-      availableManagerOptions.length > 0
-      || selectedUser.role_id === ROLE.PROJECT_MANAGER
-    ),
-  );
 
   const shouldLoadContractorDelegations = Boolean(
     selectedUser
@@ -947,9 +906,13 @@ export const UsersTable = ({
         full_name: user.full_name ?? '—',
         phone: formatPhoneForView(user.phone) ?? '—',
         mail: user.mail ?? '—',
+        email_verified: Boolean(user.email_verified),
         id_role: user.role_id,
         role: getRoleLabel(user.role_id),
-        status: normalizeUserStatus(user.status)
+        status: normalizeUserStatus(user.status),
+        units_count: user.units_count,
+        managers_count: user.managers_count,
+        subordinates_count: user.subordinates_count
       })),
     [getRoleLabel, users]
   );
@@ -1086,32 +1049,6 @@ export const UsersTable = ({
     return allowedRoleOptions;
   }, [allowedRoleOptions, canUpdateRole, users]);
 
-  const handleManagerUpdate = async () => {
-    const canBeWithoutManager = selectedUser?.role_id === ROLE.PROJECT_MANAGER;
-    if (
-      !selectedUser
-      || (managerUserId === '' && !canBeWithoutManager)
-      || managerUserId === (selectedUser.id_parent ?? '')
-    ) {
-      return;
-    }
-
-    setManagerError(null);
-    setIsUpdatingManager(true);
-    try {
-      await updateUserManager(selectedUser.user_id, {
-        manager_user_id: managerUserId || null,
-      });
-      await onStatusUpdated();
-      setSelectedUser(null);
-      setSubordinateProfile(null);
-    } catch (error) {
-      setManagerError(error instanceof Error ? error.message : 'Не удалось обновить руководителя');
-    } finally {
-      setIsUpdatingManager(false);
-    }
-  };
-
   const handleManualContractorSave = async () => {
     if (!selectedUser || !selectedUser.actions.manage_manual_contractor) {
       return;
@@ -1136,7 +1073,6 @@ export const UsersTable = ({
     try {
       await updateManualContractor(selectedUser.user_id, manualContractorValidation.payload);
 
-      setManualContractorPassword('');
       setManualContractorSuccess('Данные контрагента обновлены');
       await onStatusUpdated();
       setSelectedUser((prev) => (
@@ -1171,7 +1107,7 @@ export const UsersTable = ({
         ...prev,
         accesses: prev.accesses.map((item) =>
           item.code === code
-            ? { ...item, enabled }
+            ? withIndividualGrant(item, enabled)
             : item
         ),
       };
@@ -1191,9 +1127,7 @@ export const UsersTable = ({
     try {
       const nextState = await updateDepartmentDelegations(
         selectedUser.user_id,
-        departmentDelegations.accesses
-          .filter((item) => item.enabled)
-          .map((item) => item.code)
+        getIndividuallyGrantedAccessCodes(departmentDelegations.accesses)
       );
       setDepartmentDelegations(nextState);
       showSystemToast({
@@ -1221,7 +1155,9 @@ export const UsersTable = ({
       return {
         ...prev,
         accesses: prev.accesses.map((item) =>
-          item.code === code ? { ...item, enabled } : item
+          item.code === code
+            ? withIndividualGrant(item, enabled)
+            : item
         ),
       };
     });
@@ -1237,7 +1173,7 @@ export const UsersTable = ({
     try {
       const nextState = await updateContractorDelegations(
         selectedUser.user_id,
-        contractorDelegations.accesses.filter((item) => item.enabled).map((item) => item.code)
+        getIndividuallyGrantedAccessCodes(contractorDelegations.accesses)
       );
       setContractorDelegations(nextState);
       showSystemToast({
@@ -1259,10 +1195,29 @@ export const UsersTable = ({
     setSelectedUser(clickedUser);
     setSubordinateProfile(null);
     setSubordinateError(null);
-    setManagerOptions([]);
-    setManagerError(null);
-    setManagerUserId(clickedUser.id_parent ?? '');
+    setUserHierarchy(null);
+    setUserHierarchyUnitsTree([]);
+    setUserHierarchyError(null);
+    setIsLoadingUserHierarchy(true);
     setOpenSubordinateUnavailability(false);
+
+    void Promise.all([
+      getUserHierarchy(clickedUser.user_id),
+      getUserHierarchyUnitsTree(clickedUser.user_id),
+    ])
+      .then(([state, unitsTree]) => {
+        setUserHierarchy(state);
+        setUserHierarchyUnitsTree(unitsTree);
+        setUserHierarchyError(null);
+      })
+      .catch((error) => {
+        setUserHierarchy(null);
+        setUserHierarchyUnitsTree([]);
+        setUserHierarchyError(error instanceof Error ? error.message : 'Не удалось загрузить иерархию сотрудника');
+      })
+      .finally(() => {
+        setIsLoadingUserHierarchy(false);
+      });
 
     if (!clickedUser.actions.view_profile || !subordinateProfileRoleIds.has(clickedUser.role_id)) {
       return;
@@ -1306,7 +1261,14 @@ export const UsersTable = ({
         header: 'E-mail',
         field: 'mail',
         minWidth: 190,
-        renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography>
+        width: '240px',
+        renderCell: (row) => (
+          <EmailWithVerifiedMark
+            mail={row.mail}
+            verified={row.email_verified}
+            showMark={canViewEmailVerification}
+          />
+        )
       },
       ...(canViewRoleIds ? [{ id: 'id_role', header: 'ID роли', field: 'id_role', minWidth: 100, width: '110px' } as TableTemplateColumn<UserRow>] : []),
       {
@@ -1390,7 +1352,7 @@ export const UsersTable = ({
         }
       }
     ],
-    [getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, canViewRoleIds, resolveEditableRoleOptions, updatingUserId, usersRoleFilterOptions, usersStatusFilterOptions]
+    [getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, canViewEmailVerification, canViewRoleIds, resolveEditableRoleOptions, updatingUserId, usersRoleFilterOptions, usersStatusFilterOptions]
   );
   const contractorStatusFilterOptions = useMemo(
     () => Array.from(new Set(users.map((user) => toStatusLabel(user.status)))).map((status) => ({ label: status, value: status })),
@@ -1401,7 +1363,13 @@ export const UsersTable = ({
       { id: 'login', header: 'Логин', field: 'user_id', minWidth: 170 },
       { id: 'full_name', header: 'ФИО', field: 'full_name', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
       { id: 'phone', header: 'Телефон', field: 'phone', minWidth: 150, renderValue: (value) => <Typography variant="body2">{formatPhoneForView(value as string | null | undefined) ?? '—'}</Typography> },
-      { id: 'mail', header: 'E-mail', field: 'mail', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
+      { id: 'mail', header: 'E-mail', field: 'mail', minWidth: 190, width: '240px', renderCell: (row) => (
+        <EmailWithVerifiedMark
+          mail={row.mail}
+          verified={Boolean(row.email_verified)}
+          showMark={canViewEmailVerification}
+        />
+      ) },
       { id: 'company_phone', header: 'Телефон компании', field: 'company_phone', minWidth: 170, renderValue: (value) => <Typography variant="body2">{formatPhoneForView(value as string | null | undefined) ?? '—'}</Typography> },
       { id: 'company_mail', header: 'E-mail компании', field: 'company_mail', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
       {
@@ -1416,7 +1384,7 @@ export const UsersTable = ({
         renderCell: (row) => <ContractorStatusPill value={row.status} />
       }
     ],
-    [contractorStatusFilterOptions]
+    [contractorStatusFilterOptions, canViewEmailVerification]
   );
 
   if (!isContractorsTab) {
@@ -1450,6 +1418,7 @@ export const UsersTable = ({
               <UserMobileCard
                 row={row}
                 canViewRoleIds={canViewRoleIds}
+                canViewEmailVerification={canViewEmailVerification}
                 isExpanded={Boolean(expandedUserCardsById[row.id])}
                 onToggleExpand={() =>
                   setExpandedUserCardsById((prev) => ({
@@ -1533,12 +1502,51 @@ export const UsersTable = ({
                           }}
                         >
                           <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                          <InfoRow label="E-mail" value={selectedUser.mail} />
+                          <InfoRow
+                            label="E-mail"
+                            value={
+                              <EmailWithVerifiedMark
+                                mail={selectedUser.mail}
+                                verified={Boolean(selectedUser.email_verified)}
+                                showMark={canViewEmailVerification}
+                              />
+                            }
+                          />
                         </Box>
                       </Stack>
                     </SourceSection>
                   </Stack>
                 </Box>
+
+                <SourceSection title="Иерархия по объединениям" source="units">
+                  <Stack spacing={1.2}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+                        gap: 1.2
+                      }}
+                    >
+                      <InfoRow label="Объединения" value={selectedUser.units_count} />
+                      <InfoRow label="Руководители" value={selectedUser.managers_count} />
+                      <InfoRow label="Подчинённые" value={selectedUser.subordinates_count} />
+                    </Box>
+
+                    {isLoadingUserHierarchy ? (
+                      <Typography variant="body2" color="text.secondary">
+                        Загружаем связи сотрудника...
+                      </Typography>
+                    ) : null}
+
+                    {userHierarchyError ? (
+                      <Alert severity="warning">{userHierarchyError}</Alert>
+                    ) : null}
+
+                    {userHierarchy ? (
+                      <UserHierarchyTree hierarchy={userHierarchy} unitsTree={userHierarchyUnitsTree} />
+                    ) : null}
+                  </Stack>
+                </SourceSection>
 
                 {subordinateProfile ? (
                   <Stack spacing={1.2}>
@@ -1604,64 +1612,6 @@ export const UsersTable = ({
                   </Stack>
                 ) : null}
 
-                {canShowManagerSection && selectedUser ? (
-                  <Stack
-                    spacing={1.2}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 1,
-                      p: { xs: 1.4, sm: 1.8 },
-                      backgroundColor: 'background.paper'
-                    }}
-                  >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                      Смена руководителя
-                    </Typography>
-                    <TextField
-                      select
-                      size="small"
-                      label="Новый руководитель"
-                      value={managerUserId}
-                      onChange={(event) => setManagerUserId(event.target.value)}
-                      disabled={isUpdatingManager}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 1,
-                          backgroundColor: 'background.paper'
-                        }
-                      }}
-                    >
-                      {selectedUser.role_id === ROLE.PROJECT_MANAGER ? (
-                        <MenuItem value="">
-                          Без руководителя
-                        </MenuItem>
-                      ) : null}
-                      {availableManagerOptions.map((manager) => (
-                          <MenuItem key={manager.user_id} value={manager.user_id}>
-                            {manager.full_name
-                              ? `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.full_name} (${manager.user_id})`
-                              : `${managerRoleNameById[manager.role_id] ?? `Роль ${manager.role_id}`} — ${manager.user_id}`}
-                          </MenuItem>
-                        ))}
-                    </TextField>
-                    <Stack direction="row" justifyContent="flex-end">
-                      <Button
-                        variant="outlined"
-                        onClick={() => void handleManagerUpdate()}
-                        disabled={
-                          (managerUserId === '' && selectedUser.role_id !== ROLE.PROJECT_MANAGER)
-                          || managerUserId === (selectedUser.id_parent ?? '')
-                          || isUpdatingManager
-                        }
-                        sx={{ borderRadius: 1, textTransform: 'none' }}
-                      >
-                        {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
-                      </Button>
-                    </Stack>
-                  </Stack>
-                ) : null}
-
                 {isLoadingDepartmentDelegations && shouldLoadDepartmentDelegations ? (
                   <Alert severity="info">Загрузка дополнительных доступов...</Alert>
                 ) : null}
@@ -1691,12 +1641,22 @@ export const UsersTable = ({
                                 key={item.code}
                                 control={(
                                   <Checkbox
-                                    checked={item.enabled}
+                                    checked={item.grantedIndividually}
                                     onChange={(event) => handleDelegationToggle(item.code, event.target.checked)}
                                     disabled={!departmentDelegations.canManage || isSavingDepartmentDelegations}
                                   />
                                 )}
-                                label={item.label}
+                                label={(
+                                  <Stack spacing={0.1}>
+                                    <Typography variant="body2">{item.label}</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                      {permissionSourceLabel(
+                                        item.grantedViaRole,
+                                        item.grantedIndividually
+                                      )}
+                                    </Typography>
+                                  </Stack>
+                                )}
                               />
                             ))}
                           </FormGroup>
@@ -1741,12 +1701,22 @@ export const UsersTable = ({
                           key={item.code}
                           control={(
                             <Checkbox
-                              checked={item.enabled}
+                              checked={item.grantedIndividually}
                               onChange={(event) => handleContractorDelegationToggle(item.code, event.target.checked)}
                               disabled={!contractorDelegations.canManage || isSavingContractorDelegations}
                             />
                           )}
-                          label={item.label}
+                          label={(
+                            <Stack spacing={0.1}>
+                              <Typography variant="body2">{item.label}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {permissionSourceLabel(
+                                  item.grantedViaRole,
+                                  item.grantedIndividually
+                                )}
+                              </Typography>
+                            </Stack>
+                          )}
                         />
                       ))}
                     </FormGroup>
@@ -1912,7 +1882,16 @@ export const UsersTable = ({
                         }}
                       >
                         <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                        <InfoRow label="E-mail" value={selectedUser.mail} />
+                        <InfoRow
+                          label="E-mail"
+                          value={
+                            <EmailWithVerifiedMark
+                              mail={selectedUser.mail}
+                              verified={Boolean(selectedUser.email_verified)}
+                              showMark={canViewEmailVerification}
+                            />
+                          }
+                        />
                       </Box>
                     </Stack>
                   </SourceSection>
@@ -1974,16 +1953,6 @@ export const UsersTable = ({
                       value={selectedUser.user_id}
                       InputProps={{ readOnly: true }}
                       sx={{ '& .MuiInputBase-input': { cursor: 'default' } }}
-                    />
-                    <TextField
-                      label="Новый пароль"
-                      type="password"
-                      {...textFieldAutocompleteProps('password')}
-                      placeholder="Оставьте пустым, если без смены"
-                      value={manualContractorPassword}
-                      onChange={(event) => handleManualContractorPasswordChange(event.target.value)}
-                      error={Boolean(manualContractorFieldErrors.password)}
-                      helperText={manualContractorFieldErrors.password}
                     />
                     <TextField
                       label="ФИО"

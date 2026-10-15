@@ -2,12 +2,9 @@
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlparse
-
 import pytest
 
 from app.core.config import settings
-from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
 from app.domain.exceptions import Conflict
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
 from app.infrastructure.email.email_attachment import EmailAttachment
@@ -64,6 +61,15 @@ class _FakeRequestRepoForCreate:
                 return item
         return None
 
+    async def list_active_visible_contractor_user_ids(
+        self,
+        *,
+        request_id: str,
+        contractor_role_id: int,
+    ) -> list[str]:
+        _ = (request_id, contractor_role_id)
+        return []
+
 
 class _FakeFilesRepo:
     async def get_normative_file_status(self, *, normative_id: int):
@@ -83,28 +89,28 @@ class _FakeUsersRepo:
     async def get_by_id(self, user_id: str):
         return SimpleNamespace(id=user_id, id_role=settings.contractor_role_id)
 
-    async def list_active_approved_contractor_tg_ids(self, *, contractor_role_id: int, exclude_user_ids: list[str]):
-        _ = (contractor_role_id, exclude_user_ids)
-        return []
-
-    async def list_active_approved_contractor_max_recipients(
-        self,
-        *,
-        contractor_role_id: int,
-        exclude_user_ids: list[str],
-    ):
-        _ = (contractor_role_id, exclude_user_ids)
-        return []
-
     async def list_active_user_parent_pairs(self):
         return []
 
+    async def list_active_units(self):
+        return [
+            (1, None),
+        ]
+
+    async def list_active_unit_memberships(self):
+        return [
+            ("owner-33", 1),
+            ("owner-44", 1),
+            ("owner-45", 1),
+            ("owner-50", 1),
+            ("contractor-1", 1),
+            ("contractor-2", 1),
+            ("contractor-3", 1),
+            ("vendor_login", 1),
+        ]
+
 
 class _FakeOffersRepo:
-    async def list_contractor_tg_ids_for_request(self, *, request_id: str, contractor_role_id: int):
-        _ = (request_id, contractor_role_id)
-        return []
-
     async def get_by_id(self, *, offer_id: int):
         _ = offer_id
         return None
@@ -226,10 +232,13 @@ class _FakeOutboxEmailService:
         self.outbox.append(kwargs)
 
 
+class _FakeUsersRepoForSendUseCase(_FakeUsersRepo):
+    pass
+
+
 
 @pytest.mark.asyncio
 async def test_create_request_triggers_email_notification_event(make_current_user, monkeypatch):
-    monkeypatch.setattr(settings, "telegram_legacy_enabled", False)
     requests_repo = _FakeRequestRepoForCreate()
     email_notifications = _FakeEmailNotificationService()
     service = RequestService(
@@ -250,7 +259,7 @@ async def test_create_request_triggers_email_notification_event(make_current_use
         current_user=user,
         deadline_at=_future_dt().replace(tzinfo=None),
         description="Новая заявка",
-        initial_amount=None,
+        initial_amount=0,
         id_plan=None,
         normative_file_id=1,
         files=[
@@ -273,6 +282,33 @@ async def test_create_request_triggers_email_notification_event(make_current_use
             "hidden_contractor_ids": [],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_create_request_rejects_missing_initial_amount(make_current_user):
+    service = RequestService(
+        requests=_FakeRequestRepoForCreate(),
+        files=_FakeFilesRepo(),
+        users=_FakeUsersRepo(),
+        offers=_FakeOffersRepo(),
+        user_status_periods=_FakeUserStatusPeriodsRepo(),
+        file_service=_FakeFileServiceForCreate(),
+    )
+    user = make_current_user(
+        role_id=settings.lead_economist_role_id,
+        permissions=set(get_role_permissions_map()[settings.lead_economist_role_id]),
+    )
+
+    with pytest.raises(Conflict, match="Укажите начальную сумму заявки"):
+        await service.create_request(
+            current_user=user,
+            deadline_at=_future_dt().replace(tzinfo=None),
+            description="Новая заявка",
+            initial_amount=None,
+            id_plan=None,
+            normative_file_id=1,
+            files=[],
+        )
 
 
 @pytest.mark.asyncio
@@ -338,13 +374,15 @@ async def test_manual_request_email_notification_does_not_swallow_internal_type_
 @pytest.mark.asyncio
 async def test_send_use_case_generates_verified_and_invite_email_events(monkeypatch):
     monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
-    monkeypatch.setattr(settings, "email_verification_secret", "verify-secret")
-    monkeypatch.setattr(settings, "tg_register_ttl_seconds", 3600)
     monkeypatch.setattr(settings, "reply_email_ttl_seconds", 1800)
     monkeypatch.setattr(settings, "public_backend_base_url", "https://api.acom.example")
+    monkeypatch.setattr(settings, "invitation_portal_url", "https://portal.acom.example/login")
+    monkeypatch.setattr(settings, "web_base_url", "https://web.acom.example")
+    monkeypatch.setattr(settings, "email_verification_secret", "invite-test-secret")
 
     request_row = SimpleNamespace(
         id=33,
+        id_user="owner-33",
         description="Поставка металла",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -359,6 +397,7 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
                 )
             ]
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=_FakeOutboxEmailService(),
         app_url="https://web.acom.example",
     )
@@ -391,22 +430,14 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
     assert verified_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert verified_item["operation_expected_total"] == 2
     assert invite_item["reply_token"] is None
-    assert "/api/v1/auth/oidc/register?invite_token=" in invite_item["text_content"]
-    assert "Ссылка на регистрацию:" in invite_item["text_content"]
+    assert "/register?token=" in invite_item["text_content"]
+    assert "https://web.acom.example/register?token=" in invite_item["text_content"]
+    assert "https://portal.acom.example/login" not in invite_item["text_content"]
+    assert "Ссылка для входа:" in invite_item["text_content"]
     assert invite_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert invite_item["operation_expected_total"] == 2
     assert verified_item["operation_id"] == invite_item["operation_id"]
 
-    registration_url = next(
-        line.removeprefix("Ссылка на регистрацию: ").strip()
-        for line in invite_item["text_content"].splitlines()
-        if line.startswith("Ссылка на регистрацию: ")
-    )
-    parsed = urlparse(registration_url)
-    qs = parse_qs(parsed.query)
-    invite_token = qs["invite_token"][0]
-    claims = RegistrationInviteTokenCodec(secret="verify-secret", ttl_seconds=3600).parse_token(invite_token)
-    assert claims.email == "invite@example.com"
 
 
 @pytest.mark.asyncio
@@ -414,6 +445,7 @@ async def test_send_use_case_skips_when_no_safe_recipients(monkeypatch):
     monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
     request_row = SimpleNamespace(
         id=44,
+        id_user="owner-44",
         description="Тест",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -429,6 +461,7 @@ async def test_send_use_case_skips_when_no_safe_recipients(monkeypatch):
                 )
             ]
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=outbox,
         app_url="https://web.acom.example",
     )
@@ -450,6 +483,7 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
     monkeypatch.setattr(settings, "reply_email_token_secret", "reply-secret")
     request_row = SimpleNamespace(
         id=45,
+        id_user="owner-45",
         description="Тест",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -466,6 +500,7 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
                 )
             ]
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=outbox,
         app_url="https://web.acom.example",
         file_service=_FakeFileServiceForSendUseCase(payload_by_file_name={"oversized.pdf": b"x" * (2 * 1024 * 1024)}),
@@ -500,6 +535,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
     monkeypatch.setattr(settings, "email_verification_secret", "verify-secret")
     request_row = SimpleNamespace(
         id=50,
+        id_user="owner-50",
         description="Поставка",
         deadline_at=_future_dt().replace(tzinfo=None),
     )
@@ -510,6 +546,7 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
             recipients=[],
             economist_email_to_user_id={"vendor@example.com": "vendor_login"},
         ),
+        users=_FakeUsersRepoForSendUseCase(),
         email_service=outbox,
         app_url="https://web.acom.example",
         presentation_attachment_service=_FakePresentationAttachmentService(),
@@ -530,7 +567,8 @@ async def test_send_use_case_additional_email_with_economist_account_gets_invita
     assert "Инструкция по получению доступа приложена к письму в виде презентации." in event["text_content"]
     assert "Поступила новая заявка №50." in event["text_content"]
     assert "Перейти в систему:" in event["text_content"]
-    assert "/api/v1/auth/oidc/register" not in event["text_content"]
+    assert "invite_token=" not in event["text_content"]
+    assert "/register?token=" not in event["text_content"]
     assert event["attachments"][0].filename == "onboarding.pptx"
 
 

@@ -32,3 +32,13 @@ class ServiceUnavailable(DomainError):
         self.reason_code = reason_code
         self.detail = detail
         self.status_code = status_code
+
+
+class AuthenticationUnavailable(ServiceUnavailable):
+    """Raised while no supported authentication provider is connected."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            reason_code="AUTH_SERVICE_UNAVAILABLE",
+            detail="Сервис авторизации временно недоступен.",
+        )

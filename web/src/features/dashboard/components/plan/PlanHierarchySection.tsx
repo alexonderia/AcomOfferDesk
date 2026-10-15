@@ -103,14 +103,14 @@ export const PlanNodeMetricChips = ({ node }: PlanNodeMetricGridProps) => {
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ fontSize: 10.3, lineHeight: 1.1, whiteSpace: "nowrap" }}
+            sx={{ fontSize: 12, lineHeight: 1.1, whiteSpace: "nowrap" }}
           >
             {metric.label}
           </Typography>
           <Typography
             variant="caption"
             fontWeight={800}
-            sx={{ fontSize: 10.8, lineHeight: 1.1, whiteSpace: "nowrap" }}
+            sx={{ fontSize: 12, lineHeight: 1.1, whiteSpace: "nowrap" }}
           >
             {metric.value}
           </Typography>
@@ -339,7 +339,7 @@ export const PlanTreeNodeCard = ({
                               ? theme.palette.success.dark
                               : theme.palette.warning.dark,
                         fontWeight: 800,
-                        fontSize: 13.5,
+                        fontSize: 14,
                       }}
                     >
                       {getInitials(node.user_name)}
@@ -359,7 +359,7 @@ export const PlanTreeNodeCard = ({
                         sx={{
                           overflowWrap: "anywhere",
                           lineHeight: 1.1,
-                          fontSize: 14.2,
+                          fontSize: 14,
                         }}
                       >
                         {planTitle}
@@ -381,7 +381,7 @@ export const PlanTreeNodeCard = ({
                           "& .MuiChip-label": {
                             px: 0.65,
                             fontWeight: isRootNode ? 700 : 600,
-                            fontSize: 10.5,
+                            fontSize: 12,
                           },
                         }}
                       />
@@ -390,7 +390,7 @@ export const PlanTreeNodeCard = ({
                       <Typography
                         variant="caption"
                         color="text.secondary"
-                        sx={{ fontSize: 11.3, lineHeight: 1.1 }}
+                        sx={{ fontSize: 12, lineHeight: 1.1 }}
                       >
                         {node.user_name}
                       </Typography>
@@ -444,7 +444,7 @@ export const PlanTreeNodeCard = ({
                   fontWeight={800}
                   sx={{
                     whiteSpace: "nowrap",
-                    fontSize: 13,
+                    fontSize: 14,
                     textAlign: { xs: "left", md: "right" },
                   }}
                 >
@@ -610,7 +610,7 @@ export const PlanSideSummary = ({
                         height: 38,
                         bgcolor: alpha(theme.palette.warning.main, 0.22),
                         color: theme.palette.warning.dark,
-                        fontSize: 13,
+                        fontSize: 14,
                         fontWeight: 800,
                       }}
                     >
@@ -860,7 +860,7 @@ export const PlanHierarchySection = ({
                     borderColor: alpha(theme.palette.primary.main, 0.18),
                     color: theme.palette.primary.main,
                     bgcolor: theme.palette.background.paper,
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: 700,
                     "&:hover": {
                       borderColor: alpha(theme.palette.primary.main, 0.4),
@@ -890,11 +890,11 @@ export const PlanHierarchySection = ({
                       height: 36,
                       borderRadius: `${theme.acomShape.controlRadius}px`,
                       backgroundColor: theme.palette.background.paper,
-                      fontSize: 13,
+                      fontSize: 14,
                     },
                     "& .MuiInputBase-input": {
                       py: 0.72,
-                      fontSize: 13,
+                      fontSize: 14,
                     },
                   }}
                   InputProps={{

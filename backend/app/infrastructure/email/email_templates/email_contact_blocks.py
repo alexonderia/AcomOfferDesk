@@ -9,7 +9,7 @@ class EmailContactInfo:
     name: str | None = None
     email: str | None = None
     phone: str | None = None
-    phone_label: str = "Тел. (MAX)"
+    phone_label: str = "Телефон"
 
     @property
     def has_any(self) -> bool:

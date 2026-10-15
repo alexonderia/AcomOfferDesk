@@ -78,26 +78,11 @@ class _ProfilesRepo:
         return SimpleNamespace(id=user_id, full_name=user_id, mail=f"{user_id}@example.com")
 
 
-class _UserAuthAccountsRepo:
-    async def get_by_user_provider(
-        self,
-        *,
-        user_id: str,
-        provider: str,
-        include_inactive: bool = False,
-    ):
-        _ = include_inactive
-        if provider != "keycloak" or user_id != "contractor-1":
-            return None
-        return SimpleNamespace(id_user=user_id, provider=provider, is_active=True)
-
-
 class _Uow:
     def __init__(self, repo: _Repo) -> None:
         self.notifications = repo
         self.users = _UsersRepo()
         self.profiles = _ProfilesRepo()
-        self.user_auth_accounts = _UserAuthAccountsRepo()
         self.requests = None
         self.chats = None
         self.offers = None

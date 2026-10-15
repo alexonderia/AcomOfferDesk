@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaKeycloak, logoutFromUi } from './helpers';
+import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaIam, logoutFromUi } from './helpers';
 
 const dashboardScenarios = [
   { name: 'project_manager', envPrefix: 'E2E_PROJECT_MANAGER' as const },
@@ -11,7 +11,7 @@ for (const scenario of dashboardScenarios) {
     const credentials = getCredentialsOrSkip(testInfo, scenario.envPrefix);
     test.skip(!credentials, `Missing ${scenario.envPrefix} credentials`);
 
-    await loginViaKeycloak(page, credentials!);
+    await loginViaIam(page, credentials!);
 
     for (const path of ['/pm-dashboard', '/pm-dashboard/savings', '/pm-dashboard/plan']) {
       await assertNoSevereConsoleErrors(page, async () => {

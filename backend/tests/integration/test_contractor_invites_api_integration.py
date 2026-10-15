@@ -27,7 +27,7 @@ def test_contractor_invite_endpoint_returns_structured_result(
 ):
     set_current_user(
         make_current_user(
-            permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE},
+            permissions={PermissionCodes.USERS_REGISTRATION_INVITE},
         )
     )
 
@@ -57,3 +57,20 @@ def test_contractor_invite_endpoint_returns_structured_result(
     assert payload["sent"] == ["ok@example.com"]
     assert payload["invalid"] == ["bad-email"]
     assert payload["failed"] == [{"email": "failed@example.com", "reason": "send failed"}]
+
+
+def test_manual_contractor_permission_does_not_grant_invitation_access(
+    test_client,
+    set_current_user,
+    make_current_user,
+):
+    set_current_user(
+        make_current_user(permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE})
+    )
+
+    response = test_client.post(
+        "/api/v1/contractors/invite",
+        json={"emails": ["valid@example.com"], "normative_file_id": 1},
+    )
+
+    assert response.status_code == 403

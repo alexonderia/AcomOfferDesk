@@ -20,14 +20,12 @@ describe('getCurrentUserProfile notification preferences api', () => {
       data: {
         mode: 'email_only',
         email_available: true,
-        max_available: false,
         email: 'user@example.com',
-        max_user_id: null,
         preferences: {
-          chat: { email: true, max: false },
-          request: { email: true, max: false },
-          offer: { email: true, max: false },
-          system: { email: true, max: false }
+          chat: { email: true },
+          request: { email: true },
+          offer: { email: true },
+          system: { email: true }
         }
       }
     });
@@ -35,14 +33,12 @@ describe('getCurrentUserProfile notification preferences api', () => {
     await expect(getMyNotificationPreferences()).resolves.toEqual({
       mode: 'email_only',
       emailAvailable: true,
-      maxAvailable: false,
       email: 'user@example.com',
-      maxUserId: null,
       preferences: {
-        chat: { email: true, max: false },
-        request: { email: true, max: false },
-        offer: { email: true, max: false },
-        system: { email: true, max: false }
+        chat: { email: true },
+        request: { email: true },
+        offer: { email: true },
+        system: { email: true }
       }
     });
   });
@@ -52,22 +48,20 @@ describe('getCurrentUserProfile notification preferences api', () => {
       data: {
         mode: 'custom',
         email_available: true,
-        max_available: true,
         email: 'user@example.com',
-        max_user_id: 'max-42',
         preferences: {
-          chat: { email: true, max: false },
-          request: { email: true, max: true },
-          offer: { email: false, max: true },
-          system: { email: true, max: false }
+          chat: { email: true },
+          request: { email: false },
+          offer: { email: false },
+          system: { email: true }
         }
       }
     });
 
     await updateMyNotificationPreferences({
       preferences: {
-        chat: { email: true, max: false },
-        request: { email: true, max: true }
+        chat: { email: true },
+        request: { email: false }
       }
     });
 
@@ -77,8 +71,8 @@ describe('getCurrentUserProfile notification preferences api', () => {
         method: 'PUT',
         body: JSON.stringify({
           preferences: {
-            chat: { email: true, max: false },
-            request: { email: true, max: true }
+            chat: { email: true },
+            request: { email: false }
           }
         })
       },

@@ -17,7 +17,6 @@ from app.infrastructure.email.email_templates.request_invited_contractor_email i
 )
 from app.infrastructure.email.email_templates.request_notification_email import (
     build_request_notification_email_payload,
-    build_request_registration_email_payload,
 )
 from app.infrastructure.email.email_templates.verification_email import (
     build_verification_email_payload,
@@ -79,39 +78,6 @@ def test_contact_info_uses_vlad_defaults_when_settings_empty() -> None:
     assert contact.name == "Владислав Хлистун"
     assert contact.email == "VKhlistun@alabuga.ru"
     assert contact.phone == "+7 927 455-80-89"
-
-
-def test_request_registration_payload_contains_registration_link_and_fallback_text() -> None:
-    registration_url = "https://acom.example/api/v1/auth/oidc/register?invite_token=abc&next_path=/account"
-    contact = contact_info_from_invitation_settings(
-        contact_name=None,
-        contact_email=None,
-        contact_phone=None,
-    )
-    payload = build_request_registration_email_payload(
-        to_email="invite@example.com",
-        request_id=77,
-        description=None,
-        deadline_at=_deadline(),
-        tg_bot_url="https://t.me/acom_bot?start=1",
-        registration_url=registration_url,
-        registration_ttl_seconds=3600,
-        contact=contact,
-        attachment_warning=None,
-    )
-
-    assert payload.subject == "AcomOfferDesk — новая заявка №77"
-    assert "Описание: Описание не указано" in payload.text_content
-    assert "Перейти к регистрации:" in payload.text_content
-    assert "Владислав Хлистун" in payload.text_content
-    assert "VKhlistun@alabuga.ru" in payload.text_content
-    assert f"Ссылка на регистрацию: {registration_url}" in payload.text_content
-    assert "Срок действия ссылки: 1 ч." in payload.text_content
-    assert "Перейти к регистрации" in payload.html_content
-    assert "Если удобнее, вы можете связаться с контактным лицом напрямую" in payload.html_content
-    assert "Открыть legacy Telegram-бот" in payload.html_content
-    assert "None" not in payload.text_content
-    assert "undefined" not in payload.text_content.lower()
 
 
 def test_contractor_invitation_payload_contains_button_and_contact_block() -> None:

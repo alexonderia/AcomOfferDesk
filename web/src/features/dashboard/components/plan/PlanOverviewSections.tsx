@@ -239,7 +239,7 @@ export const PlanProgressVisual = ({
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ fontSize: 11 }}
+              sx={{ fontSize: 12 }}
             >
               
               Выполнено
@@ -403,7 +403,7 @@ export const PlanPageHeader = ({
           <Typography
             variant="h5"
             fontWeight={800}
-            sx={{ lineHeight: 1.1, fontSize: { xs: 25, md: 26 } }}
+            sx={{ lineHeight: 1.1, fontSize: { xs: 24, md: 24 } }}
           >
             План экономии
           </Typography>
@@ -855,7 +855,7 @@ export const PlanAnalyticsCards = ({
                       <Typography
                         variant="caption"
                         color="text.secondary"
-                        sx={{ fontSize: 11, textTransform: "lowercase" }}
+                        sx={{ fontSize: 12, textTransform: "lowercase" }}
                       >
                         
                         всего
@@ -902,7 +902,7 @@ export const PlanAnalyticsCards = ({
                           variant="body2"
                           fontWeight={700}
                           sx={{
-                            fontSize: 12.5,
+                            fontSize: 12,
                             lineHeight: 1.2,
                             overflowWrap: "anywhere",
                           }}
@@ -947,7 +947,7 @@ export const PlanAnalyticsCards = ({
                         <Typography
                           variant="body2"
                           color="text.secondary"
-                          sx={{ fontSize: 12.5, minWidth: 52 }}
+                          sx={{ fontSize: 12, minWidth: 52 }}
                         >
                           {formatPercent(item.percent)}
                         </Typography>
@@ -955,7 +955,7 @@ export const PlanAnalyticsCards = ({
                           variant="body2"
                           fontWeight={800}
                           sx={{
-                            fontSize: 12.5,
+                            fontSize: 12,
                             minWidth: 108,
                             textAlign: "right",
                           }}
@@ -1062,7 +1062,7 @@ export const PlanAnalyticsCards = ({
               <Typography
                 variant="caption"
                 color="text.secondary"
-                sx={{ mt: -0.35, fontSize: 11.5, lineHeight: 1.1 }}
+                sx={{ mt: -0.35, fontSize: 12, lineHeight: 1.1 }}
               >
                 План: {selectedPlanLabel}
               </Typography>
@@ -1103,7 +1103,7 @@ export const PlanAnalyticsCards = ({
                       {row.icon}
                     </Box>
                     <Stack spacing={0.2} minWidth={0}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11.5, lineHeight: 1.1 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12, lineHeight: 1.1 }}>
                         {row.label}
                       </Typography>
                       <Typography variant="body2" fontWeight={800} sx={{ lineHeight: 1.1, color: row.valueColor ?? "text.primary" }}>
@@ -1120,7 +1120,7 @@ export const PlanAnalyticsCards = ({
               <Stack spacing={0.95}>
                 {rightRequestRows.map((row) => (
                   <Stack key={row.key} spacing={0.2}>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11.5, lineHeight: 1.1 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12, lineHeight: 1.1 }}>
                       {row.label}
                     </Typography>
                     <Typography variant="body2" fontWeight={800} sx={{ lineHeight: 1.1, color: row.valueColor ?? "text.primary" }}>

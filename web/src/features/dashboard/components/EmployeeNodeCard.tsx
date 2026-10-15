@@ -5,7 +5,7 @@ import {
   IconButton,
   Stack,
   Tooltip,
-  Typography
+  Typography,
 } from '@mui/material';
 import type { ResponsibilityEmployeeNode } from '@shared/api/users/getResponsibilityDashboard';
 import { formatUnavailabilityDate, getUnavailabilityStatusLabel, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
@@ -25,14 +25,18 @@ export const EmployeeNodeCard = ({
   level,
   expanded,
   onToggle,
+  renderChildren = true,
+  suppressLevelIndent = false,
   statusColors,
   activeUnavailabilityByUser,
-  upcomingUnavailabilityByUser
+  upcomingUnavailabilityByUser,
 }: {
   node: ResponsibilityEmployeeNode;
   level: number;
   expanded: ExpandedState;
   onToggle: (userId: string) => void;
+  renderChildren?: boolean;
+  suppressLevelIndent?: boolean;
   statusColors: Record<string, string>;
   activeUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
   upcomingUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
@@ -50,10 +54,10 @@ export const EmployeeNodeCard = ({
     <Card
       variant="outlined"
       sx={{
-        ml: level * 2,
+        ml: suppressLevelIndent ? 0 : level * 2,
         borderRadius: 2,
         borderColor: 'divider',
-        background: level === 0 ? 'rgba(47,111,214,0.06)' : 'background.paper'
+        background: level === 0 ? 'rgba(47,111,214,0.06)' : 'background.paper',
       }}
     >
       <CardContent sx={{ pb: '16px !important' }}>
@@ -103,7 +107,7 @@ export const EmployeeNodeCard = ({
                     color: 'primary.main',
                     backgroundColor: 'transparent',
                     border: 'none',
-                    '&:hover': { backgroundColor: 'transparent' }
+                    '&:hover': { backgroundColor: 'transparent' },
                   }}
                 >
                   {isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
@@ -141,7 +145,7 @@ export const EmployeeNodeCard = ({
         </Stack>
       </CardContent>
 
-      {hasSubordinates && isExpanded ? (
+      {renderChildren && hasSubordinates && isExpanded ? (
         <Stack spacing={1.2} sx={{ pb: 2, pr: 2, pl: 2 }}>
           {node.children.map((child) => (
             <EmployeeNodeCard
@@ -150,6 +154,7 @@ export const EmployeeNodeCard = ({
               level={level + 1}
               expanded={expanded}
               onToggle={onToggle}
+              renderChildren={renderChildren}
               statusColors={statusColors}
               activeUnavailabilityByUser={activeUnavailabilityByUser}
               upcomingUnavailabilityByUser={upcomingUnavailabilityByUser}

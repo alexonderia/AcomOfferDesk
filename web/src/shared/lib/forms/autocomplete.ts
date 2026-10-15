@@ -5,8 +5,6 @@ export type AutocompleteToken =
   | 'email'
   | 'tel'
   | 'username'
-  | 'current-password'
-  | 'new-password'
   | 'organization'
   | 'street-address'
   | 'off';
@@ -14,10 +12,6 @@ export type AutocompleteToken =
 const AUTOCOMPLETE_BY_FIELD: Record<string, AutocompleteToken> = {
   login: 'username',
   username: 'username',
-  oldPassword: 'current-password',
-  password: 'new-password',
-  password_confirm: 'new-password',
-  confirmPassword: 'new-password',
   firstName: 'given-name',
   lastName: 'family-name',
   full_name: 'name',

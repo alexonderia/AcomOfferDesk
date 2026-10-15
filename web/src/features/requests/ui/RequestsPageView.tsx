@@ -19,7 +19,7 @@ export const RequestsPageView = () => {
     handleOwnerChange,
     isContractor,
     isLoading,
-    ownerOptions,
+    ownerOptionsByRequestId,
     requests,
     successToastEvent,
     shouldLoadOpenRequests
@@ -55,12 +55,14 @@ export const RequestsPageView = () => {
         isLoading={isLoading}
         onRowClick={(request) =>
           navigate(
-            isContractor ? `/requests/${request.id}/contractor` : `/requests/${request.id}`,
+            isContractor
+              ? `/requests/${request.id}/contractor?tab=${shouldLoadOpenRequests ? 'open' : 'my'}`
+              : `/requests/${request.id}`,
             isContractor ? undefined : { state: { request } }
           )
         }
         chatAlertsMap={chatAlertsMap}
-        ownerOptions={ownerOptions}
+        ownerOptionsByRequestId={ownerOptionsByRequestId}
         canEditOwner={canEditOwner}
         onOwnerChange={(request, ownerUserId) => void handleOwnerChange(request, ownerUserId)}
         isContractor={isContractor}

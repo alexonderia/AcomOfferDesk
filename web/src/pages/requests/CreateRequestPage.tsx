@@ -1,4 +1,4 @@
-﻿import { zodResolver } from '@hookform/resolvers/zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -45,6 +45,7 @@ import {
   mergeUniqueFiles,
 } from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
+import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 
 const normalizeAmountValue = (value: string) => value.trim().replace(',', '.');
 const isValidAmountValue = (value: string) => {
@@ -93,11 +94,9 @@ export const CreateRequestPage = () => {
   }, []);
 
   const [isLoadingNormativeFiles, setIsLoadingNormativeFiles] = useState(true);
-  const [normativeFilesError, setNormativeFilesError] = useState<string | null>(null);
   const [actualNormativeFiles, setActualNormativeFiles] = useState<NormativeFileItem[]>([]);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [showSlowFileCheckHint, setShowSlowFileCheckHint] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requestIdStatus, setRequestIdStatus] = useState<{ available: boolean; detail: string } | null>(null);
   const [isCheckingRequestId, setIsCheckingRequestId] = useState(false);
   const [contractorOptions, setContractorOptions] = useState<RequestContractorItem[]>([]);
@@ -105,7 +104,7 @@ export const CreateRequestPage = () => {
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [hideFromContractorsEnabled, setHideFromContractorsEnabled] = useState(false);
   const [additionalEmailsEnabled, setAdditionalEmailsEnabled] = useState(false);
-  const { showErrorToast, showSuccessToast } = useSystemToasts();
+  const { showErrorToast, showSuccessToast, showSystemToast } = useSystemToasts();
 
   const {
     control,
@@ -148,7 +147,6 @@ export const CreateRequestPage = () => {
 
     const loadNormativeFiles = async () => {
       setIsLoadingNormativeFiles(true);
-      setNormativeFilesError(null);
       try {
         const items = await getNormativeFiles('actual');
         if (!isMounted) {
@@ -160,9 +158,7 @@ export const CreateRequestPage = () => {
         }
       } catch (error) {
         if (isMounted) {
-          setNormativeFilesError(
-            error instanceof Error ? error.message : 'Не удалось загрузить нормативные документы'
-          );
+          showErrorToast(error instanceof Error ? error.message : 'Не удалось загрузить нормативные документы');
         }
       } finally {
         if (isMounted) {
@@ -176,7 +172,7 @@ export const CreateRequestPage = () => {
     return () => {
       isMounted = false;
     };
-  }, [setValue]);
+  }, [setValue, showErrorToast]);
 
   useEffect(() => {
     const normalizedRequestNumber = requestNumberValue.trim();
@@ -254,7 +250,7 @@ export const CreateRequestPage = () => {
         }
       } catch (error) {
         if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : 'Ошибка загрузки контрагентов');
+          showErrorToast(error instanceof Error ? error.message : 'Ошибка загрузки контрагентов');
         }
       } finally {
         if (isMounted) {
@@ -268,7 +264,7 @@ export const CreateRequestPage = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [showErrorToast]);
 
   const updateFiles = (nextFiles: File[]) => {
     setValue('files', nextFiles, {
@@ -294,6 +290,17 @@ export const CreateRequestPage = () => {
     || !hasActualNormativeFiles
     || isLoadingNormativeFiles
     || !normativeFileId;
+
+  useEffect(() => {
+    if (isLoadingNormativeFiles || hasActualNormativeFiles) {
+      return;
+    }
+
+    showSystemToast({
+      severity: 'warning',
+      message: 'Нет актуальных нормативных документов. Обратитесь к ведущему экономисту.',
+    });
+  }, [hasActualNormativeFiles, isLoadingNormativeFiles, showSystemToast]);
 
   useEffect(() => {
     if (!isSubmittingRequest) {
@@ -341,7 +348,6 @@ export const CreateRequestPage = () => {
     }
 
     setIsSubmittingRequest(true);
-    setErrorMessage(null);
 
     try {
       await createRequest({
@@ -362,7 +368,6 @@ export const CreateRequestPage = () => {
         setError('requestNumber', { type: 'manual', message: 'Заявка с таким номером уже существует' });
         setRequestIdStatus({ available: false, detail: 'Заявка с таким номером уже существует' });
       }
-      setErrorMessage(message);
       showErrorToast(message);
     } finally {
       setIsSubmittingRequest(false);
@@ -380,28 +385,10 @@ export const CreateRequestPage = () => {
       fullWidth
       maxWidth="sm"
       PaperProps={{
-        sx: (theme: Theme) => ({
-          borderRadius: 2,
-          px: { xs: 2.5, sm: 3.5 },
-          py: { xs: 3, sm: 3.5 },
-          backgroundColor: theme.palette.background.default,
-          maxHeight: 'min(760px, calc(100vh - 32px))',
-          overflow: 'hidden',
-          boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`,
-        }),
+        sx: dialogPaperSx,
       }}
     >
-      <DialogContent
-        sx={{
-          p: 0,
-          overflowX: 'hidden',
-          overflowY: 'auto',
-          scrollbarWidth: 'none',
-          '&::-webkit-scrollbar': {
-            display: 'none',
-          },
-        }}
-      >
+      <DialogContent sx={dialogContentSx}>
         <Box component="form" onSubmit={handleSubmit(handleSubmitForm)}>
           <Stack spacing={2}>
             <Typography variant="h5" fontWeight={600} lineHeight={1}>
@@ -566,12 +553,6 @@ export const CreateRequestPage = () => {
                         : 'Выберите актуальный нормативный документ')}
                 </FormHelperText>
               </FormControl>
-              {normativeFilesError ? <Alert severity="error">{normativeFilesError}</Alert> : null}
-              {!hasActualNormativeFiles && !isLoadingNormativeFiles ? (
-                <Alert severity="warning">
-                  Нет актуальных нормативных документов. Обратитесь к ведущему экономисту.
-                </Alert>
-              ) : null}
             </Stack>
 
             <Stack spacing={1}>
@@ -793,12 +774,6 @@ export const CreateRequestPage = () => {
               <Alert severity="info">
                 Проверка тяжёлых файлов может занять пару минут. Пожалуйста, не закрывайте страницу.
               </Alert>
-            ) : null}
-
-            {errorMessage ? (
-              <Typography color="error" textAlign="center">
-                {errorMessage}
-              </Typography>
             ) : null}
           </Stack>
         </Box>

@@ -63,7 +63,7 @@ class DashboardClosedRequestItemSchema(BaseModel):
     initial_amount: float | None
     offer_amount: float | None
     final_amount: float | None
-    savings_amount: float | None
+    savings_amount: float
     closed_at: datetime | None
     plan_id: int | None = None
     plan_name: str | None = None

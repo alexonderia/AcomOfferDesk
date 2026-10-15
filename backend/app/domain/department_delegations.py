@@ -12,6 +12,7 @@ DEPARTMENT_PERMISSION_TO_DELEGATION_ROLE: dict[str, str] = {
     "department.offers.accept": "delegation.department.offers.accept",
     "department.offers.reject": "delegation.department.offers.reject",
     "department.chats.read": "delegation.department.chats.read",
+    "department.chats.send_message": "delegation.department.chats.send_message",
     "department.dashboard.read": "delegation.department.dashboard.read",
     "department.plans.read": "delegation.department.plans.read",
     "department.plans.manage": "delegation.department.plans.manage",
@@ -78,6 +79,12 @@ DEPARTMENT_DELEGATIONS: tuple[DepartmentDelegationDefinition, ...] = (
         role_code="delegation.department.chats.read",
         permission_code="department.chats.read",
         label="Просмотр чатов подразделения",
+        group="chats",
+    ),
+    DepartmentDelegationDefinition(
+        role_code="delegation.department.chats.send_message",
+        permission_code="department.chats.send_message",
+        label="Отправка сообщений в чатах подразделения",
         group="chats",
     ),
     DepartmentDelegationDefinition(

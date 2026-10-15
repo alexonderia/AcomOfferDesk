@@ -91,6 +91,30 @@ class _DashboardRequestsRepo:
                 SimpleNamespace(offer_amount=100.0),
                 SimpleNamespace(full_name="Economist One"),
             ),
+            (
+                SimpleNamespace(
+                    id=102,
+                    id_user="econ-1",
+                    initial_amount=100.0,
+                    final_amount=100.0,
+                    closed_at=_dt(),
+                    id_plan=10,
+                ),
+                SimpleNamespace(offer_amount=120.0),
+                SimpleNamespace(full_name="Economist One"),
+            ),
+            (
+                SimpleNamespace(
+                    id=103,
+                    id_user="econ-1",
+                    initial_amount=100.0,
+                    final_amount=100.0,
+                    closed_at=_dt(),
+                    id_plan=10,
+                ),
+                None,
+                SimpleNamespace(full_name="Economist One"),
+            ),
         ]
 
 
@@ -118,10 +142,11 @@ def test_dashboard_savings_calculation_handles_core_edge_cases():
     )
 
     assert service._calculate_savings(initial_amount=100, offer_amount=90, final_amount=90) == Decimal("10")
-    assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=100) == Decimal("20")
+    assert service._calculate_savings(initial_amount=100, offer_amount=90, final_amount=100) == Decimal("-10")
+    assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=100) == Decimal("0")
     assert service._calculate_savings(initial_amount=0, offer_amount=0, final_amount=0) == Decimal("0")
     assert service._calculate_savings(initial_amount=100, offer_amount=120, final_amount=120) == Decimal("-20")
-    assert service._calculate_savings(initial_amount=None, offer_amount=120, final_amount=120) is None
+    assert service._calculate_savings(initial_amount=None, offer_amount=120, final_amount=120) == Decimal("0")
 
 
 @pytest.mark.asyncio
@@ -149,9 +174,16 @@ async def test_responsibility_dashboard_contains_status_counters_and_assigned_re
     assert node.in_progress_total == 3
     assert len(dashboard.assigned_requests) == 1
     assert dashboard.assigned_requests[0].owner_user_id == "econ-1"
-    assert dashboard.savings.total_closed_requests == 2
+    assert dashboard.savings.total_closed_requests == 4
     assert dashboard.savings.total_with_savings == 2
     assert dashboard.savings.total_savings_amount == pytest.approx(0.0)
+    assert {item.request_id: item.savings_amount for item in dashboard.savings.closed_items} == {
+        100: 20.0,
+        101: -20.0,
+        102: 0.0,
+        103: 0.0,
+    }
+    assert [item.request_id for item in dashboard.savings.items] == [100, 101]
 
 
 @pytest.mark.asyncio
@@ -306,14 +338,45 @@ async def test_get_request_stats_for_selected_plan_uses_attached_plan_ids(make_c
     root = _make_plan_tree_node(plan_id=1, user_id="lead-1", children=[child])
 
     class _UsersRepo:
+        _units = [(1, None), (2, 1), (3, 2)]
+        _memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("econ-1", 3),
+        ]
+
         async def get_by_id(self, user_id: str):
             if user_id == "lead-1":
-                return SimpleNamespace(id="lead-1", id_parent="pm-1")
+                return SimpleNamespace(
+                    id="lead-1",
+                    id_role=settings.lead_economist_role_id,
+                    id_parent="pm-1",
+                )
             if user_id == "econ-1":
-                return SimpleNamespace(id="econ-1", id_parent="lead-1")
+                return SimpleNamespace(
+                    id="econ-1",
+                    id_role=settings.economist_role_id,
+                    id_parent="lead-1",
+                )
             if user_id == "pm-1":
-                return SimpleNamespace(id="pm-1", id_parent=None)
+                return SimpleNamespace(
+                    id="pm-1",
+                    id_role=settings.project_manager_role_id,
+                    id_parent=None,
+                )
             return None
+
+        async def list_active_user_parent_pairs(self):
+            return [
+                ("lead-1", "pm-1"),
+                ("econ-1", "lead-1"),
+            ]
+
+        async def list_active_units(self):
+            return list(self._units)
+
+        async def list_active_unit_memberships(self):
+            return list(self._memberships)
 
     service = PlanService(
         plans=SimpleNamespace(),
@@ -357,6 +420,13 @@ async def test_get_request_stats_for_selected_plan_uses_attached_plan_ids(make_c
 
 class _PlanUsersRepo:
     def __init__(self) -> None:
+        self._units = [(1, None), (2, 1), (3, 2)]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("econ-1", 3),
+            ("econ-2", 3),
+        ]
         self._users = {
             "pm-1": SimpleNamespace(
                 id="pm-1",
@@ -389,6 +459,12 @@ class _PlanUsersRepo:
             ("econ-1", "lead-1"),
             ("econ-2", "lead-1"),
         ]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)
 
 
 @pytest.mark.asyncio

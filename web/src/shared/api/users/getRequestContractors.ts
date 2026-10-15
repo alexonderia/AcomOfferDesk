@@ -18,9 +18,11 @@ export type GetRequestContractorsResult = {
   items: RequestContractorItem[];
 };
 
-export const getRequestContractors = async (): Promise<GetRequestContractorsResult> => {
+export const getRequestContractors = async (requestId?: string): Promise<GetRequestContractorsResult> => {
   const response = await fetchJson<RequestContractorListResponse>(
-    '/api/v1/users/request-contractors',
+    requestId
+      ? `/api/v1/requests/${encodeURIComponent(requestId)}/offers/manual/eligible-contractors`
+      : '/api/v1/users/request-contractors',
     { method: 'GET' },
     'Ошибка загрузки контрагентов'
   );

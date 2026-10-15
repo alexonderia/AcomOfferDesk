@@ -6,15 +6,17 @@ from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.department_delegations import (
     DEPARTMENT_DELEGATIONS,
+    DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION,
     get_department_delegation_role_codes,
+    get_department_permission_codes,
 )
 from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.infrastructure.iam_client import IamAccountPermissions
 from app.repositories.profiles import ProfileRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.users import UserRepository
 from app.services.department_scope import DepartmentScopeService
-from app.services.keycloak_admin import KeycloakAdminService
-from app.services.keycloak_delegations import KeycloakDepartmentDelegationsService
+from app.services.iam_permission_grants import IamPermissionGrantsService
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +26,8 @@ class DepartmentDelegationAccessState:
     group: str
     label: str
     enabled: bool
+    granted_via_role: bool
+    granted_individually: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,14 +48,12 @@ class UserDepartmentDelegationsService:
         users: UserRepository,
         profiles: ProfileRepository,
         user_auth_accounts: UserAuthAccountRepository,
-        keycloak_delegations: KeycloakDepartmentDelegationsService | None = None,
-        keycloak_admin: KeycloakAdminService | None = None,
+        iam_permission_grants: IamPermissionGrantsService | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
-        self._keycloak_delegations = keycloak_delegations or KeycloakDepartmentDelegationsService()
-        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
+        self._iam_permission_grants = iam_permission_grants or IamPermissionGrantsService()
         self._department_scope = DepartmentScopeService(users)
 
     async def get_state(
@@ -68,15 +70,15 @@ class UserDepartmentDelegationsService:
             current_user=current_user,
             target_user_id=target_user.id,
         )
-        keycloak_subject = await self._get_keycloak_subject_for_user(user_id=target_user.id)
+        iam_account_id = await self._get_iam_account_id_for_user(user_id=target_user.id)
 
-        enabled_role_codes: frozenset[str] = frozenset()
+        permissions = IamAccountPermissions(frozenset(), frozenset(), frozenset())
         warning: str | None = None
-        if keycloak_subject is None:
-            warning = "User does not have an active Keycloak account link"
+        if iam_account_id is None:
+            warning = "У пользователя отсутствует активная привязка IAM"
         else:
-            enabled_role_codes = await self._keycloak_delegations.list_user_enabled_department_role_codes(
-                keycloak_user_id=keycloak_subject,
+            permissions = await self._iam_permission_grants.get(
+                account_id=iam_account_id,
             )
 
         profile = await self._profiles.get_by_id(target_user.id)
@@ -85,7 +87,7 @@ class UserDepartmentDelegationsService:
             role_id=target_user.id_role,
             full_name=profile.full_name if profile is not None else None,
             can_manage=can_manage,
-            accesses=self._build_accesses(enabled_role_codes=enabled_role_codes),
+            accesses=self._build_accesses(permissions=permissions),
             token_refresh_required=False,
             warning=warning,
         )
@@ -108,27 +110,19 @@ class UserDepartmentDelegationsService:
         if not can_manage:
             raise Forbidden("Insufficient permissions to manage department delegations")
 
-        keycloak_subject = await self._get_keycloak_subject_for_user(user_id=target_user.id)
-        if keycloak_subject is None:
-            raise Conflict("User does not have an active Keycloak account link")
+        iam_account_id = await self._get_iam_account_id_for_user(user_id=target_user.id)
+        if iam_account_id is None:
+            raise Conflict("У пользователя отсутствует активная привязка IAM")
 
         normalized_requested = self._normalize_requested_codes(requested_access_codes)
-        sync_result = await self._keycloak_delegations.sync_user_department_role_codes(
-            keycloak_user_id=keycloak_subject,
-            requested_role_codes=normalized_requested,
+        requested_permissions = frozenset(
+            DEPARTMENT_DELEGATION_ROLE_TO_PERMISSION[role_code]
+            for role_code in normalized_requested
         )
-
-        token_refresh_required = False
-        warning: str | None = None
-        if sync_result.added_role_codes or sync_result.removed_role_codes:
-            try:
-                await self._keycloak_admin.logout_user_sessions(user_id=keycloak_subject)
-            except Exception:  # noqa: BLE001
-                token_refresh_required = True
-                warning = "Delegations changed. User must refresh token or re-login."
-
-        enabled_role_codes = await self._keycloak_delegations.list_user_enabled_department_role_codes(
-            keycloak_user_id=keycloak_subject,
+        sync_result = await self._iam_permission_grants.replace_managed_grants(
+            account_id=iam_account_id,
+            managed_permissions=get_department_permission_codes(),
+            requested_permissions=requested_permissions,
         )
         profile = await self._profiles.get_by_id(target_user.id)
         return DepartmentDelegationUserState(
@@ -136,9 +130,13 @@ class UserDepartmentDelegationsService:
             role_id=target_user.id_role,
             full_name=profile.full_name if profile is not None else None,
             can_manage=can_manage,
-            accesses=self._build_accesses(enabled_role_codes=enabled_role_codes),
-            token_refresh_required=token_refresh_required,
-            warning=warning,
+            accesses=self._build_accesses(permissions=sync_result.permissions),
+            token_refresh_required=sync_result.changed,
+            warning=(
+                "Дополнительные доступы изменены. Новые права появятся после обновления сессии."
+                if sync_result.changed
+                else None
+            ),
         )
 
     async def _resolve_can_manage_target(
@@ -161,10 +159,10 @@ class UserDepartmentDelegationsService:
             target_user_id=target_user_id,
         )
 
-    async def _get_keycloak_subject_for_user(self, *, user_id: str) -> str | None:
+    async def _get_iam_account_id_for_user(self, *, user_id: str) -> str | None:
         account = await self._user_auth_accounts.get_by_user_provider(
             user_id=user_id,
-            provider="keycloak",
+            provider="iam",
             include_inactive=False,
         )
         if account is None:
@@ -184,14 +182,25 @@ class UserDepartmentDelegationsService:
             raise Conflict(f"Unsupported delegation role code(s): {', '.join(unknown)}")
         return normalized
 
-    def _build_accesses(self, *, enabled_role_codes: frozenset[str]) -> tuple[DepartmentDelegationAccessState, ...]:
+    def _build_accesses(
+        self,
+        *,
+        permissions: IamAccountPermissions,
+    ) -> tuple[DepartmentDelegationAccessState, ...]:
         return tuple(
             DepartmentDelegationAccessState(
                 code=definition.role_code,
                 permission_code=definition.permission_code,
                 group=definition.group,
                 label=definition.label,
-                enabled=definition.role_code in enabled_role_codes,
+                enabled=definition.permission_code in permissions.effective_permissions,
+                granted_via_role=(
+                    definition.permission_code in permissions.permissions_from_role
+                ),
+                granted_individually=(
+                    definition.permission_code
+                    in permissions.individually_granted_permissions
+                ),
             )
             for definition in DEPARTMENT_DELEGATIONS
         )

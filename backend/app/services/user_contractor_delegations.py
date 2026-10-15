@@ -4,13 +4,18 @@ from dataclasses import dataclass
 
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
-from app.domain.contractor_delegations import CONTRACTOR_DELEGATIONS, get_contractor_delegation_role_codes
+from app.domain.contractor_delegations import (
+    CONTRACTOR_DELEGATIONS,
+    CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS,
+    get_contractor_delegation_permission_codes,
+    get_contractor_delegation_role_codes,
+)
 from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.infrastructure.iam_client import IamAccountPermissions
 from app.repositories.profiles import ProfileRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.users import UserRepository
-from app.services.keycloak_admin import KeycloakAdminService
-from app.services.keycloak_delegations import KeycloakContractorDelegationsService
+from app.services.iam_permission_grants import IamPermissionGrantsService
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +24,8 @@ class ContractorDelegationAccessState:
     label: str
     description: str
     enabled: bool
+    granted_via_role: bool
+    granted_individually: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,14 +46,12 @@ class UserContractorDelegationsService:
         users: UserRepository,
         profiles: ProfileRepository,
         user_auth_accounts: UserAuthAccountRepository,
-        keycloak_delegations: KeycloakContractorDelegationsService | None = None,
-        keycloak_admin: KeycloakAdminService | None = None,
+        iam_permission_grants: IamPermissionGrantsService | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
-        self._keycloak_delegations = keycloak_delegations or KeycloakContractorDelegationsService()
-        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
+        self._iam_permission_grants = iam_permission_grants or IamPermissionGrantsService()
 
     async def get_state(
         self,
@@ -62,15 +67,15 @@ class UserContractorDelegationsService:
             current_user=current_user,
             target_role_id=target_user.id_role,
         )
-        keycloak_subject = await self._get_keycloak_subject_for_user(user_id=target_user.id)
+        iam_account_id = await self._get_iam_account_id_for_user(user_id=target_user.id)
 
-        enabled_role_codes: frozenset[str] = frozenset()
+        permissions = IamAccountPermissions(frozenset(), frozenset(), frozenset())
         warning: str | None = None
-        if keycloak_subject is None:
-            warning = "User does not have an active Keycloak account link"
+        if iam_account_id is None:
+            warning = "У пользователя отсутствует активная привязка IAM"
         else:
-            enabled_role_codes = await self._keycloak_delegations.list_user_enabled_contractor_role_codes(
-                keycloak_user_id=keycloak_subject,
+            permissions = await self._iam_permission_grants.get(
+                account_id=iam_account_id,
             )
 
         profile = await self._profiles.get_by_id(target_user.id)
@@ -79,7 +84,7 @@ class UserContractorDelegationsService:
             role_id=target_user.id_role,
             full_name=profile.full_name if profile is not None else None,
             can_manage=can_manage,
-            accesses=self._build_accesses(enabled_role_codes=enabled_role_codes),
+            accesses=self._build_accesses(permissions=permissions),
             token_refresh_required=False,
             warning=warning,
         )
@@ -102,27 +107,20 @@ class UserContractorDelegationsService:
         if not can_manage:
             raise Forbidden("Insufficient permissions to manage contractor delegations")
 
-        keycloak_subject = await self._get_keycloak_subject_for_user(user_id=target_user.id)
-        if keycloak_subject is None:
-            raise Conflict("User does not have an active Keycloak account link")
+        iam_account_id = await self._get_iam_account_id_for_user(user_id=target_user.id)
+        if iam_account_id is None:
+            raise Conflict("У пользователя отсутствует активная привязка IAM")
 
         normalized_requested = self._normalize_requested_codes(requested_access_codes)
-        sync_result = await self._keycloak_delegations.sync_user_contractor_role_codes(
-            keycloak_user_id=keycloak_subject,
-            requested_role_codes=normalized_requested,
+        requested_permissions = frozenset(
+            permission
+            for role_code in normalized_requested
+            for permission in CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS[role_code]
         )
-
-        token_refresh_required = False
-        warning: str | None = None
-        if sync_result.added_role_codes or sync_result.removed_role_codes:
-            try:
-                await self._keycloak_admin.logout_user_sessions(user_id=keycloak_subject)
-            except Exception:  # noqa: BLE001
-                token_refresh_required = True
-                warning = "Delegations changed. User must refresh token or re-login."
-
-        enabled_role_codes = await self._keycloak_delegations.list_user_enabled_contractor_role_codes(
-            keycloak_user_id=keycloak_subject,
+        sync_result = await self._iam_permission_grants.replace_managed_grants(
+            account_id=iam_account_id,
+            managed_permissions=get_contractor_delegation_permission_codes(),
+            requested_permissions=requested_permissions,
         )
         profile = await self._profiles.get_by_id(target_user.id)
         return ContractorDelegationUserState(
@@ -130,9 +128,13 @@ class UserContractorDelegationsService:
             role_id=target_user.id_role,
             full_name=profile.full_name if profile is not None else None,
             can_manage=can_manage,
-            accesses=self._build_accesses(enabled_role_codes=enabled_role_codes),
-            token_refresh_required=token_refresh_required,
-            warning=warning,
+            accesses=self._build_accesses(permissions=sync_result.permissions),
+            token_refresh_required=sync_result.changed,
+            warning=(
+                "Дополнительные доступы изменены. Новые права появятся после обновления сессии."
+                if sync_result.changed
+                else None
+            ),
         )
 
     def _resolve_can_manage_target(
@@ -145,10 +147,10 @@ class UserContractorDelegationsService:
             return False
         return target_role_id == settings.lead_economist_role_id
 
-    async def _get_keycloak_subject_for_user(self, *, user_id: str) -> str | None:
+    async def _get_iam_account_id_for_user(self, *, user_id: str) -> str | None:
         account = await self._user_auth_accounts.get_by_user_provider(
             user_id=user_id,
-            provider="keycloak",
+            provider="iam",
             include_inactive=False,
         )
         if account is None:
@@ -168,13 +170,26 @@ class UserContractorDelegationsService:
             raise Conflict(f"Unsupported delegation role code(s): {', '.join(unknown)}")
         return normalized
 
-    def _build_accesses(self, *, enabled_role_codes: frozenset[str]) -> tuple[ContractorDelegationAccessState, ...]:
+    def _build_accesses(
+        self,
+        *,
+        permissions: IamAccountPermissions,
+    ) -> tuple[ContractorDelegationAccessState, ...]:
         return tuple(
             ContractorDelegationAccessState(
                 code=definition.role_code,
                 label=definition.label,
                 description=definition.description,
-                enabled=definition.role_code in enabled_role_codes,
+                enabled=definition.permission_codes.issubset(
+                    permissions.effective_permissions
+                ),
+                granted_via_role=bool(
+                    definition.permission_codes & permissions.permissions_from_role
+                ),
+                granted_individually=bool(
+                    definition.permission_codes
+                    & permissions.individually_granted_permissions
+                ),
             )
             for definition in CONTRACTOR_DELEGATIONS
         )

@@ -3,13 +3,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROLE } from '@shared/constants/roles';
 import { appTheme } from '@shared/theme/appTheme';
+import type { ContractorListItem } from '@shared/api/contractors/listContractors';
 import { ContractorsListView } from './ContractorsListView';
 
 const updateManualContractorMock = vi.fn();
 const updateContractorStatusMock = vi.fn();
+const getContractorRootUnitsMock = vi.fn();
+const updateContractorRootUnitsMock = vi.fn();
 const showSystemToastMock = vi.fn();
+const showErrorToastMock = vi.fn();
 
-let mockSession: { roleId: number } = {
+let mockSession: { roleId: number; permissions?: string[] } = {
   roleId: ROLE.ADMIN,
 };
 
@@ -27,20 +31,29 @@ vi.mock('@shared/api/contractors/updateContractorStatus', () => ({
   updateContractorStatus: (...args: unknown[]) => updateContractorStatusMock(...args),
 }));
 
+vi.mock('@shared/api/contractors/getContractorRootUnits', () => ({
+  getContractorRootUnits: (...args: unknown[]) => getContractorRootUnitsMock(...args),
+}));
+
+vi.mock('@shared/api/contractors/updateContractorRootUnits', () => ({
+  updateContractorRootUnits: (...args: unknown[]) => updateContractorRootUnitsMock(...args),
+}));
+
 vi.mock('@shared/ui/toasts', () => ({
   useSystemToasts: () => ({
     showSystemToast: showSystemToastMock,
+    showErrorToast: showErrorToastMock,
   }),
 }));
 
-const buildContractor = () => ({
+const buildContractor = (): ContractorListItem => ({
   userId: 'contractor-1',
-  maxUserId: 'max-42',
   roleId: 3,
   status: 'На проверке',
   fullName: 'Иван Петров',
   phone: '+79990000000',
   mail: 'ivan@example.com',
+  emailVerified: false,
   companyName: 'ООО Ромашка',
   inn: '1234567890',
   companyPhone: '+79990000001',
@@ -49,10 +62,10 @@ const buildContractor = () => ({
   note: 'Тест',
   createdAt: '2026-06-01T10:00:00Z',
   updatedAt: '2026-06-10T11:00:00Z',
-  registrationSource: 'manual',
   actions: {
     view_profile: true,
     update_status: true,
+    manage_contractor_unit_bindings: true,
     update_role: false,
     update_manager: false,
     manage_own_profile: false,
@@ -62,6 +75,7 @@ const buildContractor = () => ({
     manage_subordinate_unavailability: false,
     manage_manual_contractor: true,
   },
+  rootUnits: null,
 });
 
 const buildContractorsPage = (count: number) => Array.from({ length: count }, (_, index) => ({
@@ -78,7 +92,7 @@ const renderView = (props: { contractors?: ReturnType<typeof buildContractor>[] 
       emptyMessage="Контрагенты не найдены"
       onStatusUpdated={async () => {}}
     />
-  </ThemeProvider>
+  </ThemeProvider>,
 );
 
 describe('ContractorsListView editing', () => {
@@ -88,9 +102,29 @@ describe('ContractorsListView editing', () => {
     };
     updateManualContractorMock.mockReset();
     updateContractorStatusMock.mockReset();
+    getContractorRootUnitsMock.mockReset();
+    updateContractorRootUnitsMock.mockReset();
     showSystemToastMock.mockReset();
+    showErrorToastMock.mockReset();
+
     updateManualContractorMock.mockResolvedValue({ userId: 'contractor-1' });
     updateContractorStatusMock.mockResolvedValue({ userId: 'contractor-1', userStatus: 'active' });
+    getContractorRootUnitsMock.mockResolvedValue({
+      contractorUserId: 'contractor-1',
+      canManage: true,
+      items: [
+        { unitId: 101, unitName: 'Финансы', isBound: true, canManage: true },
+        { unitId: 102, unitName: 'Логистика', isBound: false, canManage: true },
+      ],
+    });
+    updateContractorRootUnitsMock.mockResolvedValue({
+      contractorUserId: 'contractor-1',
+      canManage: true,
+      items: [
+        { unitId: 101, unitName: 'Финансы', isBound: true, canManage: true },
+        { unitId: 102, unitName: 'Логистика', isBound: true, canManage: true },
+      ],
+    });
   });
 
   it('shows read-only cells by default', async () => {
@@ -99,7 +133,6 @@ describe('ContractorsListView editing', () => {
     expect(await screen.findByText('Иван Петров')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeInTheDocument();
     expect(screen.queryByLabelText('contractor-1-company_name')).not.toBeInTheDocument();
-    expect(screen.queryByText('max-42')).not.toBeInTheDocument();
   });
 
   it('keeps current page while editing a row on another page', async () => {
@@ -211,6 +244,7 @@ describe('ContractorsListView editing', () => {
         ...buildContractor(),
         actions: {
           ...buildContractor().actions,
+          manage_contractor_unit_bindings: true,
           manage_manual_contractor: false,
           update_status: true,
         },
@@ -219,6 +253,66 @@ describe('ContractorsListView editing', () => {
 
     expect(await screen.findByText('Иван Петров')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Редактировать' })).not.toBeInTheDocument();
+  });
+
+  it('makes the status field editable in edit mode when status access is granted', async () => {
+    renderView({
+      contractors: [{
+        ...buildContractor(),
+        actions: {
+          ...buildContractor().actions,
+          manage_manual_contractor: true,
+          update_status: true,
+        },
+      }],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+
+    const statusCombobox = await screen.findByRole('combobox', { name: 'contractor-1-status' });
+    expect(statusCombobox).toBeInTheDocument();
+
+    fireEvent.mouseDown(statusCombobox);
+    fireEvent.click(await screen.findByRole('option', { name: 'Активен' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Сохранить/ }));
+
+    await waitFor(() => {
+      expect(updateContractorStatusMock).toHaveBeenCalledWith('contractor-1', { user_status: 'active' });
+    });
+  });
+
+  it('does not open contractor details when changing inline status', async () => {
+    renderView();
+
+    const statusCombobox = await screen.findByRole('combobox', { name: 'contractor-1-status' });
+    fireEvent.mouseDown(statusCombobox);
+    const statusOptions = await screen.findAllByRole('option');
+    fireEvent.click(statusOptions[1]);
+
+    await waitFor(() => {
+      expect(updateContractorStatusMock).toHaveBeenCalledWith('contractor-1', { user_status: 'active' });
+    });
+    expect(screen.queryByText('РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР°')).not.toBeInTheDocument();
+  });
+
+  it('locks the status field in edit mode when status access is missing', async () => {
+    renderView({
+      contractors: [{
+        ...buildContractor(),
+        actions: {
+          ...buildContractor().actions,
+          manage_manual_contractor: true,
+          update_status: false,
+        },
+      }],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+
+    expect(await screen.findByLabelText('contractor-1-full_name')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'contractor-1-status' })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Поле недоступно для редактирования').length).toBeGreaterThan(0);
   });
 
   it('allows status update from contractor details dialog', async () => {
@@ -231,6 +325,7 @@ describe('ContractorsListView editing', () => {
         ...buildContractor(),
         actions: {
           ...buildContractor().actions,
+          manage_contractor_unit_bindings: true,
           manage_manual_contractor: false,
           update_status: true,
         },
@@ -248,7 +343,102 @@ describe('ContractorsListView editing', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }));
 
-    await screen.findByText('max-42');
     expect(screen.getAllByLabelText('Поле недоступно для редактирования').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('binds contractor root units directly from the table column', async () => {
+    renderView();
+
+    fireEvent.click(await screen.findByLabelText('root-units-contractor-1'));
+
+    expect(await screen.findByLabelText('Финансы')).toBeChecked();
+    const logisticsCheckbox = await screen.findByLabelText('Логистика');
+    expect(logisticsCheckbox).not.toBeChecked();
+
+    fireEvent.click(logisticsCheckbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+
+    await waitFor(() => {
+      expect(updateContractorRootUnitsMock).toHaveBeenCalledWith('contractor-1', [101, 102]);
+    });
+    expect(showSystemToastMock).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Привязки к подразделениям сохранены.',
+    });
+    expect(screen.queryByText('Карточка контрагента')).not.toBeInTheDocument();
+    expect(updateContractorStatusMock).not.toHaveBeenCalled();
+  });
+
+  it('uses preloaded bindings from the list without an extra fetch', async () => {
+    renderView({
+      contractors: [{
+        ...buildContractor(),
+        rootUnits: {
+          contractorUserId: 'contractor-1',
+          canManage: true,
+          items: [
+            { unitId: 101, unitName: 'Финансы', isBound: true, canManage: true },
+            { unitId: 102, unitName: 'Логистика', isBound: false, canManage: true },
+          ],
+        },
+      }],
+    });
+
+    expect(await screen.findByLabelText('root-units-contractor-1')).toHaveTextContent('Привязок: 1');
+
+    fireEvent.click(screen.getByLabelText('root-units-contractor-1'));
+
+    expect(await screen.findByLabelText('Финансы')).toBeChecked();
+    expect(getContractorRootUnitsMock).not.toHaveBeenCalled();
+  });
+
+  it('loads and saves contractor root unit bindings', async () => {
+    renderView();
+
+    fireEvent.click(await screen.findByText('Иван Петров'));
+
+    expect(await screen.findByLabelText('Финансы')).toBeChecked();
+    const logisticsCheckbox = await screen.findByLabelText('Логистика');
+    expect(logisticsCheckbox).not.toBeChecked();
+
+    fireEvent.click(logisticsCheckbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить привязки' }));
+
+    await waitFor(() => {
+      expect(updateContractorRootUnitsMock).toHaveBeenCalledWith('contractor-1', [101, 102]);
+    });
+    expect(showSystemToastMock).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Привязки к подразделениям сохранены.',
+    });
+  });
+
+  it('shows a check next to verified email for registration approvers', () => {
+    mockSession = {
+      roleId: ROLE.ADMIN,
+      permissions: ['users.registration.approve'],
+    };
+    renderView({
+      contractors: [
+        buildContractor(),
+        { ...buildContractor(), userId: 'contractor-2', emailVerified: true, mail: 'ok@example.com' },
+      ],
+    });
+
+    expect(screen.getByTitle('Почта подтверждена')).toBeInTheDocument();
+    expect(screen.getByText('ok@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('Подтверждение почты')).not.toBeInTheDocument();
+  });
+
+  it('hides email verification check without registration approve permission', () => {
+    mockSession = {
+      roleId: ROLE.ECONOMIST,
+      permissions: [],
+    };
+    renderView({
+      contractors: [{ ...buildContractor(), emailVerified: true }],
+    });
+
+    expect(screen.queryByTitle('Почта подтверждена')).not.toBeInTheDocument();
   });
 });

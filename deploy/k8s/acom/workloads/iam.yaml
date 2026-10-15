@@ -1,4 +1,4 @@
-# iam — собственный OIDC-сервис (замена запрещённого Keycloak), порт 8100.
+# iam — собственный OIDC-сервис (замена запрещённого Сторонняя SSO), порт 8100.
 # Источник: iam/Dockerfile + iam/iam_app (ветка dev, PR #53), compose-секция iam.
 # Hardening как в compose: read-only rootfs, cap_drop ALL, no-new-privileges, tmpfs /tmp.
 # Образ в k8s: acom-iam:prod-1 (build iam/Dockerfile, тег при import в containerd).

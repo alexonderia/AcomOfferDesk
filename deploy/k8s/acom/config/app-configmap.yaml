@@ -12,9 +12,9 @@
 #       RABBITMQ_URL       → amqps://<user>:<pass>@rabbitmq.acom.svc.cluster.local:5671/   (R-E2: только amqps!)
 #       S3_ENDPOINT        → https://minio.acom.svc.cluster.local:9000        (R-F1: MinIO теперь TLS)
 #       S3_SECURE          → true
-#       KEYCLOAK_*=... → ПОЛИТИКА: Keycloak в контуре запрещён (23.07.2026, Тоток/СБ),
-#                       вход переходит на корп. IAM (PR #53, dev: `.env.iam.*`).
-#                       Адрес KC в k8s намеренно не прописан: Service не создаётся.
+#       переменные сторонней SSO → ПОЛИТИКА: сторонняя SSO в контуре запрещена (23.07.2026, Тоток/СБ),
+#                       вход переходит на IAM (PR #53, dev: `.env.iam.*`).
+#                       Адрес прежней SSO в k8s намеренно не прописан: Service не создаётся.
 #       PUBLIC_BACKEND_BASE_URL / WEB_BASE_URL / TG_BOT_PUBLIC_URL → https://app.acom-offer-desk.ru
 apiVersion: v1
 kind: ConfigMap
@@ -43,12 +43,11 @@ data:
   AWS_CA_BUNDLE: "/etc/ssl/minio/ca.crt"
   REQUESTS_CA_BUNDLE: "/etc/ssl/minio/ca.crt"
 
-  # --- Keycloak: ВЫКЛЮЧЕНО ПОЛИТИКОЙ (Keycloak в контуре запрещён, 23.07.2026) ---
-  # KEYCLOAK_INTERNAL_URL намеренно ОТСУТСТВУЕТ: Service `keycloak` в k8s не
+  # --- Прежняя SSO: ВЫКЛЮЧЕНА ПОЛИТИКОЙ (запрет сторонней SSO, 23.07.2026) ---
+  # Переменная URL прежней SSO намеренно ОТСУТСТВУЕТ: Service в k8s не
   # создаётся, а мёртвый DNS-адрес лишь маскировал бы поломку входа.
-  # KEYCLOAK_INTERNAL_URL: "http://keycloak.acom.svc.cluster.local:8080"
 
-  # --- IAM: свой OIDC-сервис приложения (замена Keycloak; PR #53, ветка dev) ---
+  # --- IAM: свой OIDC-сервис приложения (замена сторонней SSO; PR #53, ветка dev) ---
   # Несекретные значения контура ТЕСТА (домен app.acom-offer-desk.ru).
   # В ЦОД-контуре эти URL заменяются на домен ЦОД — контурная правка при сборке.
   # Секреты (IAM_DATABASE_URL, IAM_INTERNAL_SERVICE_TOKEN, IAM_SIGNING_PRIVATE_KEY,

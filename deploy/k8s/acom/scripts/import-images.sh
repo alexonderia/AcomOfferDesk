@@ -40,7 +40,7 @@ PASSTHROUGH=(
   "nginx:1.27-alpine"
   "order-database-postgres:with-cron"
   "rabbitmq:3-management"
-  # Keycloak НЕ импортируем: в k8s он не разворачивается (политика 23.07.2026)
+  # Сторонняя SSO НЕ импортируем: в k8s он не разворачивается (политика 23.07.2026)
 )
 
 run() { if [ "$APPLY" = 1 ]; then echo "+ $*"; "$@"; else echo "  [dry] $*"; fi; }

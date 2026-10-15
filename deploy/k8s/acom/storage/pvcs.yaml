@@ -1,7 +1,7 @@
 # Постоянные тома оверлея. Postgres держит том через volumeClaimTemplates StatefulSet,
 # rabbitmq/minio/clamav — одиночные PVC ниже.
-# Keycloak исключён (политика 23.07.2026) → PVC keycloak-data из оверлея убран;
-# compose-том `acome-offer-desk_keycloak_data` (H2-файл keycloakdb.mv.db) не трогаем.
+# Сторонняя SSO исключён (политика 23.07.2026) → PVC legacy-sso-data из оверлея убран;
+# compose-том `acome-offer-desk_legacy-sso_data` (H2-файл legacy-ssodb.mv.db) не трогаем.
 #
 # StorageClass local-path (k3s): данные узла, RWO, без репликации — на одноузловом
 # кластере это норма (официальный пример k8s + local-path-provisioner).

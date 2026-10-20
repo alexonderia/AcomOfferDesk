@@ -17,7 +17,7 @@
 | `config/app-configmap.yaml` | неконфиденциальные env-переменные приложения (имена из прод-`.env`, значения — только безопасные дефолты) |
 | `config/rabbitmq.conf` | rabbitmq.conf: `listeners.tcp = none` (R-E2), все `ssl_options.*` на 5671 (R-E1/E3), management только по HTTPS |
 | `config/rabbitmq-enabled_plugins` | список плагинов (читается только из `/etc/rabbitmq/enabled_plugins`) |
-| `config/gateway-nginx.conf` | конфиг nginx-гейтвея: `proxy_pass` на k8s-DNS (`backend:8000`, `web:80`, `maintenance:80`), а не на docker-DNS; локации `/iam/` **выключены** (политика, статический upstream без Service не дал бы nginx подняться) |
+| `config/gateway-nginx.conf` | конфиг nginx-гейтвея: `proxy_pass` на k8s-DNS (`backend:8000`, `web:80`, `maintenance:80`), а не на docker-DNS; локации `/iam/` включены и проксируются в `iam:8100` (свой OIDC; Сторонняя SSO запрещена политикой) |
 | `config/maintenance-default.conf` | страница «ведутся технические работы» |
 | `config/secrets.example.yaml` | ПРИМЕР Secret'ов (значения-заглушки), монтируется файлом `05-credentials.conf` |
 | `storage/pvcs.yaml` | PVC: rabbitmq-data, minio-data, clamav-data (PVC легаси-SSO убран — политика) |
@@ -75,10 +75,13 @@ kustomization НЕ создаёт Secret'ы и часть ConfigMap'ов (там
   KC 26.5 на postgres, но это НЕ тот путь: прод-Сторонняя SSO работает в `start-dev` с H2-файлом
   (`<legacy-sso>db.mv.db`), а главное — Сторонняя SSO запрещена в контуре решением СБ/Тоток
   (23.07.2026), и PR #53 в `dev` уже убрал его из кода. Итог: манифест в `docs/legacy-sso-excluded/`,
-  в kustomization не входит; `/iam` в gateway выключен. Проверка KC-на-postgres оставлена
-  как **история работ**, не как рецепт.
+  в kustomization не входит; `/iam` обслуживает свой IAM (`workloads/iam.yaml`), не Keycloak.
+  Проверка KC-на-postgres оставлена как **история работ**, не как рецепт.
 * Прод-факты входа (пригодятся при переходе на IAM): внешний префикс `/iam` (хостовый nginx),
   проброс `X-Forwarded-*`, health-порт сервиса 9000.
+* **Хостовый nginx:** для OIDC callback нужны `proxy_buffer_size 32k; proxy_buffers 8 32k;
+  proxy_busy_buffers_size 64k;` — иначе крупные JWT-cookie дают
+  502 `upstream sent too big header`.
 * **curl в образе postgres НЕТ** (есть `psql`, `pg_isready`, `pg_restore`, `openssl`).
   Все HTTP-проверки вынесены в контейнер на образе `acome-offer-desk-backend:latest`
   (там `curl` есть) — `jobs/post-deploy-verify.job.yaml` разделён на `http-verify` и `db-verify`.

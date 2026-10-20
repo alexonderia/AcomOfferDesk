@@ -179,7 +179,7 @@ jobs:
 
             # 6b. БД acom_iam для IAM (идемпотентно; миграции — jobs/iam-migrations).
             kubectl -n "${NS}" exec postgres-0 -- sh -ec \
-              'psql -U "$POSTGRES_USER" -lqt | cut -d\| -f1 | grep -qw acom_iam || psql -U "$POSTGRES_USER" -c "CREATE DATABASE acom_iam"'
+              'psql -U "$POSTGRES_USER" -d postgres -lqt | cut -d\| -f1 | grep -qw acom_iam || psql -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE acom_iam"'
             echo "IAM_DB_OK acom_iam"
 
             # 7. Бэкап БД перед миграциями (паритет с compose-эрой: pg_dump + sha256).

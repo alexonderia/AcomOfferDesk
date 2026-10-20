@@ -29,6 +29,9 @@ data:
   POSTGRES_PORT: "5432"
   PGSSLMODE: "verify-full"
   PGSSLROOTCERT: "/etc/ssl/postgres/ca.crt"
+  # Backend принимает X-Forwarded-* только от доверенных прокси.
+  # Поды gateway живут в pod-сети k3s (10.42.0.0/16), Service — в 10.43.0.0/16.
+  TRUSTED_PROXY_CIDRS: "127.0.0.1/32,10.42.0.0/16,10.43.0.0/16"
 
   # --- RabbitMQ: только AMQPS (R-E2), mutual TLS (R-E3) ---
   RABBITMQ_HOST: "rabbitmq"

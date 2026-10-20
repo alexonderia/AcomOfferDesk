@@ -75,7 +75,7 @@ kustomization НЕ создаёт Secret'ы и часть ConfigMap'ов (там
   KC 26.5 на postgres, но это НЕ тот путь: прод-Сторонняя SSO работает в `start-dev` с H2-файлом
   (`<legacy-sso>db.mv.db`), а главное — Сторонняя SSO запрещена в контуре решением СБ/Тоток
   (23.07.2026), и PR #53 в `dev` уже убрал его из кода. Итог: манифест в `docs/legacy-sso-excluded/`,
-  в kustomization не входит; `/iam` обслуживает свой IAM (`workloads/iam.yaml`), не Keycloak.
+  в kustomization не входит; `/iam` обслуживает свой IAM (`workloads/iam.yaml`), не легаси-SSO.
   Проверка KC-на-postgres оставлена как **история работ**, не как рецепт.
 * Прод-факты входа (пригодятся при переходе на IAM): внешний префикс `/iam` (хостовый nginx),
   проброс `X-Forwarded-*`, health-порт сервиса 9000.

@@ -214,6 +214,21 @@ jobs:
               kubectl -n "${NS}" rollout status "deployment/${d}" --timeout=5m
             done
 
+            # 9b. RBAC-матрица IAM (роли/права) — идемпотентно.
+            # Миграции создают только пустые таблицы; без seed роль не найдена
+            # и создание IAM-аккаунта падает с "unknown role".
+            for attempt in 1 2 3 4 5; do
+              if kubectl -n "${NS}" exec deployment/backend -- \
+                python -m app.scripts.seed_iam_rbac; then
+                break
+              fi
+              if [ "${attempt}" = "5" ]; then
+                echo "FAIL: IAM RBAC seed" >&2
+                exit 1
+              fi
+              sleep 5
+            done
+
             # 10. Post-deploy verify (только чтение; образы внутри Job уже на VPS).
             kubectl -n "${NS}" delete job post-deploy-verify --ignore-not-found
             kubectl -n "${NS}" delete job db-verify --ignore-not-found

@@ -64,15 +64,11 @@ spec:
               mountPath: /var/lib/clamav
             - name: clamav-run
               mountPath: /run/clamav
-            - name: shared
-              mountPath: /app/shared
       volumes:
         - name: clamav
           persistentVolumeClaim:
             claimName: clamav-data
         - name: clamav-run
-          emptyDir: {}
-        - name: shared
           emptyDir: {}
 ---
 apiVersion: v1

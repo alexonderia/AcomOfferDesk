@@ -58,5 +58,4 @@ resources:
 # Их применение — вручную и по порядку из README.md («Порядок Ф5»).
 patches:
   - path: patch-backend-shared.yaml
-  - path: patch-worker-shared.yaml
   - path: patch-fileguard-clamav.yaml

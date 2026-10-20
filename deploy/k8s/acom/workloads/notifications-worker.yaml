@@ -57,14 +57,10 @@ spec:
               cpu: 500m
               memory: 256Mi
           volumeMounts:
-            - name: shared
-              mountPath: /app/shared
             - name: rabbitmq-client
               mountPath: /etc/ssl/rabbitmq
               readOnly: true
       volumes:
-        - name: shared
-          emptyDir: {}
         - name: rabbitmq-client
           secret:
             secretName: rabbitmq-tls

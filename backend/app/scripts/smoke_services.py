@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 from dataclasses import dataclass
 from ipaddress import ip_address
-from typing import Any
 from urllib.parse import urlsplit
-from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 from urllib.error import HTTPError, URLError
@@ -231,59 +228,6 @@ async def _check_postgres(reporter: Reporter, env_map: dict[str, str]) -> None:
         await conn.close()
 
 
-async def _check_keycloak(reporter: Reporter, env_map: dict[str, str], timeout: float, base_url: str) -> None:
-    keycloak_enabled = _to_bool(_coalesce(env_map, "KEYCLOAK_ENABLED", default="false"))
-    if not keycloak_enabled:
-        reporter.warn("Keycloak", "KEYCLOAK_ENABLED=false, checks skipped")
-        return
-
-    realm = _coalesce(env_map, "KEYCLOAK_REALM", default="acom-offerdesk")
-    issuer_expected = _coalesce(env_map, "KEYCLOAK_ISSUER_URL")
-    if not issuer_expected:
-        public_base = _coalesce(env_map, "KEYCLOAK_PUBLIC_BASE_URL") or urljoin(base_url.rstrip("/") + "/", "iam")
-        issuer_expected = f"{public_base.rstrip('/')}/realms/{realm}"
-
-    well_known = f"{issuer_expected.rstrip('/')}/.well-known/openid-configuration"
-    retries = int(_coalesce(env_map, "SMOKE_HTTP_RETRIES", default="2") or "2")
-    payload: dict[str, Any] | None = None
-    last_error = ""
-    for attempt in range(max(0, retries) + 1):
-        try:
-            request = Request(url=well_known, method="GET")
-            with urlopen(request, timeout=timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            break
-        except Exception as exc:  # noqa: BLE001
-            last_error = str(exc)
-            if attempt < retries:
-                await asyncio.sleep(0.6 * (attempt + 1))
-
-    if payload is None:
-        reporter.fail("Keycloak issuer", f"{well_known} unavailable: {last_error}")
-        return
-
-    resolved_issuer = str(payload.get("issuer") or "").rstrip("/")
-    if resolved_issuer != issuer_expected.rstrip("/"):
-        reporter.fail("Keycloak issuer", f"issuer mismatch: expected {issuer_expected}, got {resolved_issuer}")
-    else:
-        reporter.ok("Keycloak issuer", resolved_issuer)
-
-    jwks_uri = str(payload.get("jwks_uri") or "").strip()
-    if not jwks_uri:
-        reporter.fail("Keycloak JWKS", "jwks_uri is missing in openid configuration")
-        return
-
-    await _check_http(
-        reporter,
-        name="Keycloak JWKS",
-        url=jwks_uri,
-        accepted_codes={200},
-        timeout=timeout,
-        critical=True,
-        retries=int(_coalesce(env_map, "SMOKE_HTTP_RETRIES", default="2") or "2"),
-    )
-
-
 def _minio_smoke_probe(
     endpoint: str,
     *,
@@ -453,27 +397,35 @@ async def run_checks(
 
     await _check_http(
         reporter,
-        name="API proxy",
-        url=f"{resolved_base_url}/api/v1/auth/oidc/login?next_path=%2F",
-        accepted_codes={200, 302, 303, 307, 308, 401, 403},
+        name="IAM BFF login redirect",
+        url=f"{resolved_base_url}/api/v1/auth/login?next=%2F",
+        accepted_codes={200, 302},
         timeout=timeout,
         critical=True,
         retries=retries,
     )
 
-    realm = _coalesce(env_map, "KEYCLOAK_REALM", default="acom-offerdesk")
     await _check_http(
         reporter,
-        name="Gateway /iam",
-        url=f"{resolved_base_url}/iam/realms/{realm}",
-        accepted_codes={200, 301, 302, 307, 308},
+        name="IAM public JWKS",
+        url=f"{resolved_base_url}/iam/.well-known/jwks.json",
+        accepted_codes={200},
         timeout=timeout,
-        critical=False,
+        critical=True,
+        retries=retries,
+    )
+
+    await _check_http(
+        reporter,
+        name="IAM internal gateway isolation",
+        url=f"{resolved_base_url}/iam/internal/rbac",
+        accepted_codes={404},
+        timeout=timeout,
+        critical=True,
         retries=retries,
     )
 
     await _check_postgres(reporter, env_map)
-    await _check_keycloak(reporter, env_map, timeout, resolved_base_url)
     await _check_s3_minio(reporter, env_map)
     if _to_bool(_coalesce(env_map, "SMOKE_SKIP_RABBITMQ", default="false")):
         reporter.warn("RabbitMQ", "SMOKE_SKIP_RABBITMQ=true, check skipped")

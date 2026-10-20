@@ -1,0 +1,180 @@
+# Keycloak 26.5 (прод-образ quay.io/keycloak/keycloak:26.5).
+#   * Ф5-3 ИСПРАВЛЕНО (критично): прод-Keycloak хранит данные в POSTGRES, а не в H2.
+#     Проверено на ЖИВОМ проде: KC_DB=postgres, KC_DB_URL_HOST=order-database-postgres,
+#     KC_DB_URL_DATABASE=order_database, KC_DB_SCHEMA=keycloak; в схеме keycloak лежат
+#     realm `master`+`acom-offerdesk` и 82 пользователя (select из keycloak.user_entity).
+#     В томе acome-offer-desk_keycloak_data H2-файла НЕТ — только ./import/ и ./tmp/kc-gzip-cache/.
+#     Прежняя версия манифеста (KC_DB=dev-file, «H2 на PVC», Ф5-свод п.10) — ОШИБКА,
+#     она бы отдала Keycloak пустую базу (тихая потеря realm/пользователей). Исправлено.
+#   * KC_DB_USERNAME/KC_DB_PASSWORD: user — order_admin (литерал, не секрет),
+#     пароль — из acom-db-secret ключ POSTGRES_PASSWORD (единственный источник правды,
+#     в проде это тот же пароль order_admin).
+#   * R-B1: команда `start` (в проде сейчас legacy `start-dev` через KEYCLOAK_START_COMMAND;
+#     откат: заменить `start` на `start-dev`).
+#   * R-B2: non-root (UID 1000 — keycloak в официальном образе).
+#   * R-B3: тег 26.5; digest не пиннится (RepoDigests пуст) — открытый пункт в README.
+#   * R-G1: KC_HOSTNAME/KC_HOSTNAME_STRICT/KC_PROXY_HEADERS/KC_HTTP_RELATIVE_PATH — из Secret.
+#   * probes: health живёт на management-порту 9000, путь С ПРЕФИКСОМ /iam
+#     (в проде healthcheck считает путь как KC_HTTP_RELATIVE_PATH + /health/... —
+#     воспроизведено здесь 1:1; без префикса проба даёт 404).
+#   * --import-realm + ConfigMap `keycloak-realm-import` (собирает scripts/make-configmaps.sh):
+#     идемпотентно доливает realm из JSON, если его нет в БД.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # один писатель в /opt/keycloak/data (кэш/gzip), как в проде
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        acom.security/tier: app
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.5
+          imagePullPolicy: Never
+          # В k8s `command` перекрывает ENTRYPOINT образа (в compose этим управляет `entrypoint`).
+          # Образ не собран под этот контур (kc.sh build не выполнялся) → `start` делает build сам,
+          # `--optimized` не используем.
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              sh /opt/keycloak/bootstrap/prepare-theme.sh
+              exec /opt/keycloak/bin/kc.sh start --import-realm
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          env:
+            # Данные — в postgres (схема keycloak в БД order_database).
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL_HOST
+              value: postgres.acom.svc.cluster.local
+            - name: KC_DB_URL_PORT
+              value: "5432"
+            - name: KC_DB_URL_DATABASE
+              value: order_database
+            - name: KC_DB_SCHEMA
+              value: keycloak
+            - name: KC_DB_USERNAME
+              value: order_admin
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-db-secret
+                  key: POSTGRES_PASSWORD
+            # Значения ниже продублированы явно (совпадают с прод-.env) — НЕ секреты,
+            # но от них зависят probes и маршрутизация gateway. Явный env имеет
+            # приоритет над envFrom, поэтому даже пустой Secret не сломает пробы.
+            - name: KC_HTTP_RELATIVE_PATH
+              value: /iam
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+            - name: KC_RUN_IN_CONTAINER
+              value: "true"
+            # Heap: в проде не задан вообще (контейнер ел ~480 MiB при лимите хоста 5.7 GiB).
+            # JAVA_OPTS_APPEND — официальный способ; лимит памяти 1Gi.
+            - name: JAVA_OPTS_APPEND
+              value: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=192m -XX:+UseSerialGC"
+          envFrom:
+            - secretRef:
+                name: acom-kc-secret      # KC_HOSTNAME, KC_HOSTNAME_STRICT, KC_PROXY_HEADERS,
+                                          # KC_HTTP_RELATIVE_PATH, KC_BOOTSTRAP_ADMIN_*
+          startupProbe:
+            httpGet:
+              path: /iam/health/started     # префикс /iam обязателен (см. шапку)
+              port: management
+            periodSeconds: 10
+            failureThreshold: 60            # запас 600 c на старт + миграции схемы в postgres
+          readinessProbe:
+            httpGet:
+              path: /iam/health/ready
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /iam/health/live
+              port: management
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: keycloak-data
+              mountPath: /opt/keycloak/data
+            - name: keycloak-themes
+              mountPath: /opt/keycloak/themes
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+            - name: theme-src
+              mountPath: /opt/keycloak/themes-src
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/keycloak/bootstrap
+              readOnly: true
+      volumes:
+        # Том НЕ содержит данных Keycloak (они в postgres): только import/ и кэш gzip-тем.
+        # Потеря тома = только холодный старт, realm/пользователи не теряются.
+        - name: keycloak-data
+          persistentVolumeClaim:
+            claimName: keycloak-data
+        # themes пишутся prepare-theme.sh (копия из themes-src) → нужен записываемый слой
+        - name: keycloak-themes
+          emptyDir: {}
+        - name: realm-import
+          configMap:
+            name: keycloak-realm-import     # собирает scripts/make-configmaps.sh
+            optional: false
+        - name: theme-src
+          configMap:
+            name: keycloak-theme
+        - name: bootstrap
+          configMap:
+            name: keycloak-bootstrap-scripts
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: management
+      port: 9000
+      targetPort: 9000

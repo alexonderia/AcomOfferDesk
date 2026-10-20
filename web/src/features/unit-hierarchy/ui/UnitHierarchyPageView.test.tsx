@@ -1,0 +1,427 @@
+﻿import { ThemeProvider } from '@mui/material/styles';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  PageBreadcrumbActionsProvider,
+  usePageBreadcrumbActionsState,
+  usePageBreadcrumbItemsState,
+} from '@app/layouts/PageBreadcrumbActions';
+import { appTheme } from '@shared/theme/appTheme';
+import { UnitHierarchyPageView } from './UnitHierarchyPageView';
+
+const useUnitHierarchyPageMock = vi.fn();
+const useAuthMock = vi.fn();
+
+vi.mock('../model/useUnitHierarchyPage', () => ({
+  useUnitHierarchyPage: () => useUnitHierarchyPageMock(),
+}));
+
+vi.mock('@app/providers/AuthProvider', () => ({
+  useAuth: () => useAuthMock(),
+}));
+
+const baseDepartment = {
+  unit_id: 1,
+  name: 'Финансовый блок',
+  id_parent: null,
+  is_active: true,
+  members: [],
+  children: [
+    {
+      unit_id: 2,
+      name: 'Проект А',
+      id_parent: 1,
+      is_active: true,
+      members: [
+        {
+          user_id: 'econ-1',
+          full_name: 'Экономист 1',
+          role_id: 6,
+          role_name: 'Экономист',
+          status: 'active',
+        },
+      ],
+      children: [
+        {
+          unit_id: 3,
+          name: 'Группа 1',
+          id_parent: 2,
+          is_active: true,
+          members: [],
+          children: [],
+          actions: {
+            canCreateChild: true,
+            canUpdate: true,
+            canDelete: true,
+            canManageMembers: true,
+          },
+        },
+      ],
+      actions: {
+        canCreateChild: true,
+        canUpdate: true,
+        canDelete: true,
+        canManageMembers: true,
+      },
+    },
+  ],
+  actions: {
+    canCreateChild: true,
+    canUpdate: true,
+    canDelete: false,
+    canManageMembers: true,
+  },
+};
+
+const secondDepartment = {
+  unit_id: 10,
+  name: 'Блок продаж',
+  id_parent: null,
+  is_active: true,
+  members: [],
+  children: [],
+  actions: {
+    canCreateChild: true,
+    canUpdate: true,
+    canDelete: false,
+    canManageMembers: true,
+  },
+};
+
+const buildViewState = (): any => ({
+  tree: [baseDepartment],
+  departments: [baseDepartment],
+  isLoading: false,
+  error: null,
+  selectedDepartment: baseDepartment,
+  selectedDepartmentId: 1,
+  setSelectedDepartmentId: vi.fn(),
+  selectedEditorUnitId: null,
+  setSelectedEditorUnitId: vi.fn(),
+  editorRootUnit: null,
+  departmentStaff: [
+    {
+      user_id: 'econ-1',
+      full_name: 'Экономист 1',
+      role_id: 6,
+      role_name: 'Экономист',
+      status: 'active',
+    },
+  ],
+  departmentContractors: [],
+  selectedDepartmentUnitOptions: [
+    { unitId: 1, label: 'Финансовый блок' },
+    { unitId: 2, label: 'Финансовый блок / Проект А' },
+    { unitId: 3, label: 'Финансовый блок / Проект А / Группа 1' },
+  ],
+  canCreateRootUnit: true,
+  canManageUnitMembers: true,
+  activeUnitDetails: null,
+  activeUnitParent: null,
+  activeUnitPathLabel: '',
+  setActiveUnitDetailsId: vi.fn(),
+  unitDialogState: { mode: null, unit: null },
+  isSavingUnit: false,
+  editableParentOptions: [],
+  openCreateRootDialog: vi.fn(),
+  openCreateChildDialog: vi.fn(),
+  openEditUnitDialog: vi.fn(),
+  closeUnitDialog: vi.fn(),
+  submitUnit: vi.fn(),
+  memberDialogState: { unit: null, search: '', selectedUserId: '' },
+  setMemberDialogState: vi.fn(),
+  availableUsers: [],
+  isLoadingUsers: false,
+  isSavingMember: false,
+  openMemberDialog: vi.fn(),
+  closeMemberDialog: vi.fn(),
+  submitMember: vi.fn(),
+  removeMemberFromUnit: vi.fn(),
+  contractorDialogUnit: null,
+  openContractorDialog: vi.fn(),
+  closeContractorDialog: vi.fn(),
+  removeContractorFromUnit: vi.fn(),
+  moveMemberState: null,
+  moveUnitOptions: [],
+  setMoveMemberState: vi.fn(),
+  isMovingMember: false,
+  openMoveMemberDialog: vi.fn(),
+  closeMoveMemberDialog: vi.fn(),
+  submitMoveMember: vi.fn(),
+  isSavingUnitNameId: null,
+  submitUnitName: vi.fn(),
+  deleteDialogState: null,
+  isDeletingUnit: false,
+  openDeleteDialog: vi.fn(),
+  closeDeleteDialog: vi.fn(),
+  confirmDeleteUnit: vi.fn(),
+  loadTree: vi.fn(),
+  unassignedUsers: [],
+  isLoadingUnassignedUsers: false,
+  assignMemberState: null,
+  setAssignMemberState: vi.fn(),
+  isAssigningMember: false,
+  assignUnitOptions: [],
+  openAssignMemberDialog: vi.fn(),
+  closeAssignMemberDialog: vi.fn(),
+  submitAssignMember: vi.fn(),
+  findRootUnitForUnit: vi.fn(() => baseDepartment),
+});
+
+const BreadcrumbActionsOutlet = () => {
+  const actions = usePageBreadcrumbActionsState();
+  return <>{actions}</>;
+};
+
+const BreadcrumbItemsOutlet = () => {
+  const items = usePageBreadcrumbItemsState();
+  return (
+    <>
+      {items.map((item) => (
+        <span key={item.key}>{`crumb:${item.label}`}</span>
+      ))}
+    </>
+  );
+};
+
+const renderView = () => render(
+  <ThemeProvider theme={appTheme}>
+    <PageBreadcrumbActionsProvider>
+      <BreadcrumbActionsOutlet />
+      <BreadcrumbItemsOutlet />
+      <UnitHierarchyPageView />
+    </PageBreadcrumbActionsProvider>
+  </ThemeProvider>
+);
+
+describe('UnitHierarchyPageView', () => {
+  beforeEach(() => {
+    useUnitHierarchyPageMock.mockReset();
+    useAuthMock.mockReset();
+    useAuthMock.mockReturnValue({
+      session: {
+        roleId: 1,
+        permissions: ['contractors.read'],
+      },
+    });
+    useUnitHierarchyPageMock.mockReturnValue(buildViewState());
+  });
+
+  it('renders filter header and expanded department details', () => {
+    renderView();
+
+    expect(screen.getByPlaceholderText('Поиск по подразделению, группе, сотруднику или контрагенту')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Подразделение для просмотра' })).toBeInTheDocument();
+    expect(screen.getAllByText('Все подразделения').length).toBeGreaterThan(0);
+    expect(screen.getByText('Объединения по всем подразделениям')).toBeInTheDocument();
+    expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Выбрать объединение Группа 1' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Открыть контрагентов объединения Проект А')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Сотрудники|Контрагенты/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Экономист 1')).toBeInTheDocument();
+  });
+
+  it('does not show contractors tab in overview details for groups', () => {
+    const viewState = buildViewState();
+    const departmentWithContractor = structuredClone(baseDepartment);
+    departmentWithContractor.children[0].members.push({
+      user_id: 'contractor-1',
+      full_name: 'Контрагент 1',
+      role_id: 3,
+      role_name: 'Контрагент',
+      status: 'active',
+    });
+    viewState.tree = [departmentWithContractor];
+    viewState.departments = [departmentWithContractor];
+    viewState.selectedDepartment = departmentWithContractor;
+    viewState.findRootUnitForUnit = vi.fn(() => departmentWithContractor);
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    expect(screen.queryByRole('tab', { name: /Контрагенты/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Контрагент 1')).not.toBeInTheDocument();
+    expect(screen.getByText('Экономист 1')).toBeInTheDocument();
+  });
+
+  it('switches department from the top filter', () => {
+    const viewState = buildViewState();
+    viewState.tree = [baseDepartment, secondDepartment];
+    viewState.departments = [baseDepartment, secondDepartment];
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Подразделение для просмотра' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Блок продаж' }));
+
+    expect(viewState.setSelectedDepartmentId).toHaveBeenCalledWith(10);
+  });
+
+  it('keeps contractor action only for department scope', () => {
+    renderView();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Подразделение для просмотра' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Финансовый блок' }));
+
+    expect(screen.getByLabelText('Открыть контрагентов объединения Финансовый блок')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Открыть контрагентов объединения Проект А')).not.toBeInTheDocument();
+  });
+
+  it('toggles department member preview grouped by categories', () => {
+    const viewState = buildViewState();
+    const departmentWithMembers = structuredClone(baseDepartment);
+    departmentWithMembers.children[0].members.push(
+      {
+        user_id: 'pm-1',
+        full_name: 'Руководитель проекта 1',
+        role_id: 4,
+        role_name: 'Руководитель Проекта',
+        status: 'active',
+      },
+      {
+        user_id: 'lead-1',
+        full_name: 'Ведущий экономист 1',
+        role_id: 5,
+        role_name: 'Ведущий экономист',
+        status: 'active',
+      },
+      {
+        user_id: 'operator-1',
+        full_name: 'Оператор 1',
+        role_id: 7,
+        role_name: 'Оператор',
+        status: 'active',
+      },
+      {
+        user_id: 'contractor-1',
+        full_name: 'Контрагент 1',
+        role_id: 3,
+        role_name: 'Контрагент',
+        status: 'active',
+      },
+    );
+    viewState.tree = [departmentWithMembers];
+    viewState.departments = [departmentWithMembers];
+    viewState.selectedDepartment = departmentWithMembers;
+    viewState.findRootUnitForUnit = vi.fn(() => departmentWithMembers);
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Подразделение для просмотра' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Финансовый блок' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать состав подразделения' }));
+
+    expect(screen.getByText('Экономисты (РП, ВЭ, Э)')).toBeInTheDocument();
+    expect(screen.getAllByText('Другие сотрудники').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Контрагенты').length).toBeGreaterThan(0);
+    expect(screen.getByText('Руководитель проекта 1')).toBeInTheDocument();
+    expect(screen.getByText('Ведущий экономист 1')).toBeInTheDocument();
+    expect(screen.getByText('Экономист 1')).toBeInTheDocument();
+    expect(screen.getByText('Оператор 1')).toBeInTheDocument();
+    expect(screen.getByText('Контрагент 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать объединения подразделения' }));
+
+    expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
+  });
+
+  it('hides unassigned employees block for read-only users', () => {
+    const viewState = buildViewState();
+    viewState.canManageUnitMembers = false;
+    viewState.unassignedUsers = [
+      {
+        user_id: 'econ-2',
+        full_name: 'Экономист 2',
+        role_id: 6,
+        role_name: 'Экономист',
+        status: 'active',
+      },
+    ];
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    expect(screen.queryByText('Нераспределённые сотрудники')).not.toBeInTheDocument();
+    expect(screen.queryByText('Экономист 2')).not.toBeInTheDocument();
+  });
+
+  it('adds selected department to breadcrumbs', () => {
+    const viewState = buildViewState();
+    viewState.tree = [baseDepartment, secondDepartment];
+    viewState.departments = [baseDepartment, secondDepartment];
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    expect(screen.queryByText('crumb:Финансовый блок')).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Подразделение для просмотра' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Блок продаж' }));
+
+    expect(screen.getByText('crumb:Иерархия')).toBeInTheDocument();
+    expect(screen.getByText('crumb:Блок продаж')).toBeInTheDocument();
+  });
+
+  it('opens the unit editor from the selected overview card', () => {
+    const viewState = buildViewState();
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.click(within(screen.getByRole('button', { name: 'Выбрать объединение Проект А' })).getByLabelText('Открыть схему объединения Проект А'));
+
+    expect(viewState.setSelectedEditorUnitId).toHaveBeenCalledWith(2);
+    expect(viewState.setActiveUnitDetailsId).toHaveBeenCalledWith(2);
+  });
+
+  it('renders full-screen editor and details panel for selected unit', () => {
+    const viewState = buildViewState();
+    viewState.selectedEditorUnitId = 2;
+    viewState.editorRootUnit = baseDepartment.children[0]!;
+    viewState.activeUnitDetails = baseDepartment.children[0]!;
+    viewState.activeUnitPathLabel = 'Финансовый блок / Проект А';
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    expect(screen.getAllByText('Проект А').length).toBeGreaterThan(0);
+    expect(screen.getByText('Финансовый блок / Проект А')).toBeInTheDocument();
+    expect(screen.getAllByRole('button').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Состав').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Создать дочернюю группу в Проект А')).toBeInTheDocument();
+  });
+
+  it('opens create child dialog from schema node in editor', () => {
+    const viewState = buildViewState();
+    viewState.selectedEditorUnitId = 2;
+    viewState.editorRootUnit = baseDepartment.children[0]!;
+    viewState.activeUnitDetails = baseDepartment.children[0]!;
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    fireEvent.click(screen.getByLabelText('Создать дочернюю группу в Проект А'));
+
+    expect(viewState.openCreateChildDialog).toHaveBeenCalledWith(baseDepartment.children[0]);
+  });
+
+  it('shows delete preview dialog when delete state is open', () => {
+    const viewState = buildViewState();
+    viewState.deleteDialogState = {
+      unit: baseDepartment.children[0]!,
+      previewTree: [baseDepartment],
+      willReassign: true,
+    };
+    useUnitHierarchyPageMock.mockReturnValue(viewState);
+
+    renderView();
+
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('Удаление объединения')).toBeInTheDocument();
+    expect(dialog.getByText('Предпросмотр новой иерархии')).toBeInTheDocument();
+    expect(dialog.getAllByText('Проект А').length).toBeGreaterThan(0);
+  });
+});

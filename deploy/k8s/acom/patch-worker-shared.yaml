@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          volumeMounts:
+            - name: shared-code
+              mountPath: /app/shared
+              readOnly: true
+      volumes:
+        - name: shared-code
+          configMap:
+            name: acom-shared

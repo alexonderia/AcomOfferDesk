@@ -23,6 +23,7 @@ vi.mock('@shared/api/users/getCurrentUserProfile', () => ({
 }));
 
 vi.mock('@shared/ui/toasts', () => ({
+  useToastMessageEffect: vi.fn(),
   useSystemToasts: () => ({
     showErrorToast: showErrorToastMock,
     showSuccessToast: showSuccessToastMock,
@@ -38,7 +39,7 @@ const buildSession = (token: string, permissions: string[] = []) => ({
   roleId: 3,
   role: 'contractor',
   status: 'review',
-  authProvider: 'keycloak',
+  authProvider: 'iam',
   businessAccess: false,
   onboardingState: null,
   permissions,
@@ -64,12 +65,13 @@ const profileResponse = {
   unavailablePeriod: null,
   unavailablePeriods: [],
   permissions: [],
-  keycloakRoles: [],
+  identityRoles: [],
   appRoles: [],
   delegationRoles: [],
   actions: {
     view_profile: false,
     update_status: false,
+    manage_contractor_unit_bindings: false,
     update_role: false,
     update_manager: false,
     manage_manual_contractor: false,
@@ -104,6 +106,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-1'),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     const view = renderPage();
@@ -115,6 +118,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-2'),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     view.rerender(
@@ -132,6 +136,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-1', []),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     const view = renderPage();
@@ -143,6 +148,7 @@ describe('AccountStatePage refresh behavior', () => {
     useAuthMock.mockReturnValue({
       session: buildSession('token-1', ['profile.manage_own']),
       logout: logoutMock,
+      refresh: vi.fn(),
     });
 
     view.rerender(

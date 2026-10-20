@@ -6,11 +6,15 @@ const baseUrl = process.env.BASE_URL ?? 'http://localhost:8080';
 const outRoot = path.resolve(process.cwd(), 'artifacts', 'screenshots', 'roles');
 
 const users = [
-  { name: 'superadmin', login: 'superadmin', password: 's18OouADqJ1vTEjpUFYCEFYhoLYWYGj4wPrNETyT07B' },
-  { name: 'project_manager', login: 'project_manager', password: 'project_manager' },
-  { name: 'lead_economist', login: 'lead_economist', password: 'lead_economist' },
-  { name: 'contractor', login: 'ooo_gvozd_27_04', password: 'ooo_gvozd_27_04' }
-];
+  { name: 'superadmin', prefix: 'E2E_SUPERADMIN' },
+  { name: 'project_manager', prefix: 'E2E_PROJECT_MANAGER' },
+  { name: 'lead_economist', prefix: 'E2E_LEAD_ECONOMIST' },
+  { name: 'contractor', prefix: 'E2E_CONTRACTOR' }
+].map(({ name, prefix }) => ({
+  name,
+  login: process.env[`${prefix}_USERNAME`]?.trim() ?? '',
+  password: process.env[`${prefix}_PASSWORD`]?.trim() ?? ''
+}));
 
 const viewports = [
   { name: 'desktop', viewport: { width: 1440, height: 960 } },
@@ -30,8 +34,11 @@ async function ensureDir(dir) {
 }
 
 async function login(page, login, password) {
+  if (!login || !password) {
+    throw new Error('Screenshot credentials are not configured in E2E_* environment variables');
+  }
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    await page.goto(`${baseUrl}/api/v1/auth/oidc/login?next_path=%2F&force_prompt=1`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${baseUrl}/api/v1/auth/login?next=%2F`, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
 
     const isAppPage = () => /\/(requests|admin|pm-dashboard|account)(\/|$)/.test(new URL(page.url()).pathname);
@@ -53,7 +60,7 @@ async function login(page, login, password) {
     const passwordInput = page.locator('#password, input[name="password"], input[type="password"]').first();
     await passwordInput.fill(password);
 
-    const submitButton = page.locator('#kc-login, button[type="submit"], input[type="submit"]').first();
+    const submitButton = page.locator('button[type="submit"], input[type="submit"]').first();
     await Promise.all([
       page.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {}),
       submitButton.click()

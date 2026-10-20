@@ -1,0 +1,179 @@
+# Postgres 16 + pg_cron (прод-образ `order-database-postgres:with-cron`, собран
+# dockerfile_inline в /opt/order_database/docker-compose.yml).
+#   * StatefulSet + volumeClaimTemplates (решение Ф5-свод п.9 — PVC, не emptyDir);
+#   * TLS на БД (R-D1) + клиенты обязаны проверять сертификат (R-D2);
+#   * QoS Guaranteed: requests == limits (вытесняется последним);
+#   * initdb.d НЕ монтируется осознанно: скрипты /opt/order_database/init/*.sql
+#     выполняются только на пустом каталоге и восстановили бы схему, которая затем
+#     конфликтует с прод-дампом. Путь переноса данных — jobs/restore-db.job.yaml.
+#
+# ВНИМАНИЕ: cron.database_name=order_database (args) обязан совпадать с POSTGRES_DB
+# из секрета acom-db-secret — иначе pg_cron не поднимется. Проверяется
+# jobs/post-deploy-verify.job.yaml.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        acom.security/tier: data
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 999          # официальный postgres UID (R-B2)
+        runAsGroup: 999
+        fsGroup: 999
+      initContainers:
+        # Ровно один шаг, который требует root: разложить TLS-сертификаты так, чтобы
+        # приватный ключ был 0600 и принадлежал postgres. Иначе postgres отказывается
+        # стартовать («private key file has group or world access»).
+        - name: prepare-tls
+          image: order-database-postgres:with-cron
+          imagePullPolicy: Never
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+          command: ["sh", "-ec"]
+          args:
+            - |
+              set -eu
+              cp /tls-src/ca.crt     /tls/ca.crt
+              cp /tls-src/server.crt /tls/server.crt
+              cp /tls-src/server.key /tls/server.key
+              chown -R 999:999 /tls
+              chmod 600 /tls/server.key
+              chmod 644 /tls/server.crt /tls/ca.crt
+              echo "POSTGRES_TLS_READY=1"
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /tls-src
+              readOnly: true
+            - name: postgres-tls-ready
+              mountPath: /tls
+      containers:
+        - name: postgres
+          image: order-database-postgres:with-cron
+          imagePullPolicy: Never
+          # args (а не command): ENTRYPOINT образа (docker-entrypoint.sh) остаётся,
+          # поэтому initdb на пустом PVC отработает как в compose.
+          args:
+            - "postgres"
+            - "-c"
+            - "timezone=Europe/Moscow"
+            - "-c"
+            - "shared_preload_libraries=pg_cron"
+            - "-c"
+            - "cron.database_name=order_database"
+            - "-c"
+            - "shared_buffers=128MB"
+            - "-c"
+            - "max_connections=100"
+            - "-c"
+            - "listen_addresses=*"
+            - "-c"
+            - "ssl=on"
+            - "-c"
+            - "ssl_cert_file=/tls/server.crt"
+            - "-c"
+            - "ssl_key_file=/tls/server.key"
+            - "-c"
+            - "ssl_ca_file=/tls/ca.crt"
+            - "-c"
+            - "ssl_min_protocol_version=TLSv1.2"
+          ports:
+            - name: postgres
+              containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: acom-db-secret
+          env:
+            - name: TZ
+              value: Europe/Moscow
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -q -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -q -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -q -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            # Guaranteed (requests == limits) — БД вытесняется последней.
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-tls-ready
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: postgres-tls
+            defaultMode: 0400
+        - name: postgres-tls-ready
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 5Gi        # сейчас 80M; запас под рост и WAL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+# Алиас: корпоративный мониторинг (/opt/acome-monitoring) ходит по docker-DNS имени
+# `order-db`. Отдельный Service с тем же селектором сохраняет это имя без правок мониторинга.
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-db
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

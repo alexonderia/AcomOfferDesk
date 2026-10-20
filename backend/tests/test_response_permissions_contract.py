@@ -9,11 +9,12 @@ from app.schemas.users import (
 )
 
 
-def test_auth_session_data_keeps_global_permissions_and_roles():
+def test_auth_session_data_keeps_only_iam_role_and_permissions():
     fields = AuthSessionData.model_fields
     assert "permissions" in fields
-    assert "app_roles" in fields
-    assert "delegation_roles" in fields
+    assert "role" in fields
+    assert "app_roles" not in fields
+    assert "delegation_roles" not in fields
 
 
 def test_request_list_and_detail_data_do_not_expose_global_permissions():

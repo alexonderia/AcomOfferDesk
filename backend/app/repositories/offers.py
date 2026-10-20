@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import BigInteger, Select, and_, cast, delete, select
+from sqlalchemy import BigInteger, Select, and_, cast, delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -19,6 +19,17 @@ class OfferRepository:
         self._session.add(offer)
         await self._session.flush()
         return offer
+
+    async def lock_contractor_offer_creation(self, *, request_id: str, contractor_user_id: str) -> None:
+        """Serialize new-offer checks for one request/contractor pair.
+
+        A transaction-scoped PostgreSQL advisory lock preserves the existing
+        deleted-offer history model without requiring a partial unique index.
+        """
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"contractor-offer:{request_id}:{contractor_user_id}"},
+        )
 
     async def get_by_id(self, *, offer_id: int) -> Offer | None:
         stmt = select(Offer).where(Offer.id == offer_id)

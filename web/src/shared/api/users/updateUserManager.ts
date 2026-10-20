@@ -11,6 +11,7 @@ type UpdateUserManagerResponse = {
   };
 };
 
+/** @deprecated Легаси: иерархия users.id_parent. На сайте не используется — только оргструктура (юниты). */
 export const updateUserManager = async (
   userId: string,
   payload: UpdateUserManagerPayload

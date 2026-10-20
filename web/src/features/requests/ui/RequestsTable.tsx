@@ -21,7 +21,7 @@ type RequestsTableProps = {
     onRowClick?: (request: RequestWithOfferStats) => void;
     onAddClick?: () => void;
     chatAlertsMap?: Record<string, number>;
-    ownerOptions?: OwnerOption[];
+    ownerOptionsByRequestId?: Record<string, OwnerOption[]>;
     canEditOwner?: boolean;
     onOwnerChange?: (request: RequestWithOfferStats, ownerUserId: string) => void;
     isContractor?: boolean;
@@ -186,7 +186,7 @@ const ContractorOffersPreview = ({ offers }: ContractorOffersPreviewProps) => {
                             <Typography
                                 component="span"
                                 sx={{
-                                    fontSize: 13,
+                                    fontSize: 14,
                                     fontWeight: 600,
                                     color: neutralColor,
                                     lineHeight: 1.15,
@@ -398,7 +398,7 @@ const RequestMobileCard = ({
                             </Typography>
                             <ExpandMoreRounded
                                 sx={{
-                                    fontSize: 22,
+                                    fontSize: 20,
                                     transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
                                     transition: 'transform 0.28s ease'
                                 }}
@@ -420,7 +420,7 @@ const RequestMobileCard = ({
                                             sx={{
                                                 minWidth: 0,
                                                 flex: '0 0 44%',
-                                                fontSize: 11,
+                                                fontSize: 12,
                                                 fontWeight: 600,
                                                 color: 'text.secondary',
                                                 textTransform: 'uppercase',
@@ -463,7 +463,7 @@ const RequestMobileCard = ({
                                                 sx={{
                                                     minWidth: 0,
                                                     flex: 1,
-                                                    fontSize: 15,
+                                                    fontSize: 14,
                                                     color: detail.value === '-' ? 'text.secondary' : 'text.primary',
                                                     whiteSpace: 'normal',
                                                     wordBreak: 'break-word'
@@ -493,7 +493,7 @@ const RequestMobileCard = ({
                     <Typography
                         sx={{
                             minWidth: 0,
-                            fontSize: 15,
+                            fontSize: 14,
                             color: 'text.secondary',
                             textAlign: 'right',
                             whiteSpace: 'nowrap',
@@ -515,7 +515,7 @@ export const RequestsTable = ({
     onRowClick,
     onAddClick,
     chatAlertsMap,
-    ownerOptions = [],
+    ownerOptionsByRequestId = {},
     canEditOwner = false,
     onOwnerChange,
     isContractor = false,
@@ -641,12 +641,12 @@ export const RequestsTable = ({
                     <Select
                         size="small"
                         value={row.id_user}
-                        renderValue={(selected) => ownerOptions.find((option) => option.id === selected)?.label ?? row.owner_full_name ?? String(selected ?? '')}
+                        renderValue={(selected) => (ownerOptionsByRequestId[row.id] ?? []).find((option) => option.id === selected)?.label ?? row.owner_full_name ?? String(selected ?? '')}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onOwnerChange?.(row, event.target.value)}
                         sx={{ minWidth: 150 }}
                     >
-                        {ownerOptions.map((option) => (
+                        {(ownerOptionsByRequestId[row.id] ?? []).map((option) => (
                             <UnavailableAwareMenuItem
                                 key={option.id}
                                 value={option.id}
@@ -759,7 +759,7 @@ export const RequestsTable = ({
                     row={row}
                     canEditOwner={!isContractor && canEditOwner}
                     isContractor={isContractor}
-                    ownerOptions={ownerOptions}
+                    ownerOptions={ownerOptionsByRequestId[row.id] ?? []}
                     onOwnerChange={onOwnerChange}
                     isExpanded={Boolean(expandedCardsById[row.id])}
                     onToggleExpand={() => handleToggleCardExpand(row.id)}

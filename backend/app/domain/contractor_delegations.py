@@ -46,7 +46,3 @@ def get_contractor_delegation_permission_codes() -> frozenset[str]:
         for permissions in CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS.values()
         for permission in permissions
     )
-
-
-def user_has_contractor_status_delegation(delegation_roles: frozenset[str]) -> bool:
-    return CONTRACTOR_STATUS_DELEGATION_ROLE in delegation_roles

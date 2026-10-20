@@ -1,27 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import type { AuthSessionResponse } from '@shared/api/auth/loginWebUser';
-import { logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
-import { setAuthRuntime, setAuthToken } from '@shared/api/client';
+import { setAuthRuntime, type AuthRefreshResult } from '@shared/api/client';
+import {
+  clearIamBrowserSession,
+  getWebSession,
+  issueCsrfToken,
+  logoutWebSession,
+  refreshWebSession,
+  type AuthSessionResponse,
+} from '@shared/api/auth/loginWebUser';
 
-type AuthStatus = 'bootstrapping' | 'authenticated' | 'anonymous' | 'refreshing';
+type AuthStatus = 'unauthenticated' | 'authenticating' | 'authenticated' | 'unavailable';
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
-
-const roleById: Record<number, string> = {
-  1: 'superadmin',
-  2: 'admin',
-  3: 'contractor',
-  4: 'project_manager',
-  5: 'lead_economist',
-  6: 'economist',
-  7: 'operator',
-  8: 'security_officer'
-};
+const PERMISSION_REFRESH_INTERVAL_MS = 60_000;
 
 export type AuthSession = {
-  token: string;
-  tokenType: string;
-  tokenExpiresAt: number;
   userId: string;
   login: string;
   roleId: number;
@@ -31,8 +23,6 @@ export type AuthSession = {
   businessAccess: boolean;
   onboardingState: string | null;
   permissions: string[];
-  appRoles: string[];
-  delegationRoles: string[];
 };
 
 type AuthContextValue = {
@@ -40,219 +30,148 @@ type AuthContextValue = {
   session: AuthSession | null;
   isAuthenticated: boolean;
   beginLogin: (nextPath?: string, options?: { forcePrompt?: boolean }) => void;
-  refresh: (reason: RefreshReason) => Promise<boolean>;
+  refresh: (reason: RefreshReason) => Promise<AuthRefreshResult>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const IDLE_WINDOW_MS = 30 * 60 * 1000;
-const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
-
 const mapSession = (response: AuthSessionResponse): AuthSession => ({
-  token: response.data.access_token,
-  tokenType: response.data.token_type,
-  tokenExpiresAt: response.data.access_token_expires_at,
   userId: response.data.user_id,
   login: response.data.login,
   roleId: response.data.role_id,
-  role: roleById[response.data.role_id] ?? `role_${response.data.role_id}`,
+  role: response.data.role,
   status: response.data.status,
-  authProvider: response.data.auth_provider ?? 'keycloak',
-  businessAccess: Boolean(response.data.business_access),
+  authProvider: response.data.auth_provider ?? 'iam',
+  businessAccess: response.data.business_access ?? false,
   onboardingState: response.data.onboarding_state ?? null,
   permissions: response.data.permissions ?? [],
-  appRoles: response.data.app_roles ?? [],
-  delegationRoles: response.data.delegation_roles ?? []
 });
 
-const buildLoginUrl = (nextPath: string, forcePrompt: boolean) => {
-  const query = new URLSearchParams({ next_path: nextPath });
-  if (forcePrompt) {
-    query.set('force_prompt', '1');
-  }
-  return `/api/v1/auth/oidc/login?${query.toString()}`;
-};
-
-const isLoginRoute = (pathname: string) => pathname === '/login' || pathname === '/auth/login';
-
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [status, setStatus] = useState<AuthStatus>('bootstrapping');
+  const [status, setStatus] = useState<AuthStatus>('authenticating');
   const [session, setSession] = useState<AuthSession | null>(null);
-  const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
-  const bootstrapStartedRef = useRef(false);
-  const loginRedirectStartedRef = useRef(false);
-  const lastActivityAtRef = useRef<number>(Date.now());
-  const sessionRef = useRef<AuthSession | null>(null);
-  const statusRef = useRef<AuthStatus>('bootstrapping');
+  const refreshPromiseRef = useRef<Promise<AuthRefreshResult> | null>(null);
+  const logoutPromiseRef = useRef<Promise<void> | null>(null);
 
-  const applySession = useCallback((nextSession: AuthSession | null, nextStatus: AuthStatus) => {
-    sessionRef.current = nextSession;
-    statusRef.current = nextStatus;
-    setSession(nextSession);
-    setStatus(nextStatus);
-    setAuthToken(nextSession?.token ?? null);
-  }, []);
-
-  const trackActivity = useCallback(() => {
-    lastActivityAtRef.current = Date.now();
-  }, []);
-
-  const canAttemptSilentRefresh = useCallback((reason: RefreshReason) => {
-    if (reason === 'bootstrap') {
-      return true;
-    }
-    if (refreshPromiseRef.current) {
-      return true;
-    }
-    if (statusRef.current !== 'authenticated') {
-      return false;
-    }
-    return Date.now() - lastActivityAtRef.current < IDLE_WINDOW_MS;
-  }, []);
-
-  const performLogout = useCallback(async (params?: { revokeRemote?: boolean; redirectToLogin?: boolean }) => {
-    const revokeRemote = params?.revokeRemote ?? true;
-    const redirectToLogin = params?.redirectToLogin ?? true;
-
-    applySession(null, 'anonymous');
-
-    if (revokeRemote) {
-      try {
-        await logoutWebSession();
-      } catch {
-        // Local logout already happened.
-      }
-    }
-
-    if (redirectToLogin && location.pathname !== '/login' && location.pathname !== '/auth/login') {
-      navigate('/login?logged_out=1', { replace: true });
-    }
-  }, [applySession, location.pathname, navigate]);
-
-  const refresh = useCallback(async (reason: RefreshReason): Promise<boolean> => {
+  const refresh = useCallback((_reason: RefreshReason): Promise<AuthRefreshResult> => {
     if (refreshPromiseRef.current) {
       return refreshPromiseRef.current;
     }
 
-    if (!canAttemptSilentRefresh(reason)) {
-      return false;
-    }
-
-    refreshPromiseRef.current = (async () => {
-      const previousStatus = statusRef.current;
-      if (reason !== 'bootstrap' && previousStatus === 'authenticated') {
-        statusRef.current = 'refreshing';
-        setStatus('refreshing');
-      }
+    const task = (async (): Promise<AuthRefreshResult> => {
       try {
-        const response = await refreshWebSession();
-        const nextSession = mapSession(response);
-        trackActivity();
-        applySession(nextSession, 'authenticated');
-        return true;
-      } catch {
-        applySession(null, 'anonymous');
-        return false;
-      } finally {
-        refreshPromiseRef.current = null;
-        if (sessionRef.current && statusRef.current === 'refreshing') {
+        await issueCsrfToken();
+        const result = await refreshWebSession();
+        if (result.kind === 'success') {
+          setSession(mapSession(result.session));
           setStatus('authenticated');
-          statusRef.current = 'authenticated';
-        } else if (!sessionRef.current && statusRef.current === 'refreshing') {
-          setStatus('anonymous');
-          statusRef.current = 'anonymous';
+          return { kind: 'success' };
         }
+        if (result.kind === 'terminal') {
+          setSession(null);
+          setStatus('unauthenticated');
+          return result;
+        }
+        setStatus('unavailable');
+        return result;
+      } catch {
+        setStatus('unavailable');
+        return { kind: 'unavailable' };
       }
     })();
 
-    return refreshPromiseRef.current;
-  }, [applySession, canAttemptSilentRefresh, trackActivity]);
+    refreshPromiseRef.current = task;
+    void task.finally(() => {
+      if (refreshPromiseRef.current === task) {
+        refreshPromiseRef.current = null;
+      }
+    });
+    return task;
+  }, []);
 
-  const beginLogin = useCallback((nextPath?: string, options?: { forcePrompt?: boolean }) => {
-    if (loginRedirectStartedRef.current) {
-      return;
-    }
-    loginRedirectStartedRef.current = true;
-    const target = nextPath ?? location.pathname ?? '/';
-    window.location.assign(buildLoginUrl(target, Boolean(options?.forcePrompt)));
-  }, [location.pathname]);
+  const beginLogin = useCallback((nextPath = '/', _options?: { forcePrompt?: boolean }) => {
+    const safeNext = nextPath.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/';
+    window.location.assign(`/api/v1/auth/login?next=${encodeURIComponent(safeNext)}`);
+  }, []);
 
   const logout = useCallback(() => {
-    void performLogout({ revokeRemote: true, redirectToLogin: true });
-  }, [performLogout]);
+    if (logoutPromiseRef.current) {
+      return;
+    }
+    setSession(null);
+    setStatus('unauthenticated');
+    const task = (async () => {
+      try {
+        await issueCsrfToken();
+        await logoutWebSession();
+      } finally {
+        try {
+          await clearIamBrowserSession();
+        } catch {
+          // The primary BFF logout has already run; always continue to login.
+        }
+        window.location.assign('/login');
+      }
+    })();
+    logoutPromiseRef.current = task;
+    void task.finally(() => {
+      if (logoutPromiseRef.current === task) {
+        logoutPromiseRef.current = null;
+      }
+    });
+  }, []);
 
   useEffect(() => {
-    const handler = () => trackActivity();
-    const events: Array<keyof WindowEventMap> = ['mousedown', 'mousemove', 'keydown', 'pointerdown', 'touchstart', 'focus'];
-    events.forEach((eventName) => window.addEventListener(eventName, handler, { passive: true }));
-    return () => {
-      events.forEach((eventName) => window.removeEventListener(eventName, handler));
+    let cancelled = false;
+    const bootstrap = async () => {
+      setStatus('authenticating');
+      try {
+        await issueCsrfToken();
+        const restored = mapSession(await getWebSession());
+        if (!cancelled) {
+          setSession(restored);
+          setStatus('authenticated');
+        }
+      } catch {
+        if (!cancelled) {
+          await refresh('bootstrap');
+        }
+      }
     };
-  }, [trackActivity]);
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
 
   useEffect(() => {
-    trackActivity();
-  }, [location.key, trackActivity]);
+    if (status !== 'authenticated') {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      void refresh('bootstrap');
+    }, PERMISSION_REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [refresh, status]);
 
   useEffect(() => {
     setAuthRuntime({
       refresh,
-      canAttemptSilentRefresh,
-      forceLogout: () => {
-        void performLogout({ revokeRemote: false, redirectToLogin: true });
-      }
+      canAttemptSilentRefresh: () => status === 'authenticated' && !logoutPromiseRef.current,
+      forceLogout: logout,
     });
-    return () => {
-      setAuthRuntime(null);
-    };
-  }, [canAttemptSilentRefresh, performLogout, refresh]);
+    return () => setAuthRuntime(null);
+  }, [logout, refresh, status]);
 
-  useEffect(() => {
-    if (bootstrapStartedRef.current) {
-      return;
-    }
-    bootstrapStartedRef.current = true;
-    if (isLoginRoute(location.pathname)) {
-      applySession(null, 'anonymous');
-      return;
-    }
-    void refresh('bootstrap').then((restored: boolean) => {
-      if (!restored) {
-        applySession(null, 'anonymous');
-      }
-    });
-  }, [applySession, location.pathname, refresh]);
-
-  useEffect(() => {
-    if (status !== 'authenticated' || !session?.token || !session.tokenExpiresAt) {
-      return;
-    }
-
-    const refreshAt = (session.tokenExpiresAt * 1000) - ACCESS_TOKEN_REFRESH_LEEWAY_MS;
-    const delayMs = Math.max(1000, refreshAt - Date.now());
-    const timerId = window.setTimeout(() => {
-      void refresh('http_401');
-    }, delayMs);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, [refresh, session?.token, session?.tokenExpiresAt, status]);
-
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      status,
-      session,
-      isAuthenticated: (status === 'authenticated' || status === 'refreshing') && Boolean(session?.token),
-      beginLogin,
-      refresh,
-      logout
-    }),
-    [beginLogin, logout, refresh, session, status]
-  );
+  const value = useMemo<AuthContextValue>(() => ({
+    status,
+    session,
+    isAuthenticated: status === 'authenticated' && session !== null,
+    beginLogin,
+    refresh,
+    logout,
+  }), [beginLogin, logout, refresh, session, status]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

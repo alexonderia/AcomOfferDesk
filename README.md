@@ -6,7 +6,7 @@ AcomOfferDesk — внутренняя платформа для работы с
 
 - frontend: React SPA (`web`)
 - backend: FastAPI (`backend`)
-- auth: Keycloak OIDC
+- auth: временно недоступна (Stage 1 IAM migration, fail-closed)
 - infra runtime: Docker Compose (`gateway`, `rabbitmq`, `minio`, `notifications_worker`)
 - внешняя БД: `order_database` (отдельный репозиторий)
 
@@ -38,11 +38,10 @@ AcomOfferDesk — внутренняя платформа для работы с
 
 - [Контракт production-переменных и секретов](docs/release/production-env.md)
 - [Практический release checklist](docs/release/release-checklist.md)
-- [Roadmap/ТЗ production-readiness](docs/release/release-preparation-tz.md)
 
-### Менять вход/регистрацию/Keycloak
+### Менять вход/регистрацию/IAM
 
-- [Аутентификация и онбординг (актуальная модель)](docs/security/auth-and-onboarding.md)
+- [Аутентификация и онбординг (Stage 1 и legacy reference)](docs/security/auth-and-onboarding.md)
 - [Матрица прав (permissions)](docs/security/permissions-matrix.md)
 
 ### Решать проблемы на VPS
@@ -59,12 +58,7 @@ AcomOfferDesk — внутренняя платформа для работы с
 docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-3. Для init Keycloak:
-
-```bash
-docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_db_prepare
-docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootstrap
-```
+3. IAM обслуживает login/refresh/logout, локальную проверку access token и effective permissions; backend связывает identity только через `user_auth_accounts(provider='iam')`.
 
 Полные сценарии `dev/prod-like/test/prod`, tunnel-профили, perimeter и проверки — в [docs/operations/environments.md](docs/operations/environments.md).
 
@@ -83,12 +77,11 @@ docker compose --env-file .env.dev -f docker-compose.init.yml up keycloak_bootst
   - PowerShell: `./scripts/test-release.ps1 -EnvFile .env.dev`
   - Bash: `ENV_FILE=.env.dev ./scripts/test-release.sh`
 - Release gate (with optional e2e smoke):
-  - PowerShell: `./scripts/test-release.ps1 -EnvFile .env.dev -IncludeE2E -ProvisionE2EUsers`
-  - Bash: `ENV_FILE=.env.dev INCLUDE_E2E=true PROVISION_E2E_USERS=true ./scripts/test-release.sh`
+  - PowerShell: `./scripts/test-release.ps1 -EnvFile .env.dev -IncludeE2E -StrictE2E`
+  - Bash: `ENV_FILE=.env.dev INCLUDE_E2E=true STRICT_E2E=true ./scripts/test-release.sh`
 - Frontend e2e smoke: `npm --prefix web run e2e:smoke`
 - Frontend extended e2e (manual):
   - `npm --prefix web run e2e:roles`
-  - `npm --prefix web run e2e:registration`
   - `npm --prefix web run e2e:request-offer`
   - `npm --prefix web run e2e:dashboard`
   - `npm --prefix web run e2e:files-chat`
@@ -101,5 +94,5 @@ CI workflow: `.github/workflows/ci.yml`
 
 Manual e2e smoke workflow: `.github/workflows/e2e-smoke.yml` (`workflow_dispatch`).
 Manual release smoke workflow: `.github/workflows/release-smoke.yml` (`workflow_dispatch`, optional e2e).
-Both manual workflows use temporary provisioned e2e users by default (`PROVISION_USERS=true`).
+Manual workflows use IAM credentials supplied through `E2E_*_USERNAME`/`E2E_*_PASSWORD` secrets.
 

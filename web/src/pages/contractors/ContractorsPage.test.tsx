@@ -18,7 +18,7 @@ vi.mock('@app/providers/AuthProvider', () => ({
   useAuth: () => ({
     session: {
       roleId: ROLE.PROJECT_MANAGER,
-      permissions: ['contractors.manual.create'],
+      permissions: ['contractors.manual.create', 'users.registration.invite'],
     },
   }),
 }));

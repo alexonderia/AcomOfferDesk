@@ -31,27 +31,11 @@ const buildRequestsSignature = (items: RequestWithOfferStats[]) => JSON.stringif
   }))
 );
 
-const buildOwnerOptionsSignature = (
-  items: Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>
-) => JSON.stringify(
-  items.map((item) => ({
-    id: item.id,
-    label: item.label,
-    unavailable: item.unavailablePeriod
-      ? {
-          status: item.unavailablePeriod.status,
-          startedAt: item.unavailablePeriod.startedAt,
-          endedAt: item.unavailablePeriod.endedAt
-        }
-      : null
-  }))
-);
-
 export const useRequestsPage = () => {
   const { session } = useAuth();
   const [searchParams] = useSearchParams();
   const [requests, setRequests] = useState<RequestWithOfferStats[]>([]);
-  const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
+  const [ownerOptionsByRequestId, setOwnerOptionsByRequestId] = useState<Record<string, Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successToastEvent, setSuccessToastEvent] = useState<{ id: number; message: string } | null>(null);
@@ -124,32 +108,36 @@ export const useRequestsPage = () => {
   const fetchOwners = useCallback(async () => {
     if (!canEditOwner) {
       ownerOptionsSignatureRef.current = '';
-      setOwnerOptions([]);
+      setOwnerOptionsByRequestId({});
       return;
     }
 
     try {
-      const economists = await getRequestEconomists();
-      const nextOwnerOptions = economists.map((item) => ({
-        id: item.user_id,
-        label: `${item.full_name?.trim() || item.user_id} (${item.role})`,
-        unavailablePeriod: item.unavailable_period
-          ? {
-              status: item.unavailable_period.status,
-              startedAt: item.unavailable_period.started_at,
-              endedAt: item.unavailable_period.ended_at,
-            }
-          : null,
+      const editableRequests = requests.filter((request) => Boolean(request.actions.change_owner));
+      const entries = await Promise.all(editableRequests.map(async (request) => {
+        const economists = await getRequestEconomists(request.id);
+        return [request.id, economists.map((item) => ({
+          id: item.user_id,
+          label: `${item.full_name?.trim() || item.user_id} (${item.role})`,
+          unavailablePeriod: item.unavailable_period
+            ? {
+                status: item.unavailable_period.status,
+                startedAt: item.unavailable_period.started_at,
+                endedAt: item.unavailable_period.ended_at,
+              }
+            : null,
+        }))] as const;
       }));
-      const nextSignature = buildOwnerOptionsSignature(nextOwnerOptions);
+      const nextOwnerOptions = Object.fromEntries(entries);
+      const nextSignature = JSON.stringify(nextOwnerOptions);
       if (ownerOptionsSignatureRef.current !== nextSignature) {
         ownerOptionsSignatureRef.current = nextSignature;
-        setOwnerOptions(nextOwnerOptions);
+        setOwnerOptionsByRequestId(nextOwnerOptions);
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Ошибка загрузки списка ответственных');
     }
-  }, [canEditOwner]);
+  }, [canEditOwner, requests]);
 
   useEffect(() => {
     void fetchRequests(true);
@@ -191,7 +179,7 @@ export const useRequestsPage = () => {
       }
 
       setErrorMessage(null);
-      const targetOwner = ownerOptions.find((item) => item.id === ownerUserId);
+      const targetOwner = ownerOptionsByRequestId[request.id]?.find((item) => item.id === ownerUserId);
       if (targetOwner?.unavailablePeriod) {
         const start = formatUnavailabilityDate(targetOwner.unavailablePeriod.startedAt);
         const end = formatUnavailabilityDate(targetOwner.unavailablePeriod.endedAt);
@@ -235,7 +223,7 @@ export const useRequestsPage = () => {
         setErrorMessage(error instanceof Error ? error.message : 'Не удалось изменить ответственного');
       }
     },
-    [canEditOwner, ownerOptions]
+    [canEditOwner, ownerOptionsByRequestId]
   );
 
   return {
@@ -246,7 +234,7 @@ export const useRequestsPage = () => {
     handleOwnerChange,
     isContractor,
     isLoading,
-    ownerOptions,
+    ownerOptionsByRequestId,
     requests,
     successToastEvent,
     shouldLoadOpenRequests

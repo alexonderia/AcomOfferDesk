@@ -81,4 +81,39 @@ describe("ProjectManagerSavingsDashboard widget states", () => {
     expect(screen.queryByText(/Infinity/)).not.toBeInTheDocument();
     expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
   });
+
+  it("renders zero for closed requests without applicable savings", async () => {
+    vi.mocked(getResponsibilityDashboard).mockResolvedValue({
+      ...emptySavingsPayload,
+      savings: {
+        ...emptySavingsPayload.savings,
+        total_closed_requests: 1,
+        closed_items: [
+          {
+            request_id: "above-initial",
+            owner_user_id: "econ-1",
+            owner_full_name: "Экономист",
+            initial_amount: 1_000_000,
+            offer_amount: 1_850_000,
+            final_amount: 1_000_000,
+            savings_amount: 0,
+            // Period filter defaults to the current month; a hardcoded date
+            // silently falls out of the filter as months pass (Sept 2026).
+            // toLocaleDateString('sv-SE') → local YYYY-MM-DD (matches dateFrom/dateTo).
+            closed_at: new Date().toLocaleDateString("sv-SE"),
+            plan_id: null,
+            plan_name: null,
+          },
+        ],
+      },
+    } as never);
+
+    renderWithTheme();
+
+    await waitFor(() => {
+      expect(screen.getByText("Заявка #above-initial")).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText("0,00 ₽")).toHaveLength(3);
+  });
 });

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaKeycloak, logoutFromUi } from './helpers';
+import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaIam, logoutFromUi } from './helpers';
 
 type RolePrefix =
   | 'E2E_SUPERADMIN'
@@ -114,7 +114,7 @@ for (const scenario of scenarios) {
     const credentials = getCredentialsOrSkip(testInfo, scenario.envPrefix);
     test.skip(!credentials, `Missing ${scenario.envPrefix} credentials`);
 
-    await loginViaKeycloak(page, credentials!);
+    await loginViaIam(page, credentials!);
     await expect(page).toHaveURL(/\/(requests|admin|pm-dashboard|account|auth\/callback)/);
 
     for (const route of scenario.allowedRoutes) {

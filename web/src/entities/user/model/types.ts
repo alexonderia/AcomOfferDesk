@@ -8,11 +8,15 @@ export type UserListItem = {
   full_name: string | null;
   phone: string | null;
   mail: string | null;
+  email_verified?: boolean;
   company_name: string | null;
   inn: string | null;
   company_phone: string | null;
   company_mail: string | null;
   address: string | null;
   note: string | null;
+  units_count: number;
+  managers_count: number;
+  subordinates_count: number;
   actions: UserActions;
 };

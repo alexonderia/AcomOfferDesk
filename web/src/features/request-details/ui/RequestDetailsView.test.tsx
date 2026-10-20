@@ -1,10 +1,11 @@
 ﻿import { forwardRef, type ReactNode } from "react";
 import { ThemeProvider } from "@mui/material/styles";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RequestDetailsView } from "@features/request-details/ui/RequestDetailsView";
 import { getRequestDetails } from "@shared/api/requests/getRequestDetails";
+import { updateRequestDetails } from "@shared/api/requests/updateRequestDetails";
 import { appTheme } from "@shared/theme/appTheme";
 
 vi.mock("@features/request-details/model/useRequestDetails", () => ({
@@ -55,6 +56,10 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
     canDeleteRequestFiles: boolean;
     canUploadRequestFiles: boolean;
     canEnterEditMode: boolean;
+    onStartEdit: () => void;
+    status: string;
+    onStatusChange: (status: string) => void;
+    onSave: () => void;
     responsibleContact?: {
       fullName?: string | null;
       phone?: string | null;
@@ -70,6 +75,9 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
       <div data-testid="main-contact-name">{props.responsibleContact?.fullName ?? ""}</div>
       <div data-testid="main-contact-phone">{props.responsibleContact?.phone ?? ""}</div>
       <div data-testid="main-contact-mail">{props.responsibleContact?.mail ?? ""}</div>
+      <button type="button" onClick={props.onStartEdit}>Start editing</button>
+      <button type="button" onClick={() => props.onStatusChange("closed")}>Close request</button>
+      <button type="button" onClick={props.onSave}>Save request</button>
     </div>
   ),
 }));
@@ -177,6 +185,7 @@ const renderWithTheme = () =>
 describe("RequestDetailsView action-driven CTAs", () => {
   beforeEach(() => {
     vi.mocked(getRequestDetails).mockReset();
+    vi.mocked(updateRequestDetails).mockReset();
   });
 
   it("enables critical request/offers controls when backend actions are true", async () => {
@@ -284,6 +293,77 @@ describe("RequestDetailsView action-driven CTAs", () => {
 
     expect(screen.getByTestId("main-can-edit-request")).toHaveTextContent("false");
     expect(screen.getByTestId("main-can-enter-edit-mode")).toHaveTextContent("true");
+  });
+
+  it("allows closing a zero-initial request with its positive stored final amount", async () => {
+    const requestDetails = {
+      ...buildRequestDetails(),
+      initial_amount: 0,
+      final_amount: 123.45,
+      offers: [],
+    };
+    vi.mocked(getRequestDetails).mockResolvedValue(requestDetails as never);
+    vi.mocked(updateRequestDetails).mockResolvedValue(undefined as never);
+
+    renderWithTheme();
+
+    await screen.findByTestId("request-details-main-card");
+    fireEvent.click(screen.getByRole("button", { name: "Start editing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close request" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save request" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save request" }));
+
+    await waitFor(() => {
+      expect(updateRequestDetails).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
+    });
+  });
+
+  it("blocks closing a request without an initial amount", async () => {
+    const requestDetails = {
+      ...buildRequestDetails(),
+      initial_amount: null,
+      final_amount: 123.45,
+      offers: [],
+    };
+    vi.mocked(getRequestDetails).mockResolvedValue(requestDetails as never);
+    vi.mocked(updateRequestDetails).mockResolvedValue(undefined as never);
+
+    renderWithTheme();
+
+    await screen.findByTestId("request-details-main-card");
+    fireEvent.click(screen.getByRole("button", { name: "Start editing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close request" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save request" }));
+
+    expect(updateRequestDetails).not.toHaveBeenCalled();
+  });
+
+  it("allows the initial amount when the accepted offer has no amount", async () => {
+    const requestDetails = {
+      ...buildRequestDetails(),
+      final_amount: 100,
+      offers: [
+        {
+          ...buildRequestDetails().offers[0],
+          status: "accepted",
+          offer_amount: null,
+        },
+      ],
+    };
+    vi.mocked(getRequestDetails).mockResolvedValue(requestDetails as never);
+    vi.mocked(updateRequestDetails).mockResolvedValue(undefined as never);
+
+    renderWithTheme();
+
+    await screen.findByTestId("request-details-main-card");
+    fireEvent.click(screen.getByRole("button", { name: "Start editing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close request" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save request" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save request" }));
+
+    await waitFor(() => {
+      expect(updateRequestDetails).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
+    });
   });
 });
 

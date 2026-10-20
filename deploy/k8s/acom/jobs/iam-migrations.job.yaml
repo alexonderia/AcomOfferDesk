@@ -1,0 +1,64 @@
+# Flyway-миграции схемы IAM (БД acom_iam). Запускать ПОСЛЕ postgres Ready
+# и после идемпотентного CREATE DATABASE acom_iam (шаг deploy-скрипта).
+# SQL — ConfigMap iam-sql (scripts/make-configmaps.sh из iam/migrations/sql/:
+# V1.0.0 … V1.0.3). Образ тот же pinned flyway, что у order_database-миграций.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: iam-migrations
+  labels:
+    acom.deploy/phase: "iam"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: iam-migrations
+        acom.security/tier: app
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      containers:
+        - name: flyway
+          image: flyway/flyway:12.1.0
+          imagePullPolicy: Never
+          args:
+            # sslrootcert обязателен: JDBC при verify-full иначе ищет /root/.postgresql/root.crt.
+            - "-url=jdbc:postgresql://postgres.acom.svc.cluster.local:5432/acom_iam?sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
+            - "-user=$(POSTGRES_USER)"
+            - "-password=$(POSTGRES_PASSWORD)"
+            - "-locations=filesystem:/flyway/sql"
+            - "-connectRetries=30"
+            - "migrate"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acom-db-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-db-secret
+                  key: POSTGRES_PASSWORD
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djavax.net.ssl.trustStorePassword=changeit"
+          volumeMounts:
+            - name: iam-sql
+              mountPath: /flyway/sql
+              readOnly: true
+            - name: postgres-ca
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+      volumes:
+        - name: iam-sql
+          configMap:
+            name: iam-sql
+        - name: postgres-ca
+          secret:
+            secretName: postgres-tls
+            items:
+              - key: ca.crt
+                path: ca.crt

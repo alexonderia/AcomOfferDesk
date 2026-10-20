@@ -19,6 +19,9 @@ from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPol
 from app.schemas.requests import (
     DeletedAlertViewed,
     DeletedAlertViewedResponse,
+    EligibleRequestOwnerListData,
+    EligibleRequestOwnerListResponse,
+    EligibleRequestOwnerSchema,
     OfferItemSchema,
     OfferedRequestOfferSchema,
     OpenRequestItemSchema,
@@ -43,11 +46,12 @@ from app.schemas.requests import (
 )
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService, PreparedUpload
+from app.services.contractor_units import ContractorUnitService
 from app.services.notifications import NotificationService
 from app.services.department_scope import DepartmentScopeService
 from app.services.requests import RequestEditInput, RequestService
 from app.services.staff_access_scope import StaffAccessScopeService
-from app.services.user_notification_preferences import UserNotificationPreferencesService
+from app.services.unit_hierarchy import UnitHierarchyService
 
 router = APIRouter()
 
@@ -56,21 +60,46 @@ def _request_id_as_str(value: str | int) -> str:
     return str(value)
 
 
+@router.get("/requests/{request_id}/eligible-owners", response_model=EligibleRequestOwnerListResponse)
+async def list_eligible_request_owners(
+    request_id: str = PathParam(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> EligibleRequestOwnerListResponse:
+    async with uow:
+        items = await _build_request_service(uow).list_eligible_request_owners(
+            current_user=current_user,
+            request_id=request_id,
+        )
+    return EligibleRequestOwnerListResponse(
+        data=EligibleRequestOwnerListData(
+            items=[
+                EligibleRequestOwnerSchema(
+                    user_id=item.user_id,
+                    full_name=item.full_name,
+                    role=item.role,
+                    unavailable_period=(
+                        {
+                            "id": item.unavailable_period.id,
+                            "status": item.unavailable_period.status,
+                            "started_at": item.unavailable_period.started_at,
+                            "ended_at": item.unavailable_period.ended_at,
+                        }
+                        if item.unavailable_period is not None
+                        else None
+                    ),
+                )
+                for item in items
+            ],
+        ),
+    )
+
+
 def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:
     notifications_repo = getattr(uow, "notifications", None)
     if notifications_repo is None:
         return None
     return NotificationService(notifications_repo)
-
-
-def _build_notification_preferences_service(uow: UnitOfWork) -> UserNotificationPreferencesService | None:
-    if uow.user_contact_channels is None or uow.user_notification_preferences is None:
-        return None
-    return UserNotificationPreferencesService(
-        uow.user_contact_channels,
-        uow.user_notification_preferences,
-        profiles=uow.profiles,
-    )
 
 
 def _build_request_service(
@@ -90,7 +119,6 @@ def _build_request_service(
         email_notifications=email_notifications,
         file_service=file_service,
         notifications=_build_notification_service(uow),
-        notification_preferences=_build_notification_preferences_service(uow),
         after_commit_hook_registrar=after_commit_hook_registrar,
     )
 
@@ -189,7 +217,12 @@ def _open_request_item_schema(
                     request_owner_user_id=item.owner_user_id,
                     contractor_user_id=current_user.user_id,
                     offer_status=offer.status,
+                    request_status=item.status,
                     can_manage_in_scope=True,
+                    has_other_accepted_offer=any(
+                        other.offer_id != offer.offer_id and other.status == "accepted"
+                        for other in item.offers
+                    ),
                 ),
             )
             for offer in item.offers
@@ -652,7 +685,12 @@ async def get_request_details(
                     request_owner_user_id=item.owner_user_id,
                     contractor_user_id=offer.contractor_user_id,
                     offer_status=offer.status,
+                    request_status=item.status,
                     can_manage_in_scope=can_manage_offer,
+                    has_other_accepted_offer=any(
+                        other.offer_id != offer.offer_id and other.status == "accepted"
+                        for other in item.offers
+                    ),
                     has_department_offer_update_scope=has_department_offer_update_scope,
                     can_accept_in_scope=can_accept_in_scope,
                     can_reject_in_scope=can_reject_in_scope,
@@ -696,7 +734,7 @@ async def create_request(
     deadline_at: datetime = Form(...),
     normative_file_id: int = Form(...),
     description: str | None = Form(default=None),
-    initial_amount: float | None = Form(default=None),
+    initial_amount: float = Form(...),
     id_plan: int | None = Form(default=None),
     additional_emails: list[str] | None = Form(default=None),
     hidden_contractor_ids: list[str] | None = Form(default=None),
@@ -717,8 +755,8 @@ async def create_request(
             email_notifications = EmailNotificationService(
                 uow.profiles,
                 uow.requests,
+                uow.users,
                 uow.files,
-                notification_preferences=_build_notification_preferences_service(uow),
             )
             service = _build_request_service(
                 uow,
@@ -786,8 +824,8 @@ async def send_request_email_notifications(
         email_notifications = EmailNotificationService(
             uow.profiles,
             uow.requests,
+            uow.users,
             uow.files,
-            notification_preferences=_build_notification_preferences_service(uow),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         service = _build_request_service(
@@ -906,10 +944,22 @@ async def download_file(
         if is_normative_file:
             UserPolicy.ensure_can_view_normative_files(current_user)
         elif current_user.role_id == settings.contractor_role_id:
-            linked_to_open_request = await uow.requests.is_file_linked_to_visible_open_request(
-                contractor_user_id=current_user.user_id,
-                file_id=file_id,
-            )
+            linked_to_open_request = False
+            open_request_identity = await uow.requests.get_open_request_identity_by_request_file_id(file_id=file_id)
+            if open_request_identity is not None:
+                request_id, request_owner_user_id = open_request_identity
+                if not await uow.requests.is_hidden_for_contractor(
+                    request_id=request_id,
+                    contractor_user_id=current_user.user_id,
+                ):
+                    request_owner = await uow.users.get_by_id(request_owner_user_id)
+                    if RequestPolicy.is_contractor_request_lifecycle_eligible(
+                        request_owner_role_id=request_owner.id_role if request_owner is not None else None,
+                    ):
+                        linked_to_open_request = await ContractorUnitService(users=uow.users).can_contractor_access_request_owner(
+                            contractor_user_id=current_user.user_id,
+                            request_owner_user_id=request_owner_user_id,
+                        )
             linked_to_own_offer = await uow.offers.is_file_linked_to_contractor(
                 contractor_user_id=current_user.user_id,
                 file_id=file_id,
@@ -1010,13 +1060,11 @@ async def _resolve_department_owner_scope_ids_for_current_user(
         settings.economist_role_id,
     }:
         return set()
-    root_user_id = await _resolve_department_root_user_id(
-        uow=uow,
-        current_user=current_user,
+    return set(
+        await DepartmentScopeService(uow.users).resolve_department_owner_ids_for_current_user(
+            current_user=current_user,
+        )
     )
-    if root_user_id is None:
-        return set()
-    return await _collect_hierarchy_user_ids(uow=uow, root_user_id=root_user_id)
 
 
 async def _resolve_standard_owner_scope_ids_for_current_user(
@@ -1031,81 +1079,10 @@ async def _resolve_standard_owner_scope_ids_for_current_user(
         settings.lead_economist_role_id,
         settings.economist_role_id,
     }:
-        users = getattr(uow, "users", None)
-        if users is not None and callable(getattr(users, "get_by_id", None)):
-            department_owner_ids = await DepartmentScopeService(users).resolve_department_owner_ids_for_current_user(
-                current_user=current_user,
-            )
-            if department_owner_ids:
-                return set(department_owner_ids)
-
-        if current_user.role_id in {
-            settings.project_manager_role_id,
-            settings.lead_economist_role_id,
-        }:
-            return await _collect_hierarchy_user_ids(uow=uow, root_user_id=current_user.user_id)
-        lead_root_user_id = await _resolve_lead_economist_scope_root_user_id(
-            uow=uow,
-            current_user_id=current_user.user_id,
+        visible_user_ids = await UnitHierarchyService(uow.users).get_visible_user_ids(
+            current_user=current_user,
         )
-        visible = await _collect_hierarchy_user_ids(uow=uow, root_user_id=lead_root_user_id)
-        return visible | {current_user.user_id}
-    return set()
-
-
-async def _resolve_lead_economist_scope_root_user_id(
-    *,
-    uow: UnitOfWork,
-    current_user_id: str,
-) -> str:
-    cursor_id: str | None = current_user_id
-    visited: set[str] = set()
-    while cursor_id is not None and cursor_id not in visited:
-        visited.add(cursor_id)
-        cursor_user = await uow.users.get_by_id(cursor_id)
-        if cursor_user is None:
-            break
-        if cursor_user.id_role == settings.lead_economist_role_id:
-            return cursor_user.id
-        cursor_id = cursor_user.id_parent
-    return current_user_id
-
-
-async def _resolve_department_root_user_id(
-    *,
-    uow: UnitOfWork,
-    current_user: CurrentUser,
-) -> str | None:
-    if current_user.role_id == settings.project_manager_role_id:
-        return current_user.user_id
-    cursor_id: str | None = current_user.user_id
-    visited: set[str] = set()
-    while cursor_id is not None and cursor_id not in visited:
-        visited.add(cursor_id)
-        cursor_user = await uow.users.get_by_id(cursor_id)
-        if cursor_user is None:
+        if visible_user_ids is None:
             return None
-        if cursor_user.id_role == settings.project_manager_role_id:
-            return cursor_user.id
-        cursor_id = cursor_user.id_parent
-    return None
-
-
-async def _collect_hierarchy_user_ids(*, uow: UnitOfWork, root_user_id: str) -> set[str]:
-    rows = await uow.users.list_active_user_parent_pairs()
-    children_by_parent: dict[str, list[str]] = {}
-    for user_id, parent_id in rows:
-        if parent_id is None:
-            continue
-        children_by_parent.setdefault(parent_id, []).append(user_id)
-
-    visible: set[str] = {root_user_id}
-    queue: list[str] = [root_user_id]
-    while queue:
-        manager_id = queue.pop()
-        for child_id in children_by_parent.get(manager_id, []):
-            if child_id in visible:
-                continue
-            visible.add(child_id)
-            queue.append(child_id)
-    return visible
+        return visible_user_ids
+    return set()

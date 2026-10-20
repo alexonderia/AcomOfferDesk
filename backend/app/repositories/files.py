@@ -54,10 +54,13 @@ class FileRepository:
         return "actual"
 
     async def acquire_storage_object_lock(self, *, content_sha256: str) -> None:
-        await self._session.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:content_sha256))"),
-            {"content_sha256": content_sha256},
-        )
+        await self._acquire_transaction_lock(lock_key=content_sha256)
+
+    async def acquire_normative_file_name_lock(self, *, original_name: str) -> None:
+        await self._acquire_transaction_lock(lock_key=f"normative-name:{original_name}")
+
+    async def acquire_normative_file_id_allocation_lock(self) -> None:
+        await self._acquire_transaction_lock(lock_key="normative-id-allocation")
 
     async def get_storage_object_by_content_hash(
         self,
@@ -115,6 +118,22 @@ class FileRepository:
 
     async def get_normative_file_id(self, *, normative_id: int) -> int | None:
         stmt = select(NormativeFile.id_file).where(NormativeFile.id == normative_id)
+        result = await self._session.execute(stmt)
+        value = result.scalar_one_or_none()
+        return int(value) if value is not None else None
+
+    async def find_normative_file_id_by_original_name(
+        self,
+        *,
+        original_name: str,
+    ) -> int | None:
+        stmt = (
+            select(NormativeFile.id)
+            .join(File, File.id == NormativeFile.id_file)
+            .where(File.original_name == original_name)
+            .order_by(NormativeFile.id.asc())
+            .limit(1)
+        )
         result = await self._session.execute(stmt)
         value = result.scalar_one_or_none()
         return int(value) if value is not None else None
@@ -358,3 +377,9 @@ class FileRepository:
     async def _scalar_count(self, stmt) -> int:
         result = await self._session.execute(stmt)
         return int(result.scalar_one())
+
+    async def _acquire_transaction_lock(self, *, lock_key: str) -> None:
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": lock_key},
+        )

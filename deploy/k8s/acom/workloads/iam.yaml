@@ -1,0 +1,94 @@
+# iam — собственный OIDC-сервис (замена запрещённого Сторонняя SSO), порт 8100.
+# Источник: iam/Dockerfile + iam/iam_app (ветка dev, PR #53), compose-секция iam.
+# Hardening как в compose: read-only rootfs, cap_drop ALL, no-new-privileges, tmpfs /tmp.
+# Образ в k8s: acom-iam:prod-1 (build iam/Dockerfile, тег при import в containerd).
+# Health: /health/live, /health/ready, /health (iam/iam_app/main.py).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: iam
+  template:
+    metadata:
+      labels:
+        app: iam
+        acom.security/tier: app
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: iam
+          image: acom-iam:prod-1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8100
+          envFrom:
+            - secretRef:
+                name: acom-iam-secrets
+            - configMapRef:
+                name: acom-app-config
+          # env приоритетнее envFrom: APP_ENV=production включает cookie_secure
+          # (валидатор iam_settings: production или https public_base_url).
+          env:
+            - name: APP_ENV
+              value: production
+          startupProbe:
+            tcpSocket:
+              port: 8100
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8100
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8100
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam
+spec:
+  type: ClusterIP
+  selector:
+    app: iam
+  ports:
+    - name: http
+      port: 8100
+      targetPort: 8100

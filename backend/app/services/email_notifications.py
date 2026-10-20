@@ -5,6 +5,7 @@ from app.infrastructure.email_service import SMTPEmailService
 from app.repositories.files import FileRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
+from app.repositories.users import UserRepository
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
 from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
 from app.services.user_notification_preferences import UserNotificationPreferencesService
@@ -15,6 +16,7 @@ class EmailNotificationService:
         self,
         profiles: ProfileRepository,
         requests: RequestRepository,
+        users: UserRepository,
         files: FileRepository | None = None,
         *,
         notification_preferences: UserNotificationPreferencesService | None = None,
@@ -22,6 +24,7 @@ class EmailNotificationService:
     ) -> None:
         self._profiles = profiles
         self._requests = requests
+        self._users = users
         self._files = files
         self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
@@ -47,6 +50,7 @@ class EmailNotificationService:
         use_case = SendRequestNotificationEmailUseCase(
             request_repository=self._requests,
             profile_repository=self._profiles,
+            users=self._users,
             email_service=self._email_service,
             app_url=settings.web_base_url,
             presentation_attachment_service=self._presentation_attachment_service(),
@@ -73,6 +77,7 @@ class EmailNotificationService:
         use_case = SendRequestNotificationEmailUseCase(
             request_repository=self._requests,
             profile_repository=self._profiles,
+            users=self._users,
             email_service=self._email_service,
             app_url=settings.web_base_url,
             presentation_attachment_service=self._presentation_attachment_service(),

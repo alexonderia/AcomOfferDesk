@@ -1,4 +1,5 @@
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import {
   Alert,
   Box,
@@ -11,7 +12,7 @@ import {
 } from '@mui/material';
 import { useRef, useState } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
-import { uploadNormativeFile } from '@shared/api/normative';
+import { replaceNormativeFile, uploadNormativeFile } from '@shared/api/normative';
 import { normativeFileStatusLabels, type NormativeFileItem, type NormativeFileStatus } from '@shared/api/normative/types';
 import { hasPermission } from '@shared/auth/permissions';
 import { DataTable, type DataTableColumn } from '@shared/components/DataTable';
@@ -35,7 +36,9 @@ export const NormativeFilesPageView = () => {
   const { items, isLoading, error, updatingIds, reload, handleStatusChange } = useNormativeFilesPage();
   const { showErrorToast, showSuccessToast } = useSystemToasts();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [replacingId, setReplacingId] = useState<number | null>(null);
 
   const handleDownload = async (item: NormativeFileItem) => {
     try {
@@ -78,20 +81,61 @@ export const NormativeFilesPageView = () => {
     }
   };
 
+  const handleReplace = async (file: File) => {
+    if (replacingId === null) {
+      return;
+    }
+    const sizeError = getUploadFileSizeError(file);
+    if (sizeError) {
+      showErrorToast(sizeError);
+      setReplacingId(null);
+      if (replaceInputRef.current) {
+        replaceInputRef.current.value = '';
+      }
+      return;
+    }
+
+    try {
+      await replaceNormativeFile(replacingId, file);
+      showSuccessToast('Нормативный документ заменён');
+      await reload();
+    } catch (replaceError) {
+      showErrorToast(replaceError instanceof Error ? replaceError.message : 'Не удалось заменить нормативный документ');
+    } finally {
+      setReplacingId(null);
+      if (replaceInputRef.current) {
+        replaceInputRef.current.value = '';
+      }
+    }
+  };
+
   return (
     <Stack spacing={1.5}>
       {canCreateNormativeFile ? (
-        <input
-          ref={fileInputRef}
-          type="file"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) {
-              void handleUpload(file);
-            }
-          }}
-        />
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void handleUpload(file);
+              }
+            }}
+          />
+          <input
+            ref={replaceInputRef}
+            type="file"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void handleReplace(file);
+              }
+            }}
+          />
+        </>
       ) : null}
 
       {error ? <Alert severity="error">{error}</Alert> : null}
@@ -132,16 +176,32 @@ export const NormativeFilesPageView = () => {
             ) : (
               normativeFileStatusLabels[row.status]
             ),
-            <Button
-              key={`actions-${row.id}`}
-              variant="outlined"
-              size="small"
-              startIcon={<DownloadOutlinedIcon />}
-              onClick={() => void handleDownload(row)}
-              sx={{ textTransform: 'none', borderRadius: 1 }}
-            >
-              Скачать
-            </Button>,
+            <Stack key={`actions-${row.id}`} direction="row" spacing={1} flexWrap="wrap">
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<DownloadOutlinedIcon />}
+                onClick={() => void handleDownload(row)}
+                sx={{ textTransform: 'none', borderRadius: 1 }}
+              >
+                Скачать
+              </Button>
+              {canCreateNormativeFile ? (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled={replacingId !== null}
+                  startIcon={<UploadFileOutlinedIcon />}
+                  onClick={() => {
+                    setReplacingId(row.id);
+                    replaceInputRef.current?.click();
+                  }}
+                  sx={{ textTransform: 'none', borderRadius: 1 }}
+                >
+                  Заменить
+                </Button>
+              ) : null}
+            </Stack>,
           ]}
           isLoading={isLoading}
           emptyMessage="Нормативные документы не добавлены"

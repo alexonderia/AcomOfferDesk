@@ -118,6 +118,8 @@ class OfferActionBuilder:
         contractor_user_id: str,
         offer_status: str,
         can_manage_in_scope: bool,
+        request_status: str | None = None,
+        has_other_accepted_offer: bool = False,
         has_department_offer_update_scope: bool = False,
         can_accept_in_scope: bool | None = None,
         can_reject_in_scope: bool | None = None,
@@ -174,6 +176,7 @@ class OfferActionBuilder:
             can_accept_in_scope = can_manage_request_offer
         if can_reject_in_scope is None:
             can_reject_in_scope = can_manage_request_offer
+        can_mutate_offer = request_status not in {"closed", "cancelled"}
         return OfferActionsSchema(
             can_open_workspace=OfferPolicy.can_access_offer_workspace(
                 current_user,
@@ -198,32 +201,36 @@ class OfferActionBuilder:
             and (
                 current_user.role_id != settings.contractor_role_id
                 or offer_status not in {"accepted", "rejected"}
-            ),
+            ) and can_mutate_offer,
             can_accept=(
                 can_accept_in_scope
                 and offer_status != "accepted"
+                and not has_other_accepted_offer
                 and (True if has_custom_accept_scope else can_update_status)
+                and can_mutate_offer
             ),
             can_reject=(
                 can_reject_in_scope
                 and offer_status != "rejected"
                 and (True if has_custom_reject_scope else can_update_status)
+                and can_mutate_offer
             ),
             can_delete=(
                 can_update_status
                 and offer_status != "deleted"
                 and (can_manage_request_offer or can_manage_own_offer)
+                and can_mutate_offer
             ),
             can_upload_files=(
                 can_upload_files_for_contractor
                 if is_contractor
                 else (can_upload_files_by_permission or has_department_offer_update_scope)
-            ),
+            ) and can_mutate_offer,
             can_delete_files=(
                 can_delete_files_for_contractor
                 if is_contractor
                 else (can_delete_files_by_permission or has_department_offer_update_scope)
-            ),
+            ) and can_mutate_offer,
         )
 
 
@@ -280,17 +287,11 @@ class ChatActionBuilder:
 class UserActionBuilder:
     @staticmethod
     def _requires_hierarchy_management(current_user: CurrentUser) -> bool:
-        if current_user.role_id not in {
+        return current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
-        }:
-            return False
-        if has_permission(current_user, PermissionCodes.PROFILE_MANAGE_ANY):
-            return False
-        if has_permission(current_user, PermissionCodes.UNAVAILABILITY_MANAGE_ALL):
-            return False
-        return True
+        }
 
     @staticmethod
     def build_list_item(
@@ -298,7 +299,7 @@ class UserActionBuilder:
         *,
         target_user_id: str,
         target_role_id: int,
-        target_tg_user_id: int | None = None,
+        is_manual: bool = False,
         is_hierarchy_subordinate: bool | None = None,
     ) -> UserActionsSchema:
         can_manage_subordinate_target = _can_manage_subordinate_target(
@@ -341,11 +342,7 @@ class UserActionBuilder:
             }
         ):
             can_update_status = can_update_status and can_manage_subordinate_role
-        can_update_manager = (
-            UserPolicy.can_update_user_manager(current_user)
-            and can_manage_subordinate_role
-            and can_update_manager_target_role
-        )
+        can_update_manager = False  # legacy users.id_parent; UI uses unit hierarchy
         if (
             UserActionBuilder._requires_hierarchy_management(current_user)
             and is_hierarchy_subordinate is not True
@@ -357,12 +354,16 @@ class UserActionBuilder:
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
+            can_manage_contractor_unit_bindings=(
+                UserPolicy.can_manage_contractor_unit_bindings(current_user)
+                and target_role_id == settings.contractor_role_id
+            ),
             can_update_role=can_update_role,
             can_update_manager=can_update_manager,
             can_manage_manual_contractor=(
                 UserPolicy.can_manage_manual_contractors(current_user)
                 and target_role_id == settings.contractor_role_id
-                and target_tg_user_id is None
+                and is_manual
             ),
         )
 
@@ -400,11 +401,7 @@ class UserActionBuilder:
         return UserActionsSchema(
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
-            can_update_manager=(
-                UserPolicy.can_update_user_manager(current_user)
-                and can_manage_subordinate_target
-                and can_update_manager_target_role
-            ),
+            can_update_manager=False,  # legacy users.id_parent; UI uses unit hierarchy
             can_manage_subordinate_unavailability=can_manage_subordinate,
         )
 
@@ -414,18 +411,15 @@ class ContractorActionBuilder:
     def build_contractor_actions(
         current_user: CurrentUser,
         *,
-        target_tg_user_id: int | None = None,
-        is_manual: bool | None = None,
+        is_manual: bool = False,
     ) -> UserActionsSchema:
         can_update_status = UserPolicy.can_update_contractor_profile_status(current_user)
         can_manage_manual_contractor = UserPolicy.can_manage_manual_contractors(current_user)
-        if is_manual is not None:
-            can_manage_manual_contractor = can_manage_manual_contractor and is_manual
-        else:
-            can_manage_manual_contractor = can_manage_manual_contractor and target_tg_user_id is None
+        can_manage_manual_contractor = can_manage_manual_contractor and is_manual
         return UserActionsSchema(
             can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
             can_update_status=can_update_status,
+            can_manage_contractor_unit_bindings=UserPolicy.can_manage_contractor_unit_bindings(current_user),
             can_manage_manual_contractor=can_manage_manual_contractor,
         )
 
@@ -537,7 +531,15 @@ class OfferActionResolver:
         current_user: CurrentUser,
         request_owner_user_id: str,
     ) -> bool:
-        return False
+        if not has_permission(
+            current_user,
+            PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE,
+        ):
+            return False
+        return await DepartmentScopeService(self._users).is_user_in_current_user_department(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
 
     async def resolve_workspace_context(
         self,
@@ -557,7 +559,7 @@ class OfferActionResolver:
             raise NotFound("Offer owner not found")
         offer_is_manual = (
             offer_owner.id_role == settings.contractor_role_id
-            and offer_owner.tg_user_id is None
+            and not await self._users.has_legacy_messenger_account(user_id=offer_owner.id)
         )
 
         can_create_new_offer = False
@@ -625,6 +627,10 @@ class OfferActionResolver:
             current_user=current_user,
             request_owner_user_id=request.id_user,
         )
+        has_other_accepted_offer = await self._requests.has_accepted_offer_for_request(
+            request_id=request.id,
+            exclude_offer_id=offer.id,
+        )
 
         offer_actions = OfferActionBuilder.build(
             current_user,
@@ -632,7 +638,9 @@ class OfferActionResolver:
             request_owner_user_id=request.id_user,
             contractor_user_id=offer.id_user,
             offer_status=offer.status,
+            request_status=request.status,
             can_manage_in_scope=can_manage_offer_in_scope,
+            has_other_accepted_offer=has_other_accepted_offer,
             has_department_offer_update_scope=has_department_offer_update_scope,
             can_accept_in_scope=can_accept_in_scope,
             can_reject_in_scope=can_reject_in_scope,

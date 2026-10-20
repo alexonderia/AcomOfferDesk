@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 from app.core.config import settings
+from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser
 from app.domain.authorization import require_permission
 from app.domain.exceptions import Conflict, Forbidden
@@ -13,6 +14,8 @@ from app.infrastructure.email.email_templates.contractor_invitation_email import
     build_contractor_invitation_email_payload,
 )
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
+from app.infrastructure.iam_client import IamClient
+from app.services.registration_invitations import RegistrationInvitationService
 from app.services.email_delivery_events import (
     BATCH_OPERATION_KIND_CONTRACTOR_INVITE,
     record_email_batch_operation_state,
@@ -47,6 +50,9 @@ class ContractorInvitationService:
         *,
         email_service: SMTPEmailService | None = None,
         attachment_service: NormativeEmailAttachmentService,
+        invitation_service: RegistrationInvitationService | None = None,
+        uow: UnitOfWork | None = None,
+        iam_client: IamClient | None = None,
         after_commit_hook_registrar=None,
     ) -> None:
         self._email_service = email_service or SMTPEmailService(
@@ -58,6 +64,9 @@ class ContractorInvitationService:
             from_name=settings.email_from_name,
         )
         self._attachment_service = attachment_service
+        self._invitation_service = invitation_service
+        self._uow = uow
+        self._iam_client = iam_client or IamClient()
         self._after_commit_hook_registrar = after_commit_hook_registrar
 
     async def invite_contractors(
@@ -69,7 +78,7 @@ class ContractorInvitationService:
     ) -> ContractorInviteResult:
         require_permission(
             current_user,
-            PermissionCodes.CONTRACTORS_MANUAL_CREATE,
+            PermissionCodes.USERS_REGISTRATION_INVITE,
             message="Недостаточно прав для отправки приглашений контрагентам",
         )
         if current_user.role_id == settings.contractor_role_id:
@@ -88,16 +97,16 @@ class ContractorInvitationService:
         presentation_attachment = await self._attachment_service.load_required_attachment(
             normative_file_id=normative_file_id,
         )
-        portal_url = self._resolve_portal_url()
         failed: list[InviteFailure] = []
         sent: list[str] = []
         operation_id = generate_correlation_id()
         first_error_message: str | None = None
 
         for email in normalized_valid:
+            registration_url = await self._registration_url(current_user=current_user, email=email)
             payload = build_contractor_invitation_email_payload(
                 to_email=email,
-                portal_url=portal_url,
+                portal_url=registration_url,
                 contact_name=settings.invitation_contact_name,
                 contact_email=settings.invitation_contact_email,
                 contact_phone=settings.invitation_contact_phone,
@@ -186,6 +195,36 @@ class ContractorInvitationService:
             raise Conflict("Необходимо указать хотя бы один email")
 
         return normalized_valid, invalid
+
+    async def _registration_url(self, *, current_user: CurrentUser, email: str) -> str | None:
+        if self._invitation_service is None:
+            return self._resolve_portal_url()
+        if self._uow is not None:
+            existing_user_id = await self._invitation_service.resolve_existing_user_id(email)
+            if existing_user_id is not None:
+                binding = await self._uow.user_auth_accounts.get_by_user_provider(
+                    user_id=existing_user_id,
+                    provider="iam",
+                )
+                if binding is not None:
+                    credential_state = await self._iam_client.get_credential_state(
+                        account_id=binding.external_subject_id,
+                    )
+                    action = await self._iam_client.create_action_token(
+                        account_id=binding.external_subject_id,
+                        purpose="password_setup" if not credential_state.password_set else "password_reset",
+                    )
+                    from urllib.parse import quote
+
+                    path = "setup" if not credential_state.password_set else "reset"
+                    return f"{settings.iam_bff_auth_base_url}/password/{path}?token={quote(action.token, safe='')}"
+        raw_token = self._invitation_service.create_contractor_invitation(
+            current_user=current_user,
+            email=email,
+        )
+        if settings.web_base_url:
+            return f"{settings.web_base_url.rstrip('/')}/register?token={raw_token}"
+        return f"/register?token={raw_token}"
 
     def _resolve_portal_url(self) -> str | None:
         if settings.invitation_portal_url:

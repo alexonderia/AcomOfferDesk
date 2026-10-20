@@ -2,18 +2,23 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import SaveOutlined from '@mui/icons-material/SaveOutlined';
 import {
+  Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
+  FormControlLabel,
+  FormGroup,
   InputBase,
   MenuItem,
+  Select,
   Stack,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
@@ -22,6 +27,7 @@ import {
   InfoRow,
   SourceSection,
   UserStatusPill,
+  EmailWithVerifiedMark,
   dialogContentSx,
   dialogPaperSx,
   normalizeUserStatus,
@@ -31,15 +37,24 @@ import {
   type ContractorEditField,
 } from '@features/contractors/hooks/useContractorTableEditing';
 import type { ContractorListItem } from '@shared/api/contractors/listContractors';
+import {
+  getContractorRootUnits,
+  type ContractorRootUnitsResult,
+} from '@shared/api/contractors/getContractorRootUnits';
 import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
+import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
+import { useAuth } from '@app/providers/AuthProvider';
+import { hasPermission } from '@shared/auth/permissions';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { ContractorMobileCard } from './ContractorMobileCard';
+import { ContractorUnitsCell } from './ContractorUnitsCell';
 import { ContractorEditableFieldFrame, ContractorReadOnlyFieldFrame } from './contractorFieldValidation';
 import {
   ContractorStatusPill,
   ContractorTableCell,
   formatPhoneForView,
+  getContractorStatusTone,
   statusLabelForFilter,
   statusMemoText,
 } from './contractorUi';
@@ -50,8 +65,30 @@ const statusSchema = z.object({
 
 type StatusFormValues = z.infer<typeof statusSchema>;
 
+const inlineStatusOptions: StatusFormValues['user_status'][] = ['review', 'active', 'inactive', 'blacklist'];
+const userStatusLabelByValue: Record<StatusFormValues['user_status'], string> = {
+  review: 'На проверке',
+  active: 'Активен',
+  inactive: 'Неактивен',
+  blacklist: 'В черном списке',
+};
+
+const getStatusPillColor = (theme: Theme, status: string) => {
+  const tone = getContractorStatusTone(status);
+  return tone === 'success'
+    ? theme.palette.success.main
+    : tone === 'warning'
+      ? theme.palette.warning.main
+      : tone === 'error'
+        ? theme.palette.error.main
+        : tone === 'info'
+          ? theme.palette.info.main
+          : theme.palette.text.secondary;
+};
+
 const VIEW_COLUMN_IDS = [
   'status',
+  'units',
   'login',
   'full_name',
   'phone',
@@ -62,7 +99,6 @@ const VIEW_COLUMN_IDS = [
 
 const ALL_COLUMN_IDS = [
   ...VIEW_COLUMN_IDS,
-  'max_user_id',
   'company_name',
   'inn',
   'address',
@@ -79,12 +115,16 @@ const toUserListItem = (row: ContractorListItem): UserListItem => ({
   full_name: row.fullName,
   phone: row.phone,
   mail: row.mail,
+  email_verified: Boolean(row.emailVerified),
   company_name: row.companyName,
   inn: row.inn,
   company_phone: row.companyPhone,
   company_mail: row.companyMail,
   address: row.address,
   note: row.note,
+  units_count: 0,
+  managers_count: 0,
+  subordinates_count: 0,
   actions: row.actions,
 });
 
@@ -121,10 +161,18 @@ export const ContractorsListView = ({
   onAddClick,
 }: ContractorsListViewProps) => {
   const theme = useTheme();
+  const { session } = useAuth();
+  const canViewEmailVerification = hasPermission(session, 'users.registration.approve');
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const [isEditMode, setIsEditMode] = useState(false);
+  const [inlineStatusSavingUserId, setInlineStatusSavingUserId] = useState<string | null>(null);
   const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([...VIEW_COLUMN_IDS]);
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
+  const [selectedUserRootUnits, setSelectedUserRootUnits] = useState<ContractorRootUnitsResult | null>(null);
+  const [rootUnitDraftById, setRootUnitDraftById] = useState<Record<number, boolean>>({});
+  const [isLoadingRootUnits, setIsLoadingRootUnits] = useState(false);
+  const [isSavingRootUnits, setIsSavingRootUnits] = useState(false);
+  const [rootUnitsError, setRootUnitsError] = useState<string | null>(null);
   const [expandedContractorCardsById, setExpandedContractorCardsById] = useState<
     Record<string, { contact: boolean; company: boolean }>
   >({});
@@ -162,10 +210,64 @@ export const ContractorsListView = ({
     reset({ user_status: normalizeUserStatus(selectedUser.status) });
   }, [reset, selectedUser]);
 
+  useEffect(() => {
+    if (!selectedUser) {
+      setSelectedUserRootUnits(null);
+      setRootUnitDraftById({});
+      setRootUnitsError(null);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsLoadingRootUnits(true);
+    setRootUnitsError(null);
+
+    void getContractorRootUnits(selectedUser.user_id)
+      .then((result) => {
+        if (isCancelled) {
+          return;
+        }
+        setSelectedUserRootUnits(result);
+        setRootUnitDraftById(
+          Object.fromEntries(result.items.map((item) => [item.unitId, item.isBound])),
+        );
+      })
+      .catch((error) => {
+        if (isCancelled) {
+          return;
+        }
+        setSelectedUserRootUnits(null);
+        setRootUnitDraftById({});
+        setRootUnitsError(
+          error instanceof Error ? error.message : 'Не удалось загрузить привязки к подразделениям',
+        );
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingRootUnits(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedUser]);
+
   const canEditContractorData = useMemo(
     () => contractors.some((row) => row.actions.manage_manual_contractor),
     [contractors],
   );
+
+  const manageableRootUnitIds = useMemo(
+    () => selectedUserRootUnits?.items.filter((item) => item.canManage).map((item) => item.unitId) ?? [],
+    [selectedUserRootUnits],
+  );
+
+  const hasRootUnitChanges = useMemo(() => (
+    selectedUserRootUnits?.items.some(
+      (item) => item.canManage && rootUnitDraftById[item.unitId] !== item.isBound,
+    ) ?? false
+  ), [rootUnitDraftById, selectedUserRootUnits]);
 
   useEffect(() => {
     setVisibleColumnIds(isEditMode ? [...ALL_COLUMN_IDS] : [...VIEW_COLUMN_IDS]);
@@ -191,6 +293,28 @@ export const ContractorsListView = ({
     await handleSave();
   };
 
+  const handleInlineStatusChange = async (
+    row: ContractorListItem,
+    nextStatus: StatusFormValues['user_status'],
+  ) => {
+    if (nextStatus === row.status || inlineStatusSavingUserId !== null) {
+      return;
+    }
+    try {
+      setInlineStatusSavingUserId(row.userId);
+      await updateContractorStatus(row.userId, { user_status: nextStatus });
+      showSystemToast({
+        severity: 'success',
+        message: 'Статус успешно обновлён.',
+      });
+      await onStatusUpdated();
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : 'Не удалось обновить статус');
+    } finally {
+      setInlineStatusSavingUserId(null);
+    }
+  };
+
   const contractorStatusFilterOptions = useMemo(
     () => Array.from(new Set(contractors.map((row) => statusLabelForFilter(row.status)))).map((status) => ({
       label: status,
@@ -205,6 +329,32 @@ export const ContractorsListView = ({
     }
     return <ContractorReadOnlyFieldFrame locked>{content}</ContractorReadOnlyFieldFrame>;
   }, [isEditMode]);
+
+  const renderStatusField = useCallback((row: ContractorListItem) => {
+    const draft = getDraft(row);
+    const value = (draft.status as string | undefined) ?? getFieldValue(row, 'status');
+    const dirty = isFieldDirty(row, 'status', draft);
+
+    return (
+      <ContractorEditableFieldFrame dirty={dirty}>
+        <Select
+          value={value}
+          onChange={(event) => updateDraftValue(row, 'status', event.target.value)}
+          disabled={isSaving}
+          variant="standard"
+          disableUnderline
+          aria-label={`${row.userId}-status`}
+          inputProps={{ 'aria-label': `${row.userId}-status` }}
+          sx={{ width: '100%', fontSize: 14 }}
+        >
+          <MenuItem value="review">На проверке</MenuItem>
+          <MenuItem value="active">Активен</MenuItem>
+          <MenuItem value="inactive">Неактивен</MenuItem>
+          <MenuItem value="blacklist">В черном списке</MenuItem>
+        </Select>
+      </ContractorEditableFieldFrame>
+    );
+  }, [getDraft, getFieldValue, isFieldDirty, isSaving, updateDraftValue]);
 
   const renderEditableField = useCallback((
     row: ContractorListItem,
@@ -261,11 +411,72 @@ export const ContractorsListView = ({
         getFilterValue: (row) => statusLabelForFilter(row.status),
         getSearchValue: (row) => statusLabelForFilter(row.status),
         getSortValue: (row) => statusLabelForFilter(row.status),
-        renderCell: (row) => (
-          isEditMode
-            ? renderLockedCell(<ContractorStatusPill value={row.status} />)
-            : <ContractorStatusPill value={row.status} />
-        ),
+        renderCell: (row) => {
+          if (!isEditMode && row.actions.update_status) {
+            const statusColor = getStatusPillColor(theme, row.status);
+            return (
+              <Select
+                value={normalizeUserStatus(row.status)}
+                onChange={(event) => {
+                  void handleInlineStatusChange(row, event.target.value as StatusFormValues['user_status']);
+                }}
+                onClick={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                disabled={inlineStatusSavingUserId !== null}
+                variant="standard"
+                disableUnderline
+                aria-label={`${row.userId}-status`}
+                inputProps={{ 'aria-label': `${row.userId}-status` }}
+                sx={{
+                  width: '100%',
+                  minHeight: 30,
+                  px: 1.1,
+                  border: '1.5px solid',
+                  borderColor: statusColor,
+                  borderRadius: '999px',
+                  bgcolor: alpha(statusColor, 0.1),
+                  color: statusColor,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  '& .MuiSelect-select': {
+                    minHeight: 'unset !important',
+                    py: 0.45,
+                    px: 0,
+                    pr: 2.5,
+                    fontWeight: 600,
+                    color: statusColor,
+                  },
+                  '& .MuiSelect-icon': { color: statusColor, right: 4 },
+                  '&:before, &:after': { display: 'none' },
+                  '&.Mui-disabled': {
+                    opacity: 0.7,
+                    color: statusColor,
+                  },
+                }}
+              >
+                {inlineStatusOptions.map((status) => (
+                  <MenuItem key={status} value={status}>
+                    {userStatusLabelByValue[status]}
+                  </MenuItem>
+                ))}
+              </Select>
+            );
+          }
+          if (!isEditMode) {
+            return <ContractorStatusPill value={row.status} />;
+          }
+          return row.actions.update_status
+            ? renderStatusField(row)
+            : renderLockedCell(<ContractorStatusPill value={row.status} />);
+        },
+      },
+      {
+        id: 'units',
+        header: 'Подразделения',
+        minWidth: 190,
+        sortable: false,
+        renderCell: (row) => <ContractorUnitsCell contractor={row} onSaved={onStatusUpdated} />,
       },
       {
         id: 'login',
@@ -295,9 +506,21 @@ export const ContractorsListView = ({
         id: 'mail',
         header: 'E-mail',
         minWidth: 190,
+        width: '240px',
         getSearchValue: (row) => row.mail ?? '',
         getSortValue: (row) => row.mail ?? '',
-        renderCell: (row) => renderEditableField(row, 'mail', row.actions.manage_manual_contractor),
+        renderCell: (row) => {
+          if (isEditMode) {
+            return renderEditableField(row, 'mail', row.actions.manage_manual_contractor);
+          }
+          return (
+            <EmailWithVerifiedMark
+              mail={row.mail}
+              verified={Boolean(row.emailVerified)}
+              showMark={canViewEmailVerification}
+            />
+          );
+        },
       },
       {
         id: 'company_phone',
@@ -314,14 +537,6 @@ export const ContractorsListView = ({
         getSearchValue: (row) => row.companyMail ?? '',
         getSortValue: (row) => row.companyMail ?? '',
         renderCell: (row) => renderEditableField(row, 'company_mail', row.actions.manage_manual_contractor),
-      },
-      {
-        id: 'max_user_id',
-        header: 'MAX ID',
-        minWidth: 170,
-        getSearchValue: (row) => row.maxUserId ?? '',
-        getSortValue: (row) => row.maxUserId ?? '',
-        renderCell: (row) => renderLockedCell(<ContractorTableCell value={row.maxUserId} />),
       },
       {
         id: 'company_name',
@@ -370,11 +585,48 @@ export const ContractorsListView = ({
         renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions, isEditMode, renderEditableField, renderLockedCell],
+    [contractorStatusFilterOptions, handleInlineStatusChange, inlineStatusSavingUserId, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField, canViewEmailVerification],
   );
 
   const openContractorDetails = (row: ContractorListItem) => {
     setSelectedUser(toUserListItem(row));
+  };
+
+  const handleRootUnitToggle = (unitId: number, checked: boolean) => {
+    setRootUnitDraftById((prev) => ({
+      ...prev,
+      [unitId]: checked,
+    }));
+  };
+
+  const handleSaveRootUnits = async () => {
+    if (!selectedUser || !selectedUserRootUnits) {
+      return;
+    }
+
+    try {
+      setIsSavingRootUnits(true);
+      setRootUnitsError(null);
+      const updated = await updateContractorRootUnits(
+        selectedUser.user_id,
+        manageableRootUnitIds.filter((unitId) => Boolean(rootUnitDraftById[unitId])),
+      );
+      setSelectedUserRootUnits(updated);
+      setRootUnitDraftById(
+        Object.fromEntries(updated.items.map((item) => [item.unitId, item.isBound])),
+      );
+      showSystemToast({
+        severity: 'success',
+        message: 'Привязки к подразделениям сохранены.',
+      });
+      await onStatusUpdated();
+    } catch (error) {
+      setRootUnitsError(
+        error instanceof Error ? error.message : 'Не удалось сохранить привязки к подразделениям',
+      );
+    } finally {
+      setIsSavingRootUnits(false);
+    }
   };
 
   const handleStatusSubmit = async (values: StatusFormValues) => {
@@ -497,6 +749,7 @@ export const ContractorsListView = ({
           return (
             <ContractorMobileCard
               row={userRow}
+              canViewEmailVerification={canViewEmailVerification}
               isContactExpanded={Boolean(expandedContractorCardsById[row.userId]?.contact)}
               isCompanyExpanded={Boolean(expandedContractorCardsById[row.userId]?.company)}
               onToggleContact={() =>
@@ -582,7 +835,16 @@ export const ContractorsListView = ({
                         }}
                       >
                         <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                        <InfoRow label="E-mail" value={selectedUser.mail} />
+                        <InfoRow
+                          label="E-mail"
+                          value={
+                            <EmailWithVerifiedMark
+                              mail={selectedUser.mail}
+                              verified={Boolean(selectedUser.email_verified)}
+                              showMark={canViewEmailVerification}
+                            />
+                          }
+                        />
                       </Box>
                     </Stack>
                   </SourceSection>
@@ -612,6 +874,44 @@ export const ContractorsListView = ({
                         <InfoRow label="Адрес" value={selectedUser.address} />
                       </Box>
                       <InfoRow label="Примечание" value={selectedUser.note} />
+                    </Stack>
+                  </SourceSection>
+
+                  <SourceSection title="Подразделения" source="units">
+                    <Stack spacing={1.2}>
+                      {isLoadingRootUnits ? (
+                        <Typography color="text.secondary">Загрузка привязок...</Typography>
+                      ) : null}
+                      {!isLoadingRootUnits && selectedUserRootUnits ? (
+                        <FormGroup>
+                          {selectedUserRootUnits.items.map((item) => (
+                            <FormControlLabel
+                              key={`${selectedUser.user_id}-${item.unitId}`}
+                              control={(
+                                <Checkbox
+                                  checked={Boolean(rootUnitDraftById[item.unitId])}
+                                  disabled={!item.canManage || isSavingRootUnits}
+                                  onChange={(event) => handleRootUnitToggle(item.unitId, event.target.checked)}
+                                />
+                              )}
+                              label={item.unitName}
+                            />
+                          ))}
+                        </FormGroup>
+                      ) : null}
+                      {rootUnitsError ? <Alert severity="error">{rootUnitsError}</Alert> : null}
+                      {selectedUser.actions.manage_contractor_unit_bindings && selectedUserRootUnits?.canManage ? (
+                        <Stack direction="row" justifyContent="flex-end">
+                          <Button
+                            variant="outlined"
+                            onClick={() => void handleSaveRootUnits()}
+                            disabled={isSavingRootUnits || !hasRootUnitChanges}
+                            sx={{ borderRadius: 1, textTransform: 'none' }}
+                          >
+                            {isSavingRootUnits ? 'Сохранение...' : 'Сохранить привязки'}
+                          </Button>
+                        </Stack>
+                      ) : null}
                     </Stack>
                   </SourceSection>
                 </Stack>

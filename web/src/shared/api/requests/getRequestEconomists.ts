@@ -18,9 +18,9 @@ type ResponsePayload = {
   };
 };
 
-export const getRequestEconomists = async (): Promise<RequestEconomist[]> => {
+export const getRequestEconomists = async (requestId: string): Promise<RequestEconomist[]> => {
   const response = await fetchJson<ResponsePayload>(
-    '/api/v1/users/request-economists',
+    `/api/v1/requests/${encodeURIComponent(requestId)}/eligible-owners`,
     { method: 'GET' },
     'Ошибка загрузки списка ответственных'
   );

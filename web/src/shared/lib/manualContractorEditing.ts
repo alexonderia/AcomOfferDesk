@@ -40,7 +40,7 @@ export type ManualContractorDraft = {
 };
 
 export type ManualContractorEditableField = Exclude<keyof ManualContractorDraft, 'login'>;
-export type ManualContractorField = ManualContractorEditableField | 'password';
+export type ManualContractorField = ManualContractorEditableField;
 export type ManualContractorFieldErrors = Partial<Record<ManualContractorField, string>>;
 
 const MANUAL_EDITABLE_FIELDS: ManualContractorEditableField[] = [
@@ -56,7 +56,6 @@ const MANUAL_EDITABLE_FIELDS: ManualContractorEditableField[] = [
 ];
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const utf8ByteLength = (value: string) => new TextEncoder().encode(value).length;
 
 export const buildManualContractorDraft = (user: UserListItem): ManualContractorDraft => ({
   login: user.user_id,
@@ -74,7 +73,6 @@ export const buildManualContractorDraft = (user: UserListItem): ManualContractor
 export const buildManualContractorPayload = (
   user: UserListItem,
   draft: ManualContractorDraft,
-  password = ''
 ) => {
   const originalPhone = formatRuPhone(normalizeOptionalContractorValue(user.phone)) || '';
   const originalCompanyPhone = formatRuPhone(normalizeOptionalContractorValue(user.company_phone)) || '';
@@ -90,10 +88,7 @@ export const buildManualContractorPayload = (
     address: draft.address.trim(),
     note: draft.note.trim(),
   };
-  const trimmedPassword = password.trim();
-
   const payload: UpdateManualContractorPayload = {
-    ...(trimmedPassword ? { password: trimmedPassword } : {}),
     ...(normalizeOptionalContractorValue(trimmedDraft.full_name) !== normalizeOptionalContractorValue(user.full_name)
       ? { full_name: toOptionalContractorPayloadValue(trimmedDraft.full_name) }
       : {}),
@@ -171,21 +166,6 @@ export const validateManualContractorPayload = (
       fieldErrors[field] = message;
     }
   };
-
-  for (const [key, value] of Object.entries(payload)) {
-    if (typeof value === 'string' && !value.trim()) {
-      if (key === 'password') {
-        setFieldError(key as ManualContractorField, 'Поле не может быть пустым');
-      }
-    }
-  }
-
-  if (
-    payload.password !== undefined
-    && (payload.password.length < 6 || payload.password.length > 72 || utf8ByteLength(payload.password) > 72)
-  ) {
-    setFieldError('password', 'Пароль должен содержать от 6 до 72 символов (не более 72 байт)');
-  }
 
   if (payload.phone !== undefined && !isEmptyOptionalValue(payload.phone) && !isValidRuPhone(payload.phone)) {
     setFieldError('phone', 'Некорректный формат телефона контакта');

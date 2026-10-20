@@ -5,6 +5,8 @@ import pytest
 from app.core.config import settings
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import Forbidden
+from app.infrastructure.iam_client import IamAccountPermissions
+from app.services.iam_permission_grants import ManagedPermissionGrantsResult
 from app.services.user_contractor_delegations import UserContractorDelegationsService
 
 
@@ -27,34 +29,50 @@ class _ProfilesRepo:
 class _UserAuthAccountsRepo:
     async def get_by_user_provider(self, *, user_id: str, provider: str, include_inactive: bool = False):
         _ = include_inactive
-        if provider != "keycloak":
+        if provider != "iam":
             return None
-        return SimpleNamespace(external_subject_id=f"kc-{user_id}")
+        return SimpleNamespace(external_subject_id=f"iam-{user_id}")
 
 
-class _KeycloakDelegations:
-    async def list_user_enabled_contractor_role_codes(self, *, keycloak_user_id: str):
-        _ = keycloak_user_id
-        return frozenset()
-
-    async def sync_user_contractor_role_codes(self, *, keycloak_user_id: str, requested_role_codes: set[str]):
-        _ = keycloak_user_id
-        return SimpleNamespace(
-            enabled_role_codes=frozenset(requested_role_codes),
-            added_role_codes=frozenset(requested_role_codes),
-            removed_role_codes=frozenset(),
+class _IamPermissionGrants:
+    def __init__(self) -> None:
+        self.permissions = IamAccountPermissions(
+            permissions_from_role=frozenset({"contractors.read"}),
+            individually_granted_permissions=frozenset(),
+            effective_permissions=frozenset({"contractors.read"}),
         )
+        self.requested_permissions: frozenset[str] | None = None
 
+    async def get(self, *, account_id: str):
+        assert account_id.startswith("iam-")
+        return self.permissions
 
-class _KeycloakAdmin:
-    async def logout_user_sessions(self, *, user_id: str):
-        _ = user_id
-        return None
+    async def replace_managed_grants(
+        self,
+        *,
+        account_id: str,
+        managed_permissions: frozenset[str],
+        requested_permissions: frozenset[str],
+    ):
+        assert account_id.startswith("iam-")
+        assert requested_permissions.issubset(managed_permissions)
+        self.requested_permissions = requested_permissions
+        self.permissions = IamAccountPermissions(
+            permissions_from_role=self.permissions.permissions_from_role,
+            individually_granted_permissions=requested_permissions,
+            effective_permissions=(
+                self.permissions.permissions_from_role | requested_permissions
+            ),
+        )
+        return ManagedPermissionGrantsResult(self.permissions, changed=True)
 
 
 def _user(*, user_id: str, role_id: int) -> CurrentUser:
     return CurrentUser(
         user_id=user_id,
+        iam_account_id="00000000-0000-4000-8000-000000000001",
+        iam_session_id="00000000-0000-4000-8000-000000000002",
+        system_role="test-role",
         role_id=role_id,
         status="active",
         permissions=frozenset(),
@@ -66,8 +84,7 @@ def _service() -> UserContractorDelegationsService:
         users=_UsersRepo(),
         profiles=_ProfilesRepo(),
         user_auth_accounts=_UserAuthAccountsRepo(),
-        keycloak_delegations=_KeycloakDelegations(),
-        keycloak_admin=_KeycloakAdmin(),
+        iam_permission_grants=_IamPermissionGrants(),
     )
 
 

@@ -1,13 +1,13 @@
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
-import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaKeycloak, logoutFromUi } from './helpers';
+import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaIam, logoutFromUi } from './helpers';
 
 test('request -> offer -> workspace -> status update flow @request-offer', async ({ page }, testInfo) => {
   const economistCredentials = getCredentialsOrSkip(testInfo, 'E2E_ECONOMIST');
   const contractorCredentials = getCredentialsOrSkip(testInfo, 'E2E_CONTRACTOR');
   test.skip(!economistCredentials || !contractorCredentials, 'Economist and contractor credentials are required');
 
-  await loginViaKeycloak(page, economistCredentials!);
+  await loginViaIam(page, economistCredentials!);
 
   await assertNoSevereConsoleErrors(page, async () => {
     await page.goto('/requests/create');
@@ -24,7 +24,7 @@ test('request -> offer -> workspace -> status update flow @request-offer', async
   await expect(page).toHaveURL(/\/requests/);
 
   await logoutFromUi(page);
-  await loginViaKeycloak(page, contractorCredentials!);
+  await loginViaIam(page, contractorCredentials!);
 
   await assertNoSevereConsoleErrors(page, async () => {
     await page.goto('/requests?tab=open');
@@ -50,7 +50,7 @@ test('request -> offer -> workspace -> status update flow @request-offer', async
   test.skip(!workspacePath, 'Workspace URL is empty');
 
   await logoutFromUi(page);
-  await loginViaKeycloak(page, economistCredentials!);
+  await loginViaIam(page, economistCredentials!);
   await page.goto(workspacePath!);
   await expect(page).toHaveURL(/\/offers\/\d+\/workspace/);
 

@@ -8,6 +8,7 @@ import HandshakeOutlined from '@mui/icons-material/HandshakeOutlined';
 import HelpOutline from '@mui/icons-material/HelpOutline';
 import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
 import InsertInvitationOutlined from '@mui/icons-material/InsertInvitationOutlined';
+import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
 import MonetizationOnOutlined from '@mui/icons-material/MonetizationOnOutlined';
 import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
@@ -17,6 +18,7 @@ import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined';
 
 const iconByKey: Record<string, ReactNode> = {
   users: <PersonOutline fontSize="small" />,
+  hierarchy: <LanOutlinedIcon fontSize="small" />,
   requests: <InsertDriveFileOutlined fontSize="small" />,
   feedback: <FeedbackOutlined fontSize="small" />,
   offers: <FilePresentOutlinedIcon fontSize="small" />,

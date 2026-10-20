@@ -1,5 +1,6 @@
-import { Box, Button, Paper, Stack, Typography } from '@mui/material';
+import { Button, Stack } from '@mui/material';
 import { Link, useSearchParams } from 'react-router-dom';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
 
 type StatusContent = {
   title: string;
@@ -36,42 +37,15 @@ export const RegistrationLinkStatusPage = () => {
   const content = CONTENT_BY_REASON[reason] ?? DEFAULT_CONTENT;
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        p: 3,
-      }}
-    >
-      <Paper
-        elevation={0}
-        sx={(theme) => ({
-          width: { xs: '100%', sm: 560 },
-          p: { xs: 4, sm: 5 },
-          borderRadius: 4,
-          border: `1px solid ${theme.palette.divider}`,
-          backgroundColor: theme.palette.background.paper,
-        })}
-      >
-        <Stack spacing={3} alignItems="center" textAlign="center">
-          <Typography variant="h5" fontWeight={700} color="text.primary">
-            {content.title}
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            {content.description}
-          </Typography>
-          <Stack spacing={1.5} width="100%">
-            <Button component={Link} to="/login" variant="contained" fullWidth>
-              {'Перейти ко входу'}
-            </Button>
-            <Button component={Link} to="/" variant="outlined" fullWidth>
-              {'На главную'}
-            </Button>
-          </Stack>
-        </Stack>
-      </Paper>
-    </Box>
+    <AuthPageShell title={content.title} subtitle={content.description} maxWidth={560}>
+      <Stack spacing={1.5} width="100%">
+        <Button component={Link} to="/login" variant="contained" fullWidth>
+          {'Перейти ко входу'}
+        </Button>
+        <Button component={Link} to="/" variant="outlined" fullWidth>
+          {'На главную'}
+        </Button>
+      </Stack>
+    </AuthPageShell>
   );
 };

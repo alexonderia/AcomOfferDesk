@@ -1,13 +1,13 @@
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
-import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaKeycloak, logoutFromUi } from './helpers';
+import { assertNoSevereConsoleErrors, getCredentialsOrSkip, loginViaIam, logoutFromUi } from './helpers';
 
 test('workspace files/chat flow and forbidden access check @files-chat', async ({ page }, testInfo) => {
   const contractorCredentials = getCredentialsOrSkip(testInfo, 'E2E_CONTRACTOR');
   const operatorCredentials = getCredentialsOrSkip(testInfo, 'E2E_OPERATOR');
   test.skip(!contractorCredentials || !operatorCredentials, 'Contractor and operator credentials are required');
 
-  await loginViaKeycloak(page, contractorCredentials!);
+  await loginViaIam(page, contractorCredentials!);
   await page.goto('/requests?tab=my');
   await page.waitForLoadState('networkidle');
 
@@ -46,7 +46,7 @@ test('workspace files/chat flow and forbidden access check @files-chat', async (
 
   await logoutFromUi(page);
 
-  await loginViaKeycloak(page, operatorCredentials!);
+  await loginViaIam(page, operatorCredentials!);
   await assertNoSevereConsoleErrors(page, async () => {
     await page.goto(workspacePath!);
     await page.waitForLoadState('networkidle');

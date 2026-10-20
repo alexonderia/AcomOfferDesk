@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UserListItem } from '@entities/user';
 import { normalizeUserStatus } from '@features/admin/components/UserCardPrimitives';
 import type { ContractorListItem } from '@shared/api/contractors/listContractors';
+import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
 import {
   buildManualContractorDraft,
@@ -40,12 +41,16 @@ const toUserListItem = (row: ContractorListItem): UserListItem => ({
   full_name: row.fullName,
   phone: row.phone,
   mail: row.mail,
+  email_verified: Boolean(row.emailVerified),
   company_name: row.companyName,
   inn: row.inn,
   company_phone: row.companyPhone,
   company_mail: row.companyMail,
   address: row.address,
   note: row.note,
+  units_count: 0,
+  managers_count: 0,
+  subordinates_count: 0,
   actions: row.actions,
 });
 
@@ -248,6 +253,10 @@ export const useContractorTableEditing = ({
             if (Object.keys(payload).length > 0) {
               await updateManualContractor(row.userId, payload);
             }
+          }
+
+          if (draft.status !== undefined && row.actions.update_status) {
+            await updateContractorStatus(row.userId, { user_status: draft.status });
           }
 
           return rowId;

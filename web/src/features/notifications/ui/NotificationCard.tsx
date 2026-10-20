@@ -110,7 +110,7 @@ export const NotificationCard = ({
       <Stack spacing={0.35} sx={{ minWidth: 0, flex: 1 }}>
         <Typography
           sx={{
-            fontSize: 13.4,
+            fontSize: 14,
             lineHeight: 1.25,
             fontWeight: isUnread ? 600 : 500,
           }}
@@ -120,7 +120,7 @@ export const NotificationCard = ({
         <Typography
           color="text.secondary"
           sx={{
-            fontSize: 12.2,
+            fontSize: 12,
             lineHeight: 1.28,
             display: '-webkit-box',
             WebkitLineClamp: 2,
@@ -130,7 +130,7 @@ export const NotificationCard = ({
         >
           {notification.body}
         </Typography>
-        <Typography color="text.secondary" sx={{ fontSize: 11.2, lineHeight: 1.2 }}>
+        <Typography color="text.secondary" sx={{ fontSize: 12, lineHeight: 1.2 }}>
           {formatDate(notification.created_at, true)}
         </Typography>
       </Stack>

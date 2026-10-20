@@ -71,6 +71,8 @@ export type TableTemplateFilterOption = {
   value: string;
 };
 
+import { themeTokens } from '@shared/theme/tokens';
+
 const tableUiScale: TableUiScale = {
   toolbarGap: 12,
   searchWidth: 360,
@@ -81,7 +83,7 @@ const tableUiScale: TableUiScale = {
   footerHeight: 56,
   pagerButtonSize: 40,
   rowsPerPageWidth: 64,
-  fontSize: 15,
+  fontSize: themeTokens.typography.body2FontSize,
   iconSize: 22,
   rowGap: '2px',
   gridColumnGap: 0,

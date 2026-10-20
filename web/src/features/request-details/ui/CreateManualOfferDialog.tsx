@@ -1,7 +1,6 @@
-﻿import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import {
-  Alert,
   Autocomplete,
   Box,
   Button,
@@ -20,6 +19,8 @@ import { getRequestContractors, type RequestContractorItem } from '@shared/api/u
 import { getFileKey } from '@shared/lib/files';
 import { useLiveFieldVisibility, textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
+import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
+import { useToastMessageEffect } from '@shared/ui/toasts';
 
 type Props = {
   open: boolean;
@@ -69,13 +70,15 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { markTouched, shouldShowError, markSubmitAttempted, resetVisibility } = useLiveFieldVisibility();
 
+  useToastMessageEffect({ message: errorMessage });
+
   useEffect(() => {
     if (!open) {
       return;
     }
     let isMounted = true;
     setIsLoadingContractors(true);
-    getRequestContractors()
+    getRequestContractors(requestId)
       .then((response) => {
         if (!isMounted) {
           return;
@@ -96,7 +99,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     return () => {
       isMounted = false;
     };
-  }, [open]);
+  }, [open, requestId]);
 
   const resetForm = () => {
     setContractorMode('existing');
@@ -287,28 +290,10 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
       maxWidth="sm"
       fullWidth
       PaperProps={{
-        sx: (theme: Theme) => ({
-          borderRadius: 2,
-          px: { xs: 2.5, sm: 3.5 },
-          py: { xs: 3, sm: 3.5 },
-          backgroundColor: theme.palette.background.default,
-          maxHeight: 'min(760px, calc(100vh - 32px))',
-          overflow: 'hidden',
-          boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
-        })
+        sx: dialogPaperSx
       }}
     >
-      <DialogContent
-        sx={{
-          p: 0,
-          overflowX: 'hidden',
-          overflowY: 'auto',
-          scrollbarWidth: 'none',
-          '&::-webkit-scrollbar': {
-            display: 'none'
-          }
-        }}
-      >
+      <DialogContent sx={dialogContentSx}>
         <Stack spacing={1.5}>
           <Typography variant="h5" fontWeight={600} lineHeight={1}>
             Ручное внесение КП
@@ -494,9 +479,6 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
               </Box>
             ) : null}
           </Stack>
-
-          {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-
           <Stack direction="row" spacing={1} justifyContent="flex-end">
             <Button variant="outlined" onClick={handleClose} disabled={isSubmitting}>
               Отмена

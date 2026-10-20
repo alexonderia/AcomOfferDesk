@@ -1,10 +1,4 @@
 services:
-  keycloak:
-    command:
-      - |
-        sh /opt/keycloak/bootstrap/prepare-theme.sh
-        exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start}" --import-realm
-
   gateway:
     # Keep port publishing in base compose to avoid duplicate 8080 bindings
     # when multiple override files are combined.

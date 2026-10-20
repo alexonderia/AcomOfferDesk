@@ -14,6 +14,9 @@ from app.schemas.offers import (
     ContractorInfoResponse,
     ContractorRequestViewResponse,
     ManualOfferCreateResponse,
+    ManualOfferEligibleContractorItem,
+    ManualOfferEligibleContractorListData,
+    ManualOfferEligibleContractorListResponse,
     ManualContractorCreatePayload,
     OfferCreatePayload,
     OfferCreateResponse,
@@ -128,6 +131,7 @@ async def get_contractor_request_view(
                         request_owner_user_id=item.owner_user_id,
                         contractor_user_id=current_user.user_id,
                         offer_status=item.existing_offer.status,
+                        request_status=item.status,
                         can_manage_in_scope=True,
                     ),
                 }
@@ -249,6 +253,27 @@ async def create_manual_offer(
     )
 
 
+@router.get(
+    "/requests/{request_id}/offers/manual/eligible-contractors",
+    response_model=ManualOfferEligibleContractorListResponse,
+)
+async def list_eligible_manual_offer_contractors(
+    request_id: str = PathParam(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualOfferEligibleContractorListResponse:
+    async with uow:
+        items = await build_offer_service(uow).list_eligible_contractors_for_manual_offer(
+            current_user=current_user,
+            request_id=request_id,
+        )
+    return ManualOfferEligibleContractorListResponse(
+        data=ManualOfferEligibleContractorListData(
+            items=[ManualOfferEligibleContractorItem(**item.__dict__) for item in items]
+        )
+    )
+
+
 @router.get("/offers/{offer_id}/workspace", response_model=OfferWorkspaceResponse)
 async def get_offer_workspace(
     offer_id: int = PathParam(..., ge=1),
@@ -316,7 +341,12 @@ async def get_offer_workspace(
                         request_owner_user_id=item.request.owner_user_id,
                         contractor_user_id=request_offer.owner_user_id,
                         offer_status=request_offer.status,
+                        request_status=item.request.status,
                         can_manage_in_scope=getattr(resolved, "can_manage_offer_in_scope", False),
+                        has_other_accepted_offer=any(
+                            other.offer_id != request_offer.offer_id and other.status == "accepted"
+                            for other in item.offers
+                        ),
                         has_department_offer_update_scope=getattr(
                             resolved,
                             "has_department_offer_update_scope",

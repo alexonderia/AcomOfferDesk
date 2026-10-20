@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acom
+  labels:
+    app.kubernetes.io/part-of: acom-offer-desk
+    app.kubernetes.io/managed-by: mbo2-f5
+    # PSA: enforce=baseline — образы nginx (web/gateway/maintenance) слушают :80
+    # от root, поэтому restricted сломал бы их. audit/warn=restricted — чтобы
+    # отклонения от restricted были видны в событиях namespace.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

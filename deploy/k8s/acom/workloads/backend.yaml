@@ -1,0 +1,130 @@
+# backend (FastAPI). Прод: build . backend/Dockerfile, порт 8000, /health.
+# Образ в k8s: acom-backend:prod-1 (перетегируется из acome-offer-desk-backend при
+# import в containerd, см. scripts/import-images.sh). imagePullPolicy: Never —
+# у прод-образов RepoDigests пусты, registry нет.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        acom.security/tier: app
+    spec:
+      serviceAccountName: acom-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: backend
+          image: acom-backend:prod-1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-app-config
+          # Тайминги/пути TLS-материала — в env, чтобы гарантированно перекрыть
+          # одноимённые ключи из Secret (env приоритетнее envFrom).
+          env:
+            - name: PGSSLMODE
+              value: verify-full
+            - name: PGSSLROOTCERT
+              value: /etc/ssl/postgres/ca.crt
+            - name: RABBITMQ_SSL_CAFILE
+              value: /etc/ssl/rabbitmq/ca.crt
+            - name: RABBITMQ_SSL_CERTFILE
+              value: /etc/ssl/rabbitmq/tls.crt
+            - name: RABBITMQ_SSL_KEYFILE
+              value: /etc/ssl/rabbitmq/tls.key
+            - name: AWS_CA_BUNDLE
+              value: /etc/ssl/minio/ca.crt
+          # startup — даём приложению подняться; readiness — внешние зависимости (БД, брокер);
+          # liveness — только локальный TCP, чтобы падение соседа не вызывало шторм рестартов.
+          startupProbe:
+            tcpSocket:
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: shared
+              mountPath: /app/shared
+            - name: postgres-ca
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+            - name: rabbitmq-client
+              mountPath: /etc/ssl/rabbitmq
+              readOnly: true
+            - name: minio-ca
+              mountPath: /etc/ssl/minio
+              readOnly: true
+      volumes:
+        # shared/upload осознанно НЕ переносится как том с данными (R-J1: приёма
+        # файлов по умолчанию нет) — поду нужен только записываемый рабочий каталог.
+        - name: shared
+          emptyDir: {}
+        - name: postgres-ca
+          secret:
+            secretName: postgres-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: rabbitmq-client
+          secret:
+            secretName: rabbitmq-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: client.crt
+                path: tls.crt
+              - key: client.key
+                path: tls.key
+        - name: minio-ca
+          secret:
+            secretName: minio-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

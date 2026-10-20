@@ -126,6 +126,21 @@ class RequestDetailsResponse(BaseModel):
     data: RequestDetailsResponseData
 
 
+class EligibleRequestOwnerSchema(BaseModel):
+    user_id: str
+    full_name: str | None = None
+    role: str
+    unavailable_period: dict[str, object] | None = None
+
+
+class EligibleRequestOwnerListData(BaseModel):
+    items: list[EligibleRequestOwnerSchema] = Field(default_factory=list)
+
+
+class EligibleRequestOwnerListResponse(BaseModel):
+    data: EligibleRequestOwnerListData
+
+
 class OpenRequestListResponse(BaseModel):
     data: OpenRequestListData
 

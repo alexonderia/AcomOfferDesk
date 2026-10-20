@@ -12,7 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.csrf import csrf_failure_reason
+from app.core.request_id import RequestIdMiddleware
 from app.api.v1 import router as v1_router
+from app.api.v1.auth import iam_bff_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, ServiceUnavailable, Unauthorized, UploadRejected
 from app.infrastructure.db import engine
 from app.infrastructure.email_delivery_consumer import EmailDeliveryConsumerRuntime
@@ -33,7 +36,7 @@ _DEFAULT_PUBLIC_ERROR_BY_STATUS = {
     401: "Сессия истекла. Войдите в систему заново.",
     403: "Недостаточно прав для выполнения действия.",
     404: "Данные не найдены или были удалены.",
-    409: "Конфликт данных. Обновите страницу и попробуйте снова.",
+    409: "Не удалось применить изменение. Повторите попытку.",
 }
 _DIRECT_PUBLIC_DETAIL_TRANSLATIONS = {
     "Missing credentials": "Необходимо войти в систему.",
@@ -57,11 +60,11 @@ _DIRECT_PUBLIC_DETAIL_TRANSLATIONS = {
     "File not found": "Файл не найден.",
     "Insufficient permissions": "Недостаточно прав для выполнения действия.",
     "Insufficient permissions to edit request": "Недостаточно прав для редактирования заявки: доступ ограничен иерархией/подразделением.",
-    "Insufficient permissions to edit offer": "Недостаточно прав для изменения КП: требуется `offers.update` или `delegation.department.offers.update` в допустимом скоупе.",
+    "Insufficient permissions to edit offer": "Недостаточно прав для изменения КП: требуется `offers.update` или `department.offers.update` в допустимом скоупе.",
     "Insufficient permissions to update offer amount": "Недостаточно прав для изменения суммы КП: требуется право изменения суммы в допустимом контуре.",
     "Insufficient permissions to upload offer files": "Недостаточно прав для загрузки файлов КП: требуется право загрузки файлов в допустимом контуре.",
     "Insufficient permissions to delete offer files": "Недостаточно прав для удаления файлов КП: требуется право удаления файлов в допустимом скоупе.",
-    "Insufficient permissions to update request status": "Недостаточно прав для изменения статуса заявки: требуется `requests.status.update` или `delegation.department.requests.status_update` в допустимом скоупе.",
+    "Insufficient permissions to update request status": "Недостаточно прав для изменения статуса заявки: требуется `requests.status.update` или `department.requests.status_update` в допустимом скоупе.",
     "Offer status cannot be changed for closed request": "КП нельзя изменить, если заявка уже закрыта или отклонена",
     "КП нельзя изменить, если заявка уже закрыта или отклонена": "КП нельзя изменить, если заявка уже закрыта или отклонена",
     "Insufficient permissions to update request amounts": "Недостаточно прав для изменения сумм заявки: требуется право редактирования цен в допустимом контуре.",
@@ -75,8 +78,6 @@ _DIRECT_PUBLIC_DETAIL_TRANSLATIONS = {
     "Insufficient permissions to send chat message": "Недостаточно прав для отправки сообщения в чат.",
     "Insufficient permissions to view workspace": "Недостаточно прав для просмотра рабочего пространства.",
     "Password is managed by the identity provider": "Пароль управляется провайдером аутентификации.",
-    "Keycloak authentication is disabled": "Вход временно недоступен.",
-    "Keycloak email is already used by another account": "Почта уже используется другим аккаунтом.",
 }
 _CONTAINS_PUBLIC_DETAIL_TRANSLATIONS: tuple[tuple[str, str], ...] = (
     ("missing credentials", "Необходимо войти в систему."),
@@ -234,6 +235,25 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
+
+@app.middleware("http")
+async def csrf_protection(request: Request, call_next):
+    failure_reason = csrf_failure_reason(request)
+    if failure_reason is not None:
+        logger.warning(
+            "csrf_request_rejected path=%s method=%s reason=%s",
+            request.url.path,
+            request.method,
+            failure_reason,
+        )
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Запрос отклонён проверкой безопасности."},
+        )
+    return await call_next(request)
+
+app.add_middleware(RequestIdMiddleware)
+
 cors_allow_origins = settings.resolved_cors_allow_origins
 if cors_allow_origins:
     app.add_middleware(
@@ -244,6 +264,7 @@ if cors_allow_origins:
         allow_headers=["*"],
     )
 app.include_router(v1_router)
+app.include_router(iam_bff_router)
 
 
 @app.get("/health")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.core.datetime_utils import utc_now_naive
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.auth_models import UserContactChannel
@@ -41,6 +41,33 @@ class UserContactChannelRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_user_ids_by_primary_email(self, *, email: str) -> list[str]:
+        normalized = email.strip().lower()
+        if not normalized:
+            return []
+        stmt = select(UserContactChannel.id_user).where(
+            UserContactChannel.channel_type == "email",
+            UserContactChannel.is_primary.is_(True),
+            UserContactChannel.is_active.is_(True),
+            func.lower(UserContactChannel.channel_value) == normalized,
+        )
+        result = await self._session.execute(stmt)
+        return [user_id for user_id in result.scalars().all() if user_id]
+
+    async def exists_primary_email(self, *, email: str, exclude_user_id: str | None = None) -> bool:
+        normalized = email.strip().lower()
+        if not normalized:
+            return False
+        stmt = select(UserContactChannel.id_user).where(
+            UserContactChannel.channel_type == "email",
+            UserContactChannel.is_active.is_(True),
+            func.lower(UserContactChannel.channel_value) == normalized,
+        )
+        if exclude_user_id:
+            stmt = stmt.where(UserContactChannel.id_user != exclude_user_id)
+        result = await self._session.execute(stmt.limit(1))
+        return result.scalar_one_or_none() is not None
 
     async def list_by_user(
         self,

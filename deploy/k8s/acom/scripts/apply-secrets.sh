@@ -49,6 +49,15 @@ for k in $ALLOWED; do
   fi
   printf "%s=%s\n" "$k" "$v" >> "$DIR/app.env"
 done
+
+# NetworkPolicy allow-app-egress разрешает SMTP 25/443/587/993, но не 465.
+# Принудительно используем 587 + STARTTLS, чтобы дефект не вернулся.
+if grep -q '^SMTP_PORT=' "$DIR/app.env"; then
+  sed -i 's/^SMTP_PORT=.*/SMTP_PORT=587/' "$DIR/app.env"
+else
+  printf 'SMTP_PORT=587\n' >> "$DIR/app.env"
+fi
+grep -q '^SMTP_PORT=587$' "$DIR/app.env" || { echo "SMTP_PORT_REWRITE_FAILED" >&2; exit 3; }
 # перепривязка адресов (только host/схема/порт, креды не трогаем)
 # asyncpg через SQLAlchemy не принимает sslmode/sslrootcert как kwargs.
 # ssl=require шифрует; проверку CA делает post-deploy-verify через libpq.

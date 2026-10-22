@@ -35,7 +35,8 @@ def _build_verification_text_template(*, verification_link: str, ttl_seconds: in
         "Вы получили это письмо, потому что был запрошен доступ к подтверждению электронной почты в AcomOfferDesk.\n\n"
         "Подтвердите адрес по ссылке:\n"
         f"{verification_link}\n\n"
-        f"Ссылка действительна {ttl_minutes} минут.\n\n"
+        f"Ссылка одноразовая и действительна {ttl_minutes} минут.\n"
+        "После успешного подтверждения повторный переход по этой ссылке покажет, что адрес уже подтверждён.\n\n"
         "Если вы не запрашивали подтверждение — просто проигнорируйте это письмо."
     )
 
@@ -82,7 +83,8 @@ def _build_verification_html_template(*, verification_link: str, ttl_seconds: in
             </tr>
             <tr>
               <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
-                Срок действия ссылки: <strong>{ttl_minutes} минут</strong>.
+                Ссылка одноразовая и действует <strong>{ttl_minutes} минут</strong>.
+                После успешного подтверждения повторный переход покажет, что адрес уже подтверждён.
               </td>
             </tr>
             <tr>

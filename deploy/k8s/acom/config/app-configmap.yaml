@@ -65,7 +65,11 @@ data:
   IAM_TRUSTED_PROXY_CIDRS: "127.0.0.1/32,10.42.0.0/16,10.43.0.0/16"
   IAM_WORKERS: "1"
 
-  # --- file-guard: лимиты и режим антивируса ---
+  # --- file-guard: адрес сервиса и лимиты ---
+  # В k8s Service называется file-guard (дефис). Дефолт приложения
+  # http://file_guard:8080 (подчёркивание) не резолвится — заявки падают с 503.
+  FILE_GUARD_URL: "http://file-guard:8080"
+  FILE_GUARD_ENABLED: "true"
   # CLAMAV_UPDATE_ON_START=false осознанно: CDN ClamAV из РФ-сети отдаёт 403, базы
   # заливаются на PVC из зеркала packages.microsoft.com (кейс Ф4), затем freshclam
   # обновляет их штатно. true давал бы молчаливый «пустой» старт.

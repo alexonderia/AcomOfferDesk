@@ -117,6 +117,7 @@ class EmailVerificationService:
             email=normalized_email,
             verification_link=self._build_frontend_verify_link(token=action.token),
             recipient_context={"user_login": user_id},
+            recipient_user_id=user_id,
         )
         self._request_locks[lock_key] = now_ts + settings.email_verification_ttl_seconds
         return "sent"
@@ -194,6 +195,7 @@ class EmailVerificationService:
         email: str,
         verification_link: str,
         recipient_context: dict | None,
+        recipient_user_id: str | None = None,
     ) -> None:
         payload = build_verification_email_payload(
             to_email=email,
@@ -208,6 +210,7 @@ class EmailVerificationService:
                 payload.text_content,
                 payload.html_content,
                 recipient_context=recipient_context,
+                recipient_user_id=recipient_user_id,
             )
         except smtplib.SMTPException as exc:
             raise Conflict(f"Не удалось отправить письмо для подтверждения email: {exc}") from exc

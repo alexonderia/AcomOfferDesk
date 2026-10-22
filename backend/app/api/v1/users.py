@@ -691,6 +691,8 @@ async def get_user_department_delegations(
             current_user=current_user,
             target_user_id=user_id,
         )
+    if not state.can_manage and current_user.user_id != user_id:
+        raise Forbidden("Недостаточно прав для просмотра делегирований пользователя")
     return UserDepartmentDelegationsResponse(data=_department_delegations_data(state))
 
 
@@ -710,6 +712,8 @@ async def get_user_contractor_delegations(
             current_user=current_user,
             target_user_id=user_id,
         )
+    if not state.can_manage and current_user.user_id != user_id:
+        raise Forbidden("Недостаточно прав для просмотра делегирований пользователя")
     return UserContractorDelegationsResponse(data=_contractor_delegations_data(state))
 
 

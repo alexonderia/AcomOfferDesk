@@ -581,9 +581,10 @@ class _ManualEmailNotifications:
         users=None,
         files=None,
         *,
+        notification_preferences=None,
         after_commit_hook_registrar=None,
     ) -> None:
-        _ = (profiles, requests, users, files, after_commit_hook_registrar)
+        _ = (profiles, requests, users, files, notification_preferences, after_commit_hook_registrar)
         self.calls: list[dict] = []
 
     async def notify_request_to_additional_emails(
@@ -1910,6 +1911,7 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
         users,
         files=None,
         *,
+        notification_preferences=None,
         after_commit_hook_registrar=None,
     ):
         nonlocal fake_notifications
@@ -1918,6 +1920,7 @@ def test_manual_request_email_notification_endpoint_deduplicates_and_uses_fake_t
             requests,
             users,
             files,
+            notification_preferences=notification_preferences,
             after_commit_hook_registrar=after_commit_hook_registrar,
         )
         return fake_notifications
@@ -2007,13 +2010,14 @@ def test_request_email_verification_uses_fake_mail_sender(
 ):
     sent: list[dict] = []
 
-    async def _fake_send(self, *, email, verification_link, recipient_context):
+    async def _fake_send(self, *, email, verification_link, recipient_context, recipient_user_id=None):
         _ = self
         sent.append(
             {
                 "email": email,
                 "verification_link": verification_link,
                 "recipient_context": recipient_context,
+                "recipient_user_id": recipient_user_id,
             }
         )
 
@@ -2033,6 +2037,7 @@ def test_request_email_verification_uses_fake_mail_sender(
     assert sent[0]["email"] == "new@example.com"
     assert sent[0]["verification_link"].startswith("https://web.acom.example/verify-email?token=")
     assert sent[0]["recipient_context"] == {"user_login": "profile-1"}
+    assert sent[0]["recipient_user_id"] == "profile-1"
 
 
 @pytest.mark.parametrize("update_result", [True, False])

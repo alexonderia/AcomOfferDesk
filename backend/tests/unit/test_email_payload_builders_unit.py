@@ -150,6 +150,7 @@ def test_verification_payload_is_utf8_friendly_and_has_no_mojibake_markers() -> 
 
     assert payload.subject == "AcomOfferDesk — подтверждение электронной почты"
     assert "Подтвердите адрес по ссылке:" in payload.text_content
+    assert "Ссылка одноразовая и действительна 15 минут" in payload.text_content
     assert "https://acom.example/verify-email?token=token-123" in payload.text_content
     assert "Если кнопка не работает, откройте ссылку вручную" in payload.html_content
     assert "\ufffd" not in payload.text_content

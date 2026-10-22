@@ -578,6 +578,7 @@ def test_verify_email_rejects_invalid_token(test_client, set_uow, monkeypatch):
     )
 
     assert response.status_code == 401
+    assert "уже использована" in response.json()["detail"]
 
 
 def test_verify_email_rejects_expired_token(test_client, set_uow, monkeypatch):

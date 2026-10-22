@@ -19,6 +19,10 @@ VERIFY_EMAIL_PURPOSE = "verify_email"
 FIRST_ACCESS_PURPOSE = "first_access"
 PROFILE_CHANGE_PURPOSE = "profile_change"
 EMAIL_ACTION_PURPOSES = (VERIFY_EMAIL_PURPOSE, FIRST_ACCESS_PURPOSE, PROFILE_CHANGE_PURPOSE)
+VERIFICATION_LINK_INVALID_DETAIL = (
+    "Ссылка недействительна или уже использована. "
+    "Если адрес уже подтверждён, войдите в систему."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,11 +138,11 @@ class EmailVerificationService:
             except Unauthorized as exc:
                 last_error = exc
         if consumed is None or matched_purpose is None:
-            raise Unauthorized("Ссылка подтверждения недействительна") from last_error
+            raise Unauthorized(VERIFICATION_LINK_INVALID_DETAIL) from last_error
 
         email = str((consumed.context or {}).get("email") or "").strip().lower()
         if not email:
-            raise Unauthorized("Ссылка подтверждения недействительна")
+            raise Unauthorized(VERIFICATION_LINK_INVALID_DETAIL)
         user_id = await self._user_id_for_account(str(consumed.account_id))
         if await self._profiles.exists_by_mail(email=email, exclude_user_id=user_id):
             raise Conflict("Эта электронная почта уже используется")
@@ -180,13 +184,13 @@ class EmailVerificationService:
 
     async def _user_id_for_account(self, account_id: str) -> str:
         if self._user_auth_accounts is None:
-            raise Unauthorized("Ссылка подтверждения недействительна")
+            raise Unauthorized(VERIFICATION_LINK_INVALID_DETAIL)
         binding = await self._user_auth_accounts.get_by_provider_subject(
             provider="iam",
             subject=account_id,
         )
         if binding is None:
-            raise Unauthorized("Ссылка подтверждения недействительна")
+            raise Unauthorized(VERIFICATION_LINK_INVALID_DETAIL)
         return binding.id_user
 
     async def _send_verification_email(

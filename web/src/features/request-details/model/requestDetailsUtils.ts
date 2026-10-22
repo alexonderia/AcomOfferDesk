@@ -73,3 +73,19 @@ export const buildRequestDetailsSignature = (request: RequestDetails | null) => 
 };
 
 export const toDeadlineIso = (date: string) => `${date}T23:59:59`;
+
+/**
+ * При переводе заявки в review дедлайн фиксируется на сегодня.
+ * Если заявка уже в review, ручное изменение дедлайна должно сохраняться.
+ */
+export const resolveEffectiveDeadline = ({
+    status,
+    statusChanged,
+    deadline,
+    todayDate
+}: {
+    status: RequestStatus;
+    statusChanged: boolean;
+    deadline: string;
+    todayDate: string;
+}) => (status === 'review' && statusChanged ? todayDate : deadline);

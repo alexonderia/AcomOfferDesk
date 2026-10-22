@@ -45,6 +45,7 @@ from app.schemas.requests import (
     RequestStatsSchema,
 )
 from app.services.email_notifications import EmailNotificationService
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 from app.services.files import FileService, PreparedUpload
 from app.services.contractor_units import ContractorUnitService
 from app.services.notifications import NotificationService
@@ -100,6 +101,17 @@ def _build_notification_service(uow: UnitOfWork) -> NotificationService | None:
     if notifications_repo is None:
         return None
     return NotificationService(notifications_repo)
+
+
+def _build_notification_preferences(uow: UnitOfWork) -> UserNotificationPreferencesService | None:
+    preferences_repo = getattr(uow, "user_notification_preferences", None)
+    if preferences_repo is None:
+        return None
+    return UserNotificationPreferencesService(
+        uow.user_contact_channels,
+        preferences_repo,
+        profiles=uow.profiles,
+    )
 
 
 def _build_request_service(
@@ -757,6 +769,8 @@ async def create_request(
                 uow.requests,
                 uow.users,
                 uow.files,
+                notification_preferences=_build_notification_preferences(uow),
+                after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
             )
             service = _build_request_service(
                 uow,
@@ -826,6 +840,7 @@ async def send_request_email_notifications(
             uow.requests,
             uow.users,
             uow.files,
+            notification_preferences=_build_notification_preferences(uow),
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         service = _build_request_service(

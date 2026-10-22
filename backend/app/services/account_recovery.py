@@ -34,6 +34,7 @@ class AccountRecoveryService:
             provider="iam",
         )
         if binding is None:
+            logger.warning("password_recovery_missing_iam_binding user_id=%s", user.id)
             return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
         channel = await self._uow.user_contact_channels.get_primary_by_type(
             user_id=user.id,
@@ -41,6 +42,7 @@ class AccountRecoveryService:
         )
         delivery_email = (channel.channel_value if channel is not None else "").strip().lower()
         if not delivery_email:
+            logger.warning("password_recovery_missing_email user_id=%s", user.id)
             return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
         try:
             validate_optional_email(delivery_email, allow_placeholder=False)

@@ -364,7 +364,7 @@ class ProcessNotificationEventHandler:
         if responsible_user_id is None and request_row is not None:
             responsible_user_id = _normalize_optional_str(getattr(request_row, "id_user", None))
 
-        if new_status == "open" and event.request_id is not None:
+        if event.request_id is not None:
             if responsible_user_id is not None:
                 recipients.append(responsible_user_id)
             recipients.extend(

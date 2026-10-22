@@ -272,6 +272,33 @@ async def test_handler_request_status_changed_excludes_actor(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handler_request_status_changed_notifies_visible_contractors(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(
+        module,
+        "UnitOfWork",
+        lambda: _FakeUow(
+            repo,
+            owner_id="owner-2",
+            visible_contractors_by_request={"55": ["contractor-1"]},
+        ),
+    )
+    handler = module.ProcessNotificationEventHandler()
+
+    event = build_process_notification_event(
+        event_type="request.status_changed",
+        actor_user_id="actor-1",
+        request_id=55,
+        dedupe_key="request.status_changed:55:review",
+        payload={"old_status": "open", "new_status": "review"},
+    )
+    await handler.handle(payload=event.to_payload())
+
+    assert sorted(item.user_id for item in repo.created) == ["contractor-1", "owner-2"]
+    assert {item.type for item in repo.created} == {"request.status_changed"}
+
+
+@pytest.mark.asyncio
 async def test_handler_dedupe_skips_duplicate_event(monkeypatch):
     repo = _FakeNotificationsRepo()
     monkeypatch.setattr(module, "UnitOfWork", lambda: _FakeUow(repo, owner_id="owner-2"))

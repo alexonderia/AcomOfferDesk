@@ -11,8 +11,11 @@ from app.domain.contractor_validation import validate_inn, validate_optional_ema
 from app.domain.authorization import has_permission
 from app.domain.department_delegations import get_department_permission_codes
 from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.domain.iam_identity import stable_iam_account_id
+from app.domain.iam_roles import technical_role_name
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, UserPolicy
+from app.models.auth_models import UserAuthAccount
 from app.models.orm_models import CompanyContact, Profile, Role, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
@@ -491,6 +494,11 @@ class UserQueryService:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Профиль подчиненного доступен только для разрешенных ролей")
 
+        # Superadmin/admin manage allowed profiles globally; lead/economist
+        # remain restricted to their unit subtree.
+        if current_user.role_id in {settings.superadmin_role_id, settings.admin_role_id}:
+            return
+
         if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
@@ -905,6 +913,7 @@ class ManualContractorService:
         units: UnitRepository | None = None,
         user_contact_channels=None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        iam_client: IamClient | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
@@ -913,6 +922,7 @@ class ManualContractorService:
         self._units = units
         self._user_contact_channels = user_contact_channels
         self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._iam_client = iam_client or IamClient()
 
     def _contractor_unit_service(self) -> ContractorUnitService:
         if self._units is None:
@@ -1094,6 +1104,26 @@ class ManualContractorService:
                 is_verified=False,
                 is_primary=True,
             )
+
+        role_name = technical_role_name(settings.contractor_role_id)
+        if role_name is None:
+            raise Conflict("Роль контрагента недоступна")
+        account = await self._iam_client.put_account(
+            account_id=stable_iam_account_id(login),
+            login=login,
+            role=role_name,
+            auth_status="active",
+        )
+        await self._user_auth_accounts.add(
+            UserAuthAccount(
+                id_user=login,
+                provider="iam",
+                external_subject_id=account.id,
+                external_username=login,
+                external_email=(data.company_mail or "").strip().lower() or None,
+                is_active=True,
+            )
+        )
         return login
 
     async def create_manual_contractor(
@@ -1552,12 +1582,25 @@ class UserStatusService:
                 if not email_system_enabled:
                     contractor_email_notification_reason = "disabled_by_user"
                 else:
-                    contractor_email_notification_queued = await notify_contractor_status_changed_email(
-                        to_email=notify_email,
-                        user_status=user.status,
-                        recipient_user_id=user.id,
-                        initiator_user_id=current_user.user_id,
-                    )
+                    async def _send_contractor_status_email() -> None:
+                        await notify_contractor_status_changed_email(
+                            to_email=notify_email,
+                            user_status=user.status,
+                            recipient_user_id=user.id,
+                            initiator_user_id=current_user.user_id,
+                        )
+
+                    if self._after_commit_hook_registrar is not None:
+                        # Never queue mail for a status change that may still roll back.
+                        self._after_commit_hook_registrar(_send_contractor_status_email)
+                        contractor_email_notification_queued = True
+                    else:
+                        contractor_email_notification_queued = await notify_contractor_status_changed_email(
+                            to_email=notify_email,
+                            user_status=user.status,
+                            recipient_user_id=user.id,
+                            initiator_user_id=current_user.user_id,
+                        )
                     if not contractor_email_notification_queued:
                         contractor_email_notification_reason = "status_not_supported_for_email"
 
@@ -1617,6 +1660,8 @@ class UserSelfService:
     ) -> None:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Данными подчиненного можно управлять только для разрешенных ролей подчиненных")
+        if current_user.role_id in {settings.superadmin_role_id, settings.admin_role_id}:
+            return
         if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,

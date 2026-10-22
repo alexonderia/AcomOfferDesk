@@ -36,6 +36,7 @@ import {
     parseAmountInput,
     normalizeOfferStatus,
     buildRequestDetailsSignature,
+    resolveEffectiveDeadline,
     toDeadlineIso,
 } from '../model/requestDetailsUtils';
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
@@ -462,10 +463,12 @@ export const RequestDetailsView = () => {
         const parsedPlanId = planId ? Number(planId) : null;
         const initialAmountChanged = canViewRequestAmounts && initialAmount !== baselineInitialAmount;
         const finalAmountChanged = canViewRequestAmounts && finalAmount !== baselineFinalAmount;
-        let effectiveDeadline = deadline;
-        if (status === 'review') {
-            effectiveDeadline = todayDate;
-        }
+        const effectiveDeadline = resolveEffectiveDeadline({
+            status,
+            statusChanged,
+            deadline,
+            todayDate,
+        });
         const deadlineChanged = effectiveDeadline !== baselineDeadline;
 
         const validationError = getSaveValidationError(status, effectiveDeadline, initialAmount, finalAmount);

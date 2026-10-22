@@ -1,8 +1,14 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.services.users import ManualContractorCreateInput, ManualContractorService
+
+
+class _IamClient:
+    async def put_account(self, *, account_id, login: str, role: str, auth_status: str):
+        return SimpleNamespace(id=str(account_id))
 
 
 @pytest.mark.asyncio
@@ -14,6 +20,7 @@ async def test_manual_contractor_creation_is_local_only() -> None:
         profiles=AsyncMock(),
         company_contacts=AsyncMock(),
         user_auth_accounts=AsyncMock(),
+        iam_client=_IamClient(),
     )
 
     login = await service._create_manual_contractor(
@@ -29,7 +36,7 @@ async def test_manual_contractor_creation_is_local_only() -> None:
 
 
 @pytest.mark.asyncio
-async def test_manual_contractor_creation_does_not_create_auth_binding() -> None:
+async def test_manual_contractor_creation_creates_iam_binding() -> None:
     auth_accounts = AsyncMock()
     users = AsyncMock()
     users.exists = AsyncMock(return_value=False)
@@ -38,6 +45,7 @@ async def test_manual_contractor_creation_does_not_create_auth_binding() -> None
         profiles=AsyncMock(),
         company_contacts=AsyncMock(),
         user_auth_accounts=auth_accounts,
+        iam_client=_IamClient(),
     )
 
     await service._create_manual_contractor(
@@ -49,4 +57,8 @@ async def test_manual_contractor_creation_does_not_create_auth_binding() -> None
         )
     )
 
-    auth_accounts.add.assert_not_awaited()
+    auth_accounts.add.assert_awaited_once()
+    binding = auth_accounts.add.await_args.args[0]
+    assert binding.provider == "iam"
+    assert binding.id_user
+    assert binding.external_subject_id

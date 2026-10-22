@@ -111,7 +111,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-          command_timeout: 35m
+          command_timeout: 45m
           script: |
             set -euo pipefail
             SHA="${{ needs.gate-ci.outputs.sha }}"
@@ -171,8 +171,31 @@ jobs:
             # 4. flyway-sql ConfigMap из чекаута (миграции едут вместе с SHA).
             bash deploy/k8s/acom/scripts/make-configmaps.sh
 
-            # 5. Apply overlay (jobs/ в kustomization сознательно НЕ включены — см. kustomization.yaml).
-            kubectl apply -k deploy/k8s/acom/
+            # 5. Apply overlay with immutable SHA tags. Do not apply prod-1 first:
+            # a stale mutable tag can create crashlooping pods before migrations finish.
+            OVERLAY_DIR="${ROOT}/deploy/k8s/acom-ci-overlay"
+            mkdir -p "${OVERLAY_DIR}"
+            trap 'rm -rf "${OVERLAY_DIR}"' EXIT
+            cat > "${OVERLAY_DIR}/kustomization.yaml" <<EOF
+            apiVersion: kustomize.config.k8s.io/v1beta1
+            kind: Kustomization
+            resources:
+              - ../acom
+            images:
+              - name: acom-backend
+                newTag: ${TAG}
+              - name: acom-file-guard
+                newTag: ${TAG}
+              - name: acom-web
+                newTag: ${TAG}
+              - name: acom-notifications-worker
+                newTag: ${TAG}
+              - name: acom-iam
+                newTag: ${TAG}
+            EOF
+            kubectl kustomize --load-restrictor LoadRestrictionsNone "${OVERLAY_DIR}" \
+              | kubectl apply -f -
+            rm -rf "${OVERLAY_DIR}"
 
             # 5b. Gateway читает nginx.conf из ConfigMap только при старте.
             # Без перезапуска новые location/буферы не применяются (кейс IAM: /iam → SPA).
@@ -201,13 +224,13 @@ jobs:
             # У Job-манифестов нет metadata.namespace — применяем и ждём явно в ns acom.
             kubectl -n "${NS}" delete job flyway-migrate --ignore-not-found
             kubectl -n "${NS}" apply -f deploy/k8s/acom/jobs/flyway-migrate.job.yaml
-            kubectl -n "${NS}" wait --for=condition=complete job/flyway-migrate --timeout=10m
+            kubectl -n "${NS}" wait --for=condition=complete job/flyway-migrate --timeout=15m
 
             # 8b. Flyway-миграции схемы IAM (БД acom_iam) — тем же pinned-образом.
             # ConfigMap iam-sql собирается шагом 4 (make-configmaps.sh).
             kubectl -n "${NS}" delete job iam-migrations --ignore-not-found
             kubectl -n "${NS}" apply -f deploy/k8s/acom/jobs/iam-migrations.job.yaml
-            kubectl -n "${NS}" wait --for=condition=complete job/iam-migrations --timeout=8m
+            kubectl -n "${NS}" wait --for=condition=complete job/iam-migrations --timeout=12m
 
             # 9. Раскатка app-образов (container names: backend/web/file-guard/worker/iam).
             kubectl -n "${NS}" set image deployment/backend backend="acom-backend:${TAG}"

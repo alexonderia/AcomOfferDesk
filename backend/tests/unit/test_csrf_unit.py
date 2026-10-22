@@ -6,7 +6,14 @@ from app.core.config import settings
 from app.core.csrf import csrf_failure_reason
 
 
-def _request(*, method: str, cookie: str = "", csrf: str = "", origin: str = "") -> Request:
+def _request(
+    *,
+    method: str,
+    cookie: str = "",
+    csrf: str = "",
+    origin: str = "",
+    path: str = "/api/v1/users/me/profile",
+) -> Request:
     headers: list[tuple[bytes, bytes]] = []
     if cookie:
         headers.append((b"cookie", cookie.encode("ascii")))
@@ -18,7 +25,7 @@ def _request(*, method: str, cookie: str = "", csrf: str = "", origin: str = "")
         {
             "type": "http",
             "method": method,
-            "path": "/api/v1/users/me/profile",
+            "path": path,
             "headers": headers,
             "scheme": "https",
             "server": ("app.example", 443),
@@ -40,6 +47,28 @@ def test_authenticated_post_requires_matching_double_submit_token(monkeypatch) -
     assert (
         csrf_failure_reason(
             _request(method="POST", cookie=cookie, csrf="other", origin="https://app.example")
+        )
+        == "csrf_token_mismatch"
+    )
+
+
+def test_token_based_password_forms_are_exempt_from_session_csrf(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "web_base_url", "https://app.example")
+    auth_cookie = f"{settings.iam_access_cookie_name}=access"
+    for path in ("/api/v1/auth/password/setup", "/api/v1/auth/password/reset"):
+        assert csrf_failure_reason(_request(method="POST", cookie=auth_cookie, path=path)) is None
+
+
+def test_password_form_exemption_is_exact_path_only(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "web_base_url", "https://app.example")
+    auth_cookie = f"{settings.iam_access_cookie_name}=access"
+    assert (
+        csrf_failure_reason(
+            _request(
+                method="POST",
+                cookie=auth_cookie,
+                path="/api/v1/auth/password/setup/extra",
+            )
         )
         == "csrf_token_mismatch"
     )

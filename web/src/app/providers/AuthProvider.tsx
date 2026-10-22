@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return refreshPromiseRef.current;
     }
 
-    const task = (async (): Promise<AuthRefreshResult> => {
+    const runRefresh = async (): Promise<AuthRefreshResult> => {
       try {
         await issueCsrfToken();
         const result = await refreshWebSession();
@@ -79,7 +79,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setStatus('unavailable');
         return { kind: 'unavailable' };
       }
-    })();
+    };
+
+    // Two tabs share the same refresh cookie. Without a cross-tab lock both
+    // can rotate it at once; IAM then treats the second request as refresh
+    // reuse and revokes the session. Web Locks serializes the network calls.
+    const lockManager = (
+      navigator as Navigator & {
+        locks?: { request<T>(name: string, callback: () => Promise<T>): Promise<T> };
+      }
+    ).locks;
+    const task: Promise<AuthRefreshResult> = lockManager
+      ? lockManager.request<AuthRefreshResult>('acom-auth-refresh', () => runRefresh())
+      : runRefresh();
 
     refreshPromiseRef.current = task;
     void task.finally(() => {

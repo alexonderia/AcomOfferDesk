@@ -6,15 +6,27 @@ from fastapi.testclient import TestClient
 
 from app.api.v1 import auth as auth_api
 from app.core.config import settings
+from app.core.csrf import csrf_failure_reason
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import AuthenticationUnavailable, ServiceUnavailable, Unauthorized
 from app.infrastructure.iam_client import IamBrowserPage, IamTokenBundle
 
 
-def _build_app() -> FastAPI:
+def _build_app(*, csrf: bool = False) -> FastAPI:
     app = FastAPI()
     app.include_router(auth_api.router, prefix="/api/v1")
     app.include_router(auth_api.iam_bff_router)
+
+    if csrf:
+
+        @app.middleware("http")
+        async def csrf_protection(request, call_next):
+            if csrf_failure_reason(request) is not None:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Запрос отклонён проверкой безопасности."},
+                )
+            return await call_next(request)
 
     @app.exception_handler(Unauthorized)
     async def unauthorized_handler(request, exc):
@@ -181,6 +193,39 @@ def test_password_setup_form_is_proxied_through_bff(monkeypatch) -> None:
     assert response.headers["cache-control"] == "no-store"
 
     with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/v1/auth/password/setup",
+            data={
+                "token": "setup-action-token-123456",
+                "new_password": "correct-horse-battery-staple",
+                "password_confirmation": "correct-horse-battery-staple",
+            },
+        )
+
+    assert response.status_code == 200
+    assert observed == {
+        "action": "setup",
+        "token": None,
+        "form": {
+            "token": "setup-action-token-123456",
+            "new_password": "correct-horse-battery-staple",
+            "password_confirmation": "correct-horse-battery-staple",
+        },
+    }
+
+
+def test_password_setup_post_is_exempt_from_csrf_with_active_session(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class _IamClient:
+        async def render_password_action_page(self, *, action, token=None, form=None):
+            observed.update(action=action, token=token, form=form)
+            return IamBrowserPage(status_code=200, html="ok")
+
+    monkeypatch.setattr(auth_api, "IamClient", _IamClient)
+
+    with TestClient(_build_app(csrf=True)) as client:
+        _set_refresh_cookie(client)
         response = client.post(
             "/api/v1/auth/password/setup",
             data={

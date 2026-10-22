@@ -9,6 +9,15 @@ from app.core.config import settings
 
 
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Password setup/reset authenticate with a one-time token in the form body,
+# not with the browser session. A plain HTML form cannot send X-CSRF-Token,
+# so the session CSRF check would block the legitimate password flow.
+_TOKEN_FORM_PATHS = frozenset(
+    {
+        "/api/v1/auth/password/setup",
+        "/api/v1/auth/password/reset",
+    }
+)
 
 
 def _allowed_origins() -> set[str]:
@@ -26,6 +35,8 @@ def _allowed_origins() -> set[str]:
 
 def csrf_failure_reason(request: Request) -> str | None:
     if request.method.upper() in _SAFE_METHODS:
+        return None
+    if request.url.path in _TOKEN_FORM_PATHS:
         return None
     has_auth_cookie = bool(
         request.cookies.get(settings.iam_access_cookie_name)

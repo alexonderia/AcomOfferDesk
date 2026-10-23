@@ -858,7 +858,10 @@ class OfferService:
             contractor_user_id=resolved_contractor_user_id,
         )
         if existing_offer is not None and existing_offer.status != "deleted":
-            raise Conflict("Offer for this contractor already exists")
+            raise Conflict(
+                "Offer for this contractor already exists",
+                reason_code="offer_already_exists",
+            )
 
         offer = await self._offers.create(
             request_id=request.id,

@@ -22,6 +22,7 @@ const API_REASON_CODE_TRANSLATIONS: Record<string, string> = {
   invalid_image: 'Изображение повреждено или имеет неверный формат.',
   malware_detected: 'Файл не прошел проверку безопасности.',
   file_scan_unavailable: FILE_SCAN_UNAVAILABLE_MESSAGE,
+  offer_already_exists: 'У этого контрагента уже есть КП.',
 };
 
 const DIRECT_TRANSLATIONS: Record<string, string> = {

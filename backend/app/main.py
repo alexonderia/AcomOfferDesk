@@ -302,10 +302,11 @@ async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONRespo
 @app.exception_handler(Conflict)
 async def conflict_handler(request: Request, exc: Conflict) -> JSONResponse:
     _ = request
-    return JSONResponse(
-        status_code=409,
-        content={"detail": _normalize_public_error_detail(status_code=409, detail=str(exc))},
-    )
+    content = {"detail": _normalize_public_error_detail(status_code=409, detail=str(exc))}
+    reason_code = getattr(exc, "reason_code", None)
+    if reason_code:
+        content["reason_code"] = reason_code
+    return JSONResponse(status_code=409, content=content)
 
 
 @app.exception_handler(UploadRejected)

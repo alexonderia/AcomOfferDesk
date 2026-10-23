@@ -50,6 +50,25 @@ describe('api client upload reason_code handling', () => {
       fetchJson('/api/v1/requests/10/files', { method: 'POST', body: new FormData() }, 'Ошибка прикрепления файла')
     ).rejects.toThrow('PDF-файл поврежден или не читается.');
   });
+
+  it('shows duplicate contractor offer reason for 409', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: 'Не удалось применить изменение. Повторите попытку.',
+          reason_code: 'offer_already_exists',
+        }),
+        {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+
+    await expect(
+      fetchJson('/api/v1/requests/232545/offers/manual', { method: 'POST', body: new FormData() }, 'Не удалось создать КП вручную')
+    ).rejects.toThrow('У этого контрагента уже есть КП.');
+  });
 });
 
 describe('api client silent session refresh', () => {

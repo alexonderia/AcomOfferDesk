@@ -15,7 +15,9 @@ class Forbidden(DomainError):
 
 
 class Conflict(DomainError):
-    pass
+    def __init__(self, detail: str = "", *, reason_code: str | None = None) -> None:
+        super().__init__(detail)
+        self.reason_code = reason_code
 
 
 class UploadRejected(DomainError):

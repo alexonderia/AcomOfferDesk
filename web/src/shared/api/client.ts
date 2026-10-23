@@ -179,7 +179,12 @@ const getErrorMessage = async (response: Response, fallback: string) => {
 
     if (
       reasonCodeMessage
-      && (!detailMessage || detailMessage === GENERIC_ERROR_MESSAGE || detailMessage === NOT_FOUND_ERROR_MESSAGE)
+      && (
+        !detailMessage
+        || detailMessage === GENERIC_ERROR_MESSAGE
+        || detailMessage === NOT_FOUND_ERROR_MESSAGE
+        || response.status === 409
+      )
     ) {
       return reasonCodeMessage;
     }

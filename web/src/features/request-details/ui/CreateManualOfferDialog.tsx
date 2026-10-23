@@ -21,6 +21,7 @@ import { useLiveFieldVisibility, textFieldAutocompleteProps } from '@shared/lib/
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 import { useToastMessageEffect } from '@shared/ui/toasts';
+import { filterManualOfferContractors } from './manualOfferContractorFilter';
 
 type Props = {
   open: boolean;
@@ -325,6 +326,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
               onChange={(_, value) => setSelectedContractor(value)}
               isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
               getOptionLabel={getContractorOptionLabel}
+              filterOptions={filterManualOfferContractors}
               renderInput={(params) => (
                 <TextField
                   {...params}

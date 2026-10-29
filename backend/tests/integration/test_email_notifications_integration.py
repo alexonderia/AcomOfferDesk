@@ -430,9 +430,10 @@ async def test_send_use_case_generates_verified_and_invite_email_events(monkeypa
     assert verified_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert verified_item["operation_expected_total"] == 2
     assert invite_item["reply_token"] is None
-    assert "/register?token=" in invite_item["text_content"]
-    assert "https://web.acom.example/register?token=" in invite_item["text_content"]
-    assert "https://portal.acom.example/login" not in invite_item["text_content"]
+    # PR #53 (Keycloak→IAM): invitation no longer carries /register?token=;
+    # the email points the invited user to the portal login instead.
+    assert "/register?token=" not in invite_item["text_content"]
+    assert "https://portal.acom.example/login" in invite_item["text_content"]
     assert "Ссылка для входа:" in invite_item["text_content"]
     assert invite_item["operation_kind"] == BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
     assert invite_item["operation_expected_total"] == 2

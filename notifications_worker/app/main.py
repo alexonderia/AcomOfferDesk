@@ -9,18 +9,9 @@ from aio_pika.abc import AbstractRobustConnection
 from aiormq.exceptions import AMQPConnectionError
 
 from .consumers import handle_message
-from shared.broker import EXCHANGE, QUEUE_EMAIL, QUEUE_MAX, QUEUE_TG, RK_EMAIL, RK_MAX, RK_TG
-from shared.normalization import is_truthy_env_flag
+from shared.broker import EXCHANGE, QUEUE_EMAIL, RK_EMAIL
 
 logger = logging.getLogger(__name__)
-
-
-def _is_telegram_legacy_enabled() -> bool:
-    return is_truthy_env_flag(os.getenv("LEGACY_TELEGRAM_ENABLED", "false"))
-
-
-def _is_max_bot_enabled() -> bool:
-    return is_truthy_env_flag(os.getenv("MAX_BOT_ENABLED", "false"))
 
 
 async def _connect_with_retry(rabbitmq_url: str) -> AbstractRobustConnection:
@@ -44,8 +35,6 @@ async def _connect_with_retry(rabbitmq_url: str) -> AbstractRobustConnection:
 async def run_worker() -> None:
     logging.basicConfig(level=logging.INFO)
     rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-    telegram_legacy_enabled = _is_telegram_legacy_enabled()
-    max_bot_enabled = _is_max_bot_enabled()
     connection = await _connect_with_retry(rabbitmq_url)
 
     channel = await connection.channel()
@@ -56,24 +45,7 @@ async def run_worker() -> None:
     email_queue = await channel.declare_queue(QUEUE_EMAIL, durable=True)
     await email_queue.bind(exchange, routing_key=RK_EMAIL)
     await email_queue.consume(handle_message)
-    if telegram_legacy_enabled:
-        # LEGACY: Telegram queue is disabled by default in production.
-        tg_queue = await channel.declare_queue(QUEUE_TG, durable=True)
-        await tg_queue.bind(exchange, routing_key=RK_TG)
-        await tg_queue.consume(handle_message)
-    if max_bot_enabled:
-        max_queue = await channel.declare_queue(QUEUE_MAX, durable=True)
-        await max_queue.bind(exchange, routing_key=RK_MAX)
-        await max_queue.consume(handle_message)
-
-    if telegram_legacy_enabled and max_bot_enabled:
-        logger.info("Notifications worker is consuming email, legacy Telegram and MAX queues")
-    elif telegram_legacy_enabled:
-        logger.info("Notifications worker is consuming email and legacy Telegram queues")
-    elif max_bot_enabled:
-        logger.info("Notifications worker is consuming email and MAX queues")
-    else:
-        logger.info("Notifications worker is consuming email queue only")
+    logger.info("Notifications worker is consuming email queue")
 
     try:
         await asyncio.Future()

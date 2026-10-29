@@ -20,18 +20,19 @@ def make_current_user():
         role_id: int = settings.economist_role_id,
         status: str = "active",
         permissions: set[str] | frozenset[str] | None = None,
-        keycloak_roles: set[str] | frozenset[str] | None = None,
+        onboarding_state: str | None = None,
     ) -> CurrentUser:
         raw_permissions = permissions or set()
-        raw_keycloak_roles = keycloak_roles or set(raw_permissions)
+        required_actions = frozenset({"complete_profile"}) if onboarding_state == "first_login" else frozenset()
         return CurrentUser(
             user_id=user_id,
+            iam_account_id="00000000-0000-4000-8000-000000000001",
+            iam_session_id="00000000-0000-4000-8000-000000000002",
+            system_role="economist",
             role_id=role_id,
             status=status,
             permissions=frozenset(raw_permissions),
-            keycloak_roles=frozenset(raw_keycloak_roles),
-            app_roles=frozenset(role for role in raw_keycloak_roles if role.startswith("app.")),
-            delegation_roles=frozenset(role for role in raw_keycloak_roles if role.startswith("delegation.")),
+            required_actions=required_actions,
         )
 
     return _make_current_user

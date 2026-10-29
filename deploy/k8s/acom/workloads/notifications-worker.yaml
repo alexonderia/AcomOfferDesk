@@ -38,6 +38,8 @@ spec:
               value: /etc/ssl/rabbitmq/tls.crt
             - name: RABBITMQ_SSL_KEYFILE
               value: /etc/ssl/rabbitmq/tls.key
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/rabbitmq/ca.crt
           startupProbe:
             exec:
               command: ["python", "-c", "import pathlib;c=pathlib.Path('/proc/1/cmdline').read_bytes().replace(b'\\x00',b' ').decode();raise SystemExit(0 if 'app.main' in c else 1)"]
@@ -57,14 +59,10 @@ spec:
               cpu: 500m
               memory: 256Mi
           volumeMounts:
-            - name: shared
-              mountPath: /app/shared
             - name: rabbitmq-client
               mountPath: /etc/ssl/rabbitmq
               readOnly: true
       volumes:
-        - name: shared
-          emptyDir: {}
         - name: rabbitmq-client
           secret:
             secretName: rabbitmq-tls

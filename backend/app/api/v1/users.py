@@ -8,17 +8,29 @@ from app.api.action_flags import UserActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
+from app.domain.exceptions import Conflict, Forbidden
+from app.domain.iam_identity import stable_iam_account_id
+from app.domain.iam_roles import technical_role_name
 from app.domain.policies import CurrentUser
+from app.domain.iam_status import iam_auth_status_for_user_status
+from app.infrastructure.iam_client import IamClient
+from app.models.auth_models import UserAuthAccount
 from app.schemas.users import (
     DepartmentDelegationAccessSchema,
     EconomistListData,
     EconomistListItemSchema,
     EconomistListResponse,
-    LinkMyMaxAccountRequest,
+    HierarchyRelationBriefSchema,
+    HierarchyUnitBriefSchema,
+    HierarchyUserBriefSchema,
+    LegacyHierarchyData,
     NotificationPreferencesData,
     NotificationPreferencesResponse,
     ManualContractorCreateRequest,
     ManualContractorCreateResponse,
+    ManualContractorDuplicateItemSchema,
+    ManualContractorDuplicateListData,
+    ManualContractorDuplicateListResponse,
     ManualContractorUpdateRequest,
     ManualContractorUpdateResponse,
     MeData,
@@ -26,9 +38,6 @@ from app.schemas.users import (
     RequestContractorItemSchema,
     RequestContractorListData,
     RequestContractorListResponse,
-    RequestEconomistItemSchema,
-    RequestEconomistListData,
-    RequestEconomistListResponse,
     SetMyUnavailabilityPeriodRequest,
     SetMyUnavailabilityPeriodResponse,
     SetSubordinateUnavailabilityPeriodRequest,
@@ -36,8 +45,9 @@ from app.schemas.users import (
     SubordinateProfileData,
     SubordinateProfileResponse,
     UpdateMyCompanyContactsRequest,
-    UpdateMyCredentialsRequest,
     UpdateMyProfileRequest,
+    UserHierarchyData,
+    UserHierarchyResponse,
     UserListData,
     UserListItemSchema,
     UserManagerUpdateData,
@@ -59,7 +69,8 @@ from app.schemas.users import (
     UserContractorDelegationsUpdateRequest,
     UpdateNotificationPreferencesRequest,
 )
-from app.domain.exceptions import Forbidden
+from app.api.v1.units import _unit_node_schema
+from app.schemas.units import UnitTreeData, UnitTreeResponse
 from app.services.users import (
     ManualContractorCreateInput,
     ManualContractorService,
@@ -70,12 +81,12 @@ from app.services.users import (
     UserSelfService,
     UserStatusService,
 )
-from app.services.max_account_linking import link_max_account
-from app.services.max_notifications import notify_account_linked as notify_max_account_linked
-from app.services.max_registration_links import MaxExistingLinkExpiredError, MaxExistingLinkInvalidError, resolve_max_existing_link_token
-from app.services.user_notification_preferences import UserNotificationPreferencesService
-from app.services.user_department_delegations import UserDepartmentDelegationsService
+from app.services.account_recovery import AccountRecoveryService
+from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
+from app.services.units import UnitService
 from app.services.user_contractor_delegations import UserContractorDelegationsService
+from app.services.user_department_delegations import UserDepartmentDelegationsService
+from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 router = APIRouter()
 
@@ -98,8 +109,7 @@ def _user_list_schema(
 ) -> UserListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
-    data.pop("tg_user_id", None)
-    data.pop("tg_status", None)
+    is_manual = data.pop("is_manual", False)
     is_hierarchy_subordinate = None
     if subordinate_ids is not None:
         is_hierarchy_subordinate = item.user_id in subordinate_ids
@@ -107,7 +117,7 @@ def _user_list_schema(
         current_user,
         target_user_id=item.user_id,
         target_role_id=item.role_id,
-        target_tg_user_id=item.tg_user_id,
+        is_manual=is_manual,
         is_hierarchy_subordinate=is_hierarchy_subordinate,
     )
     return UserListItemSchema(**data)
@@ -127,11 +137,7 @@ def _economist_list_schema(current_user: CurrentUser, item) -> EconomistListItem
 def _me_data(current_user: CurrentUser, item) -> MeData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
-    data.pop("tg_user_id", None)
     data["permissions"] = serialize_permissions(current_user)
-    data["keycloak_roles"] = sorted(current_user.keycloak_roles)
-    data["app_roles"] = sorted(current_user.app_roles)
-    data["delegation_roles"] = sorted(current_user.delegation_roles)
     data["actions"] = UserActionBuilder.build_me(current_user)
     return MeData(**data)
 
@@ -168,6 +174,8 @@ def _department_delegations_data(item) -> UserDepartmentDelegationsData:
                 group=access.group,
                 label=access.label,
                 enabled=access.enabled,
+                granted_via_role=access.granted_via_role,
+                granted_individually=access.granted_individually,
             )
             for access in item.accesses
         ],
@@ -188,11 +196,64 @@ def _contractor_delegations_data(item) -> UserContractorDelegationsData:
                 label=access.label,
                 description=access.description,
                 enabled=access.enabled,
+                granted_via_role=access.granted_via_role,
+                granted_individually=access.granted_individually,
             )
             for access in item.accesses
         ],
         token_refresh_required=item.token_refresh_required,
         warning=item.warning,
+    )
+
+
+def _hierarchy_user_brief_schema(item) -> HierarchyUserBriefSchema:
+    return HierarchyUserBriefSchema(
+        user_id=item.user_id,
+        full_name=item.full_name,
+        role_id=item.role_id,
+        role_name=item.role_name,
+        status=_ru_user_status(item.status),
+    )
+
+
+def _hierarchy_relation_schema(item) -> HierarchyRelationBriefSchema:
+    return HierarchyRelationBriefSchema(
+        user_id=item.user_id,
+        full_name=item.full_name,
+        role_id=item.role_id,
+        role_name=item.role_name,
+        status=_ru_user_status(item.status),
+        source_unit_id=item.source_unit_id,
+        source_unit_name=item.source_unit_name,
+    )
+
+
+def _user_hierarchy_data(item: UserHierarchyProfileState) -> UserHierarchyData:
+    return UserHierarchyData(
+        user=_hierarchy_user_brief_schema(item.user),
+        units=[
+            HierarchyUnitBriefSchema(
+                unit_id=unit.unit_id,
+                name=unit.name,
+                id_parent=unit.id_parent,
+            )
+            for unit in item.units
+        ],
+        managers=[_hierarchy_relation_schema(manager) for manager in item.managers],
+        subordinates=[_hierarchy_relation_schema(subordinate) for subordinate in item.subordinates],
+        legacy_hierarchy=LegacyHierarchyData(
+            legacy_manager=(
+                _hierarchy_user_brief_schema(item.legacy_hierarchy.legacy_manager)
+                if item.legacy_hierarchy.legacy_manager is not None
+                else None
+            ),
+            legacy_subordinates=[
+                _hierarchy_user_brief_schema(subordinate)
+                for subordinate in item.legacy_hierarchy.legacy_subordinates
+            ],
+            is_business_source=item.legacy_hierarchy.is_business_source,
+            note=item.legacy_hierarchy.note,
+        ),
     )
 
 
@@ -215,8 +276,13 @@ async def list_users(
     )
 
 
-@router.get("/users/manager-candidates", response_model=UserListResponse)
-@router.get("/users/manager-candidates/", response_model=UserListResponse, include_in_schema=False)
+@router.get(
+    "/users/manager-candidates",
+    response_model=UserListResponse,
+    deprecated=True,
+    summary="[Legacy] Кандидаты в руководители по users.id_parent",
+)
+@router.get("/users/manager-candidates/", response_model=UserListResponse, include_in_schema=False, deprecated=True)
 async def list_manager_candidates(
     target_role_id: int = Query(..., ge=1),
     target_user_id: str | None = Query(default=None, min_length=1),
@@ -264,13 +330,15 @@ async def get_me(
     async with uow:
         service = UserQueryService(uow.users, uow.user_status_periods)
         me = await service.get_me(current_user)
+        department_name = await uow.units.get_primary_department_name_for_user(
+            user_id=current_user.user_id,
+        )
 
     if current_user.role_id != settings.contractor_role_id:
         me = me.__class__(
             user_id=me.user_id,
             role_id=me.role_id,
             status=me.status,
-            tg_user_id=me.tg_user_id,
             full_name=me.full_name,
             phone=me.phone,
             mail=me.mail,
@@ -279,8 +347,23 @@ async def get_me(
         )
 
     return MeResponse(
-        data=_me_data(current_user, me),
+        data=_me_data(current_user, me).model_copy(update={"department_name": department_name}),
     )
+
+
+@router.get("/users/me/hierarchy", response_model=UserHierarchyResponse)
+@router.get("/users/me/hierarchy/", response_model=UserHierarchyResponse, include_in_schema=False)
+async def get_my_hierarchy(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserHierarchyResponse:
+    async with uow:
+        hierarchy = UnitHierarchyService(uow.users)
+        state = await hierarchy.get_user_hierarchy_profile(user_id=current_user.user_id)
+        if state is None:
+            raise Forbidden("Иерархия пользователя недоступна")
+
+    return UserHierarchyResponse(data=_user_hierarchy_data(state))
 
 
 @router.get("/users/me/registration-profile", response_model=MeResponse)
@@ -297,47 +380,6 @@ async def get_my_registration_profile(
     )
 
 
-@router.patch("/users/me/credentials", response_model=MeResponse)
-async def update_my_credentials(
-    payload: UpdateMyCredentialsRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    uow: UnitOfWork = Depends(get_uow),
-) -> MeResponse:
-    async with uow:
-        self_service = UserSelfService(
-            uow.users,
-            uow.profiles,
-            uow.company_contacts,
-            uow.user_status_periods,
-            uow.user_auth_accounts,
-        )
-        await self_service.update_my_credentials(
-            current_user,
-            current_password=payload.current_password,
-            new_password=payload.new_password,
-        )
-
-        query_service = UserQueryService(uow.users, uow.user_status_periods)
-        me = await query_service.get_me(current_user)
-
-    if current_user.role_id != settings.contractor_role_id:
-        me = me.__class__(
-            user_id=me.user_id,
-            role_id=me.role_id,
-            status=me.status,
-            tg_user_id=me.tg_user_id,
-            full_name=me.full_name,
-            phone=me.phone,
-            mail=me.mail,
-            unavailable_period=me.unavailable_period,
-            unavailable_periods=me.unavailable_periods,
-        )
-
-    return MeResponse(
-        data=_me_data(current_user, me),
-    )
-
-
 @router.patch("/users/me/profile", response_model=MeResponse)
 async def update_my_profile(
     payload: UpdateMyProfileRequest,
@@ -351,6 +393,7 @@ async def update_my_profile(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_profile(
             current_user,
@@ -367,7 +410,6 @@ async def update_my_profile(
             user_id=me.user_id,
             role_id=me.role_id,
             status=me.status,
-            tg_user_id=me.tg_user_id,
             full_name=me.full_name,
             phone=me.phone,
             mail=me.mail,
@@ -384,60 +426,13 @@ def _notification_preferences_data(item) -> NotificationPreferencesData:
     return NotificationPreferencesData(
         mode=item.mode,
         email_available=item.email_available,
-        max_available=item.max_available,
         email=item.email,
-        max_user_id=item.max_user_id,
         preferences={
             notification_type: {
                 "email": notification_state.email,
-                "max": notification_state.max,
             }
             for notification_type, notification_state in item.preferences.items()
         },
-    )
-
-
-@router.post("/users/me/max-link", response_model=MeResponse)
-async def link_my_max_account(
-    payload: LinkMyMaxAccountRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    uow: UnitOfWork = Depends(get_uow),
-) -> MeResponse:
-    try:
-        max_user_id = await resolve_max_existing_link_token(payload.code.strip())
-    except MaxExistingLinkExpiredError as exc:
-        raise Forbidden("Срок действия кода привязки MAX истёк") from exc
-    except MaxExistingLinkInvalidError as exc:
-        raise Forbidden("Недействительный код привязки MAX") from exc
-
-    async with uow:
-        await link_max_account(
-            user_auth_accounts=uow.user_auth_accounts,
-            user_contact_channels=uow.user_contact_channels,
-            user_id=current_user.user_id,
-            max_user_id=max_user_id,
-            is_verified=True,
-        )
-        query_service = UserQueryService(uow.users, uow.user_status_periods)
-        me = await query_service.get_me(current_user)
-
-    await notify_max_account_linked(max_user_id)
-
-    if current_user.role_id != settings.contractor_role_id:
-        me = me.__class__(
-            user_id=me.user_id,
-            role_id=me.role_id,
-            status=me.status,
-            tg_user_id=me.tg_user_id,
-            full_name=me.full_name,
-            phone=me.phone,
-            mail=me.mail,
-            unavailable_period=me.unavailable_period,
-            unavailable_periods=me.unavailable_periods,
-        )
-
-    return MeResponse(
-        data=_me_data(current_user, me),
     )
 
 
@@ -495,6 +490,7 @@ async def update_my_registration_profile(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_profile_for_review_onboarding(
             current_user,
@@ -524,6 +520,7 @@ async def update_my_company_contacts(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_company_contacts(
             current_user,
@@ -556,6 +553,7 @@ async def update_my_registration_company_contacts(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.update_my_company_contacts_for_review_onboarding(
             current_user,
@@ -588,6 +586,7 @@ async def set_my_unavailability_period(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.set_my_unavailability_period(
             current_user,
@@ -604,7 +603,6 @@ async def set_my_unavailability_period(
             user_id=me.user_id,
             role_id=me.role_id,
             status=me.status,
-            tg_user_id=me.tg_user_id,
             full_name=me.full_name,
             phone=me.phone,
             mail=me.mail,
@@ -635,6 +633,48 @@ async def get_subordinate_profile(
     )
 
 
+@router.get("/users/{user_id}/hierarchy", response_model=UserHierarchyResponse)
+async def get_user_hierarchy(
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserHierarchyResponse:
+    async with uow:
+        hierarchy = UnitHierarchyService(uow.users)
+        if not await hierarchy.can_view_user(current_user=current_user, target_user_id=user_id):
+            raise Forbidden("Недостаточно прав для просмотра иерархии пользователя")
+        visible_user_ids = await hierarchy.get_visible_user_ids(current_user=current_user)
+        if current_user.user_id == user_id or visible_user_ids is None:
+            visible_user_ids = None
+        state = await hierarchy.get_user_hierarchy_profile(
+            user_id=user_id,
+            visible_user_ids=visible_user_ids,
+        )
+        if state is None:
+            raise Forbidden("Иерархия пользователя недоступна")
+
+    return UserHierarchyResponse(data=_user_hierarchy_data(state))
+
+
+@router.get("/users/{user_id}/hierarchy/units-tree", response_model=UnitTreeResponse)
+async def get_user_hierarchy_units_tree(
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UnitTreeResponse:
+    async with uow:
+        hierarchy = UnitHierarchyService(uow.users)
+        if not await hierarchy.can_view_user(current_user=current_user, target_user_id=user_id):
+            raise Forbidden("Недостаточно прав для просмотра иерархии пользователя")
+        service = UnitService(uow.units, uow.users)
+        items = await service.get_tree_for_user_hierarchy(
+            current_user=current_user,
+            target_user_id=user_id,
+        )
+
+    return UnitTreeResponse(data=UnitTreeData(items=[_unit_node_schema(item) for item in items]))
+
+
 @router.get("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)
 async def get_user_department_delegations(
     user_id: str = Path(...),
@@ -651,10 +691,9 @@ async def get_user_department_delegations(
             current_user=current_user,
             target_user_id=user_id,
         )
-
-    return UserDepartmentDelegationsResponse(
-        data=_department_delegations_data(state),
-    )
+    if not state.can_manage and current_user.user_id != user_id:
+        raise Forbidden("Недостаточно прав для просмотра делегирований пользователя")
+    return UserDepartmentDelegationsResponse(data=_department_delegations_data(state))
 
 
 @router.get("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
@@ -673,10 +712,9 @@ async def get_user_contractor_delegations(
             current_user=current_user,
             target_user_id=user_id,
         )
-
-    return UserContractorDelegationsResponse(
-        data=_contractor_delegations_data(state),
-    )
+    if not state.can_manage and current_user.user_id != user_id:
+        raise Forbidden("Недостаточно прав для просмотра делегирований пользователя")
+    return UserContractorDelegationsResponse(data=_contractor_delegations_data(state))
 
 
 @router.put("/users/{user_id}/delegations/contractors", response_model=UserContractorDelegationsResponse)
@@ -697,10 +735,7 @@ async def update_user_contractor_delegations(
             target_user_id=user_id,
             requested_access_codes=payload.access_codes,
         )
-
-    return UserContractorDelegationsResponse(
-        data=_contractor_delegations_data(state),
-    )
+    return UserContractorDelegationsResponse(data=_contractor_delegations_data(state))
 
 
 @router.put("/users/{user_id}/delegations/department", response_model=UserDepartmentDelegationsResponse)
@@ -721,10 +756,7 @@ async def update_user_department_delegations(
             target_user_id=user_id,
             requested_access_codes=payload.access_codes,
         )
-
-    return UserDepartmentDelegationsResponse(
-        data=_department_delegations_data(state),
-    )
+    return UserDepartmentDelegationsResponse(data=_department_delegations_data(state))
 
 
 @router.post("/users/{user_id}/unavailability-period", response_model=SetSubordinateUnavailabilityPeriodResponse)
@@ -741,6 +773,7 @@ async def set_subordinate_unavailability_period(
             uow.company_contacts,
             uow.user_status_periods,
             uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         await self_service.set_subordinate_unavailability_period(
             current_user=current_user,
@@ -758,23 +791,6 @@ async def set_subordinate_unavailability_period(
 
     return SetSubordinateUnavailabilityPeriodResponse(
         data=_subordinate_profile_data(current_user, profile),
-    )
-
-
-@router.get("/users/request-economists", response_model=RequestEconomistListResponse)
-@router.get("/users/request-economists/", response_model=RequestEconomistListResponse, include_in_schema=False)
-async def list_request_economists(
-    current_user: CurrentUser = Depends(get_current_user),
-    uow: UnitOfWork = Depends(get_uow),
-) -> RequestEconomistListResponse:
-    async with uow:
-        service = UserQueryService(uow.users, uow.user_status_periods)
-        users = await service.list_request_economists(current_user=current_user)
-
-    return RequestEconomistListResponse(
-        data=RequestEconomistListData(
-            items=[RequestEconomistItemSchema(**asdict(item)) for item in users],
-        ),
     )
 
 
@@ -816,9 +832,11 @@ async def create_manual_contractor(
             uow.profiles,
             uow.company_contacts,
             uow.user_auth_accounts,
+            uow.units,
+            user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
-        created_user_id = await service.create_manual_contractor(
+        result = await service.create_manual_contractor(
             current_user=current_user,
             data=ManualContractorCreateInput(
                 company_name=payload.company_name,
@@ -829,9 +847,73 @@ async def create_manual_contractor(
                 note=payload.note,
             ),
         )
-
+        if result.created:
+            binding = await uow.user_auth_accounts.get_by_user_provider(
+                user_id=result.user_id,
+                provider="iam",
+                include_inactive=True,
+            )
+            account_id = stable_iam_account_id(result.user_id) if binding is None else binding.external_subject_id
+            account = await IamClient().put_account(
+                account_id=account_id,
+                login=result.user_id,
+                role="contractor",
+                auth_status="active",
+            )
+            if binding is None:
+                binding = UserAuthAccount(
+                    id_user=result.user_id,
+                    provider="iam",
+                    external_subject_id=account.id,
+                    external_username=result.user_id,
+                    external_email=payload.company_mail,
+                    is_active=True,
+                )
+                await uow.user_auth_accounts.add(binding)
+            else:
+                binding.is_active = True
+            if payload.company_mail:
+                await AccountRecoveryService(uow).request_recovery(identifier=result.user_id)
     return ManualContractorCreateResponse(
-        data={"user_id": created_user_id},
+        data={
+            "user_id": result.user_id,
+            "outcome": "created" if result.created else "duplicate_found",
+            "duplicate": None if result.created else {
+                "company_name": result.company_name,
+                "inn": result.inn,
+                "company_mail": result.company_mail,
+            },
+        },
+    )
+
+
+@router.get("/users/manual-contractor-duplicates", response_model=ManualContractorDuplicateListResponse)
+async def list_manual_contractor_duplicates(
+    company_name: str | None = Query(default=None, max_length=256),
+    inn: str | None = Query(default=None, max_length=32),
+    company_mail: str | None = Query(default=None, max_length=256),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualContractorDuplicateListResponse:
+    async with uow:
+        service = ManualContractorService(
+            uow.users,
+            uow.profiles,
+            uow.company_contacts,
+            uow.user_auth_accounts,
+            uow.units,
+            user_contact_channels=uow.user_contact_channels,
+        )
+        items = await service.list_possible_duplicates(
+            current_user=current_user,
+            company_name=company_name,
+            inn=inn,
+            company_mail=company_mail,
+        )
+    return ManualContractorDuplicateListResponse(
+        data=ManualContractorDuplicateListData(
+            items=[ManualContractorDuplicateItemSchema(**item.__dict__) for item in items],
+        ),
     )
 
 
@@ -843,12 +925,11 @@ async def update_manual_contractor(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ManualContractorUpdateResponse:
     async with uow:
-        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts, uow.user_auth_accounts)
+        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts, uow.user_auth_accounts, uow.units)
         updated_user_id = await service.update_manual_contractor(
             current_user=current_user,
             user_id=user_id,
             data=ManualContractorUpdateInput(
-                password=payload.password,
                 full_name=payload.full_name,
                 phone=payload.phone,
                 mail=payload.mail,
@@ -874,12 +955,14 @@ async def update_user_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserStatusUpdateResponse:
     async with uow:
+        target_user = await uow.users.get_by_id(user_id)
+        if target_user is not None and target_user.id_role == settings.contractor_role_id:
+            raise Forbidden("Статус контрагента изменяется только через /contractors/{contractor_id}/status")
         service = UserStatusService(
             uow.users,
-            uow.tg_users,
             uow.profiles,
             uow.user_auth_accounts,
-            uow.max_users,
+            user_contact_channels=uow.user_contact_channels,
             notification_preferences=UserNotificationPreferencesService(
                 uow.user_contact_channels,
                 uow.user_notification_preferences,
@@ -891,15 +974,25 @@ async def update_user_status(
             current_user=current_user,
             user_id=user_id,
             user_status=payload.user_status,
-            tg_status=None,
+        )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=user_id,
+            provider="iam",
+        )
+        if binding is None:
+            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+        iam_status = iam_auth_status_for_user_status(payload.user_status)
+        await IamClient().update_status(
+            account_id=binding.external_subject_id,
+            auth_status=iam_status,
+            actor_account_id=current_user.iam_account_id,
+            actor_session_id=current_user.iam_session_id,
         )
 
     return UserStatusUpdateResponse(
         data=UserStatusUpdateData(
             user_id=result.user_id,
             user_status=_ru_user_status(result.user_status),
-            tg_user_id=result.tg_user_id,
-            tg_status=result.tg_status,
         ),
     )
 
@@ -912,11 +1005,26 @@ async def update_user_role(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserRoleUpdateResponse:
     async with uow:
-        service = UserRoleService(uow.users, uow.user_auth_accounts)
+        service = UserRoleService(uow.users, uow.user_auth_accounts, uow.units)
         result = await service.update_role(
             current_user=current_user,
             user_id=user_id,
             role_id=payload.role_id,
+        )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=user_id,
+            provider="iam",
+        )
+        role_name = technical_role_name(payload.role_id)
+        if binding is None:
+            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+        if role_name is None:
+            raise Conflict("Выбранная роль не поддерживается IAM")
+        await IamClient().update_role(
+            account_id=binding.external_subject_id,
+            role=role_name,
+            actor_account_id=current_user.iam_account_id,
+            actor_session_id=current_user.iam_session_id,
         )
 
     return UserRoleUpdateResponse(
@@ -924,7 +1032,12 @@ async def update_user_role(
     )
 
 
-@router.patch("/users/{user_id}/manager", response_model=UserManagerUpdateResponse)
+@router.patch(
+    "/users/{user_id}/manager",
+    response_model=UserManagerUpdateResponse,
+    deprecated=True,
+    summary="[Legacy] Смена руководителя через users.id_parent",
+)
 async def update_user_manager(
     payload: UserManagerUpdateRequest,
     user_id: str = Path(...),

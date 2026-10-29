@@ -15,7 +15,9 @@ class Forbidden(DomainError):
 
 
 class Conflict(DomainError):
-    pass
+    def __init__(self, detail: str = "", *, reason_code: str | None = None) -> None:
+        super().__init__(detail)
+        self.reason_code = reason_code
 
 
 class UploadRejected(DomainError):
@@ -32,3 +34,13 @@ class ServiceUnavailable(DomainError):
         self.reason_code = reason_code
         self.detail = detail
         self.status_code = status_code
+
+
+class AuthenticationUnavailable(ServiceUnavailable):
+    """Raised while no supported authentication provider is connected."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            reason_code="AUTH_SERVICE_UNAVAILABLE",
+            detail="Сервис авторизации временно недоступен.",
+        )

@@ -11,6 +11,24 @@ class HierarchyUsersRepo:
     """PM -> two LE modules -> economists (eco-1/eco-2 under lead-1, eco-3 under lead-2)."""
 
     def __init__(self) -> None:
+        self._units = [
+            (1, None),
+            (2, 1),
+            (3, 1),
+        ]
+        self._unit_details = [
+            (1, "Department A", None),
+            (2, "Lead 1 Module", 1),
+            (3, "Lead 2 Module", 1),
+        ]
+        self._memberships = [
+            ("pm-1", 1),
+            ("lead-1", 2),
+            ("eco-1", 2),
+            ("eco-2", 2),
+            ("lead-2", 3),
+            ("eco-3", 3),
+        ]
         self._users = {
             "pm-1": SimpleNamespace(
                 id="pm-1",
@@ -60,3 +78,12 @@ class HierarchyUsersRepo:
             ("eco-2", "lead-1"),
             ("eco-3", "lead-2"),
         ]
+
+    async def list_active_units(self):
+        return list(self._units)
+
+    async def list_active_unit_details(self):
+        return list(self._unit_details)
+
+    async def list_active_unit_memberships(self):
+        return list(self._memberships)

@@ -16,12 +16,10 @@ class EmailVerificationClaims:
     email: str
     exp: int
     user_id: str | None = None
-    tg_id: int | None = None
 
 
 class EmailVerificationTokenCodec:
     PURPOSE_PROFILE = "verify_email"
-    PURPOSE_TG_REGISTER = "verify_email_tg_register"
 
     def __init__(self, secret: str, ttl_seconds: int) -> None:
         self._secret = secret.encode("utf-8")
@@ -37,37 +35,26 @@ class EmailVerificationTokenCodec:
             }
         )
 
-    async def create_tg_registration_token(self, *, tg_id: int, email: str) -> str:
-        return self._encode(
-            {
-                "purpose": self.PURPOSE_TG_REGISTER,
-                "tg_id": tg_id,
-                "email": email,
-                "exp": self._build_exp(),
-            }
-        )
-
     async def parse_token(self, token: str) -> EmailVerificationClaims:
         payload = self._decode(token)
         purpose = str(payload.get("purpose", "")).strip()
         email = str(payload.get("email", "")).strip()
-        if purpose not in {self.PURPOSE_PROFILE, self.PURPOSE_TG_REGISTER} or not email:
+        if purpose != self.PURPOSE_PROFILE or not email:
             raise Unauthorized("Invalid verification token payload")
 
         user_id: str | None = None
-        tg_id: int | None = None
-        if purpose == self.PURPOSE_PROFILE:
-            user_id = str(payload.get("user_id", "")).strip()
-            if not user_id:
-                raise Unauthorized("Invalid verification token payload")
-        if purpose == self.PURPOSE_TG_REGISTER:
-            try:
-                tg_id = int(payload.get("tg_id"))
-            except (TypeError, ValueError) as exc:
-                raise Unauthorized("Invalid verification token payload") from exc
+        user_id = str(payload.get("user_id", "")).strip()
+        if not user_id:
+            raise Unauthorized("Invalid verification token payload")
 
         exp = self._extract_exp(payload)
-        return EmailVerificationClaims(purpose=purpose, email=email, exp=exp, user_id=user_id, tg_id=tg_id)
+        return EmailVerificationClaims(purpose=purpose, email=email, exp=exp, user_id=user_id)
+
+    def encode_payload(self, payload: dict[str, object]) -> str:
+        return self._encode(payload)
+
+    def decode_payload(self, token: str) -> dict[str, object]:
+        return self._decode(token)
 
     def _build_exp(self) -> int:
         return int((datetime.now(timezone.utc) + timedelta(seconds=self._ttl_seconds)).timestamp())

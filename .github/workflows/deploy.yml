@@ -111,7 +111,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-          command_timeout: 35m
+          command_timeout: 45m
           script: |
             set -euo pipefail
             SHA="${{ needs.gate-ci.outputs.sha }}"
@@ -149,11 +149,12 @@ jobs:
             # 1. Build app images (pinned infra images: nginx/rabbitmq/minio/postgres не трогаем).
             docker build -t "acom-backend:${TAG}" -f backend/Dockerfile .
             docker build -t "acom-file-guard:${TAG}" -f file_guard/Dockerfile .
-            docker build -t "acom-web:${TAG}" ./web
+            docker build -t "acom-web:${TAG}" -f web/Dockerfile .
             docker build -t "acom-notifications-worker:${TAG}" -f notifications_worker/Dockerfile .
+            docker build -t "acom-iam:${TAG}" -f iam/Dockerfile .
 
             # 2. Import в containerd (imagePullPolicy: Never — без импорта pod встанет в ErrImageNeverPull).
-            for img in acom-backend acom-file-guard acom-web acom-notifications-worker; do
+            for img in acom-backend acom-file-guard acom-web acom-notifications-worker acom-iam; do
               docker save "${img}:${TAG}" | k3s ctr images import -
             done
 
@@ -170,11 +171,44 @@ jobs:
             # 4. flyway-sql ConfigMap из чекаута (миграции едут вместе с SHA).
             bash deploy/k8s/acom/scripts/make-configmaps.sh
 
-            # 5. Apply overlay (jobs/ в kustomization сознательно НЕ включены — см. kustomization.yaml).
-            kubectl apply -k deploy/k8s/acom/
+            # 5. Apply overlay with immutable SHA tags. Do not apply prod-1 first:
+            # a stale mutable tag can create crashlooping pods before migrations finish.
+            OVERLAY_DIR="${ROOT}/deploy/k8s/acom-ci-overlay"
+            mkdir -p "${OVERLAY_DIR}"
+            trap 'rm -rf "${OVERLAY_DIR}"' EXIT
+            cat > "${OVERLAY_DIR}/kustomization.yaml" <<EOF
+            apiVersion: kustomize.config.k8s.io/v1beta1
+            kind: Kustomization
+            resources:
+              - ../acom
+            images:
+              - name: acom-backend
+                newTag: ${TAG}
+              - name: acom-file-guard
+                newTag: ${TAG}
+              - name: acom-web
+                newTag: ${TAG}
+              - name: acom-notifications-worker
+                newTag: ${TAG}
+              - name: acom-iam
+                newTag: ${TAG}
+            EOF
+            kubectl kustomize --load-restrictor LoadRestrictionsNone "${OVERLAY_DIR}" \
+              | kubectl apply -f -
+            rm -rf "${OVERLAY_DIR}"
+
+            # 5b. Gateway читает nginx.conf из ConfigMap только при старте.
+            # Без перезапуска новые location/буферы не применяются (кейс IAM: /iam → SPA).
+            kubectl -n "${NS}" rollout restart deployment/gateway
+            kubectl -n "${NS}" rollout status deployment/gateway --timeout=3m
 
             # 6. Postgres должен быть Ready до миграций.
             kubectl -n "${NS}" wait --for=condition=ready pod -l app=postgres --timeout=300s
+
+            # 6b. БД acom_iam для IAM (идемпотентно; миграции — jobs/iam-migrations).
+            kubectl -n "${NS}" exec postgres-0 -- sh -ec \
+              'psql -U "$POSTGRES_USER" -d postgres -lqt | cut -d\| -f1 | grep -qw acom_iam || psql -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE acom_iam"'
+            echo "IAM_DB_OK acom_iam"
 
             # 7. Бэкап БД перед миграциями (паритет с compose-эрой: pg_dump + sha256).
             BACKUP_DIR="/opt/order_database/backups"
@@ -190,15 +224,37 @@ jobs:
             # У Job-манифестов нет metadata.namespace — применяем и ждём явно в ns acom.
             kubectl -n "${NS}" delete job flyway-migrate --ignore-not-found
             kubectl -n "${NS}" apply -f deploy/k8s/acom/jobs/flyway-migrate.job.yaml
-            kubectl -n "${NS}" wait --for=condition=complete job/flyway-migrate --timeout=10m
+            kubectl -n "${NS}" wait --for=condition=complete job/flyway-migrate --timeout=15m
 
-            # 9. Раскатка app-образов (container names: backend/web/file-guard/worker).
+            # 8b. Flyway-миграции схемы IAM (БД acom_iam) — тем же pinned-образом.
+            # ConfigMap iam-sql собирается шагом 4 (make-configmaps.sh).
+            kubectl -n "${NS}" delete job iam-migrations --ignore-not-found
+            kubectl -n "${NS}" apply -f deploy/k8s/acom/jobs/iam-migrations.job.yaml
+            kubectl -n "${NS}" wait --for=condition=complete job/iam-migrations --timeout=12m
+
+            # 9. Раскатка app-образов (container names: backend/web/file-guard/worker/iam).
             kubectl -n "${NS}" set image deployment/backend backend="acom-backend:${TAG}"
             kubectl -n "${NS}" set image deployment/web web="acom-web:${TAG}"
             kubectl -n "${NS}" set image deployment/file-guard file-guard="acom-file-guard:${TAG}"
             kubectl -n "${NS}" set image deployment/notifications-worker worker="acom-notifications-worker:${TAG}"
-            for d in backend web file-guard notifications-worker; do
+            kubectl -n "${NS}" set image deployment/iam iam="acom-iam:${TAG}"
+            for d in backend web file-guard notifications-worker iam; do
               kubectl -n "${NS}" rollout status "deployment/${d}" --timeout=5m
+            done
+
+            # 9b. RBAC-матрица IAM (роли/права) — идемпотентно.
+            # Миграции создают только пустые таблицы; без seed роль не найдена
+            # и создание IAM-аккаунта падает с "unknown role".
+            for attempt in 1 2 3 4 5; do
+              if kubectl -n "${NS}" exec deployment/backend -- \
+                python -m app.scripts.seed_iam_rbac; then
+                break
+              fi
+              if [ "${attempt}" = "5" ]; then
+                echo "FAIL: IAM RBAC seed" >&2
+                exit 1
+              fi
+              sleep 5
             done
 
             # 10. Post-deploy verify (только чтение; образы внутри Job уже на VPS).

@@ -7,7 +7,10 @@ from fastapi import APIRouter, Body, Depends, Path, Query
 from app.api.action_flags import ContractorActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
-from app.domain.policies import CurrentUser
+from app.domain.exceptions import Conflict
+from app.domain.iam_status import iam_auth_status_for_user_status
+from app.domain.policies import CurrentUser, UserPolicy
+from app.infrastructure.iam_client import IamClient
 from app.schemas.contractors import (
     ContractorInviteData,
     ContractorInviteRequest,
@@ -17,6 +20,10 @@ from app.schemas.contractors import (
     ContractorListResponse,
     ContractorProfileData,
     ContractorProfileResponse,
+    ContractorRootUnitBindingItemSchema,
+    ContractorRootUnitBindingsData,
+    ContractorRootUnitBindingsResponse,
+    ContractorRootUnitBindingsUpdateRequest,
     ContractorStatusUpdateData,
     ContractorStatusUpdateRequest,
     ContractorStatusUpdateResponse,
@@ -24,7 +31,7 @@ from app.schemas.contractors import (
 from app.services.contractor_invitations import ContractorInvitationService
 from app.services.contractors import ContractorService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
-from app.services.user_notification_preferences import UserNotificationPreferencesService
+from app.services.registration_invitations import RegistrationInvitationService
 from app.services.users import UserStatusService
 
 router = APIRouter()
@@ -44,9 +51,10 @@ def _ru_user_status(status: str) -> str:
 def _contractor_list_item(current_user: CurrentUser, item) -> ContractorListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
+    is_manual = data.pop("is_manual")
     data["actions"] = ContractorActionBuilder.build_contractor_actions(
         current_user,
-        is_manual=data.get("registration_source") == "manual",
+        is_manual=is_manual,
     )
     return ContractorListItemSchema(**data)
 
@@ -56,6 +64,22 @@ def _contractor_profile_data(current_user: CurrentUser, item) -> ContractorProfi
     data["status"] = _ru_user_status(data["status"])
     data["actions"] = ContractorActionBuilder.build_contractor_actions(current_user)
     return ContractorProfileData(**data)
+
+
+def _contractor_root_unit_bindings_data(item) -> ContractorRootUnitBindingsData:
+    return ContractorRootUnitBindingsData(
+        contractor_user_id=item.contractor_user_id,
+        can_manage=item.can_manage,
+        items=[
+            ContractorRootUnitBindingItemSchema(
+                unit_id=binding.unit_id,
+                unit_name=binding.unit_name,
+                is_bound=binding.is_bound,
+                can_manage=binding.can_manage,
+            )
+            for binding in item.items
+        ],
+    )
 
 
 @router.get("/contractors", response_model=ContractorListResponse)
@@ -75,7 +99,7 @@ async def list_contractors(
     if normalized_status is not None:
         normalized_status = status_label_to_code.get(normalized_status, normalized_status)
     async with uow:
-        service = ContractorService(uow.users, uow.profiles)
+        service = ContractorService(uow.users, uow.profiles, uow.units)
         result = await service.list_contractors(
             current_user=current_user,
             search=search,
@@ -103,7 +127,7 @@ async def get_contractor(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorProfileResponse:
     async with uow:
-        service = ContractorService(uow.users, uow.profiles)
+        service = ContractorService(uow.users, uow.profiles, uow.units)
         profile = await service.get_contractor(
             current_user=current_user,
             contractor_id=contractor_id,
@@ -122,18 +146,12 @@ async def update_contractor_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorStatusUpdateResponse:
     async with uow:
-        contractor_service = ContractorService(uow.users, uow.profiles)
+        contractor_service = ContractorService(uow.users, uow.profiles, uow.units)
         status_service = UserStatusService(
             uow.users,
-            uow.tg_users,
             uow.profiles,
             uow.user_auth_accounts,
-            uow.max_users,
-            notification_preferences=UserNotificationPreferencesService(
-                uow.user_contact_channels,
-                uow.user_notification_preferences,
-                profiles=uow.profiles,
-            ),
+            user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await contractor_service.update_contractor_status(
@@ -141,6 +159,18 @@ async def update_contractor_status(
             contractor_id=contractor_id,
             user_status=payload.user_status,
             status_service=status_service,
+        )
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=contractor_id,
+            provider="iam",
+        )
+        if binding is None:
+            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+        await IamClient().update_status(
+            account_id=binding.external_subject_id,
+            auth_status=iam_auth_status_for_user_status(payload.user_status),
+            actor_account_id=current_user.iam_account_id,
+            actor_session_id=current_user.iam_session_id,
         )
 
     return ContractorStatusUpdateResponse(
@@ -151,15 +181,56 @@ async def update_contractor_status(
     )
 
 
+@router.get("/contractors/{contractor_id}/root-units", response_model=ContractorRootUnitBindingsResponse)
+async def get_contractor_root_units(
+    contractor_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ContractorRootUnitBindingsResponse:
+    async with uow:
+        service = ContractorService(uow.users, uow.profiles, uow.units)
+        result = await service.get_contractor_root_unit_bindings(
+            current_user=current_user,
+            contractor_id=contractor_id,
+        )
+
+    return ContractorRootUnitBindingsResponse(
+        data=_contractor_root_unit_bindings_data(result),
+    )
+
+
+@router.put("/contractors/{contractor_id}/root-units", response_model=ContractorRootUnitBindingsResponse)
+async def update_contractor_root_units(
+    payload: ContractorRootUnitBindingsUpdateRequest,
+    contractor_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ContractorRootUnitBindingsResponse:
+    async with uow:
+        service = ContractorService(uow.users, uow.profiles, uow.units)
+        result = await service.update_contractor_root_unit_bindings(
+            current_user=current_user,
+            contractor_id=contractor_id,
+            root_unit_ids={int(unit_id) for unit_id in payload.root_unit_ids},
+        )
+
+    return ContractorRootUnitBindingsResponse(
+        data=_contractor_root_unit_bindings_data(result),
+    )
+
+
 @router.post("/contractors/invite", response_model=ContractorInviteResponse)
 async def invite_contractors(
     payload: ContractorInviteRequest = Body(...),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorInviteResponse:
+    UserPolicy.ensure_can_invite_registration(current_user)
     async with uow:
         service = ContractorInvitationService(
             attachment_service=NormativeEmailAttachmentService(uow.files),
+            invitation_service=RegistrationInvitationService(uow),
+            uow=uow,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
         result = await service.invite_contractors(

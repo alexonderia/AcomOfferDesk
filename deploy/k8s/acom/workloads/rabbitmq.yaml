@@ -29,6 +29,24 @@ spec:
         runAsUser: 999        # rabbitmq UID в официальном образе (R-B2)
         runAsGroup: 999
         fsGroup: 999
+      initContainers:
+        # Erlang требует, чтобы .erlang.cookie принадлежал только владельцу (0600).
+        # На существующем PVC файл остался 0660 после смены securityContext,
+        # поэтому rabbitmq падал в CrashLoopBackOff. Init идемпотентно
+        # возвращает режим; сам файл принадлежит UID 999, root не нужен.
+        - name: fix-erlang-cookie
+          image: rabbitmq:3-management
+          imagePullPolicy: Never
+          command:
+            - sh
+            - -c
+            - |
+              if [ -f /var/lib/rabbitmq/.erlang.cookie ]; then
+                chmod 600 /var/lib/rabbitmq/.erlang.cookie
+              fi
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
       containers:
         - name: rabbitmq
           image: rabbitmq:3-management
@@ -80,10 +98,10 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: "1"
-              memory: 512Mi
+              memory: 2Gi
       volumes:
         - name: rabbitmq-config
           configMap:

@@ -51,8 +51,9 @@ spec:
               check "web /"            "http://web:80/"              200 6
               # gateway НЕ проверяем из кластера: netpol allow-edge-from-node пускает в edge
               # только с node — проверка gateway /health выполняется на хосте в deploy.yml.
-              # Keycloak НЕ проверяем: в k8s его нет (политика 23.07.2026 — см. kustomization.yaml).
-              # Проверка входа появится вместе с переходом на корп. IAM (PR #53, dev).
+              # Стороннюю SSO НЕ проверяем: в k8s его нет (политика 23.07.2026 — см. kustomization.yaml).
+              # IAM (свой OIDC-сервис, PR #53/dev) — проверяем readiness-эндпоинт.
+              check "iam /health/ready" "http://iam:8100/health/ready" 200 6
               check "maintenance"      "http://maintenance:80/healthz"     200
               check "file-guard"       "http://file-guard:8080/health"     200
 
@@ -145,11 +146,11 @@ spec:
               echo "pg_cron=$CRON"
               [ -n "$CRON" ] || { echo "FAIL: расширение pg_cron не установлено"; FAIL=1; }
 
-              echo "--- схема keycloak в БД: АРТЕФАКТ ДАМПА (в k8s Keycloak НЕ разворачивается) ---"
+              echo "--- схема legacy-sso в БД: АРТЕФАКТ ДАМПА (в k8s Сторонняя SSO НЕ разворачивается) ---"
               KCT=$(psql -h postgres.acom.svc.cluster.local -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
-                "select count(*) from information_schema.tables where table_schema='keycloak'" || echo 0)
-              echo "keycloak_tables=$KCT (ожидаемо >0: пришло с дампом прод-БД; на вход в k8s не влияет)"
-              # Политика `policy_acom_no_keycloak_cod_jul2026` (23.07.2026): realm/users
+                "select count(*) from information_schema.tables where table_schema not in ('public','cron','information_schema')" || echo 0)
+              echo "legacy_sso_tables=$KCT (ожидаемо >0: пришло с дампом прод-БД; на вход в k8s не влияет)"
+              # Политика `политика СБ/Тоток 23.07.2026 (запрет сторонней SSO; узел в Graph RAG)` (23.07.2026): realm/users
               # из k8s-контура не читаются — проверять их здесь смысла нет.
 
               echo "--- postgres TLS (R-D2) ---"

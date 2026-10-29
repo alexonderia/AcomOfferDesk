@@ -8,7 +8,7 @@ import { RoleRoute } from '@app/routes/RoleRoute';
 import { REQUESTS_ROUTE_PERMISSIONS } from '@shared/lib/routing/getDefaultPathByRole';
 
 const AuthPage = lazy(async () => ({ default: (await import('@pages/auth/AuthPage')).AuthPage }));
-const AuthCallbackPage = lazy(async () => ({ default: (await import('@pages/auth/AuthCallbackPage')).AuthCallbackPage }));
+const RegisterPage = lazy(async () => ({ default: (await import('@pages/auth/RegisterPage')).RegisterPage }));
 const AccountStatePage = lazy(async () => ({ default: (await import('@pages/auth/AccountStatePage')).AccountStatePage }));
 const RegistrationLinkStatusPage = lazy(
   async () => ({ default: (await import('@pages/auth/RegistrationLinkStatusPage')).RegistrationLinkStatusPage })
@@ -23,6 +23,9 @@ const ContractorRequestDetailsPage = lazy(
 );
 const OfferWorkspacePage = lazy(async () => ({ default: (await import('@pages/offers/OfferWorkspacePage')).OfferWorkspacePage }));
 const AdminPage = lazy(async () => ({ default: (await import('@pages/admin/AdminPage')).AdminPage }));
+const AdminHierarchyPage = lazy(
+  async () => ({ default: (await import('@pages/admin-hierarchy/AdminHierarchyPage')).AdminHierarchyPage })
+);
 const ContractorsPage = lazy(async () => ({ default: (await import('@pages/contractors/ContractorsPage')).ContractorsPage }));
 const FeedbackPage = lazy(async () => ({ default: (await import('@pages/feedback/FeedbackPage')).FeedbackPage }));
 const ProjectManagerDashboardPage = lazy(
@@ -61,11 +64,13 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
         <Routes location={backgroundLocation ?? location}>
           <Route path="/login" element={<AuthPage />} />
           <Route path="/auth/login" element={<AuthPage />} />
-          <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/auth/callback" element={<AuthPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route path="/auth/registration-link-status" element={<RegistrationLinkStatusPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/account" element={<AccountStatePage />} />
+            <Route path="/profile/onboarding" element={<AccountStatePage />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Navigate to={defaultPath} replace />} />
               <Route
@@ -114,6 +119,14 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
                 element={
                   <RoleRoute allowedPermissions={['users.read']}>
                     <AdminPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/admin/hierarchy"
+                element={
+                  <RoleRoute allowedPermissions={['units.read']}>
+                    <AdminHierarchyPage />
                   </RoleRoute>
                 }
               />

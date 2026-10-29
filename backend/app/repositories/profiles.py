@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import BigInteger, and_, cast, func, or_, select
+from sqlalchemy import BigInteger, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.auth_models import UserAuthAccount
 from app.models.orm_models import CompanyContact, Profile, User
 
 _INVALID_NOTIFICATION_EMAILS = frozenset({"не указано", "none", "null"})
@@ -51,14 +50,6 @@ class ProfileRepository:
         stmt = (
             select(Profile.mail)
             .join(User, User.id == Profile.id)
-            .join(
-                UserAuthAccount,
-                and_(
-                    UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "keycloak",
-                    UserAuthAccount.is_active.is_(True),
-                ),
-            )
             .where(User.id_role == contractor_role_id)
             .where(User.status == "active")
             .order_by(User.id)
@@ -77,14 +68,6 @@ class ProfileRepository:
         stmt = (
             select(Profile)
             .join(User, User.id == Profile.id)
-            .join(
-                UserAuthAccount,
-                and_(
-                    UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "keycloak",
-                    UserAuthAccount.is_active.is_(True),
-                ),
-            )
             .where(User.id_role == contractor_role_id)
             .where(User.status == "active")
             .order_by(User.id)
@@ -107,14 +90,6 @@ class ProfileRepository:
         stmt = (
             select(User.id, cast(None, BigInteger), Profile.mail)
             .join(Profile, Profile.id == User.id)
-            .join(
-                UserAuthAccount,
-                and_(
-                    UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "keycloak",
-                    UserAuthAccount.is_active.is_(True),
-                ),
-            )
             .where(User.id_role == contractor_role_id)
             .where(User.status == "active")
             .order_by(User.id)
@@ -149,13 +124,6 @@ class ProfileRepository:
             select(User.id)
             .outerjoin(Profile, Profile.id == User.id)
             .outerjoin(CompanyContact, CompanyContact.id == User.id)
-            .join(
-                UserAuthAccount,
-                and_(
-                    UserAuthAccount.id_user == User.id,
-                    UserAuthAccount.provider == "keycloak",
-                ),
-            )
             .where(User.id_role == contractor_role_id)
             .where(
                 or_(
@@ -180,6 +148,14 @@ class ProfileRepository:
             .where(Profile.mail.ilike(normalized_email))
             .limit(1)
         )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_id_by_mail(self, *, email: str) -> str | None:
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            return None
+        stmt = select(Profile.id).where(Profile.mail.ilike(normalized_email)).limit(1)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 

@@ -77,8 +77,6 @@ spec:
               cpu: "1"
               memory: 512Mi
           volumeMounts:
-            - name: shared
-              mountPath: /app/shared
             - name: postgres-ca
               mountPath: /etc/ssl/postgres
               readOnly: true
@@ -89,10 +87,6 @@ spec:
               mountPath: /etc/ssl/minio
               readOnly: true
       volumes:
-        # shared/upload осознанно НЕ переносится как том с данными (R-J1: приёма
-        # файлов по умолчанию нет) — поду нужен только записываемый рабочий каталог.
-        - name: shared
-          emptyDir: {}
         - name: postgres-ca
           secret:
             secretName: postgres-tls

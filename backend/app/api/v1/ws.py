@@ -8,11 +8,10 @@ from pydantic import BaseModel
 from pydantic import ValidationError
 from starlette.websockets import WebSocketState
 
-from app.api.dependencies import build_current_user_from_keycloak_claims
 from app.api.dependencies import get_current_user
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser as HttpCurrentUser
-from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
+from app.domain.exceptions import AuthenticationUnavailable, Conflict, Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.realtime.contracts import OutboundEnvelope, client_event_adapter
 from app.realtime.runtime import ChatRealtimeRuntime, get_chat_runtime, get_unified_realtime_runtime
@@ -42,9 +41,12 @@ async def create_ws_ticket(
     service = get_ws_ticket_service()
     raw_ticket, expires_at = await service.issue_ticket(
         user_id=current_user.user_id,
+        iam_account_id=current_user.iam_account_id,
+        iam_session_id=current_user.iam_session_id,
+        system_role=current_user.system_role,
         role_id=current_user.role_id,
         status=current_user.status,
-        keycloak_api_roles=current_user.keycloak_roles,
+        permissions=current_user.permissions,
         purpose=purpose,
     )
     now = int(time.time())
@@ -61,18 +63,19 @@ async def _get_current_user_from_websocket_with_purpose(
     *,
     expected_purpose: WsTicketPurpose,
 ) -> CurrentUser:
-    ticket = (websocket.query_params.get("ticket") or "").strip()
-    if not ticket:
-        raise Unauthorized("Необходимо войти в систему.")
-
-    service = get_ws_ticket_service()
-    access = await service.consume_ticket(raw_ticket=ticket, expected_purpose=expected_purpose)
-    UserPolicy.ensure_can_login(access.status)
-    return build_current_user_from_keycloak_claims(
+    raw_ticket = (websocket.query_params.get("ticket") or "").strip()
+    access = await get_ws_ticket_service().consume_ticket(
+        raw_ticket=raw_ticket,
+        expected_purpose=expected_purpose,
+    )
+    return CurrentUser(
         user_id=access.user_id,
+        iam_account_id=access.iam_account_id,
+        iam_session_id=access.iam_session_id,
+        system_role=access.system_role,
         role_id=access.role_id,
         status=access.status,
-        keycloak_api_roles=access.keycloak_api_roles,
+        permissions=access.permissions,
     )
 
 
@@ -381,7 +384,7 @@ async def unified_realtime_websocket(websocket: WebSocket) -> None:
             websocket,
             expected_purpose="realtime_ws",
         )
-    except (Conflict, Forbidden, Unauthorized):
+    except (AuthenticationUnavailable, Conflict, Forbidden, Unauthorized):
         await websocket.close(code=4401)
         return
 

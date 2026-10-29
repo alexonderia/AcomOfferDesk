@@ -1,32 +1,58 @@
-import { fetchEmpty, fetchJson } from '../client';
+import { apiFetch, fetchEmpty, fetchJson } from '../client';
 
 export type AuthSessionResponse = {
   data: {
-    access_token: string;
-    token_type: string;
-    access_token_expires_at: number;
     user_id: string;
     login: string;
     role_id: number;
+    role: string;
     status: string;
     auth_provider?: string;
     business_access?: boolean;
     onboarding_state?: string | null;
     permissions?: string[];
-    app_roles?: string[];
-    delegation_roles?: string[];
   };
 };
 
-export const refreshWebSession = async (): Promise<AuthSessionResponse> =>
+export type RefreshWebSessionResult =
+  | { kind: 'success'; session: AuthSessionResponse }
+  | { kind: 'terminal' }
+  | { kind: 'unavailable' };
+
+export const getWebSession = async (): Promise<AuthSessionResponse> =>
   fetchJson<AuthSessionResponse>(
-    '/api/v1/auth/refresh',
-    {
-      method: 'POST'
-    },
-    'Не удалось восстановить сессию',
+    '/api/v1/auth/session',
+    { method: 'GET' },
+    'Не удалось проверить сессию',
     false
   );
+
+export const issueCsrfToken = async (): Promise<void> => {
+  await fetchJson<{ csrf_token: string }>(
+    '/api/v1/auth/csrf',
+    { method: 'GET' },
+    'Не удалось подготовить защищённую сессию',
+    false
+  );
+};
+
+export const refreshWebSession = async (): Promise<RefreshWebSessionResult> => {
+  try {
+    const response = await apiFetch('/api/v1/auth/refresh', { method: 'POST' });
+    if (response.status === 401) {
+      return { kind: 'terminal' };
+    }
+    if (!response.ok) {
+      return { kind: 'unavailable' };
+    }
+    return {
+      kind: 'success',
+      session: await response.json() as AuthSessionResponse,
+    };
+  } catch {
+    return { kind: 'unavailable' };
+  }
+};
 
 export const logoutWebSession = async (): Promise<void> =>
   fetchEmpty(
@@ -35,5 +61,12 @@ export const logoutWebSession = async (): Promise<void> =>
       method: 'POST'
     },
     'Не удалось завершить сессию',
+  );
+
+export const clearIamBrowserSession = async (): Promise<void> =>
+  fetchEmpty(
+    '/iam/acom/logout',
+    { method: 'POST' },
+    'Не удалось завершить сессию IAM',
     false
   );

@@ -23,22 +23,17 @@ from app.repositories.offers import OfferRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
+from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.files import FileService, PreparedUpload
 from app.services.department_scope import DepartmentScopeService
+from app.services.contractor_units import ContractorUnitService
 from app.services.staff_access_scope import StaffAccessScopeService
-from app.services.keycloak_admin import KeycloakAdminService
-from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
-from app.services.users import _bind_keycloak_account
 from app.services.notifications import NotificationService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.infrastructure.delayed_notification_publisher import schedule_unread_chat_email_notification
 from app.services.contractor_outbound_notifications import notify_contractor_offer_updated
-from app.services.max_notifications import notify_new_message as notify_max_new_message
-from app.services.max_notifications import notify_offer_status_finalized as notify_max_offer_status_finalized
-from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
-from app.services.user_notification_preferences import UserNotificationPreferencesService
 from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 DEFAULT_PARTNER_CARD_PATH = (
@@ -92,12 +87,6 @@ _CYRILLIC_TO_LATIN = {
     "я": "ya",
 }
 
-
-def _normalize_keycloak_email_value(value: str | None) -> str | None:
-    normalized = (value or "").strip()
-    if not normalized or normalized == PLACEHOLDER_TEXT:
-        return None
-    return normalized
 
 @dataclass(frozen=True)
 class ExistingAttachmentFileInput:
@@ -245,6 +234,15 @@ class ManualOfferCreateResult:
     contractor_created: bool
 
 
+@dataclass(frozen=True)
+class ManualOfferEligibleContractor:
+    user_id: str
+    full_name: str | None
+    company_name: str | None
+    mail: str | None
+    company_mail: str | None
+
+
 class OfferService:
     def __init__(
         self,
@@ -256,11 +254,10 @@ class OfferService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         users: UserRepository,
+        units: UnitRepository | None = None,
         user_auth_accounts: UserAuthAccountRepository | None = None,
         file_service: FileService | None = None,
-        keycloak_admin: KeycloakAdminService | None = None,
         notifications: NotificationService | None = None,
-        notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
@@ -272,15 +269,19 @@ class OfferService:
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._users = users
+        self._units = units
         self._user_auth_accounts = user_auth_accounts
         self._file_service = file_service or FileService(files)
-        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
         self._notifications = notifications
-        self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._department_scope = DepartmentScopeService(users)
         self._staff_scope = StaffAccessScopeService(users)
+
+    def _contractor_unit_service(self) -> ContractorUnitService:
+        if self._units is None:
+            raise RuntimeError("Offer service requires unit repository")
+        return ContractorUnitService(users=self._users, units=self._units)
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -351,14 +352,73 @@ class OfferService:
         )
 
     async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: str) -> None:
+        """Authorize historical offer access without reapplying discovery eligibility."""
         if current_user.role_id != settings.contractor_role_id:
             return
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
         is_hidden = await self._requests.is_hidden_for_contractor(
             request_id=request_id,
             contractor_user_id=current_user.user_id,
         )
         if is_hidden:
             raise NotFound("Request not found")
+        if not await self._contractor_unit_service().can_contractor_access_request_owner(
+            contractor_user_id=current_user.user_id,
+            request_owner_user_id=request.id_user,
+        ):
+            raise NotFound("Request not found")
+
+    async def _is_request_available_for_contractor_discovery(self, *, current_user: CurrentUser, request) -> bool:
+        return await self._is_request_available_for_contractor_user(
+            contractor_user_id=current_user.user_id,
+            request=request,
+        )
+
+    async def _is_request_available_for_contractor_user(self, *, contractor_user_id: str, request) -> bool:
+        """Return the BL-002 discovery eligibility for a concrete contractor.
+
+        Manual offer creation acts on behalf of a contractor, therefore it must
+        use exactly the same visibility/lifecycle/root-unit rule as the
+        contractor's own request discovery flow.
+        """
+        owner = await self._users.get_by_id(request.id_user)
+        if not RequestPolicy.is_contractor_request_lifecycle_eligible(
+            request_owner_role_id=owner.id_role if owner is not None else None,
+        ):
+            return False
+        return await self._contractor_unit_service().can_contractor_access_request_owner(
+            contractor_user_id=contractor_user_id,
+            request_owner_user_id=request.id_user,
+        )
+
+    async def _ensure_contractor_can_create_offer_for_request(
+        self,
+        *,
+        contractor_user_id: str,
+        request,
+    ) -> None:
+        contractor_user = await self._users.get_by_id(contractor_user_id)
+        if contractor_user is None or contractor_user.id_role != settings.contractor_role_id:
+            raise NotFound("Контрагент не найден")
+        if getattr(contractor_user, "status", "active") != "active":
+            raise Conflict("Контрагент неактивен и не может быть выбран для коммерческого предложения")
+        if await self._requests.is_hidden_for_contractor(
+            request_id=request.id,
+            contractor_user_id=contractor_user_id,
+        ) or not await self._is_request_available_for_contractor_user(
+            contractor_user_id=contractor_user_id,
+            request=request,
+        ):
+            raise Forbidden(
+                "Контрагент не имеет доступа к данной заявке и не может быть выбран для коммерческого предложения"
+            )
+
+    @staticmethod
+    def _ensure_request_is_open_for_offer_mutation(*, request_status: str) -> None:
+        if request_status in {"closed", "cancelled"}:
+            raise Conflict("КП нельзя изменить, если заявка уже закрыта или отклонена")
 
     async def _load_offer_and_request(self, *, offer_id: int, current_user: CurrentUser | None = None):
         offer = await self._offers.get_by_id(offer_id=offer_id)
@@ -376,9 +436,8 @@ class OfferService:
         offer_owner = await self._users.get_by_id(user_id=offer_owner_user_id)
         if offer_owner is None:
             raise NotFound("Offer owner not found")
-        return (
-            offer_owner.id_role == settings.contractor_role_id
-            and offer_owner.tg_user_id is None
+        return offer_owner.id_role == settings.contractor_role_id and not await self._users.has_legacy_messenger_account(
+            user_id=offer_owner.id
         )
 
     async def _require_chat_context(
@@ -545,14 +604,58 @@ class OfferService:
             if index > 1000:
                 raise Conflict("Unable to generate unique login for manual contractor")
 
-    def _build_manual_password(self) -> str:
-        return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
+    async def _find_existing_manual_contractor_user_id(
+        self,
+        *,
+        contractor_data: ManualContractorCreateInput,
+    ) -> str | None:
+        matched_user_ids = await self._users.find_matching_contractor_user_ids(
+            contractor_role_id=settings.contractor_role_id,
+            email=contractor_data.company_mail,
+            inn=contractor_data.inn,
+            company_name=contractor_data.company_name,
+        )
+        if not matched_user_ids:
+            return None
+        if len(matched_user_ids) > 1:
+            raise Conflict("Найдено несколько похожих контрагентов. Уточните данные и повторите попытку.")
+        return matched_user_ids[0]
+
+    async def _bind_to_creator_root_units_if_needed(
+        self,
+        *,
+        current_user: CurrentUser,
+        contractor_user_id: str,
+    ) -> None:
+        if self._units is None or current_user.role_id == settings.contractor_role_id:
+            return
+        creator_root_unit_ids = await self._contractor_unit_service().list_direct_root_unit_ids_for_user(
+            user_id=current_user.user_id,
+        )
+        if not creator_root_unit_ids:
+            return
+        await self._contractor_unit_service().bind_user_to_root_units(
+            user_id=contractor_user_id,
+            root_unit_ids=creator_root_unit_ids,
+            assigned_by_user_id=current_user.user_id,
+        )
 
     async def _create_manual_contractor(
         self,
         *,
+        current_user: CurrentUser,
         contractor_data: ManualContractorCreateInput,
-    ) -> str:
+    ) -> tuple[str, bool]:
+        existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(
+            contractor_data=contractor_data,
+        )
+        if existing_contractor_user_id is not None:
+            await self._bind_to_creator_root_units_if_needed(
+                current_user=current_user,
+                contractor_user_id=existing_contractor_user_id,
+            )
+            return existing_contractor_user_id, False
+
         login = await self._build_manual_login(company_name=contractor_data.company_name)
         await self._users.add(
             User(
@@ -580,25 +683,11 @@ class OfferService:
                 note=contractor_data.note or PLACEHOLDER_TEXT,
             )
         )
-        keycloak_user = await self._keycloak_admin.ensure_user(
-            username=login,
-            email=_normalize_keycloak_email_value(contractor_data.company_mail),
-            email_verified=False,
+        await self._bind_to_creator_root_units_if_needed(
+            current_user=current_user,
+            contractor_user_id=login,
         )
-        if self._user_auth_accounts is not None:
-            await _bind_keycloak_account(
-                user_auth_accounts=self._user_auth_accounts,
-                user_id=login,
-                keycloak_subject_id=keycloak_user.id,
-                username=login,
-                email=_normalize_keycloak_email_value(contractor_data.company_mail),
-            )
-            await sync_keycloak_app_role_for_user(
-                self._keycloak_admin,
-                keycloak_user_id=keycloak_user.id,
-                local_role_id=settings.contractor_role_id,
-            )
-        return login
+        return login, True
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: str) -> ContractorRequestView:
         require_permission(
@@ -607,13 +696,15 @@ class OfferService:
             message="Insufficient permissions to view contractor request details",
         )
 
+        # A contractor may open a historical (closed/cancelled) request when
+        # they already have an offer on it. Discovery and offer creation remain
+        # restricted to open requests below.
         request = await self._requests.get_visible_by_id_for_contractor(
             request_id=request_id,
             contractor_user_id=current_user.user_id,
         )
         if request is None:
             raise NotFound("Request not found")
-
         owner_profile = await self._profiles.get_by_id(request.id_user)
         request_files = await self._requests.list_files(request_id=request.id)
         request_file_items = [RequestFileItem(id=f.id, path=f.path, name=f.name) for f in request_files]
@@ -621,6 +712,16 @@ class OfferService:
             request_id=request.id,
             contractor_user_id=current_user.user_id,
         )
+        if request.status == "open":
+            if not await self._is_request_available_for_contractor_discovery(
+                current_user=current_user,
+                request=request,
+            ):
+                raise NotFound("Request not found")
+        elif existing_offer is None:
+            # Closed requests without this contractor's offer must not become
+            # a way to bypass the normal contractor discovery scope.
+            raise NotFound("Request not found")
         existing_offer_preview: ExistingOfferPreview | None = None
         if existing_offer is not None:
             offer_files = await self._offers.list_offer_files(offer_id=existing_offer.id)
@@ -654,13 +755,23 @@ class OfferService:
         UserPolicy.ensure_can_create_offer(current_user)
         self._validate_offer_amount(offer_amount)
 
+        await self._requests.lock_offer_lifecycle(request_id=request_id)
         request = await self._requests.get_visible_open_by_id_for_contractor(
             request_id=request_id,
             contractor_user_id=current_user.user_id,
         )
         if request is None:
             raise NotFound("Open request not found")
+        if not await self._is_request_available_for_contractor_discovery(
+            current_user=current_user,
+            request=request,
+        ):
+            raise NotFound("Open request not found")
 
+        await self._offers.lock_contractor_offer_creation(
+            request_id=request.id,
+            contractor_user_id=current_user.user_id,
+        )
         existing_offer = await self._offers.get_contractor_offer_for_request(
             request_id=request.id,
             contractor_user_id=current_user.user_id,
@@ -729,33 +840,28 @@ class OfferService:
             normalized_contractor_data = self._validate_manual_contractor_create_data(
                 contractor_data=contractor_data,
             )
-            resolved_contractor_user_id = await self._create_manual_contractor(
+            resolved_contractor_user_id, contractor_created = await self._create_manual_contractor(
+                current_user=current_user,
                 contractor_data=normalized_contractor_data
             )
-            contractor_created = True
         else:
             assert normalized_contractor_user_id is not None
-            contractor_user = await self._users.get_by_id(normalized_contractor_user_id)
-            if contractor_user is None:
-                raise NotFound("Contractor not found")
-            if contractor_user.id_role != settings.contractor_role_id:
-                raise Conflict("Selected user is not contractor")
-            if contractor_user.status != "active":
-                raise Conflict("Selected contractor must be active")
-            is_hidden = await self._requests.is_hidden_for_contractor(
-                request_id=request.id,
-                contractor_user_id=normalized_contractor_user_id,
-            )
-            if is_hidden:
-                raise Conflict("Selected contractor is hidden for this request")
             resolved_contractor_user_id = normalized_contractor_user_id
+
+        await self._ensure_contractor_can_create_offer_for_request(
+            contractor_user_id=resolved_contractor_user_id,
+            request=request,
+        )
 
         existing_offer = await self._offers.get_contractor_offer_for_request(
             request_id=request.id,
             contractor_user_id=resolved_contractor_user_id,
         )
         if existing_offer is not None and existing_offer.status != "deleted":
-            raise Conflict("Offer for this contractor already exists")
+            raise Conflict(
+                "Offer for this contractor already exists",
+                reason_code="offer_already_exists",
+            )
 
         offer = await self._offers.create(
             request_id=request.id,
@@ -797,6 +903,48 @@ class OfferService:
             contractor_user_id=resolved_contractor_user_id,
             contractor_created=contractor_created,
         )
+
+    async def list_eligible_contractors_for_manual_offer(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: str,
+    ) -> list[ManualOfferEligibleContractor]:
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
+        RequestPolicy.ensure_can_create_manual_offer(
+            current_user,
+            request_owner_user_id=request.id_user,
+        )
+        if request.status != "open":
+            return []
+
+        rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
+        eligible: list[ManualOfferEligibleContractor] = []
+        for contractor, profile, company, _tg_user, _legacy_account_id in rows:
+            if contractor.status != "active":
+                continue
+            if await self._requests.is_hidden_for_contractor(
+                request_id=request.id,
+                contractor_user_id=contractor.id,
+            ):
+                continue
+            if not await self._is_request_available_for_contractor_user(
+                contractor_user_id=contractor.id,
+                request=request,
+            ):
+                continue
+            eligible.append(
+                ManualOfferEligibleContractor(
+                    user_id=contractor.id,
+                    full_name=profile.full_name if profile else None,
+                    company_name=company.company_name if company else None,
+                    mail=profile.mail if profile else None,
+                    company_mail=company.mail if company else None,
+                )
+            )
+        return eligible
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
@@ -911,6 +1059,7 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,
             request_owner_user_id=request.id_user,
@@ -995,6 +1144,7 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,
             request_owner_user_id=request.id_user,
@@ -1063,11 +1213,12 @@ class OfferService:
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        await self._requests.lock_offer_lifecycle(request_id=request.id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
 
         if status not in EDITABLE_OFFER_STATUSES:
             raise Conflict("Unsupported offer status")
-        if request.status in {"closed", "cancelled"}:
-            raise Conflict("КП нельзя изменить, если заявка уже закрыта или отклонена")
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_status_scope = await self._ensure_can_update_offer_status(
             current_user=current_user,
             request_owner_user_id=request.id_user,
@@ -1089,34 +1240,13 @@ class OfferService:
                 )
         status_changed = offer.status != status
         previous_status = offer.status
+        if status == "accepted" and status_changed:
+            if await self._requests.has_accepted_offer_for_request(
+                request_id=request.id,
+                exclude_offer_id=offer.id,
+            ):
+                raise Conflict("Для заявки уже выбрано принятое КП")
         await self._offers.update_status(offer=offer, status=status)
-
-        if status_changed and status in {"accepted", "rejected"} and settings.telegram_legacy_enabled:
-            tg_id = await self._users.get_active_approved_contractor_tg_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if tg_id is not None:
-                await notify_offer_status_finalized(tg_id=tg_id, request_id=request.id)
-        if status_changed and status in {"accepted", "rejected"} and settings.max_bot_enabled:
-            max_user_id = await self._users.get_active_approved_contractor_max_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if max_user_id is not None:
-                if self._notification_preferences is not None:
-                    is_enabled = await self._notification_preferences.is_channel_enabled(
-                        user_id=offer.id_user,
-                        channel_type="max",
-                        notification_type="offer",
-                    )
-                    if not is_enabled:
-                        max_user_id = None
-            if max_user_id is not None:
-                await notify_max_offer_status_finalized(
-                    max_user_id=max_user_id,
-                    request_id=request.id,
-                )
 
         if status_changed and status in {"accepted", "rejected", "deleted"}:
             event = build_process_notification_event(
@@ -1139,6 +1269,9 @@ class OfferService:
 
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        await self._requests.lock_offer_lifecycle(request_id=request.id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         self._validate_offer_amount(offer_amount)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,
@@ -1406,30 +1539,6 @@ class OfferService:
                 message_id=message.id,
             )
 
-        if current_user.user_id != offer.id_user and settings.telegram_legacy_enabled:
-            tg_id = await self._users.get_active_approved_contractor_tg_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if tg_id is not None:
-                await notify_new_message(tg_id=tg_id, request_id=request.id)
-        if current_user.user_id != offer.id_user and settings.max_bot_enabled:
-            max_user_id = await self._users.get_active_approved_contractor_max_id(
-                user_id=offer.id_user,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if max_user_id is not None:
-                if self._notification_preferences is not None:
-                    is_enabled = await self._notification_preferences.is_channel_enabled(
-                        user_id=offer.id_user,
-                        channel_type="max",
-                        notification_type="chat",
-                    )
-                    if not is_enabled:
-                        max_user_id = None
-            if max_user_id is not None:
-                await notify_max_new_message(max_user_id=max_user_id, request_id=request.id)
-
         self._schedule_unread_chat_email_notifications(
             message_id=message.id,
             recipient_user_ids=notification_recipients,
@@ -1617,6 +1726,17 @@ class OfferService:
             ):
                 raise Forbidden("Insufficient permissions to send chat message")
             return
+        if (
+            has_permission(
+                current_user,
+                PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE,
+            )
+            and await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            )
+        ):
+            return
         raise Forbidden("Insufficient permissions to send chat message")
 
     async def _can_attach_chat_files(
@@ -1780,24 +1900,6 @@ class OfferService:
             current_user=current_user,
             request_owner_user_id=request_owner_user_id,
         )
-
-    async def _is_descendant(
-        self,
-        *,
-        ancestor_user_id: str,
-        target_user_id: str,
-    ) -> bool:
-        cursor_id: str | None = target_user_id
-        visited: set[str] = set()
-        while cursor_id is not None and cursor_id not in visited:
-            if cursor_id == ancestor_user_id:
-                return True
-            visited.add(cursor_id)
-            cursor_user = await self._users.get_by_id(cursor_id)
-            if cursor_user is None:
-                return False
-            cursor_id = cursor_user.id_parent
-        return False
 
     def _resolve_message_type(self, *, has_text: bool, has_attachments: bool) -> str:
         if has_text and has_attachments:

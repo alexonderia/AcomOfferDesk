@@ -30,3 +30,28 @@ ls -1 "${SQL_DIR}"/V*.sql
   --dry-run=client -o yaml | "${KUBECTL}" apply -f -
 
 echo "MAKE_CONFIGMAPS_OK flyway-sql"
+
+# --- iam-sql: миграции схемы IAM (acom_iam) для jobs/iam-migrations ---
+# Источник: iam/migrations/sql/V*.sql (тот же SHA, что и образ iam).
+# scripts → acom → k8s → deploy → корень репо (четыре уровня вверх).
+IAM_SQL_DIR="${IAM_SQL_DIR:-${SCRIPT_DIR}/../../../../iam/migrations/sql}"
+
+if [ ! -d "${IAM_SQL_DIR}" ]; then
+  echo "FAIL: нет каталога миграций IAM ${IAM_SQL_DIR}" >&2
+  exit 1
+fi
+
+set -- "${IAM_SQL_DIR}"/V*.sql
+if [ ! -e "$1" ]; then
+  echo "FAIL: нет V*.sql в ${IAM_SQL_DIR}" >&2
+  exit 1
+fi
+
+echo "iam-sql <- ${IAM_SQL_DIR}:"
+ls -1 "${IAM_SQL_DIR}"/V*.sql
+
+"${KUBECTL}" -n "${NS}" create configmap iam-sql \
+  --from-file="${IAM_SQL_DIR}" \
+  --dry-run=client -o yaml | "${KUBECTL}" apply -f -
+
+echo "MAKE_CONFIGMAPS_OK iam-sql"

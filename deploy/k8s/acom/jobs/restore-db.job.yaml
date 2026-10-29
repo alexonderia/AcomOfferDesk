@@ -67,10 +67,10 @@ spec:
               echo "restore: счётчики"
               psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
                    "select 'tables=' || count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')"
-              echo "restore: схема keycloak — АРТЕФАКТ ДАМПА (в k8s Keycloak не разворачивается,"
+              echo "restore: легаси-схема SSO — АРТЕФАКТ ДАМПА (в k8s не разворачивается,"
               echo "         политика 23.07.2026; печатаем только для полноты картины)"
               psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
-                   "select 'keycloak_tables=' || count(*) from information_schema.tables where table_schema='keycloak'" || true
+                   "select 'legacy_sso_tables=' || count(*) from information_schema.tables where table_schema not in ('public','cron','information_schema')" || true
               echo "RESTORE_OK=1"
           envFrom:
             - secretRef:

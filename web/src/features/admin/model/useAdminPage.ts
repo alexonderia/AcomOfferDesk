@@ -10,11 +10,12 @@ import { listContractors } from '@shared/api/contractors/listContractors';
 import type { ContractorListItem } from '@shared/api/contractors/listContractors';
 import { registerUser } from '@shared/api/auth/registerUser';
 import { createManualContractor } from '@shared/api/users/createManualContractor';
-import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { getUsers } from '@shared/api/users/getUsers';
+import { getUnitsTree } from '@shared/api/units';
 import { hasAnyPermission, hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { isValidRuPhone } from '@shared/lib/phone';
+import { buildUnitOptions, type UnitOption } from '@shared/lib/hierarchy/buildUnitOptions';
 import { addUserButtonSx, employeePersonLabels, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
 import { getScopedCreateRoleIds, resolveUserTabFromParam } from './helpers';
 import { useSystemToasts } from '@shared/ui/toasts';
@@ -26,18 +27,16 @@ const schema = z
   .object({
     role_id: z.number({ required_error: 'Выберите роль' }),
     login: z.string().optional(),
-    password: z.string().optional(),
-    confirmPassword: z.string().optional(),
     mail: z.string().optional(),
     full_name: z.string().optional(),
     phone: z.string().optional(),
-    id_parent: z.string().optional(),
     company_name: z.string().optional(),
     inn: z.string().optional(),
     company_phone: z.string().optional(),
     company_mail: z.string().optional(),
     address: z.string().optional(),
-    note: z.string().optional()
+    note: z.string().optional(),
+    unit_id: z.number().nullable().optional(),
   })
   .superRefine((data, ctx) => {
     const isContractor = data.role_id === ROLE.CONTRACTOR;
@@ -135,7 +134,7 @@ const schema = z
     if (!mail) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'E-mail обязателен для входа через Keycloak',
+        message: 'E-mail обязателен для будущей привязки учётной записи',
         path: ['mail']
       });
     } else if (!emailRegex.test(mail)) {
@@ -168,13 +167,6 @@ const schema = z
       });
     }
 
-    if ((data.role_id === ROLE.ECONOMIST || data.role_id === ROLE.LEAD_ECONOMIST) && !data.id_parent?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Выберите руководителя',
-        path: ['id_parent']
-      });
-    }
   });
 
 export type AdminUserFormValues = z.infer<typeof schema>;
@@ -189,6 +181,9 @@ export const useAdminPage = () => {
   const isAdmin = session?.roleId === ROLE.ADMIN;
   const canCreateManualContractor = hasPermission(session, 'contractors.manual.create');
   const canCreateUser = hasPermission(session, 'users.create');
+  const canAssignUnitOnCreate = hasPermission(session, 'units.members.manage')
+    && hasPermission(session, 'units.read');
+  const canShowUnitOnCreate = canCreateUser && hasPermission(session, 'units.read');
   const canUpdateRoleAny = hasPermission(session, 'users.role.update_any');
   const canUpdateRoleEconomy = hasPermission(session, 'users.role.update_economy');
   const canUpdateStatus = hasPermission(session, 'users.status.update');
@@ -202,10 +197,9 @@ export const useAdminPage = () => {
   const [contractors, setContractors] = useState<ContractorListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
+  const [isLoadingUnitOptions, setIsLoadingUnitOptions] = useState(false);
   const loadUsersRequestIdRef = useRef(0);
-  const [economistAndLeadManagers, setEconomistAndLeadManagers] = useState<UserListItem[]>([]);
-  const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
-  const [projectManagerRoleManagers, setProjectManagerRoleManagers] = useState<UserListItem[]>([]);
 
   const baseCreateRoleIds = useMemo(() => {
     const roleIds: number[] = [];
@@ -247,6 +241,9 @@ export const useAdminPage = () => {
 
   const roleUpdateOptions = useMemo(() => {
     if (canUpdateRoleAny) {
+      if (session?.roleId === ROLE.ADMIN) {
+        return [ROLE.ECONOMIST, ROLE.OPERATOR];
+      }
       return [
         ROLE.ADMIN,
         ROLE.CONTRACTOR,
@@ -282,38 +279,22 @@ export const useAdminPage = () => {
     defaultValues: {
       role_id: preferredCreateRoleId,
       login: '',
-      password: '',
-      confirmPassword: '',
       mail: '',
       full_name: '',
       phone: '',
-      id_parent: '',
       company_name: '',
       inn: '',
       company_phone: '',
       company_mail: '',
       address: '',
-      note: ''
+      note: '',
+      unit_id: null,
     }
   });
 
   const { watch, setValue, reset } = form;
   const selectedRoleId = watch('role_id');
-  const selectedParentId = watch('id_parent');
   const isContractorRole = selectedRoleId === ROLE.CONTRACTOR;
-  const requiresParent = selectedRoleId === ROLE.ECONOMIST || selectedRoleId === ROLE.LEAD_ECONOMIST;
-  const managerOptions = useMemo(() => {
-    if (selectedRoleId === ROLE.PROJECT_MANAGER) {
-      return projectManagerRoleManagers;
-    }
-    if (selectedRoleId === ROLE.ECONOMIST) {
-      return economistAndLeadManagers;
-    }
-    if (selectedRoleId === ROLE.LEAD_ECONOMIST) {
-      return projectManagerManagers;
-    }
-    return [];
-  }, [economistAndLeadManagers, projectManagerManagers, projectManagerRoleManagers, selectedRoleId]);
 
   const handleTabChange = (value: UserTab) => {
     setActiveTab(value);
@@ -323,6 +304,48 @@ export const useAdminPage = () => {
       return next;
     }, { replace: true });
   };
+
+  useEffect(() => {
+    if (!isDialogOpen || !canShowUnitOnCreate || selectedRoleId === ROLE.CONTRACTOR) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIsLoadingUnitOptions(true);
+
+    void getUnitsTree()
+      .then((tree) => {
+        if (cancelled) {
+          return;
+        }
+        const options = buildUnitOptions(tree);
+        setUnitOptions(options);
+        if (isLeadLike && options.length > 0) {
+          const defaultOption = options.reduce((best, option) =>
+            option.label.split(' / ').length >= best.label.split(' / ').length ? option : best
+          );
+          setValue('unit_id', defaultOption.unitId, {
+            shouldDirty: false,
+            shouldTouch: false,
+            shouldValidate: true,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUnitOptions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingUnitOptions(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canShowUnitOnCreate, isDialogOpen, isLeadLike, selectedRoleId, setValue]);
 
   useEffect(() => {
     if (!roleOptions.length) {
@@ -345,41 +368,6 @@ export const useAdminPage = () => {
       setActiveTab(resolveUserTabFromParam(searchParams.get('users_tab')));
     }
   }, [isLeadLike, searchParams]);
-
-  const loadManagers = useCallback(async () => {
-    const [economistManagersResult, leadEconomistManagersResult, projectManagerRoleManagersResult] = await Promise.allSettled([
-      getManagerCandidates(ROLE.ECONOMIST),
-      getManagerCandidates(ROLE.LEAD_ECONOMIST),
-      getManagerCandidates(ROLE.PROJECT_MANAGER),
-    ]);
-
-    setEconomistAndLeadManagers(
-      economistManagersResult.status === 'fulfilled' ? economistManagersResult.value.items : []
-    );
-    setProjectManagerManagers(
-      leadEconomistManagersResult.status === 'fulfilled' ? leadEconomistManagersResult.value.items : []
-    );
-    setProjectManagerRoleManagers(
-      projectManagerRoleManagersResult.status === 'fulfilled'
-        ? projectManagerRoleManagersResult.value.items
-        : []
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!isDialogOpen) return;
-    void loadManagers();
-  }, [isDialogOpen, loadManagers]);
-
-  useEffect(() => {
-    if (selectedParentId && !managerOptions.some((item) => item.user_id === selectedParentId)) {
-      setValue('id_parent', '');
-      return;
-    }
-    if (!requiresParent && selectedRoleId !== ROLE.PROJECT_MANAGER) {
-      setValue('id_parent', '');
-    }
-  }, [managerOptions, requiresParent, selectedParentId, selectedRoleId, setValue]);
 
   const loadUsers = useCallback(async () => {
     const requestId = loadUsersRequestIdRef.current + 1;
@@ -431,18 +419,16 @@ export const useAdminPage = () => {
     reset({
       role_id: preferredCreateRoleId,
       login: '',
-      password: '',
-      confirmPassword: '',
       mail: '',
       full_name: '',
       phone: '',
-      id_parent: '',
       company_name: '',
       inn: '',
       company_phone: '',
       company_mail: '',
       address: '',
-      note: ''
+      note: '',
+      unit_id: null,
     });
   }, [preferredCreateRoleId, reset]);
 
@@ -486,6 +472,11 @@ export const useAdminPage = () => {
           note: values.note?.trim() || undefined
         });
 
+        if (response.outcome === 'duplicate_found' && response.duplicate) {
+          const email = response.duplicate.companyMail ? `, e-mail: ${response.duplicate.companyMail}` : '';
+          showErrorToast(`Найден существующий контрагент: ИНН ${response.duplicate.inn}, ${response.duplicate.companyName}${email}.`);
+          return;
+        }
         showSuccessToast(`Контрагент ${response.userId} создан.`);
       } else {
         const response = await registerUser({
@@ -494,14 +485,14 @@ export const useAdminPage = () => {
           mail: values.mail?.trim() || undefined,
           full_name: values.full_name?.trim() || undefined,
           phone: values.phone?.trim() || undefined,
-          id_parent: values.id_parent?.trim() || undefined
+          unit_id: values.unit_id ?? undefined,
         });
 
         showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
       }
 
       resetForm();
-      await Promise.all([loadUsers(), loadManagers()]);
+      await loadUsers();
     } catch (error) {
       showErrorToast(
         error instanceof Error
@@ -533,14 +524,16 @@ export const useAdminPage = () => {
     getRoleLabel,
     canCreateUser,
     canCreateManualContractor,
+    canAssignUnitOnCreate,
+    canShowUnitOnCreate,
     canOpenCreateDialog,
     isContractorRole,
-    requiresParent,
-    managerOptions,
+    isLoadingUnitOptions,
     loadUsers,
     handleClose,
     onSubmit,
     form,
+    unitOptions,
     addUserButtonSx
   };
 };

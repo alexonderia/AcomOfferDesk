@@ -36,6 +36,7 @@ import {
     parseAmountInput,
     normalizeOfferStatus,
     buildRequestDetailsSignature,
+    resolveEffectiveDeadline,
     toDeadlineIso,
 } from '../model/requestDetailsUtils';
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
@@ -280,7 +281,7 @@ export const RequestDetailsView = () => {
         }
 
         try {
-            const economists = await getRequestEconomists();
+            const economists = await getRequestEconomists(requestId);
             setOwnerOptions(
                 economists.map((item) => ({
                     id: item.user_id,
@@ -297,7 +298,7 @@ export const RequestDetailsView = () => {
         } catch {
             setOwnerOptions([]);
         }
-    }, [canEditOwner]);
+    }, [canEditOwner, requestId]);
 
 
     useEffect(() => {
@@ -400,13 +401,14 @@ export const RequestDetailsView = () => {
                 if (parsedFinalAmount === null) {
                     return 'Для закрытия заявки укажите итоговую сумму';
                 }
-                if (!acceptedOffer) {
-                    if (parsedFinalAmount !== parsedInitialAmount) {
-                        return 'Для закрытия заявки без принятого КП итоговая сумма должна совпадать с суммой по ТЗ';
+                if (parsedInitialAmount === 0) {
+                    if (parsedFinalAmount <= 0) {
+                        return 'Для закрытия заявки с нулевой суммой по ТЗ укажите положительную итоговую сумму';
                     }
-                } else if (acceptedOffer.offer_amount === null || acceptedOffer.offer_amount === undefined) {
-                    return 'Для закрытия заявки с принятым КП у него должна быть указана сумма';
-                } else if (parsedFinalAmount !== parsedInitialAmount && parsedFinalAmount !== acceptedOffer.offer_amount) {
+                } else if (
+                    parsedFinalAmount !== parsedInitialAmount
+                    && parsedFinalAmount !== acceptedOffer?.offer_amount
+                ) {
                     return 'Итоговая сумма должна совпадать с суммой по ТЗ или с суммой принятого КП';
                 }
             }
@@ -461,10 +463,12 @@ export const RequestDetailsView = () => {
         const parsedPlanId = planId ? Number(planId) : null;
         const initialAmountChanged = canViewRequestAmounts && initialAmount !== baselineInitialAmount;
         const finalAmountChanged = canViewRequestAmounts && finalAmount !== baselineFinalAmount;
-        let effectiveDeadline = deadline;
-        if (status === 'review') {
-            effectiveDeadline = todayDate;
-        }
+        const effectiveDeadline = resolveEffectiveDeadline({
+            status,
+            statusChanged,
+            deadline,
+            todayDate,
+        });
         const deadlineChanged = effectiveDeadline !== baselineDeadline;
 
         const validationError = getSaveValidationError(status, effectiveDeadline, initialAmount, finalAmount);

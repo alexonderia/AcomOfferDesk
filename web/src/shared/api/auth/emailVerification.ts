@@ -1,7 +1,13 @@
 import { fetchJson } from '../client';
 
-export const requestEmailVerification = async (email: string): Promise<{ detail: string }> => {
-  return fetchJson<{ detail: string }>(
+export type EmailVerificationResult = {
+  detail: string;
+  next_action?: string | null;
+  redirect_url?: string | null;
+};
+
+export const requestEmailVerification = async (email: string): Promise<EmailVerificationResult> => {
+  return fetchJson<EmailVerificationResult>(
     '/api/v1/auth/request-email-verification',
     {
       method: 'POST',
@@ -11,8 +17,8 @@ export const requestEmailVerification = async (email: string): Promise<{ detail:
   );
 };
 
-export const verifyEmailToken = async (token: string): Promise<{ detail: string }> => {
-  return fetchJson<{ detail: string }>(
+export const verifyEmailToken = async (token: string): Promise<EmailVerificationResult> => {
+  return fetchJson<EmailVerificationResult>(
     `/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
     { method: 'GET' },
     'Не удалось подтвердить email',

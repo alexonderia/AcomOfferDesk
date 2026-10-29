@@ -38,3 +38,29 @@ async def test_notify_contractor_status_changed_email_active_includes_login_butt
     assert AUTHORIZATION_BUTTON_LABEL in sent["html_content"]
     assert "https://acom.example/login?next=/" in sent["html_content"]
 
+
+@pytest.mark.asyncio
+async def test_notify_contractor_status_changed_email_closed_includes_configured_contact(monkeypatch):
+    monkeypatch.setattr(settings, "invitation_contact_name", "Служба поддержки")
+    monkeypatch.setattr(settings, "invitation_contact_email", "support@example.com")
+    monkeypatch.setattr(settings, "invitation_contact_phone", "+79990000000")
+    monkeypatch.setattr(settings, "invitation_contact_text", None)
+
+    sent = {}
+
+    class _FakeEmailService:
+        async def send_email(self, **kwargs) -> None:  # noqa: ANN002
+            sent.update(kwargs)
+
+    monkeypatch.setattr(contractor_email_notifications_module, "_build_email_service", lambda: _FakeEmailService())
+
+    await contractor_email_notifications_module.notify_contractor_status_changed_email(
+        to_email="contractor@example.com",
+        user_status="inactive",
+    )
+
+    assert "support@example.com" in sent["text_content"]
+    assert "Если удобнее, вы можете связаться с контактным лицом напрямую:" in sent["text_content"]
+    assert "Служба поддержки" in sent["text_content"]
+    assert "support@example.com" in sent["html_content"]
+

@@ -14,12 +14,15 @@ REVIEW_ALLOWED_PERMISSIONS = frozenset(
         PermissionCodes.COMPANY_CONTACTS_MANAGE_OWN,
     }
 )
+FIRST_LOGIN_ALLOWED_PERMISSIONS = REVIEW_ALLOWED_PERMISSIONS
 
 
 def has_permission(current_user: CurrentUser, permission_code: str) -> bool:
     if not current_user.has_permission(permission_code):
         return False
     if current_user.status == "active":
+        if current_user.onboarding_state == "first_login":
+            return permission_code in FIRST_LOGIN_ALLOWED_PERMISSIONS
         return True
     if current_user.status == "review":
         return (

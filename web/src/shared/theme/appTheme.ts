@@ -76,18 +76,63 @@ export const appTheme = createTheme({
     fontFamily: tokens.typography.fontFamily,
     fontSize: tokens.typography.bodyFontSize,
     h1: {
-      fontSize: 32,
+      fontSize: tokens.typography.h1FontSize,
       fontWeight: 700,
       lineHeight: 1.2
     },
     h2: {
-      fontSize: 24,
+      fontSize: tokens.typography.h2FontSize,
       fontWeight: 700,
       lineHeight: 1.25
     },
-    body1: {
-      fontSize: 16,
+    h3: {
+      fontSize: tokens.typography.h3FontSize,
+      fontWeight: 700,
+      lineHeight: 1.25
+    },
+    h4: {
+      fontSize: tokens.typography.h4FontSize,
+      fontWeight: 700,
+      lineHeight: 1.25
+    },
+    h5: {
+      fontSize: tokens.typography.h5FontSize,
+      fontWeight: 700,
+      lineHeight: 1.25
+    },
+    h6: {
+      fontSize: tokens.typography.h6FontSize,
+      fontWeight: 700,
+      lineHeight: 1.3
+    },
+    subtitle1: {
+      fontSize: tokens.typography.subtitle1FontSize,
+      fontWeight: 600,
       lineHeight: 1.5
+    },
+    subtitle2: {
+      fontSize: tokens.typography.subtitle2FontSize,
+      fontWeight: 600,
+      lineHeight: 1.43
+    },
+    body1: {
+      fontSize: tokens.typography.bodyFontSize,
+      lineHeight: 1.5
+    },
+    body2: {
+      fontSize: tokens.typography.body2FontSize,
+      lineHeight: 1.43
+    },
+    caption: {
+      fontSize: tokens.typography.captionFontSize,
+      lineHeight: 1.33
+    },
+    overline: {
+      fontSize: tokens.typography.captionFontSize,
+      fontWeight: 600,
+      lineHeight: 1.5,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase'
     },
     button: {
       textTransform: 'none',
@@ -102,6 +147,8 @@ export const appTheme = createTheme({
         body: {
           margin: 0,
           minWidth: 320,
+          fontFamily: tokens.typography.fontFamily,
+          fontSize: tokens.typography.bodyFontSize,
           backgroundColor: tokens.color.background.page,
           color: tokens.color.text.primary
         },
@@ -199,6 +246,41 @@ export const appTheme = createTheme({
       styleOverrides: {
         outlined: {
           borderWidth: 1.5
+        },
+        label: {
+          fontSize: tokens.typography.captionFontSize
+        },
+        labelSmall: {
+          fontSize: tokens.typography.captionFontSize
+        }
+      }
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          fontSize: tokens.typography.body2FontSize
+        }
+      }
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          fontSize: tokens.typography.body2FontSize,
+          textTransform: 'none'
+        }
+      }
+    },
+    MuiInputBase: {
+      styleOverrides: {
+        root: {
+          fontSize: tokens.typography.body2FontSize
+        }
+      }
+    },
+    MuiFormHelperText: {
+      styleOverrides: {
+        root: {
+          fontSize: tokens.typography.captionFontSize
         }
       }
     },

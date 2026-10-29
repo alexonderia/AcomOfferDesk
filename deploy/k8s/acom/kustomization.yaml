@@ -37,12 +37,13 @@ resources:
   - data/postgres-statefulset.yaml
   - workloads/rabbitmq.yaml
   - workloads/minio.yaml
-  # Keycloak в k3s НЕ включаем — ПОЛИТИКА: `policy_acom_no_keycloak_cod_jul2026`
-  # (Тоток С.И. / СБ, 23.07.2026): «Keycloak полностью запрещён», альтернатива —
+  # Стороннюю SSO в k3s НЕ включаем — ПОЛИТИКА: `политика СБ/Тоток 23.07.2026 (запрет сторонней SSO; узел в Graph RAG)`
+  # (Тоток С.И. / СБ, 23.07.2026): «Сторонняя SSO полностью запрещён», альтернатива —
   # мультифактор (корп. IAM); текущий OIDC на VPS — «не канон для ЦОД».
-  # PR #53 «without_keycloak_and_others» (dev, 04.09.2026) уже убрал Keycloak из кода.
-  # Манифест сохранён как история: excluded-by-policy/keycloak.yaml (в оверлей не входит).
+  # PR #53 «without_legacy-sso_and_others» (dev, 04.09.2026) уже убрал Сторонняя SSO из кода.
+  # Манифест-история вынесен из оверлея в docs/legacy-sso-excluded/ (см. README там).
   - workloads/backend.yaml
+  - workloads/iam.yaml
   - workloads/web.yaml
   - workloads/gateway.yaml
   - workloads/maintenance.yaml
@@ -57,5 +58,4 @@ resources:
 # Их применение — вручную и по порядку из README.md («Порядок Ф5»).
 patches:
   - path: patch-backend-shared.yaml
-  - path: patch-worker-shared.yaml
   - path: patch-fileguard-clamav.yaml

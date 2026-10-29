@@ -62,6 +62,7 @@ export const SidebarMenuButton = ({
             {icon}
           </Stack>
           <Typography
+            variant="body2"
             sx={{
               maxWidth: collapsed ? 0 : compactLabel ? '100%' : 220,
               opacity: collapsed ? 0 : 1,
@@ -69,7 +70,6 @@ export const SidebarMenuButton = ({
               overflow: 'hidden',
               textOverflow: compactLabel ? 'ellipsis' : 'clip',
               whiteSpace: compactLabel ? 'pre-line' : 'nowrap',
-              fontSize: 14,
               fontWeight: active ? 600 : 500,
               lineHeight: compactLabel ? 1.25 : 1.2,
               textAlign: 'left',

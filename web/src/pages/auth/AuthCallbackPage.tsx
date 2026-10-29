@@ -1,13 +1,15 @@
-import { Box, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { CircularProgress, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
+import { AuthPageShell } from '@shared/components/AuthPageShell';
 import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
+import { TechnicalUnavailablePage } from '@pages/technical';
 
 export const AuthCallbackPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { refresh, session, isAuthenticated } = useAuth();
+  const { refresh, session, isAuthenticated, status } = useAuth();
   const nextPath = useMemo(() => {
     const raw = searchParams.get('next');
     return raw && raw.startsWith('/') ? raw : '/';
@@ -22,8 +24,8 @@ export const AuthCallbackPage = () => {
     }
 
     let cancelled = false;
-    void refresh('bootstrap').then((restored) => {
-      if (!restored && !cancelled) {
+    void refresh('bootstrap').then((result) => {
+      if (result.kind === 'terminal' && !cancelled) {
         navigate('/login?auth_error=login_failed', { replace: true });
       }
     });
@@ -44,17 +46,18 @@ export const AuthCallbackPage = () => {
     navigate(resolveAuthenticatedPath(nextPath, session), { replace: true });
   }, [isAuthenticated, navigate, nextPath, session]);
 
+  if (status === 'unavailable') {
+    return <TechnicalUnavailablePage />;
+  }
+
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
-      <Paper sx={{ p: 4, width: { xs: '100%', sm: 520 } }}>
-        <Stack spacing={2} alignItems="center">
-          <Typography variant="h5" fontWeight={700}>Завершаем вход</Typography>
-          <CircularProgress size={28} />
-          <Typography variant="body2" color="text.secondary" textAlign="center">
-            Проверяем доступ и открываем рабочий кабинет.
-          </Typography>
-        </Stack>
-      </Paper>
-    </Box>
+    <AuthPageShell title="Завершаем вход">
+      <Stack spacing={2} alignItems="center">
+        <CircularProgress size={28} />
+        <Typography variant="body2" color="text.secondary" textAlign="center">
+          Проверяем доступ и открываем рабочий кабинет.
+        </Typography>
+      </Stack>
+    </AuthPageShell>
   );
 };

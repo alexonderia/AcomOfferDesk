@@ -1,5 +1,5 @@
 import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined';
-import { Alert, Button, Stack } from '@mui/material';
+import { Button, Stack } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
@@ -11,22 +11,24 @@ import { listContractors } from '@shared/api/contractors/listContractors';
 import { hasPermission } from '@shared/auth/permissions';
 import { ActionButton } from '@shared/components/ActionButton';
 import { useIsMobileViewport } from '@shared/lib/responsive';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 export const ContractorsPage = () => {
   const { session } = useAuth();
   const theme = useTheme();
   const isMobileViewport = useIsMobileViewport();
+  const { showErrorToast } = useSystemToasts();
   const [contractors, setContractors] = useState<Awaited<ReturnType<typeof listContractors>>>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
 
   const canManageContractors = hasPermission(session, 'contractors.manual.create');
+  const canInviteContractors = hasPermission(session, 'users.registration.invite');
 
   const breadcrumbActions = useMemo(
     () =>
-      canManageContractors ? (
+      canInviteContractors ? (
         isMobileViewport ? (
           <ActionButton
             kind="outlined"
@@ -59,24 +61,23 @@ export const ContractorsPage = () => {
           </Button>
         )
       ) : null,
-    [canManageContractors, isMobileViewport, theme]
+    [canInviteContractors, isMobileViewport, theme]
   );
 
   useSetPageBreadcrumbActions(breadcrumbActions);
 
   const loadContractors = useCallback(async () => {
     setIsLoading(true);
-    setError(null);
     try {
       const items = await listContractors();
       setContractors(items);
     } catch (loadError) {
       setContractors([]);
-      setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить контрагентов');
+      showErrorToast(loadError instanceof Error ? loadError.message : 'Не удалось загрузить контрагентов');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [showErrorToast]);
 
   useEffect(() => {
     void loadContractors();
@@ -84,7 +85,6 @@ export const ContractorsPage = () => {
 
   return (
     <Stack spacing={2}>
-      {error ? <Alert severity="error">{error}</Alert> : null}
       <ContractorsListView
         contractors={contractors}
         isLoading={isLoading}

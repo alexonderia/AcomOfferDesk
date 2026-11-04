@@ -7,6 +7,24 @@ export type Credentials = {
   password: string;
 };
 
+export const createPdfFixture = (): Buffer => {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> >>'
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(Buffer.byteLength(body));
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xref = Buffer.byteLength(body);
+  body += `xref\n0 4\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}`;
+  body += `trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(body);
+};
+
 const TRANSIENT_NAVIGATION_ERRORS = [
   'ERR_CONNECTION_CLOSED',
   'ERR_CONNECTION_RESET',
@@ -106,7 +124,7 @@ export const loginViaIam = async (page: Page, credentials: Credentials): Promise
     );
   };
 
-  const usernameInput = page.locator('input[name="username"], input#username').first();
+  const usernameInput = page.locator('input[name="login"], input#login, input[name="username"], input#username').first();
   const passwordInput = page.locator('input[name="password"], input#password').first();
   const submitButton = page.locator('button[type="submit"], input[type="submit"]').first();
 

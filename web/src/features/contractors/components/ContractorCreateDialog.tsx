@@ -23,11 +23,13 @@ import { useLiveValidatedForm } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { sectionTitleSx } from '@shared/theme/sectionTitleSx';
+import { InitialAccountFields, type InitialAccountValues } from '@shared/components/InitialAccountFields';
 
 type ContractorCreateDialogProps = {
   open: boolean;
   onClose: () => void;
   onCreated: () => Promise<void>;
+  emailEnabled?: boolean;
 };
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -57,7 +59,9 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorCreateDialogProps) => {
+export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled = true }: ContractorCreateDialogProps) => {
+  const [account, setAccount] = useState<InitialAccountValues>({ login: '', password: '', password_confirmation: '' });
+  const [existingUserId, setExistingUserId] = useState<string | undefined>();
   const { showSuccessToast, showErrorToast } = useSystemToasts();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<ManualContractorDuplicate[]>([]);
@@ -146,6 +150,8 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
   useEffect(() => {
     if (!open) {
       reset(defaultValues);
+      setAccount({ login: '', password: '', password_confirmation: '' });
+      setExistingUserId(undefined);
       setSubmitError(null);
     }
   }, [defaultValues, open, reset]);
@@ -169,14 +175,11 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
         company_mail: values.companyMail?.trim() || undefined,
         address: values.address?.trim() || undefined,
         note: values.note?.trim() || undefined,
+        existing_user_id: existingUserId,
+        ...(!emailEnabled && (account.login || account.password || account.password_confirmation) ? { login: account.login.trim(), password: account.password, password_confirmation: account.password_confirmation } : {}),
       });
-      if (created.outcome === 'duplicate_found' && created.duplicate) {
-        const email = created.duplicate.companyMail ? `, e-mail: ${created.duplicate.companyMail}` : '';
-        setSubmitError(`Найден существующий контрагент: ИНН ${created.duplicate.inn}, ${created.duplicate.companyName}${email}.`);
-        return;
-      }
       await onCreated();
-      showSuccessToast(`Контрагент ${created.userId} создан`);
+      showSuccessToast(created.outcome === 'duplicate_found' ? `Использован существующий контрагент ${created.userId}` : `Контрагент ${created.userId} создан`);
       handleClose();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось создать контрагента';
@@ -266,6 +269,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
             fullWidth
           />
           {submitError ? <Alert severity="error">{submitError}</Alert> : null}
+          {!emailEnabled ? <InitialAccountFields values={account} onChange={(field, value) => setAccount((old) => ({ ...old, [field]: value }))} disabled={isSubmitting} /> : null}
         </Stack>
         </Box>
         {(hasDuplicateQuery || duplicatesLoading || duplicates.length > 0) ? <Box
@@ -295,6 +299,11 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated }: ContractorC
             {duplicates.map((item) => (
               <Box key={item.userId} sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 1 }}>
                 <Box sx={{ fontWeight: 600, mb: 0.5 }}>{item.companyName || item.fullName || item.userId}</Box>
+                <Button onClick={() => {
+                  setExistingUserId(item.userId);
+                  setAccount({ login: '', password: '', password_confirmation: '' });
+                  reset({ companyName: item.companyName ?? '', inn: item.inn ?? '', companyPhone: item.companyPhone ?? '', companyMail: item.companyMail ?? '', address: item.address ?? '', note: item.note ?? '' });
+                }}>Использовать этого контрагента</Button>
                 <Stack spacing={0.2} sx={{ fontSize: 13, color: 'text.secondary' }}>
                   <Box>ID: {item.userId}</Box>
                   <Box>Статус: {item.status}</Box>

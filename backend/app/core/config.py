@@ -84,14 +84,15 @@ class Settings(BaseSettings):
     security_officer_role_id: int = 8
     public_backend_base_url: str | None = Field(default=None, validation_alias="PUBLIC_BACKEND_BASE_URL")
     web_base_url: str | None = Field(default=None, validation_alias="WEB_BASE_URL")
-    email_address: str = Field(..., validation_alias="EMAIL_ADDRESS")
+    email_enabled: bool = Field(default=True, validation_alias="EMAIL_ENABLED")
+    email_address: str = Field(default="", validation_alias="EMAIL_ADDRESS")
     email_from_name: str = Field(default="AcomOfferDesk", validation_alias="EMAIL_FROM_NAME")
-    email_app_password: str = Field(..., validation_alias="EMAIL_APP_PASSWORD")
-    smtp_host: str = Field(..., validation_alias="SMTP_HOST")
+    email_app_password: str = Field(default="", validation_alias="EMAIL_APP_PASSWORD")
+    smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=465, validation_alias="SMTP_PORT")
     smtp_security: str = Field(default="auto", validation_alias="SMTP_SECURITY")
     rabbitmq_url: str = Field(default="amqp://guest:guest@rabbitmq:5672/", validation_alias="RABBITMQ_URL")
-    email_verification_secret: str = Field(..., validation_alias="EMAIL_VERIFICATION_SECRET")
+    email_verification_secret: str = Field(default="", validation_alias="EMAIL_VERIFICATION_SECRET")
     email_verification_ttl_seconds: int = Field(default=3600, validation_alias="EMAIL_VERIFICATION_TTL_SECONDS")
     registration_invite_ttl_seconds: int = Field(
         default=86400,
@@ -206,6 +207,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
+        if self.email_enabled and not all((self.email_address, self.email_app_password, self.smtp_host, self.email_verification_secret)):
+            raise ValueError("Email configuration is required when EMAIL_ENABLED=true")
         self.app_env = self.app_env.strip().lower() or "development"
         self.superadmin_role_id = 1
         self.admin_role_id = 2

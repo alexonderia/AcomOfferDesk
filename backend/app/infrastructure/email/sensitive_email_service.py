@@ -7,6 +7,8 @@ from email.utils import formataddr
 
 import anyio
 
+from app.core.config import settings
+
 
 class SensitiveEmailDeliveryError(RuntimeError):
     """Sanitized failure that cannot retain a secret-bearing email payload."""
@@ -42,6 +44,8 @@ class SensitiveEmailService:
         text_content: str,
         html_content: str,
     ) -> None:
+        if not settings.email_enabled:
+            return
         try:
             await anyio.to_thread.run_sync(
                 self._send_sync,

@@ -105,12 +105,15 @@ class _FeedbackRepo:
         self.created: list[str] = []
         self.items = [SimpleNamespace(id=7, text="existing feedback")]
 
-    async def create(self, *, text: str):
+    async def create(self, *, text: str, author_user_id: str):
         self.created.append(text)
-        return SimpleNamespace(id=42, text=text)
+        return SimpleNamespace(id=42, text=text, author_user_id=author_user_id)
 
     async def list_items(self):
         return self.items
+
+    async def list_page(self, **kwargs):
+        return self.items, len(self.items)
 
 
 class _FeedbackUow:
@@ -1118,7 +1121,7 @@ def test_feedback_list_allows_superadmin_and_denies_non_superadmin(
     response = test_client.get("/api/v1/feedback")
 
     assert response.status_code == 200
-    assert response.json()["data"]["items"] == [{"id": 7, "text": "existing feedback"}]
+    assert response.json()["data"]["items"] == [{"id": 7, "text": "existing feedback", "author_user_id": None, "author_name": None, "created_at": None}]
 
     set_current_user(make_current_user(role_id=settings.economist_role_id, permissions={PermissionCodes.FEEDBACK_CREATE}))
     denied_response = test_client.get("/api/v1/feedback")
@@ -1593,6 +1596,38 @@ def test_offer_file_upload_denies_anonymous_user(api_app, test_client, monkeypat
     )
 
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("permissions", "is_normative", "expected"),
+    [
+        ({PermissionCodes.NORMATIVE_FILES_READ}, True, 200),
+        ({PermissionCodes.NORMATIVE_FILES_READ}, False, 403),
+        ({PermissionCodes.FILES_DOWNLOAD}, True, 403),
+        (set(), True, 403),
+    ],
+)
+def test_normative_read_permission_allows_only_normative_content(
+    test_client, monkeypatch, set_current_user, set_uow, make_current_user,
+    permissions, is_normative, expected,
+):
+    from unittest.mock import AsyncMock
+
+    files = _DownloadFilesRepo()
+    files.is_normative_file = AsyncMock(return_value=is_normative)
+    read_bytes = AsyncMock(return_value=b"normative-content")
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", read_bytes)
+    set_uow(_DownloadUow(files_repo=files))
+    set_current_user(make_current_user(role_id=settings.admin_role_id, permissions=permissions))
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == expected
+    if expected == 200:
+        assert response.content == b"normative-content"
+        read_bytes.assert_awaited_once()
+    else:
+        read_bytes.assert_not_awaited()
 
 
 def test_file_download_allows_contractor_for_linked_open_request(

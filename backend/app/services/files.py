@@ -138,6 +138,15 @@ class FileService:
             ttl_seconds=settings.s3_presigned_get_ttl_seconds,
         )
 
+    async def ensure_content_available(self, *, db_file: File) -> None:
+        storage_object = self._require_storage_object(db_file)
+        try:
+            await self._storage.stat_object(bucket=storage_object.storage_bucket, key=storage_object.storage_key)
+        except S3Error as exc:
+            if self._is_missing_object_error(exc):
+                raise NotFound("File content not found") from exc
+            raise
+
     async def read_bytes(self, *, db_file: File) -> bytes:
         storage_object = self._require_storage_object(db_file)
         try:

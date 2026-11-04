@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.api.dependencies import get_current_user
 from app.core.config import settings
 from app.domain.exceptions import Unauthorized
@@ -62,6 +64,9 @@ class _UsersRepo:
 
     async def get_by_id(self, user_id: str):
         return self._users.get(user_id)
+
+    async def find_matching_contractor_user_ids(self, **kwargs):
+        return []
 
     async def exists(self, user_id: str) -> bool:
         return user_id in self._users
@@ -150,6 +155,17 @@ class _ProfilesRepo:
         return self._users_repo._profiles.get(user_id)
 
 
+class _CompaniesRepo:
+    def __init__(self):
+        self.items = {}
+
+    async def add(self, item):
+        self.items[item.id] = item
+
+    async def get_by_id(self, user_id):
+        return self.items.get(user_id)
+
+
 class _UserAuthAccountsRepo:
     def __init__(self) -> None:
         self._bindings = {
@@ -225,6 +241,9 @@ class _UnitsRepo:
                 )
         return None
 
+    async def list_units(self, *, active_only=True):
+        return [await self.get_by_id(unit_id) for unit_id, _, _ in self._users_repo._units]
+
     async def get_member(self, *, unit_id: int, user_id: str):
         return self._members.get((unit_id, user_id))
 
@@ -246,7 +265,7 @@ class _UsersUow:
         self.profiles = _ProfilesRepo(self.users)
         self.user_auth_accounts = _UserAuthAccountsRepo()
         self.user_status_periods = _UserStatusPeriodsRepo()
-        self.company_contacts = object()
+        self.company_contacts = _CompaniesRepo()
         self.user_contact_channels = _NullUserContactChannelsRepo()
         self.user_notification_preferences = _NullUserNotificationPreferencesRepo()
         self.after_commit_hooks = []
@@ -262,6 +281,10 @@ class _UsersUow:
 
 
 class _FakeIamClient:
+    async def provision_direct_credentials(self, *, account_id, login: str, role: str, password: str):
+        assert password
+        return SimpleNamespace(id=str(account_id), login=login, role=role, auth_status="active", created=True)
+
     async def put_account(self, *, account_id, login: str, role: str, auth_status: str):
         return SimpleNamespace(
             id=str(account_id), login=login, role=role, auth_status=auth_status, created=True
@@ -280,6 +303,114 @@ class _FakeIamClient:
 def _set_fake_iam(monkeypatch) -> None:
     monkeypatch.setattr("app.api.v1.auth.IamClient", _FakeIamClient)
     monkeypatch.setattr("app.api.v1.users.IamClient", _FakeIamClient)
+
+
+def test_no_mail_creation_has_ready_binding_and_no_email_channel(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
+    monkeypatch.setattr(settings, "email_enabled", False)
+    uow = _UsersUow()
+    set_uow(uow)
+    set_current_user(make_current_user(user_id="admin-1", role_id=settings.admin_role_id, permissions={PermissionCodes.USERS_CREATE}))
+    payload = {"login": "new-no-mail", "role_id": settings.economist_role_id, "password": "Initial password 123", "password_confirmation": "Initial password 123"}
+    response = test_client.post("/api/v1/users/register", json=payload)
+    assert response.status_code == 200, response.text
+    assert uow.users._users["new-no-mail"].status == "active"
+    assert uow.user_auth_accounts._bindings["new-no-mail"].is_active
+    assert ("new-no-mail", 1) in uow.users._memberships
+    assert response.json()["data"] == {"user_id": "new-no-mail", "role_id": settings.economist_role_id, "status": "active"}
+    payload["password_confirmation"] = "different password 123"
+    rejected = test_client.post("/api/v1/users/register", json=payload)
+    assert rejected.status_code == 422
+
+
+def test_no_mail_mode_requires_password_and_does_not_adopt_existing_login(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
+    monkeypatch.setattr(settings, "email_enabled", False)
+    uow = _UsersUow()
+    set_uow(uow)
+    set_current_user(make_current_user(user_id="admin-1", role_id=settings.admin_role_id, permissions={PermissionCodes.USERS_CREATE}))
+    assert test_client.post("/api/v1/users/register", json={"login": "new-no-password", "role_id": settings.economist_role_id}).status_code == 409
+    assert "new-no-password" not in uow.users._users
+    assert test_client.get("/api/v1/auth/capabilities").json()["data"]["email_enabled"] is False
+    assert test_client.post("/api/v1/auth/password-reset/request", json={"login": "eco-1"}).status_code == 409
+
+
+def test_password_change_uses_authenticated_account_and_session(test_client, monkeypatch, set_current_user, make_current_user):
+    captured = {}
+    class PasswordClient:
+        async def change_own_password(self, **kwargs):
+            captured.update(kwargs)
+    monkeypatch.setattr("app.api.v1.auth.IamClient", PasswordClient)
+    user = make_current_user(user_id="eco-1", role_id=settings.economist_role_id)
+    set_current_user(user)
+    response = test_client.post("/api/v1/users/me/password", json={
+        "current_password": "Current password 123", "new_password": "Replacement password 456",
+        "password_confirmation": "Replacement password 456", "account_id": "other-account",
+    })
+    assert response.status_code == 204
+    assert captured["account_id"] == user.iam_account_id
+    assert captured["session_id"] == user.iam_session_id
+    assert "Replacement password 456" not in response.text
+
+
+def test_no_mail_contractor_can_receive_login_and_password(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
+    monkeypatch.setattr(settings, 'email_enabled', False)
+    uow = _UsersUow()
+    set_uow(uow)
+    set_current_user(make_current_user(user_id='admin-1', role_id=settings.admin_role_id, permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE}))
+    response = test_client.post('/api/v1/users/manual-contractor', json={
+        'company_name': 'New contractor', 'inn': '7707083893', 'company_phone': '+79991234567',
+        'login': 'contractor-access', 'password': 'Initial password 123', 'password_confirmation': 'Initial password 123',
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['user_id'] == 'contractor-access'
+    assert uow.users._users['contractor-access'].id_role == settings.contractor_role_id
+    assert uow.user_auth_accounts._bindings['contractor-access'].is_active
+    assert ('contractor-access', 1) in uow.users._memberships
+
+
+def test_duplicate_contractor_creation_cannot_initialize_existing_credentials(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    from unittest.mock import AsyncMock
+    _set_fake_iam(monkeypatch)
+    monkeypatch.setattr(settings, 'email_enabled', False)
+    uow = _UsersUow()
+    uow.users.find_matching_contractor_user_ids = AsyncMock(return_value=['contractor-1'])
+    class ExistingAccountClient(_FakeIamClient):
+        async def get_credential_state(self, **kwargs):
+            return SimpleNamespace(password_set=False)
+        async def provision_direct_credentials(self, **kwargs):
+            raise AssertionError('Existing contractor credentials must not be claimed through dedupe')
+    monkeypatch.setattr('app.api.v1.users.IamClient', ExistingAccountClient)
+    set_uow(uow)
+    set_current_user(make_current_user(user_id='admin-1', role_id=settings.admin_role_id, permissions={PermissionCodes.CONTRACTORS_MANUAL_CREATE}))
+    response = test_client.post('/api/v1/users/manual-contractor', json={
+        'company_name': 'Existing company', 'inn': '7707083893', 'company_phone': '+79991234567',
+        'login': 'contractor-1', 'password': 'Initial password 123', 'password_confirmation': 'Initial password 123',
+    })
+    assert response.status_code == 409
+
+
+def test_admin_cannot_change_status_of_staff_in_other_root(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
+    uow = _UsersUow()
+    set_uow(uow)
+    set_current_user(make_current_user(user_id='admin-1', role_id=settings.admin_role_id, permissions={PermissionCodes.USERS_STATUS_UPDATE}))
+    response = test_client.patch('/api/v1/users/pm-2/status', json={'user_status': 'inactive'})
+    assert response.status_code == 403
+    assert uow.users._users['pm-2'].status == 'active'
+
+
+def test_superadmin_can_restore_accidentally_converted_employee(test_client, monkeypatch, set_uow, set_current_user, make_current_user):
+    _set_fake_iam(monkeypatch)
+    uow = _UsersUow()
+    uow.users._users['eco-1'].id_role = settings.contractor_role_id
+    set_uow(uow)
+    set_current_user(make_current_user(user_id='superadmin-1', role_id=settings.superadmin_role_id, permissions={PermissionCodes.USERS_ROLE_UPDATE_ANY}))
+    response = test_client.patch('/api/v1/users/eco-1/role', json={'role_id': settings.economist_role_id})
+    assert response.status_code == 200
+    assert uow.users._users['eco-1'].id_role == settings.economist_role_id
+    assert ('eco-1', 2) in uow.users._memberships
 
 
 def test_admin_can_create_user_with_permission(
@@ -342,20 +473,23 @@ def test_lead_economist_register_auto_assigns_creator_unit(
     assert ("eco-new", 2) in uow.users._memberships
 
 
+@pytest.mark.parametrize("email_enabled", [True, False])
 def test_lead_economist_can_register_with_unit_in_scope(
     test_client,
     monkeypatch,
     set_uow,
     set_current_user,
     make_current_user,
+    email_enabled,
 ):
     _set_fake_iam(monkeypatch)
+    monkeypatch.setattr(settings, "email_enabled", email_enabled)
     uow = _UsersUow()
     set_uow(uow)
     lead = make_current_user(
         user_id="lead-1",
         role_id=settings.lead_economist_role_id,
-        permissions={PermissionCodes.USERS_CREATE, PermissionCodes.UNITS_READ},
+        permissions={PermissionCodes.USERS_CREATE, PermissionCodes.UNITS_READ, PermissionCodes.UNITS_MEMBERS_MANAGE},
     )
     set_current_user(lead)
 
@@ -366,11 +500,36 @@ def test_lead_economist_can_register_with_unit_in_scope(
             "role_id": settings.economist_role_id,
             "mail": "eco-child@example.com",
             "unit_id": 3,
+            **({"password": "Initial password 123", "password_confirmation": "Initial password 123"} if not email_enabled else {}),
         },
     )
 
     assert response.status_code == 200
     assert ("eco-child", 3) in uow.users._memberships
+
+
+@pytest.mark.parametrize("email_enabled", [True, False])
+def test_lead_registration_cannot_assign_foreign_unit_or_provision_identity(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user, email_enabled,
+):
+    class NoProvisionClient(_FakeIamClient):
+        async def put_account(self, **kwargs):
+            raise AssertionError("IAM must not be called before unit authorization")
+
+        async def provision_direct_credentials(self, **kwargs):
+            raise AssertionError("IAM must not be called before unit authorization")
+
+    monkeypatch.setattr("app.api.v1.auth.IamClient", NoProvisionClient)
+    monkeypatch.setattr(settings, "email_enabled", email_enabled)
+    set_uow(_UsersUow())
+    set_current_user(make_current_user(
+        user_id="lead-1", role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.USERS_CREATE, PermissionCodes.UNITS_READ, PermissionCodes.UNITS_MEMBERS_MANAGE},
+    ))
+    payload = {"login": "eco-foreign", "role_id": settings.economist_role_id, "mail": "eco@example.com", "unit_id": 10}
+    if not email_enabled:
+        payload.update(password="Initial password 123", password_confirmation="Initial password 123")
+    assert test_client.post("/api/v1/users/register", json=payload).status_code == 403
 
 
 def test_user_without_users_create_cannot_register_user(test_client, set_uow, set_current_user, make_current_user):
@@ -387,6 +546,7 @@ def test_user_without_users_create_cannot_register_user(test_client, set_uow, se
         json={
             "login": "blocked-user",
             "password": "StrongPass1!",
+            "password_confirmation": "StrongPass1!",
             "role_id": settings.operator_role_id,
             "mail": "blocked@example.com",
         },

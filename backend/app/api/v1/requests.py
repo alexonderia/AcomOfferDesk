@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.api.action_flags import OfferActionBuilder, RequestActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
+from app.core.email_mode import ensure_email_enabled
 from app.core.uow import UnitOfWork
 from app.domain.authorization import has_permission
 from app.domain.exceptions import Forbidden, NotFound
@@ -820,6 +821,7 @@ async def send_request_email_notifications(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEmailNotificationResponse:
+    ensure_email_enabled()
     async with uow:
         email_notifications = EmailNotificationService(
             uow.profiles,
@@ -932,7 +934,8 @@ async def download_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> StreamingResponse:
-    if not has_permission(current_user, PermissionCodes.FILES_DOWNLOAD):
+    can_download_business_files = has_permission(current_user, PermissionCodes.FILES_DOWNLOAD)
+    if not can_download_business_files and not has_permission(current_user, PermissionCodes.NORMATIVE_FILES_READ):
         raise Forbidden("Insufficient permissions for file download")
 
     async with uow:
@@ -941,6 +944,8 @@ async def download_file(
             raise NotFound("File not found")
 
         is_normative_file = await uow.files.is_normative_file(file_id=file_id)
+        if not is_normative_file and not can_download_business_files:
+            raise Forbidden("Insufficient permissions for file download")
         if is_normative_file:
             UserPolicy.ensure_can_view_normative_files(current_user)
         elif current_user.role_id == settings.contractor_role_id:

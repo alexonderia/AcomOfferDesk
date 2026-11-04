@@ -19,6 +19,7 @@ import {
   Typography
 } from '@mui/material';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import { UserPasswordResetButton } from '@shared/components/UserPasswordResetButton';
 import { alpha, useTheme } from '@mui/material/styles';
 import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/forms';
@@ -1463,6 +1464,8 @@ export const UsersTable = ({
                   Карточка сотрудника
                 </Typography>
 
+                <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} />
+
                 <Box
                   sx={{
                     border: '1px solid',
@@ -1842,6 +1845,8 @@ export const UsersTable = ({
               <Typography id="contractor-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
                 Карточка контрагента
               </Typography>
+
+              <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} />
 
               <Box
                 sx={{

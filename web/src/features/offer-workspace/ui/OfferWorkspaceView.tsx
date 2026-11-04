@@ -126,6 +126,7 @@ export const OfferWorkspaceView = () => {
     canDeleteFile,
     canSendMessage,
     canViewMessages,
+    retryChat,
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,
@@ -761,6 +762,7 @@ export const OfferWorkspaceView = () => {
 
       {canViewMessages ? (
         <OfferWorkspaceChatDock isOpen={isChatOpen} onOpen={() => setIsChatOpen(true)}>
+          {visibleErrorMessage ? <Button onClick={() => void retryChat()}>Повторить загрузку чата</Button> : null}
           <OfferWorkspaceChatPanel
             offerId={selectedOffer.offer_id}
             readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? '\u0414\u043b\u044f \u0432\u0430\u0441 \u0447\u0430\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u043b\u044f \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430.' : null}

@@ -43,6 +43,15 @@ class UserRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def lock_contractor_identity(self, *, inn: str) -> None:
+        await self._session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"contractor:{inn.strip()}", 0))))
+
+    async def has_contractor_offers(self, *, user_id: str) -> bool:
+        return (await self._session.execute(select(Offer.id).where(Offer.id_user == user_id).limit(1))).scalar_one_or_none() is not None
+
+    async def has_owned_requests(self, *, user_id: str) -> bool:
+        return (await self._session.execute(select(Request.id).where(Request.id_user == user_id).limit(1))).scalar_one_or_none() is not None
+
     async def list_all_with_profiles(self) -> list[tuple[User, Profile | None]]:
         stmt = (
             select(User, Profile)
@@ -385,7 +394,7 @@ class UserRepository:
             .outerjoin(CompanyContact, CompanyContact.id == User.id)
             .where(
                 User.id_role == contractor_role_id,
-                or_(*match_clauses),
+                CompanyContact.inn == normalized_inn if normalized_inn else or_(*match_clauses),
             )
             .order_by(User.created_at.asc(), User.id.asc())
         )

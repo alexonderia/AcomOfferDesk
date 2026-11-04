@@ -6,6 +6,7 @@ import time
 from urllib.parse import quote
 
 from app.core.config import settings
+from app.core.email_mode import ensure_email_enabled
 from app.domain.exceptions import Conflict, NotFound, Unauthorized
 from app.infrastructure.email.email_templates.verification_email import build_verification_email_payload
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
@@ -63,6 +64,7 @@ class EmailVerificationService:
         purpose: str = VERIFY_EMAIL_PURPOSE,
         account_id: str | None = None,
     ) -> str:
+        ensure_email_enabled()
         normalized_email = email.strip().lower()
         if not normalized_email:
             raise Conflict("Введите email для подтверждения")

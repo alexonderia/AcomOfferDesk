@@ -2,6 +2,8 @@
 
 import base64
 
+from app.core.config import settings
+
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.infrastructure.notification_publisher import publish_notification
 from shared.broker import RK_EMAIL
@@ -41,6 +43,8 @@ class SMTPEmailService:
         operation_kind: str | None = None,
         operation_expected_total: int | None = None,
     ) -> None:
+        if not settings.email_enabled:
+            return
         resolved_correlation_id = (correlation_id or "").strip() or generate_correlation_id()
         normalized_recipient_user_id = (recipient_user_id or "").strip() or None
         resolved_recipient_context = recipient_context

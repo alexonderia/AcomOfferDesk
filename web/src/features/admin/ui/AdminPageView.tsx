@@ -32,6 +32,7 @@ import { useToastMessageEffect } from '@shared/ui/toasts';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 import { employeePersonLabels, type UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
+import { InitialAccountFields } from '@shared/components/InitialAccountFields';
 
 const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
@@ -47,6 +48,7 @@ export const AdminPageView = () => {
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const {
     isLeadLike,
+    emailEnabled,
     canViewRoleIds,
     isDialogOpen,
     openCreateDialog,
@@ -114,7 +116,7 @@ export const AdminPageView = () => {
   const isInnFieldValid = hasValue(innValue) && !errors.inn;
   const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
   const selectedUnitOption = unitOptions.find((option) => option.unitId === selectedUnitId) ?? null;
-  const canInviteContractors = activeTab === 'contractors' && hasPermission(session, 'users.registration.invite');
+  const canInviteContractors = emailEnabled && activeTab === 'contractors' && hasPermission(session, 'users.registration.invite');
 
   const breadcrumbActions = useMemo(
     () => {
@@ -244,6 +246,7 @@ export const AdminPageView = () => {
                   <Typography sx={sectionTitleSx}>
                     Данные для регистрации
                   </Typography>
+                  {!emailEnabled ? <InitialAccountFields values={{ login: watch('login') ?? '', password: watch('password') ?? '', password_confirmation: watch('password_confirmation') ?? '' }} onChange={(field, value) => setValue(field, value, { shouldDirty: true, shouldValidate: true })} /> : null}
                   <ValidatedTextField
                     label={<RequiredFieldLabel label="Наименование компании" isValid={isCompanyNameFieldValid} />}
                     fieldName="company_name"
@@ -320,13 +323,19 @@ export const AdminPageView = () => {
                     sx={inputFieldSx}
                   />
                   <ValidatedTextField
-                    label={<RequiredFieldLabel label="E-mail" isValid={isMailFieldValid} />}
+                    label={emailEnabled ? <RequiredFieldLabel label="E-mail" isValid={isMailFieldValid} /> : 'E-mail (необязательно)'}
                     fieldName="mail"
                     error={Boolean(getFieldError('mail'))}
                     helperText={getFieldError('mail')}
                     registration={register('mail')}
                     sx={inputFieldSx}
                   />
+
+                  {!emailEnabled ? <>
+                    <Typography color="text.secondary">Почта отключена. Пользователь сможет сразу войти с заданными данными.</Typography>
+                    <ValidatedTextField label="Пароль" fieldName="password" type="password" autoComplete="new-password" registration={register('password')} error={Boolean(getFieldError('password'))} helperText={getFieldError('password') ?? 'От 12 до 128 символов'} inputProps={{ maxLength: 128 }} />
+                    <ValidatedTextField label="Повтор пароля" fieldName="password_confirmation" type="password" autoComplete="new-password" registration={register('password_confirmation')} error={Boolean(getFieldError('password_confirmation'))} helperText={getFieldError('password_confirmation')} inputProps={{ maxLength: 128 }} />
+                  </> : null}
 
                   <Typography sx={sectionTitleSx}>
                     {employeePersonLabels.profileSectionTitle}

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
 from app.domain.contractor_validation import (
     validate_inn,
@@ -39,6 +39,17 @@ class UserListData(BaseModel):
 
 class UserListResponse(BaseModel):
     data: UserListData
+
+
+class UserPasswordResetRequest(BaseModel):
+    new_password: SecretStr = Field(min_length=12, max_length=128)
+    password_confirmation: SecretStr = Field(min_length=12, max_length=128)
+
+    @model_validator(mode="after")
+    def _confirmation(self):
+        if self.new_password.get_secret_value() != self.password_confirmation.get_secret_value():
+            raise ValueError("Пароли не совпадают")
+        return self
 
 
 class EconomistListItemSchema(BaseModel):
@@ -327,6 +338,21 @@ class ManualContractorCreateRequest(BaseModel):
     company_mail: str | None = Field(default=None, max_length=256)
     address: str | None = Field(default=None, max_length=256)
     note: str | None = Field(default=None, max_length=1024)
+    login: str | None = Field(default=None, min_length=3, max_length=128)
+    password: SecretStr | None = Field(default=None, min_length=12, max_length=128)
+    password_confirmation: SecretStr | None = Field(default=None, min_length=12, max_length=128)
+    existing_user_id: str | None = Field(default=None, min_length=3, max_length=128)
+
+    @model_validator(mode="after")
+    def _credentials(self):
+        if self.login is not None:
+            self.login = self.login.strip()
+            if len(self.login) < 3:
+                raise ValueError("Логин должен содержать от 3 до 128 символов")
+        if self.login is not None or self.password is not None or self.password_confirmation is not None:
+            if not self.login or self.password is None or self.password_confirmation is None or self.password.get_secret_value() != self.password_confirmation.get_secret_value():
+                raise ValueError("Укажите логин и совпадающие пароли")
+        return self
 
     @field_validator("company_name", "inn", "company_phone", mode="before")
     @classmethod

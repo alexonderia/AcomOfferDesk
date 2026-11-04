@@ -40,6 +40,7 @@ type MoreMenuOptions = {
   showRoleGuide?: boolean;
   showFeedback?: boolean;
   showLogout?: boolean;
+  showSystem?: boolean;
 };
 
 const LABELS = {
@@ -70,11 +71,15 @@ const buildMoreNavItem = ({
   showRoleGuide = true,
   showFeedback = true,
   showLogout = true,
+  showSystem = false,
 }: MoreMenuOptions): HeaderMobileNavItem => {
   const children: HeaderMobileNavItem[] = [];
 
   if (showProfile) {
     children.push({ key: 'profile', label: LABELS.profile });
+  }
+  if (showSystem) {
+    children.push({ key: 'system', label: 'Состояние системы', to: '/admin/system' });
   }
   if (showContractors) {
     children.push({ key: 'contractors', label: LABELS.contractors, to: '/contractors' });
@@ -152,11 +157,12 @@ const buildSuperadminMobileNavItems = (
   items.push({ key: 'requests', label: LABELS.requests, to: '/requests' });
   items.push(
     buildMoreNavItem({
-      showProfile: false,
+      showProfile: true,
       showNormative,
       showRoleGuide: true,
       showFeedback: canViewFeedback,
       showLogout: true,
+      showSystem: true,
     })
   );
 
@@ -570,6 +576,7 @@ export const buildHeaderConfig = ({
       || isSuperadminRequestsPage
       || isSuperadminUsersPage
       || isSuperadminHierarchyPage
+      || pathname === '/admin/system'
       || isNormativeFilesPage
     );
 
@@ -607,8 +614,9 @@ export const buildHeaderConfig = ({
 
     return {
       mode: 'sidebar',
+      sidebarItems: [{ key: 'system', label: 'Состояние системы', to: '/admin/system' }],
       tabs,
-      activeTab: isSuperadminDashboard
+      activeTab: pathname === '/admin/system' ? 'system' : isSuperadminDashboard
         ? 'dashboard'
         : isSuperadminSavings
           ? 'savings'
@@ -647,7 +655,7 @@ export const buildHeaderConfig = ({
         }
         : undefined,
       actions: [],
-      breadcrumbs,
+      breadcrumbs: pathname === '/admin/system' ? [] : breadcrumbs,
       mobileNavItems: buildSuperadminMobileNavItems(
         canManageNormativeFiles,
         canOpenUsersPage,
@@ -659,7 +667,7 @@ export const buildHeaderConfig = ({
       ),
       showFeedback: true,
       showRoleGuide: true,
-      showProfile: false,
+      showProfile: true,
       showLogout: true,
       ...normativeNavProps,
     };

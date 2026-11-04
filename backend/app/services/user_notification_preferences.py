@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.core.config import settings
+
 from app.domain.exceptions import Conflict
 from app.models.auth_models import UserContactChannel
 from app.repositories.profiles import ProfileRepository
@@ -106,7 +108,7 @@ class UserNotificationPreferencesService:
         channel_type: str,
         notification_type: str,
     ) -> bool:
-        if channel_type.strip().lower() != NOTIFICATION_CHANNEL_EMAIL:
+        if not settings.email_enabled or channel_type.strip().lower() != NOTIFICATION_CHANNEL_EMAIL:
             return False
         normalized_notification_type = notification_type.strip().lower()
         if normalized_notification_type not in NOTIFICATION_TYPES:
@@ -164,7 +166,7 @@ class UserNotificationPreferencesService:
             profile_email = self._normalize_contact_value(profile.mail if profile is not None else None)
         channel_email = email_channel.channel_value if email_channel is not None and email_channel.is_active else None
         email_value = self._normalize_contact_value(profile_email or channel_email)
-        email_available = email_value is not None
+        email_available = settings.email_enabled and email_value is not None
 
         channel_ids = [email_channel.id] if email_channel is not None and getattr(email_channel, "id", None) is not None else []
         stored_preferences = await self._user_notification_preferences.list_by_channel_ids(channel_ids=channel_ids)
@@ -247,6 +249,8 @@ class UserNotificationPreferencesService:
             )
 
     def _ensure_email_available(self, *, context: _PreferenceContext, required: bool) -> None:
+        if required and not settings.email_enabled:
+            raise Conflict("Почтовый сервис отключён. Email-уведомления недоступны")
         if required and not context.email_available:
             raise Conflict(_EMAIL_REQUIRED_MESSAGE)
 

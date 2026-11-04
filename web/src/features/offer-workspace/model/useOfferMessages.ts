@@ -416,6 +416,7 @@ export const useOfferMessages = ({
   return {
     messages,
     chatActions,
+    setChatActions,
     isSending,
     chatErrorMessage,
     typingUserIds,

@@ -197,3 +197,15 @@ async def test_unit_descendant_scope_grants_management_even_without_user_parent_
         current_user=current_user,
         request_owner_user_id="cross-eco",
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("grant", [None, PermissionCodes.DEPARTMENT_REQUESTS_READ, PermissionCodes.DEPARTMENT_DASHBOARD_READ])
+async def test_sibling_workspace_visibility_requires_request_read_delegation(grant):
+    users = _UsersRepo()
+    users._units.append((4, 1))
+    users._memberships = [("pm-1", 1), ("eco-1", 2), ("eco-2", 4)]
+    current_user = _current_user(user_id="eco-1", role_id=settings.economist_role_id, permissions=frozenset({grant}) if grant else frozenset())
+    service = StaffAccessScopeService(users)
+
+    assert await service.can_view_request_owner(current_user=current_user, request_owner_user_id="eco-2") is (grant == PermissionCodes.DEPARTMENT_REQUESTS_READ)

@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import EditOutlined from '@mui/icons-material/EditOutlined';
+import { UserPasswordResetButton } from '@shared/components/UserPasswordResetButton';
 import SaveOutlined from '@mui/icons-material/SaveOutlined';
 import {
   Alert,
@@ -42,6 +43,9 @@ import {
   type ContractorRootUnitsResult,
 } from '@shared/api/contractors/getContractorRootUnits';
 import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
+import { updateUserRole } from '@shared/api/users/updateUserRole';
+import { ROLE } from '@shared/constants/roles';
+import { roleLabelsById } from '@features/admin/model/constants';
 import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -162,6 +166,8 @@ export const ContractorsListView = ({
 }: ContractorsListViewProps) => {
   const theme = useTheme();
   const { session } = useAuth();
+  const [targetRole, setTargetRole] = useState('');
+  const [changingRole, setChangingRole] = useState(false);
   const canViewEmailVerification = hasPermission(session, 'users.registration.approve');
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const [isEditMode, setIsEditMode] = useState(false);
@@ -791,6 +797,22 @@ export const ContractorsListView = ({
               <Typography id="contractor-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
                 Карточка контрагента
               </Typography>
+              <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} />
+              {session?.roleId === ROLE.SUPERADMIN && selectedUser.actions.update_role ? <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField select label="Роль сотрудника" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} sx={{ minWidth: 220 }}>
+                  {[ROLE.ADMIN, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].map((id) => <MenuItem key={id} value={id}>{roleLabelsById[id]}</MenuItem>)}
+                </TextField>
+                <Button disabled={!targetRole || changingRole} onClick={async () => {
+                  setChangingRole(true);
+                  try {
+                    await updateUserRole(selectedUser.user_id, { role_id: Number(targetRole) });
+                    setSelectedUser(null);
+                    setTargetRole('');
+                    await onStatusUpdated();
+                  } catch (e) { showErrorToast(e instanceof Error ? e.message : 'Не удалось изменить роль'); }
+                  finally { setChangingRole(false); }
+                }}>Преобразовать в сотрудника</Button>
+              </Stack> : null}
 
               <Box
                 sx={{

@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react';
-import { getFeedbackList, type FeedbackListItem } from '@shared/api/feedback/getFeedbackList';
+import { getFeedbackPage, type FeedbackListItem } from '@shared/api/feedback/getFeedbackList';
 
 export const useFeedbackList = () => {
   const [items, setItems] = useState<FeedbackListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState({ search: '', author: '', sortBy: 'created_at', sortOrder: 'desc', page: 0, pageSize: 20 });
+  const [total, setTotal] = useState(0);
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    const reload = () => setRevision((n) => n + 1);
+    window.addEventListener('focus', reload);
+    window.addEventListener('feedback:created', reload);
+    return () => { window.removeEventListener('focus', reload); window.removeEventListener('feedback:created', reload); };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -13,9 +23,10 @@ export const useFeedbackList = () => {
       setIsLoading(true);
       setError(null);
       try {
-        const list = await getFeedbackList();
+        const list = await getFeedbackPage(query);
         if (isMounted) {
-          setItems(list);
+          setItems(list.items);
+          setTotal(list.total);
         }
       } catch (loadError) {
         if (isMounted) {
@@ -33,7 +44,7 @@ export const useFeedbackList = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [query, revision]);
 
-  return { items, isLoading, error };
+  return { items, isLoading, error, query, setQuery, total, reload: () => setRevision((n) => n + 1) };
 };

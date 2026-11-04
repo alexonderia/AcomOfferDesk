@@ -1,6 +1,7 @@
 import { TextField, type TextFieldProps } from '@mui/material';
 import type { UseFormRegisterReturn } from 'react-hook-form';
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
+import { PasswordTextField } from './PasswordTextField';
 
 type ValidatedTextFieldProps = TextFieldProps & {
   fieldName?: string;
@@ -14,15 +15,10 @@ export const ValidatedTextField = ({
   ...props
 }: ValidatedTextFieldProps) => {
   const autocompleteInputProps = fieldName ? textFieldAutocompleteProps(fieldName).inputProps : undefined;
-
-  return (
-    <TextField
-      {...registration}
-      inputProps={{
-        ...autocompleteInputProps,
-        ...inputProps,
-      }}
-      {...props}
-    />
-  );
+  const fieldProps = {
+    ...registration,
+    inputProps: { ...autocompleteInputProps, ...inputProps },
+    ...props,
+  };
+  return props.type === 'password' ? <PasswordTextField {...fieldProps} /> : <TextField {...fieldProps} />;
 };

@@ -13,6 +13,7 @@ from app.api.v1.notifications import router as notifications_router
 from app.api.v1.plans import router as plans_router
 from app.api.v1.units import router as units_router
 from app.api.v1.ws import router as ws_router
+from app.api.v1.system_status import router as system_status_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(auth_router, tags=["auth"])
@@ -28,3 +29,4 @@ router.include_router(normative_files_router, tags=["normative_files"])
 router.include_router(notifications_router, tags=["notifications"])
 router.include_router(dashboard_router, tags=["dashboard"])
 router.include_router(plans_router, tags=["plans"])
+router.include_router(system_status_router, tags=["system"])

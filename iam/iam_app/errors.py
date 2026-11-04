@@ -40,3 +40,7 @@ class Conflict(IamError):
 class RateLimited(IamError):
     status_code = 429
     public_detail = "Слишком много попыток. Повторите позже"
+
+
+class CurrentPasswordMismatch(Conflict):
+    public_detail = "Текущий пароль указан неверно"

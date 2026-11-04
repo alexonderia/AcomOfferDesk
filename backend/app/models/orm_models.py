@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
@@ -521,6 +521,9 @@ class FeedBack(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    author_user_id: Mapped[Optional[str]] = mapped_column(Text, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    author_name: Mapped[Optional[str]] = query_expression()
 
 
 class UserStatusPeriod(Base):

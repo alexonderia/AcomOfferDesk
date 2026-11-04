@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from app.api.action_flags import UserActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
+from app.services.iam_bindings import recover_existing_iam_binding
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import Conflict, Forbidden
 from app.domain.iam_identity import stable_iam_account_id
@@ -82,6 +83,8 @@ from app.services.users import (
     UserStatusService,
 )
 from app.services.account_recovery import AccountRecoveryService
+from app.schemas.users import UserPasswordResetRequest
+from app.services.user_password_reset import reset_user_password
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
 from app.services.user_contractor_delegations import UserContractorDelegationsService
@@ -89,6 +92,21 @@ from app.services.user_department_delegations import UserDepartmentDelegationsSe
 from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 router = APIRouter()
+
+
+@router.post("/users/{user_id}/password/reset", status_code=204)
+async def reset_password(
+    user_id: str,
+    payload: UserPasswordResetRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> Response:
+    async with uow:
+        await reset_user_password(
+            uow, current_user=current_user, user_id=user_id,
+            new_password=payload.new_password.get_secret_value(),
+        )
+    return Response(status_code=204)
 
 
 USER_STATUS_RU = {
@@ -822,6 +840,8 @@ async def create_manual_contractor(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ManualContractorCreateResponse:
+    if payload.password is not None and settings.email_enabled:
+        raise Conflict("Начальный пароль задаётся при создании в режиме без почты")
     async with uow:
         service = ManualContractorService(
             uow.users,
@@ -841,21 +861,33 @@ async def create_manual_contractor(
                 company_mail=payload.company_mail,
                 address=payload.address,
                 note=payload.note,
+                login=payload.login,
+                existing_user_id=payload.existing_user_id,
             ),
         )
-        if result.created:
+        if result.created or payload.password is not None:
             binding = await uow.user_auth_accounts.get_by_user_provider(
                 user_id=result.user_id,
                 provider="iam",
                 include_inactive=True,
             )
             account_id = stable_iam_account_id(result.user_id) if binding is None else binding.external_subject_id
-            account = await IamClient().put_account(
-                account_id=account_id,
-                login=result.user_id,
-                role="contractor",
-                auth_status="active",
-            )
+            if payload.password is not None:
+                if not result.created:
+                    existing_user = await uow.users.get_by_id(result.user_id)
+                    if binding is None or not binding.is_active or existing_user.status != "active":
+                        raise Conflict("Создание не изменяет доступ существующего контрагента")
+                    state = await IamClient().get_credential_state(account_id=account_id)
+                    if not state.password_set:
+                        raise Conflict("Доступ существующего контрагента настраивается отдельно администратором")
+                account = await IamClient().provision_direct_credentials(
+                    account_id=account_id, login=result.user_id, role="contractor",
+                    password=payload.password.get_secret_value(),
+                )
+            else:
+                account = await IamClient().put_account(
+                    account_id=account_id, login=result.user_id, role="contractor", auth_status="active",
+                )
             if binding is None:
                 binding = UserAuthAccount(
                     id_user=result.user_id,
@@ -868,7 +900,7 @@ async def create_manual_contractor(
                 await uow.user_auth_accounts.add(binding)
             else:
                 binding.is_active = True
-            if payload.company_mail:
+            if payload.company_mail and settings.email_enabled:
                 await AccountRecoveryService(uow).request_recovery(identifier=result.user_id)
     return ManualContractorCreateResponse(
         data={
@@ -958,6 +990,7 @@ async def update_user_status(
             uow.users,
             uow.profiles,
             uow.user_auth_accounts,
+            units=uow.units,
             user_contact_channels=uow.user_contact_channels,
             notification_preferences=UserNotificationPreferencesService(
                 uow.user_contact_channels,
@@ -976,7 +1009,7 @@ async def update_user_status(
             provider="iam",
         )
         if binding is None:
-            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+            binding = await recover_existing_iam_binding(uow, user_id=user_id)
         iam_status = iam_auth_status_for_user_status(payload.user_status)
         await IamClient().update_status(
             account_id=binding.external_subject_id,
@@ -1013,7 +1046,7 @@ async def update_user_role(
         )
         role_name = technical_role_name(payload.role_id)
         if binding is None:
-            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+            binding = await recover_existing_iam_binding(uow, user_id=user_id)
         if role_name is None:
             raise Conflict("Выбранная роль не поддерживается IAM")
         await IamClient().update_role(

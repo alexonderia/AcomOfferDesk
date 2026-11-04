@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import logging
@@ -7,6 +7,7 @@ from pathlib import Path
 import fcntl
 import re
 
+from fastapi.exceptions import RequestValidationError
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -205,8 +206,10 @@ async def lifespan(_: FastAPI):
         logger.exception("Delayed notification consumer failed to start; backend will continue without it")
 
     task: asyncio.Task[None] | None = None
-    if is_leader:
+    if is_leader and settings.email_enabled:
         task = asyncio.create_task(_request_reply_polling_worker(stop_event))
+    elif not settings.email_enabled:
+        logger.info('Request reply background task disabled: EMAIL_ENABLED=false')
     else:
         logger.info('Request reply background task skipped in current worker: leader lock is held by another worker')
     try:
@@ -343,3 +346,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Validation input may contain credentials, including errors on the whole body.
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+        for error in exc.errors()
+    ]})

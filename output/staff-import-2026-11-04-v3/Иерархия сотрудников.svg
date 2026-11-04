@@ -1,0 +1,240 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4800" height="2740" viewBox="0 0 4800 2740">
+<rect width="100%" height="100%" fill="#F4F7FB"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="90" y="111" font-size="66" fill="#152C49" font-weight="700">Иерархия сотрудников по системным ролям</text>
+<text x="92" y="172" font-size="36" fill="#526780" font-weight="400">45 сотрудников  •  РП → ВЭ → Экономист → Экономист → Экономист  •  без изменений кода</text>
+<rect x="52" y="410" width="1128" height="2090" rx="24" fill="#FFFFFF" stroke="#DCE4EF" stroke-width="2"/>
+<text x="82" y="2467" font-size="27" fill="#63768F" font-weight="400">14 сотрудников в ветке</text>
+<rect x="1242" y="410" width="1128" height="2090" rx="24" fill="#FFFFFF" stroke="#DCE4EF" stroke-width="2"/>
+<text x="1272" y="2467" font-size="27" fill="#63768F" font-weight="400">7 сотрудников в ветке</text>
+<rect x="2432" y="410" width="1128" height="2090" rx="24" fill="#FFFFFF" stroke="#DCE4EF" stroke-width="2"/>
+<text x="2462" y="2467" font-size="27" fill="#63768F" font-weight="400">13 сотрудников в ветке</text>
+<rect x="3622" y="410" width="1128" height="2090" rx="24" fill="#FFFFFF" stroke="#DCE4EF" stroke-width="2"/>
+<text x="3652" y="2467" font-size="27" fill="#63768F" font-weight="400">10 сотрудников в ветке</text>
+<polyline points="2400,349 2400,384 615,384 615,450" fill="none" stroke="#8295AF" stroke-width="5"/>
+<polyline points="98,568 98,651 160,651" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="188,710 188,793 250,793" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="278,852 278,935 340,935" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="188,710 188,1077 250,1077" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="278,1136 278,1219 340,1219" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="98,568 98,1361 160,1361" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="188,1420 188,1503 250,1503" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="278,1562 278,1645 340,1645" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="188,1420 188,1787 250,1787" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="98,568 98,1929 160,1929" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="188,1988 188,2071 250,2071" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="278,2130 278,2213 340,2213" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="188,1988 188,2355 250,2355" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2400,349 2400,384 1805,384 1805,450" fill="none" stroke="#8295AF" stroke-width="5"/>
+<polyline points="1288,568 1288,651 1350,651" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="1288,568 1288,793 1350,793" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="1378,852 1378,935 1440,935" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="1288,568 1288,1077 1350,1077" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="1378,1136 1378,1219 1440,1219" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="1378,1136 1378,1361 1440,1361" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2400,349 2400,384 2995,384 2995,450" fill="none" stroke="#8295AF" stroke-width="5"/>
+<polyline points="2478,568 2478,651 2540,651" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2568,710 2568,793 2630,793" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2478,568 2478,935 2540,935" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2568,994 2568,1077 2630,1077" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2568,994 2568,1219 2630,1219" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2478,568 2478,1361 2540,1361" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2568,1420 2568,1503 2630,1503" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2658,1562 2658,1645 2720,1645" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2568,1420 2568,1787 2630,1787" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2658,1846 2658,1929 2720,1929" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2478,568 2478,2071 2540,2071" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2568,2130 2568,2213 2630,2213" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="2400,349 2400,384 4185,384 4185,450" fill="none" stroke="#8295AF" stroke-width="5"/>
+<polyline points="3668,568 3668,651 3730,651" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3758,710 3758,793 3820,793" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3848,852 3848,935 3910,935" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3848,852 3848,1077 3910,1077" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3758,710 3758,1219 3820,1219" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3758,710 3758,1361 3820,1361" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3848,1420 3848,1503 3910,1503" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3668,568 3668,1645 3730,1645" fill="none" stroke="#8295AF" stroke-width="4"/>
+<polyline points="3758,1704 3758,1787 3820,1787" fill="none" stroke="#8295AF" stroke-width="4"/>
+<rect x="1600" y="225" width="1600" height="124" rx="18" fill="#17355D" stroke="#17355D" stroke-width="2"/>
+<text x="1620" y="259" font-size="25" fill="#FFFFFF" font-weight="700">РП  ·  S002</text>
+<text x="1620" y="314" font-size="42" fill="#FFFFFF" font-weight="700">Ермошкин Федор Андреевич</text>
+<rect x="70" y="450" width="1090" height="118" rx="18" fill="#E1F5F3" stroke="#E1F5F3" stroke-width="2"/>
+<text x="90" y="484" font-size="25" fill="#116C65" font-weight="700">ВЭ  ·  S004</text>
+<text x="90" y="523" font-size="32" fill="#116C65" font-weight="700">Миннебаева</text>
+<text x="90" y="556" font-size="27" fill="#116C65" font-weight="400">Гульгена Наилевна</text>
+<rect x="160" y="592" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="180" y="626" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S005  ·  + назначение заявок своей ветки</text>
+<text x="180" y="665" font-size="32" fill="#37672C" font-weight="700">Белунькин</text>
+<text x="180" y="698" font-size="27" fill="#37672C" font-weight="400">Дмитрий Юрьевич</text>
+<rect x="250" y="734" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="270" y="768" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S006</text>
+<text x="270" y="807" font-size="32" fill="#37672C" font-weight="700">Винокурова</text>
+<text x="270" y="840" font-size="27" fill="#37672C" font-weight="400">Виктория Витальевна</text>
+<rect x="340" y="876" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="360" y="910" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S007</text>
+<text x="360" y="949" font-size="32" fill="#37672C" font-weight="700">Ан</text>
+<text x="360" y="982" font-size="27" fill="#37672C" font-weight="400">Карина Владимировна</text>
+<rect x="250" y="1018" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="270" y="1052" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S008</text>
+<text x="270" y="1091" font-size="32" fill="#37672C" font-weight="700">Тулупова</text>
+<text x="270" y="1124" font-size="27" fill="#37672C" font-weight="400">Елена Дмитриевна</text>
+<rect x="340" y="1160" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="360" y="1194" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S009</text>
+<text x="360" y="1233" font-size="32" fill="#37672C" font-weight="700">Андреева</text>
+<text x="360" y="1266" font-size="27" fill="#37672C" font-weight="400">Дарья Андреевна</text>
+<rect x="160" y="1302" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="180" y="1336" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S010  ·  + назначение заявок своей ветки</text>
+<text x="180" y="1375" font-size="32" fill="#37672C" font-weight="700">Крамской</text>
+<text x="180" y="1408" font-size="27" fill="#37672C" font-weight="400">Ярослав Николаевич</text>
+<rect x="250" y="1444" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="270" y="1478" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S011</text>
+<text x="270" y="1517" font-size="32" fill="#37672C" font-weight="700">Муртазин</text>
+<text x="270" y="1550" font-size="27" fill="#37672C" font-weight="400">Ринат Раильевич</text>
+<rect x="340" y="1586" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="360" y="1620" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S012</text>
+<text x="360" y="1659" font-size="32" fill="#37672C" font-weight="700">Лиходько</text>
+<text x="360" y="1692" font-size="27" fill="#37672C" font-weight="400">Мария Алексеевна</text>
+<rect x="250" y="1728" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="270" y="1762" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S013</text>
+<text x="270" y="1801" font-size="32" fill="#37672C" font-weight="700">Сушкова</text>
+<text x="270" y="1834" font-size="27" fill="#37672C" font-weight="400">Елизавета Олеговна</text>
+<rect x="160" y="1870" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="180" y="1904" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S014  ·  + назначение заявок своей ветки</text>
+<text x="180" y="1943" font-size="32" fill="#37672C" font-weight="700">Павлюк</text>
+<text x="180" y="1976" font-size="27" fill="#37672C" font-weight="400">Марина Анатольевна</text>
+<rect x="250" y="2012" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="270" y="2046" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S015</text>
+<text x="270" y="2085" font-size="32" fill="#37672C" font-weight="700">Васянина</text>
+<text x="270" y="2118" font-size="27" fill="#37672C" font-weight="400">Лиана Сергеевна</text>
+<rect x="340" y="2154" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="360" y="2188" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S016</text>
+<text x="360" y="2227" font-size="32" fill="#37672C" font-weight="700">Васильева</text>
+<text x="360" y="2260" font-size="27" fill="#37672C" font-weight="400">Полина Николаевна</text>
+<rect x="250" y="2296" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="270" y="2330" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S017</text>
+<text x="270" y="2369" font-size="32" fill="#37672C" font-weight="700">Сидоренко</text>
+<text x="270" y="2402" font-size="27" fill="#37672C" font-weight="400">Софья Андреевна</text>
+<rect x="1260" y="450" width="1090" height="118" rx="18" fill="#E1F5F3" stroke="#E1F5F3" stroke-width="2"/>
+<text x="1280" y="484" font-size="25" fill="#116C65" font-weight="700">ВЭ  ·  S019</text>
+<text x="1280" y="523" font-size="32" fill="#116C65" font-weight="700">Плехова</text>
+<text x="1280" y="556" font-size="27" fill="#116C65" font-weight="400">Виктория Александровна</text>
+<rect x="1350" y="592" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="1370" y="626" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S020</text>
+<text x="1370" y="665" font-size="32" fill="#37672C" font-weight="700">Елышева</text>
+<text x="1370" y="698" font-size="27" fill="#37672C" font-weight="400">Наталья Владимировна</text>
+<rect x="1350" y="734" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="1370" y="768" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S021  ·  + назначение заявок своей ветки</text>
+<text x="1370" y="807" font-size="32" fill="#37672C" font-weight="700">Прокудин</text>
+<text x="1370" y="840" font-size="27" fill="#37672C" font-weight="400">Егор Константинович</text>
+<rect x="1440" y="876" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="1460" y="910" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S022</text>
+<text x="1460" y="949" font-size="32" fill="#37672C" font-weight="700">Лебеденко</text>
+<text x="1460" y="982" font-size="27" fill="#37672C" font-weight="400">Анастасия Максимовна</text>
+<rect x="1350" y="1018" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="1370" y="1052" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S023  ·  + назначение заявок своей ветки</text>
+<text x="1370" y="1091" font-size="32" fill="#37672C" font-weight="700">Черепова</text>
+<text x="1370" y="1124" font-size="27" fill="#37672C" font-weight="400">Ирина Алексеевна</text>
+<rect x="1440" y="1160" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="1460" y="1194" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S024</text>
+<text x="1460" y="1233" font-size="32" fill="#37672C" font-weight="700">Бекмухамедов</text>
+<text x="1460" y="1266" font-size="27" fill="#37672C" font-weight="400">Анди Саидназарович</text>
+<rect x="1440" y="1302" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="1460" y="1336" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S025</text>
+<text x="1460" y="1375" font-size="32" fill="#37672C" font-weight="700">Коротких</text>
+<text x="1460" y="1408" font-size="27" fill="#37672C" font-weight="400">Кирилл Алексеевич</text>
+<rect x="2450" y="450" width="1090" height="118" rx="18" fill="#E1F5F3" stroke="#E1F5F3" stroke-width="2"/>
+<text x="2470" y="484" font-size="25" fill="#116C65" font-weight="700">ВЭ  ·  S027</text>
+<text x="2470" y="523" font-size="32" fill="#116C65" font-weight="700">Хабибулин</text>
+<text x="2470" y="556" font-size="27" fill="#116C65" font-weight="400">Эмиль Тэльгатович</text>
+<rect x="2540" y="592" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2560" y="626" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S028  ·  + назначение заявок своей ветки</text>
+<text x="2560" y="665" font-size="32" fill="#37672C" font-weight="700">Мухаметганеева</text>
+<text x="2560" y="698" font-size="27" fill="#37672C" font-weight="400">Милена Денисламовна</text>
+<rect x="2630" y="734" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2650" y="768" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S029</text>
+<text x="2650" y="807" font-size="32" fill="#37672C" font-weight="700">Туйкина</text>
+<text x="2650" y="840" font-size="27" fill="#37672C" font-weight="400">Светлана Алексеевна</text>
+<rect x="2540" y="876" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2560" y="910" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S030  ·  + назначение заявок своей ветки</text>
+<text x="2560" y="949" font-size="32" fill="#37672C" font-weight="700">Юсупов</text>
+<text x="2560" y="982" font-size="27" fill="#37672C" font-weight="400">Радик Рузилевич</text>
+<rect x="2630" y="1018" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2650" y="1052" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S031</text>
+<text x="2650" y="1091" font-size="32" fill="#37672C" font-weight="700">Копысов</text>
+<text x="2650" y="1124" font-size="27" fill="#37672C" font-weight="400">Михаил Станиславович</text>
+<rect x="2630" y="1160" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2650" y="1194" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S032</text>
+<text x="2650" y="1233" font-size="32" fill="#37672C" font-weight="700">Федорцов</text>
+<text x="2650" y="1266" font-size="27" fill="#37672C" font-weight="400">Никита Андреевич</text>
+<rect x="2540" y="1302" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2560" y="1336" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S033  ·  + назначение заявок своей ветки</text>
+<text x="2560" y="1375" font-size="32" fill="#37672C" font-weight="700">Рычу</text>
+<text x="2560" y="1408" font-size="27" fill="#37672C" font-weight="400">Мария Геннадьевна</text>
+<rect x="2630" y="1444" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2650" y="1478" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S034</text>
+<text x="2650" y="1517" font-size="32" fill="#37672C" font-weight="700">Латыпов</text>
+<text x="2650" y="1550" font-size="27" fill="#37672C" font-weight="400">Даниил Русланович</text>
+<rect x="2720" y="1586" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2740" y="1620" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S035</text>
+<text x="2740" y="1659" font-size="32" fill="#37672C" font-weight="700">Демахина</text>
+<text x="2740" y="1692" font-size="27" fill="#37672C" font-weight="400">Дарья Ивановна</text>
+<rect x="2630" y="1728" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2650" y="1762" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S036</text>
+<text x="2650" y="1801" font-size="32" fill="#37672C" font-weight="700">Ильясов</text>
+<text x="2650" y="1834" font-size="27" fill="#37672C" font-weight="400">Руслан Рашидович</text>
+<rect x="2720" y="1870" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2740" y="1904" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S037</text>
+<text x="2740" y="1943" font-size="32" fill="#37672C" font-weight="700">Гильмуллина</text>
+<text x="2740" y="1976" font-size="27" fill="#37672C" font-weight="400">Эльвира Шавкатовна</text>
+<rect x="2540" y="2012" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2560" y="2046" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S038  ·  + назначение заявок своей ветки</text>
+<text x="2560" y="2085" font-size="32" fill="#37672C" font-weight="700">Пушин</text>
+<text x="2560" y="2118" font-size="27" fill="#37672C" font-weight="400">Михаил Александрович</text>
+<rect x="2630" y="2154" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="2650" y="2188" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S039</text>
+<text x="2650" y="2227" font-size="32" fill="#37672C" font-weight="700">Ильин</text>
+<text x="2650" y="2260" font-size="27" fill="#37672C" font-weight="400">Фёдор Алексеевич</text>
+<rect x="3640" y="450" width="1090" height="118" rx="18" fill="#E1F5F3" stroke="#E1F5F3" stroke-width="2"/>
+<text x="3660" y="484" font-size="25" fill="#116C65" font-weight="700">ВЭ  ·  S041</text>
+<text x="3660" y="523" font-size="32" fill="#116C65" font-weight="700">Яруллин</text>
+<text x="3660" y="556" font-size="27" fill="#116C65" font-weight="400">Рамиль Маратович</text>
+<rect x="3730" y="592" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3750" y="626" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S042  ·  полный доступ к подразделению РП</text>
+<text x="3750" y="665" font-size="32" fill="#37672C" font-weight="700">Хлистун</text>
+<text x="3750" y="698" font-size="27" fill="#37672C" font-weight="400">Владислав Станиславович</text>
+<rect x="3820" y="734" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3840" y="768" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S043</text>
+<text x="3840" y="807" font-size="32" fill="#37672C" font-weight="700">Мухамадиев</text>
+<text x="3840" y="840" font-size="27" fill="#37672C" font-weight="400">Ильгиз Разимович</text>
+<rect x="3910" y="876" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3930" y="910" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S044</text>
+<text x="3930" y="949" font-size="32" fill="#37672C" font-weight="700">Миндибаева</text>
+<text x="3930" y="982" font-size="27" fill="#37672C" font-weight="400">Эльвина Эдуардовна</text>
+<rect x="3910" y="1018" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3930" y="1052" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S045</text>
+<text x="3930" y="1091" font-size="32" fill="#37672C" font-weight="700">Цыбка</text>
+<text x="3930" y="1124" font-size="27" fill="#37672C" font-weight="400">Денис Владиславович</text>
+<rect x="3820" y="1160" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3840" y="1194" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S046</text>
+<text x="3840" y="1233" font-size="32" fill="#37672C" font-weight="700">Уразгулов</text>
+<text x="3840" y="1266" font-size="27" fill="#37672C" font-weight="400">Артур Тимурович</text>
+<rect x="3820" y="1302" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3840" y="1336" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S047</text>
+<text x="3840" y="1375" font-size="32" fill="#37672C" font-weight="700">Хмелёк</text>
+<text x="3840" y="1408" font-size="27" fill="#37672C" font-weight="400">Ярослав Сергеевич</text>
+<rect x="3910" y="1444" width="820" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3930" y="1478" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S048</text>
+<text x="3930" y="1517" font-size="32" fill="#37672C" font-weight="700">Лемешков</text>
+<text x="3930" y="1550" font-size="27" fill="#37672C" font-weight="400">Артур Андреевич</text>
+<rect x="3730" y="1586" width="1000" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3750" y="1620" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S049  ·  + назначение заявок своей ветки</text>
+<text x="3750" y="1659" font-size="32" fill="#37672C" font-weight="700">Хлыстенков</text>
+<text x="3750" y="1692" font-size="27" fill="#37672C" font-weight="400">Михаил Олегович</text>
+<rect x="3820" y="1728" width="910" height="118" rx="18" fill="#EAF5E7" stroke="#EAF5E7" stroke-width="2"/>
+<text x="3840" y="1762" font-size="25" fill="#37672C" font-weight="700">Экономист  ·  S050</text>
+<text x="3840" y="1801" font-size="32" fill="#37672C" font-weight="700">Назаров</text>
+<text x="3840" y="1834" font-size="27" fill="#37672C" font-weight="400">Макар Владимирович</text>
+<text x="90" y="2576" font-size="31" fill="#152C49" font-weight="400">Системные роли: 1 РП, 4 ВЭ, 40 экономистов. ВС получают requests.owner.change; новых ролей и прав нет.</text>
+<text x="90" y="2630" font-size="29" fill="#526780" font-weight="400">Обычные ВС: управление заявками своей ветки; чужие КП и отправка в чужие чаты недоступны. Хлистун — отдельное исключение.</text>
+<text x="90" y="2676" font-size="26" fill="#63768F" font-weight="400">Елышева напрямую под Плеховой. Источник: Excel + решения заказчика от 03–04.11.2026. Ключ Sxxx = строка исходного Excel.</text>
+</g></svg>

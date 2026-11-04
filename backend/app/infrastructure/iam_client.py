@@ -91,6 +91,8 @@ class IamClient:
         if response.status_code == 404:
             raise NotFound("IAM account not found")
         if response.status_code == 409:
+            if path.endswith("/password/change"):
+                raise Conflict("Текущий пароль указан неверно или смена пароля недоступна")
             raise Conflict("IAM operation conflict")
         if response.status_code >= 500:
             raise AuthenticationUnavailable()
@@ -99,6 +101,37 @@ class IamClient:
         except httpx.HTTPStatusError as exc:
             raise Conflict("IAM operation rejected") from exc
         return response
+
+    async def reset_user_password(
+        self, *, account_id: str, new_password: str,
+        actor_account_id: str, actor_session_id: str,
+    ) -> None:
+        await self._request(
+            "POST", f"/internal/accounts/{account_id}/password/reset",
+            json={"new_password": new_password, "actor_account_id": actor_account_id,
+                  "actor_session_id": actor_session_id},
+        )
+
+    async def provision_direct_credentials(
+        self, *, account_id: uuid.UUID | str, login: str, role: str, password: str,
+    ) -> IamAccount:
+        response = await self._request(
+            "PUT", f"/internal/accounts/{account_id}/direct-credentials",
+            json={"login": login, "role": role, "password": password},
+        )
+        payload = response.json()
+        return IamAccount(
+            id=payload["id"], login=payload["login"], role=payload["role"],
+            auth_status=payload["auth_status"], created=bool(payload.get("created", False)),
+        )
+
+    async def change_own_password(
+        self, *, account_id: str, session_id: str, current_password: str, new_password: str,
+    ) -> None:
+        await self._request(
+            "POST", f"/internal/accounts/{account_id}/password/change",
+            json={"session_id": session_id, "current_password": current_password, "new_password": new_password},
+        )
 
     async def exchange_code(
         self,

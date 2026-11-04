@@ -8,6 +8,8 @@ export type RegisterUserPayload = {
   phone?: string;
   mail?: string;
   unit_id?: number;
+  password?: string;
+  password_confirmation?: string;
 };
 
 export type RegisterUserResponse = {

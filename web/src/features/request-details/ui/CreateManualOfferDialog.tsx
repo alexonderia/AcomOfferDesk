@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import {
+  Alert,
   Autocomplete,
   Box,
   Button,
@@ -66,6 +67,8 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [isLoadingContractors, setIsLoadingContractors] = useState(false);
+  const [contractorsError, setContractorsError] = useState<string | null>(null);
+  const [contractorsReloadKey, setContractorsReloadKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { markTouched, shouldShowError, markSubmitAttempted, resetVisibility } = useLiveFieldVisibility();
@@ -78,6 +81,8 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     }
     let isMounted = true;
     setIsLoadingContractors(true);
+    setContractorsError(null);
+    setContractorOptions([]);
     getRequestContractors(requestId)
       .then((response) => {
         if (!isMounted) {
@@ -87,7 +92,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
       })
       .catch((error) => {
         if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить контрагентов');
+          setContractorsError(error instanceof Error ? error.message : 'Не удалось загрузить контрагентов');
         }
       })
       .finally(() => {
@@ -99,7 +104,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     return () => {
       isMounted = false;
     };
-  }, [open, requestId]);
+  }, [open, requestId, contractorsReloadKey]);
 
   const resetForm = () => {
     setContractorMode('existing');
@@ -318,21 +323,34 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
           </Stack>
 
           {contractorMode === 'existing' ? (
-            <Autocomplete
-              options={contractorOptions}
-              loading={isLoadingContractors}
-              value={selectedContractor}
-              onChange={(_, value) => setSelectedContractor(value)}
-              isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
-              getOptionLabel={getContractorOptionLabel}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Выберите контрагента"
-                  placeholder="Компания, ФИО, email или логин"
-                />
-              )}
-            />
+            <Stack spacing={1}>
+              <Autocomplete
+                options={contractorOptions}
+                loading={isLoadingContractors}
+                loadingText="Загрузка контрагентов…"
+                noOptionsText={contractorsError ? 'Список недоступен' : 'Подходящие контрагенты не найдены'}
+                value={selectedContractor}
+                onChange={(_, value) => setSelectedContractor(value)}
+                isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
+                getOptionLabel={getContractorOptionLabel}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Выберите контрагента"
+                    placeholder="Компания, ФИО, email или логин"
+                  />
+                )}
+              />
+              {contractorsError ? (
+                <Alert severity="error" action={<Button onClick={() => setContractorsReloadKey((value) => value + 1)}>Повторить</Button>}>
+                  {contractorsError}
+                </Alert>
+              ) : !isLoadingContractors && contractorOptions.length === 0 ? (
+                <Alert severity="info">
+                  Нет доступных контрагентов. Здесь отображаются активные контрагенты в области заявки, которым ещё не создано КП по этой заявке. Проверьте их статус и подразделение или выберите «Создать нового».
+                </Alert>
+              ) : null}
+            </Stack>
           ) : (
             <Stack spacing={0.75}>
               <TextField

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 import unicodedata
@@ -227,17 +227,7 @@ class UserRegistrationService:
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
 
-    async def register_user(
-        self,
-        current_user: CurrentUser,
-        *,
-        user_id: str,
-        role_id: int,
-        id_parent: str | None,
-        full_name: str | None,
-        phone: str | None,
-        mail: str | None,
-    ) -> User:
+    async def ensure_registration_role(self, current_user: CurrentUser, role_id: int) -> None:
         UserPolicy.ensure_can_register_user(current_user)
         target_role = await self._users.get_role_by_id(role_id)
         if target_role is None:
@@ -270,6 +260,19 @@ class UserRegistrationService:
 
         if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
             raise Forbidden("Ведущий экономист может создавать только экономистов")
+
+    async def register_user(
+        self,
+        current_user: CurrentUser,
+        *,
+        user_id: str,
+        role_id: int,
+        id_parent: str | None,
+        full_name: str | None,
+        phone: str | None,
+        mail: str | None,
+    ) -> User:
+        await self.ensure_registration_role(current_user, role_id)
         role_rule = _hierarchy_rule_for_role(role_id=role_id)
         if not role_rule.parent_allowed:
             id_parent = None
@@ -294,10 +297,10 @@ class UserRegistrationService:
         normalized_full_name = (full_name or "").strip() or PLACEHOLDER_TEXT
         normalized_phone = (phone or "").strip() or PLACEHOLDER_TEXT
         normalized_mail = (mail or "").strip()
-        if not normalized_mail:
+        if not normalized_mail and settings.email_enabled:
             raise Conflict("Для создания пользователя требуется email")
         try:
-            normalized_mail = validate_optional_email(normalized_mail, allow_placeholder=False) or normalized_mail
+            normalized_mail = validate_optional_email(normalized_mail, allow_placeholder=False) if normalized_mail else PLACEHOLDER_TEXT
         except ValueError as exc:
             raise Conflict(str(exc)) from exc
         
@@ -867,6 +870,8 @@ class ManualContractorCreateInput:
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    login: str | None = None
+    existing_user_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -976,6 +981,8 @@ class ManualContractorService:
             company_mail=company_mail,
             address=address,
             note=note,
+            login=(data.login or "").strip() or None,
+            existing_user_id=data.existing_user_id,
         )
 
     def _build_login_slug(self, company_name: str) -> str:
@@ -1059,7 +1066,11 @@ class ManualContractorService:
         )
 
     async def _create_manual_contractor(self, *, data: ManualContractorCreateInput) -> str:
-        login = await self._build_manual_login(company_name=data.company_name)
+        login = data.login or await self._build_manual_login(company_name=data.company_name)
+        if not 3 <= len(login) <= 128:
+            raise Conflict("Логин должен содержать от 3 до 128 символов")
+        if await self._users.exists(login):
+            raise Conflict("Логин уже занят")
         await self._users.add(
             User(
                 id=login,
@@ -1105,10 +1116,29 @@ class ManualContractorService:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
-        existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(
-            data=normalized_data,
-        )
+        return await self._create_or_reuse_validated(current_user=current_user, data=normalized_data)
+
+    async def _create_or_reuse_validated(self, *, current_user: CurrentUser, data: ManualContractorCreateInput) -> ManualContractorCreateResult:
+        # Authorization belongs to the calling use case (directory or request offer).
+        normalized_data = data
+        lock = getattr(self._users, "lock_contractor_identity", None)
+        if callable(lock):
+            await lock(inn=normalized_data.inn)
+        existing_contractor_user_id = None
+        if not data.existing_user_id:
+            existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(data=normalized_data)
+        if data.existing_user_id:
+            existing_user = await self._users.get_by_id(data.existing_user_id)
+            if existing_user is None or existing_user.id_role != settings.contractor_role_id:
+                raise NotFound("Контрагент не найден")
+            await self._contractor_unit_service().ensure_can_access_contractor(current_user=current_user, contractor_user_id=existing_user.id)
+            company = await self._company_contacts.get_by_id(existing_user.id)
+            if company is None or company.inn != normalized_data.inn:
+                raise Conflict("Реквизиты не соответствуют выбранному контрагенту. Выберите запись повторно")
+            existing_contractor_user_id = existing_user.id
         if existing_contractor_user_id is not None:
+            if data.login and data.login != existing_contractor_user_id:
+                raise Conflict("Компания уже существует. Используйте её существующую учётную запись")
             await self._bind_to_creator_root_units_if_needed(
                 current_user=current_user,
                 contractor_user_id=existing_contractor_user_id,
@@ -1330,6 +1360,21 @@ class UserRoleService:
         if role_id not in allowed_role_ids:
             raise Forbidden("Выбранная роль недоступна для назначения")
 
+        changing_kind = (user.id_role == settings.contractor_role_id) != (role_id == settings.contractor_role_id)
+        if changing_kind and current_user.role_id != settings.superadmin_role_id:
+            raise Forbidden("Преобразование сотрудника и контрагента доступно только суперадминистратору")
+        if changing_kind and role_id == settings.contractor_role_id:
+            has_requests = getattr(self._users, "has_owned_requests", None)
+            if callable(has_requests) and await has_requests(user_id=user.id):
+                raise Conflict("Перед преобразованием назначьте другого ответственного за заявки сотрудника")
+            parents = dict(await self._users.list_active_units())
+            if any(member_user == user.id and parents.get(unit_id) is not None for member_user, unit_id in await self._users.list_active_unit_memberships()):
+                raise Conflict("Перед преобразованием в контрагента оставьте только привязки к корневым подразделениям")
+        if changing_kind and user.id_role == settings.contractor_role_id:
+            has_offers = getattr(self._users, "has_contractor_offers", None)
+            if callable(has_offers) and await has_offers(user_id=user.id):
+                raise Conflict("У контрагента есть коммерческие предложения. Преобразование нарушит их связи")
+
         await self._ensure_target_root_scope(
             current_user=current_user,
             target_user_id=user.id,
@@ -1452,6 +1497,7 @@ class UserStatusService:
         notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
+        units: UnitRepository | None = None,
     ):
         self._users = users
         self._profiles = profiles
@@ -1460,6 +1506,7 @@ class UserStatusService:
         self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
+        self._units = units
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -1489,6 +1536,8 @@ class UserStatusService:
         if user is None:
             raise NotFound("Пользователь не найден")
 
+        if not contractor_only and self._units is not None and not await UnitHierarchyService(self._users).can_view_user(current_user=current_user, target_user_id=user.id):
+            raise Forbidden("Пользователь находится вне разрешённой области")
         if contractor_only:
             if user.id_role != settings.contractor_role_id:
                 raise Forbidden("Изменение статуса доступно только для контрагентов")
@@ -1744,7 +1793,7 @@ class UserSelfService:
             await IamClient().complete_required_action(account_id=current_user.iam_account_id)
             normalized_mail = (mail or "").strip().lower()
             if (
-                normalized_mail
+                settings.email_enabled and normalized_mail
                 and normalized_mail not in {"не указано", "none", "null"}
                 and normalized_mail != previous_email
             ):

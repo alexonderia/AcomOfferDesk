@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import logging
 
 from app.core.request_id import get_request_id
+from app.core.email_mode import ensure_email_enabled
 from app.core.uow import UnitOfWork
 from app.domain.contractor_validation import validate_optional_email
 from app.infrastructure.iam_client import IamClient
@@ -26,6 +27,7 @@ class AccountRecoveryService:
         self._iam_client = iam_client or IamClient()
 
     async def request_recovery(self, *, identifier: str) -> PasswordRecoveryResult:
+        ensure_email_enabled()
         user = await self._resolve_user(identifier)
         if user is None:
             return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)

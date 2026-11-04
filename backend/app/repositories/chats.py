@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from app.core.datetime_utils import utc_now_naive
 
 from sqlalchemy import Select, and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,23 @@ class ChatState:
 class ChatRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    async def reconcile_participants(self, *, chat_id: int, user_ids: set[str], primary_user_ids: set[str]) -> None:
+        # Serialize membership reconciliation with other access to this chat.
+        await self._session.execute(select(Chat.id).where(Chat.id == chat_id).with_for_update())
+        rows = list((await self._session.execute(select(ChatParticipant).where(ChatParticipant.id_chat == chat_id))).scalars().all())
+        by_user = {row.id_user: row for row in rows}
+        now = utc_now_naive()
+        for user_id in user_ids:
+            row = by_user.get(user_id)
+            if row is None:
+                self._session.add(ChatParticipant(id_chat=chat_id, id_user=user_id, joined_at=now, last_read_at=now, is_muted=user_id not in primary_user_ids, is_archived=False))
+            elif row.left_at is not None:
+                row.left_at = None
+        for row in rows:
+            if row.id_user not in user_ids and row.left_at is None:
+                row.left_at = now
+        await self._session.flush()
 
     async def get_active_participant(self, *, chat_id: int, user_id: str) -> ChatParticipant | None:
         stmt = select(ChatParticipant).where(

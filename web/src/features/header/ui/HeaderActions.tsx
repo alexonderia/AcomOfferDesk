@@ -54,6 +54,7 @@ export const HeaderActions = ({
           </Box>
         ) : null}
         {showRoleGuide ? <RoleGuideButton /> : null}
+        {showProfile ? <ProfileButton /> : null}
         {showLogout ? (
           <Button className="sa-logout" variant="outlined" onClick={onLogout}>
             Выйти

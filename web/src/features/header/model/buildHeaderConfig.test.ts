@@ -39,6 +39,19 @@ const mobileKeys = (config: ReturnType<typeof buildHeaderConfig>) =>
 const tabKeys = (config: ReturnType<typeof buildHeaderConfig>) => config.tabs.map((tab) => tab.key);
 
 describe('buildHeaderConfig role navigation', () => {
+  it.each([ROLE.ADMIN, ROLE.CONTRACTOR, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR, ROLE.SECURITY_OFFICER])('does not expose system status navigation to role %s', (roleId) => {
+    const config = buildHeaderConfig({ ...baseArgs(), roleId });
+    expect(config.sidebarItems?.some((item) => item.key === 'system') ?? false).toBe(false);
+    expect(config.mobileNavItems?.some((item) => item.children?.some((child) => child.key === 'system')) ?? false).toBe(false);
+  });
+
+  it('keeps superadmin navigation and selects system status on its own page', () => {
+    const config = buildHeaderConfig({ ...baseArgs(), roleId: ROLE.SUPERADMIN, pathname: '/admin/system', canOpenUsersPage: true });
+    expect(config.activeTab).toBe('system');
+    expect(tabKeys(config)).toContain('users');
+    expect(config.breadcrumbs).toEqual([]);
+  });
+
   it('shows all major sections for superadmin', () => {
     const config = buildHeaderConfig({
       ...baseArgs(),
@@ -51,6 +64,11 @@ describe('buildHeaderConfig role navigation', () => {
     });
 
     expect(tabKeys(config)).toEqual(['dashboard', 'savings', 'plan', 'requests', 'users', 'hierarchy']);
+    expect(config.showProfile).toBe(true);
+    const more = config.mobileNavItems?.find((item) => item.key === 'more');
+    expect(more?.children?.map((item) => item.key)).toContain('profile');
+    expect(more?.children).toContainEqual({ key: 'system', label: 'Состояние системы', to: '/admin/system' });
+    expect(config.sidebarItems).toContainEqual({ key: 'system', label: 'Состояние системы', to: '/admin/system' });
   });
 
   it('shows dashboard tabs only for granted split-permissions', () => {

@@ -6,6 +6,7 @@ import { AppLayout } from '@app/layouts/AppLayout';
 import { ProtectedRoute } from '@app/routes/ProtectedRoute';
 import { RoleRoute } from '@app/routes/RoleRoute';
 import { REQUESTS_ROUTE_PERMISSIONS } from '@shared/lib/routing/getDefaultPathByRole';
+import { ROLE } from '@shared/constants/roles';
 
 const AuthPage = lazy(async () => ({ default: (await import('@pages/auth/AuthPage')).AuthPage }));
 const RegisterPage = lazy(async () => ({ default: (await import('@pages/auth/RegisterPage')).RegisterPage }));
@@ -23,6 +24,7 @@ const ContractorRequestDetailsPage = lazy(
 );
 const OfferWorkspacePage = lazy(async () => ({ default: (await import('@pages/offers/OfferWorkspacePage')).OfferWorkspacePage }));
 const AdminPage = lazy(async () => ({ default: (await import('@pages/admin/AdminPage')).AdminPage }));
+const SystemStatusPage = lazy(async () => ({ default: (await import('@pages/system-status/SystemStatusPage')).SystemStatusPage }));
 const AdminHierarchyPage = lazy(
   async () => ({ default: (await import('@pages/admin-hierarchy/AdminHierarchyPage')).AdminHierarchyPage })
 );
@@ -130,6 +132,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
                   </RoleRoute>
                 }
               />
+              <Route path="/admin/system" element={<RoleRoute allowedRoles={[ROLE.SUPERADMIN]}><SystemStatusPage /></RoleRoute>} />
               <Route
                 path="/contractors"
                 element={

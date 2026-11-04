@@ -24,7 +24,7 @@ export const ContractorsPage = () => {
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
 
   const canManageContractors = hasPermission(session, 'contractors.manual.create');
-  const canInviteContractors = hasPermission(session, 'users.registration.invite');
+  const canInviteContractors = (session?.emailEnabled ?? true) && hasPermission(session, 'users.registration.invite');
 
   const breadcrumbActions = useMemo(
     () =>
@@ -96,6 +96,7 @@ export const ContractorsPage = () => {
         open={isCreateDialogOpen}
         onClose={() => setIsCreateDialogOpen(false)}
         onCreated={loadContractors}
+        emailEnabled={session?.emailEnabled ?? true}
       />
       <ContractorInviteDialog
         open={isInviteDialogOpen}

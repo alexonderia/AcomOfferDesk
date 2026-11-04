@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Depends, Path, Query
 from app.api.action_flags import ContractorActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
+from app.services.iam_bindings import recover_existing_iam_binding
 from app.domain.exceptions import Conflict
 from app.domain.iam_status import iam_auth_status_for_user_status
 from app.domain.policies import CurrentUser, UserPolicy
@@ -165,7 +166,7 @@ async def update_contractor_status(
             provider="iam",
         )
         if binding is None:
-            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+            binding = await recover_existing_iam_binding(uow, user_id=contractor_id)
         await IamClient().update_status(
             account_id=binding.external_subject_id,
             auth_status=iam_auth_status_for_user_status(payload.user_status),

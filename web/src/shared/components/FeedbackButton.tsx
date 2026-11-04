@@ -64,6 +64,7 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
   const onSubmit = async (values: FormValues) => {
     try {
       await createFeedback({ text: values.text.trim() });
+      window.dispatchEvent(new Event('feedback:created'));
       showSuccessToast('Спасибо! Обратная связь отправлена.');
       reset({ text: '' });
     } catch (submitError) {

@@ -184,6 +184,13 @@ class AuthorizationCodeRepository:
     async def add(self, code: AuthorizationCode) -> None:
         self._session.add(code)
 
+    async def invalidate_active(self, *, account_id: uuid.UUID, consumed_at: datetime) -> None:
+        await self._session.execute(
+            update(AuthorizationCode)
+            .where(AuthorizationCode.account_id == account_id, AuthorizationCode.consumed_at.is_(None))
+            .values(consumed_at=consumed_at)
+        )
+
     async def get_by_hash(self, code_hash: str, *, for_update: bool = False) -> AuthorizationCode | None:
         stmt = select(AuthorizationCode).where(AuthorizationCode.code_hash == code_hash)
         if for_update:
@@ -273,6 +280,14 @@ class AuditRepository:
 
     async def add(self, event: AuthAuditLog) -> None:
         self._session.add(event)
+
+    async def has_event(self, *, account_id: uuid.UUID, event_type: str) -> bool:
+        stmt = select(AuthAuditLog.id).where(
+            AuthAuditLog.account_id == account_id,
+            AuthAuditLog.event_type == event_type,
+            AuthAuditLog.success.is_(True),
+        ).limit(1)
+        return (await self._session.execute(stmt)).scalar_one_or_none() is not None
 
     async def list_events(self) -> list[AuthAuditLog]:
         stmt = select(AuthAuditLog).order_by(AuthAuditLog.created_at, AuthAuditLog.id)

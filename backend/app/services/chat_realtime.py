@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+import logging
 
 from app.core.chat_upload_tokens import create_chat_upload_token, decode_chat_upload_token
 from app.core.uow import UnitOfWork
-from app.domain.exceptions import Forbidden, NotFound, Unauthorized
+from app.domain.exceptions import AuthenticationUnavailable, Forbidden, NotFound, Unauthorized
+from app.domain.iam_roles import technical_role_name
 from app.domain.policies import CurrentUser
+from app.infrastructure.iam_client import IamClient
 from app.services.files import FileService
 from app.services.notifications import NotificationService
 from app.services.offers import (
@@ -62,6 +65,36 @@ def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = N
 class ChatRealtimeService:
     def __init__(self, *, uow_factory: type[UnitOfWork] = UnitOfWork) -> None:
         self._uow_factory = uow_factory
+
+    async def authorized_recipients(self, *, offer_id: int, user_ids: set[str]) -> set[str]:
+        """A room subscription does not survive revocation of business access."""
+        allowed: set[str] = set()
+        iam = IamClient()
+        for user_id in user_ids:
+            try:
+                async with self._uow_factory() as uow:
+                    user = await uow.users.get_by_id(user_id)
+                    if user is None or user.status != "active":
+                        continue
+                    binding = await uow.user_auth_accounts.get_by_user_provider(user_id=user_id, provider="iam", include_inactive=False)
+                    if binding is None:
+                        continue
+                    permissions = await iam.get_account_permissions(account_id=binding.external_subject_id)
+                    current_user = CurrentUser(
+                        user_id=user_id, role_id=user.id_role, status=user.status,
+                        iam_account_id=binding.external_subject_id, iam_session_id="",
+                        system_role=technical_role_name(user.id_role),
+                        permissions=permissions.effective_permissions,
+                    )
+                    await build_offer_service(uow).get_chat_state(current_user=current_user, offer_id=offer_id)
+                    allowed.add(user_id)
+            except (Forbidden, NotFound, Unauthorized):
+                continue
+            except AuthenticationUnavailable:
+                # A transient IAM failure must not expose data or turn a stored
+                # message into an HTTP failure that encourages duplicate sends.
+                logging.getLogger(__name__).warning("Chat recipient authorization temporarily unavailable")
+        return allowed
 
     async def upload_message_file(
         self,

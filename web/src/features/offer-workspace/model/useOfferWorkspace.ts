@@ -128,6 +128,7 @@ export const useOfferWorkspace = () => {
   const {
     messages,
     chatActions,
+    setChatActions,
     isSending,
     chatErrorMessage,
     typingUserIds,
@@ -194,6 +195,7 @@ export const useOfferWorkspace = () => {
       const workspaceResponse = await getOfferWorkspace(offerId);
       workspaceRef.current = workspaceResponse;
       setWorkspace(workspaceResponse);
+      setChatActions(workspaceResponse.chatActions);
       const initialOfferId = workspaceResponse.offers.find((item) => item.offer_id === offerId)?.offer_id ?? workspaceResponse.offers[0]?.offer_id ?? offerId;
       setSelectedOfferId(initialOfferId);
       await loadMessages(initialOfferId, workspaceResponse.offers);
@@ -213,7 +215,7 @@ export const useOfferWorkspace = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [loadMessages, offerId]);
+  }, [loadMessages, offerId, setChatActions]);
 
   useEffect(() => {
     contractorInfoRef.current = contractorInfo;
@@ -467,6 +469,11 @@ export const useOfferWorkspace = () => {
     canDeleteFile,
     canSendMessage,
     canViewMessages,
+    retryChat: async () => {
+      if (!selectedOffer || !workspace) return;
+      try { await loadMessages(selectedOffer.offer_id, workspace.offers); setErrorMessage(null); }
+      catch (e) { setErrorMessage(getErrorMessage(e, 'Не удалось загрузить чат')); }
+    },
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,

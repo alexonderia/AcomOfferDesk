@@ -195,6 +195,7 @@ export const useUnitHierarchyPage = () => {
   const [isSavingUnitNameId, setIsSavingUnitNameId] = useState<number | null>(null);
   const [unassignedUsers, setUnassignedUsers] = useState<AvailableUnitUser[]>([]);
   const [isLoadingUnassignedUsers, setIsLoadingUnassignedUsers] = useState(false);
+  const [unassignedUsersError, setUnassignedUsersError] = useState<string | null>(null);
   const [assignMemberState, setAssignMemberState] = useState<AssignMemberState>(null);
   const [isAssigningMember, setIsAssigningMember] = useState(false);
   const deferredMemberSearch = useDeferredValue(memberDialogState.search);
@@ -284,11 +285,12 @@ export const useUnitHierarchyPage = () => {
     }
 
     setIsLoadingUnassignedUsers(true);
+    setUnassignedUsersError(null);
     try {
       const items = await getUnassignedUsers();
       setUnassignedUsers(items);
-    } catch {
-      setUnassignedUsers([]);
+    } catch (e) {
+      setUnassignedUsersError(e instanceof Error ? e.message : 'Не удалось загрузить нераспределённых сотрудников');
     } finally {
       setIsLoadingUnassignedUsers(false);
     }
@@ -645,6 +647,8 @@ export const useUnitHierarchyPage = () => {
     confirmDeleteUnit,
     loadTree,
     unassignedUsers,
+    unassignedUsersError,
+    loadUnassignedUsers,
     isLoadingUnassignedUsers,
     assignMemberState,
     setAssignMemberState,

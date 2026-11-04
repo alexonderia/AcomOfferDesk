@@ -328,6 +328,8 @@ class UserActionBuilder:
                 and target_role_id in ECONOMY_ROLE_IDS
                 and can_manage_subordinate_role
             )
+        if target_role_id == settings.contractor_role_id and current_user.role_id != settings.superadmin_role_id:
+            can_update_role = False
         can_update_status = (
             UserPolicy.can_update_contractor_profile_status(current_user)
             if target_role_id == settings.contractor_role_id
@@ -371,7 +373,7 @@ class UserActionBuilder:
     def build_me(current_user: CurrentUser) -> UserActionsSchema:
         return UserActionsSchema(
             can_manage_own_profile=UserPolicy.can_manage_own_profile(current_user),
-            can_manage_credentials=False,
+            can_manage_credentials=current_user.status == "active",
             can_manage_company_contacts=UserPolicy.can_manage_own_company_contacts(current_user),
             can_manage_own_unavailability=UserPolicy.can_manage_own_unavailability(current_user),
         )
@@ -418,6 +420,7 @@ class ContractorActionBuilder:
         can_manage_manual_contractor = can_manage_manual_contractor and is_manual
         return UserActionsSchema(
             can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
+            can_update_role=(current_user.role_id == settings.superadmin_role_id and has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY)),
             can_update_status=can_update_status,
             can_manage_contractor_unit_bindings=UserPolicy.can_manage_contractor_unit_bindings(current_user),
             can_manage_manual_contractor=can_manage_manual_contractor,

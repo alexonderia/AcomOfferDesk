@@ -27,17 +27,19 @@ from app.core.auth_cookies import (
     set_iam_refresh_cookie,
 )
 from app.core.config import settings
+from app.core.email_mode import ensure_email_enabled
 from app.core.iam_flow import FLOW_TTL_SECONDS, build_iam_authorize_url, create_iam_flow, decode_iam_flow
 from app.core.uow import UnitOfWork
 from app.domain.authentication import decode_iam_access_token
 from app.domain.auth_context import CurrentUser
-from app.domain.exceptions import AuthenticationUnavailable, Conflict, NotFound, Unauthorized
+from app.domain.exceptions import AuthenticationUnavailable, Conflict, Forbidden, NotFound, Unauthorized
 from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.domain.policies import UserPolicy
 from app.infrastructure.iam_client import IamClient
 from app.models.auth_models import UserAuthAccount
 from app.schemas.auth import AuthSessionData, AuthSessionResponse, RegisterUserRequest, RegisterUserResponse
+from app.schemas.auth import PasswordChangeRequest
 from app.services.account_recovery import AccountRecoveryService, GENERIC_RECOVERY_DETAIL
 from app.services.email_verification import FIRST_ACCESS_PURPOSE, EmailVerificationService
 from app.services.unit_hierarchy import UnitHierarchyService
@@ -105,6 +107,35 @@ class PasswordResetRateLimiter:
 
 
 password_reset_rate_limiter = PasswordResetRateLimiter()
+password_change_rate_limiter = PasswordResetRateLimiter()
+
+
+@router.get("/auth/capabilities")
+async def app_capabilities(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return {"data": {"email_enabled": settings.email_enabled, "direct_user_creation": not settings.email_enabled, "password_change": True}}
+
+
+@router.post("/users/me/password", status_code=204)
+async def change_my_password(
+    payload: PasswordChangeRequest, request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> Response:
+    if current_user.status != "active":
+        raise Forbidden("Смена пароля доступна только активному пользователю")
+    if not await password_change_rate_limiter.allow(client_ip=_client_ip(request), login=current_user.iam_account_id):
+        return JSONResponse(status_code=429, content={"detail": "Слишком много попыток. Повторите позже"})
+    await IamClient().change_own_password(
+        account_id=current_user.iam_account_id, session_id=current_user.iam_session_id,
+        current_password=payload.current_password.get_secret_value(),
+        new_password=payload.new_password.get_secret_value(),
+    )
+    response = Response(status_code=204)
+    clear_iam_access_cookie(response)
+    clear_iam_refresh_cookie(response)
+    clear_iam_browser_session_cookie(response)
+    clear_csrf_cookie(response)
+    return response
 
 
 def _client_ip(request: Request) -> str:
@@ -136,6 +167,7 @@ def _session_response(current_user: CurrentUser) -> AuthSessionResponse:
             business_access=current_user.status == "active" and current_user.onboarding_state != "first_login",
             onboarding_state=onboarding_state,
             permissions=sorted(current_user.permissions),
+            email_enabled=settings.email_enabled,
         )
     )
 
@@ -333,6 +365,7 @@ async def request_password_reset(
     request: Request,
     uow: UnitOfWork = Depends(get_uow),
 ) -> PasswordResetResponse:
+    ensure_email_enabled()
     generic_detail = GENERIC_RECOVERY_DETAIL
     normalized_login = payload.login.strip()
     client_ip = _client_ip(request)
@@ -353,6 +386,7 @@ async def request_email_verification(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> EmailVerificationActionResponse:
+    ensure_email_enabled()
     UserPolicy.ensure_can_manage_own_profile(current_user)
     async with uow:
         service = EmailVerificationService(
@@ -417,6 +451,10 @@ async def register_user(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RegisterUserResponse:
     UserPolicy.ensure_can_register_user(current_user)
+    if not settings.email_enabled and payload.password is None:
+        raise Conflict("Для создания пользователя без почты задайте пароль и его подтверждение")
+    if settings.email_enabled and payload.password is not None:
+        raise Conflict("Начальный пароль задаётся при создании в режиме без почты")
     iam_client = IamClient()
     normalized_login = payload.login.strip()
     account_id = stable_iam_account_id(normalized_login)
@@ -432,6 +470,14 @@ async def register_user(
         )
         if user is not None and user.id_role != payload.role_id:
             raise Conflict("Existing user has a different role")
+        is_new_user = user is None
+        if not settings.email_enabled and user is not None:
+            if binding is None or user.status != "active":
+                raise Conflict("Логин уже занят. Создание не изменяет существующую учётную запись")
+            allowed_ids = await UnitHierarchyService(uow.users).get_visible_user_ids(current_user=current_user)
+            if allowed_ids is not None and user.id not in allowed_ids:
+                raise Forbidden("Пользователь находится вне разрешённой области")
+            await UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts).ensure_registration_role(current_user, payload.role_id)
         if user is None:
             service = UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts)
             user = await service.register_user(
@@ -444,7 +490,7 @@ async def register_user(
                 mail=payload.mail.strip() if payload.mail else None,
             )
         delivery_email = (payload.mail or "").strip().lower()
-        if delivery_email:
+        if delivery_email and is_new_user:
             await uow.user_contact_channels.upsert_channel(
                 user_id=user.id,
                 channel_type="email",
@@ -452,12 +498,37 @@ async def register_user(
                 is_verified=False,
                 is_primary=True,
             )
-        account = await iam_client.put_account(
-            account_id=binding.external_subject_id if binding is not None else account_id,
-            login=user.id,
-            role=role_name,
-            auth_status="active",
-        )
+        unit_service = UnitService(uow.units, uow.users)
+        if not is_new_user and not settings.email_enabled:
+            pass
+        elif payload.unit_id is not None:
+            # A new employee is not visible through memberships yet. The
+            # registration operation validates the lead's chosen unit directly.
+            is_new_lead_registration = is_new_user and current_user.role_id == settings.lead_economist_role_id
+            if UserPolicy.can_manage_unit_members(current_user) and not is_new_lead_registration:
+                await unit_service.add_member(current_user=current_user, unit_id=payload.unit_id, user_id=user.id)
+            else:
+                await unit_service.add_member_on_registration(
+                    current_user=current_user, unit_id=payload.unit_id, user_id=user.id
+                )
+        else:
+            hierarchy = UnitHierarchyService(uow.users)
+            seed_unit_ids = await hierarchy.get_management_seed_unit_ids(user_id=current_user.user_id)
+            for seed_unit_id in sorted(seed_unit_ids):
+                await unit_service.add_member_on_registration(
+                    current_user=current_user, unit_id=seed_unit_id, user_id=user.id
+                )
+
+        if settings.email_enabled:
+            account = await iam_client.put_account(
+                account_id=binding.external_subject_id if binding is not None else account_id,
+                login=user.id, role=role_name, auth_status="active",
+            )
+        else:
+            account = await iam_client.provision_direct_credentials(
+                account_id=binding.external_subject_id if binding is not None else account_id,
+                login=user.id, role=role_name, password=payload.password.get_secret_value(),
+            )
         if binding is None:
             binding = UserAuthAccount(
                 id_user=user.id,
@@ -471,21 +542,6 @@ async def register_user(
         else:
             binding.is_active = True
 
-        unit_service = UnitService(uow.units, uow.users)
-        if payload.unit_id is not None:
-            if UserPolicy.can_manage_unit_members(current_user):
-                await unit_service.add_member(current_user=current_user, unit_id=payload.unit_id, user_id=user.id)
-            else:
-                await unit_service.add_member_on_registration(
-                    current_user=current_user, unit_id=payload.unit_id, user_id=user.id
-                )
-        else:
-            hierarchy = UnitHierarchyService(uow.users)
-            seed_unit_ids = await hierarchy.get_management_seed_unit_ids(user_id=current_user.user_id)
-            for seed_unit_id in sorted(seed_unit_ids):
-                await unit_service.add_member_on_registration(
-                    current_user=current_user, unit_id=seed_unit_id, user_id=user.id
-                )
     return RegisterUserResponse(
         data={"user_id": user.id, "role_id": user.id_role, "status": user.status}
     )

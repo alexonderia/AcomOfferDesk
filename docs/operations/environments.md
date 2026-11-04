@@ -11,6 +11,8 @@ docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.y
 
 Production-like использует `.env.prod-like` и `docker-compose.prod-like.yml`; production — соответствующий private env и `docker-compose.prod.yml`. PostgreSQL доступен через внешнюю сеть `project_net`.
 
+`EMAIL_ENABLED=false` в общем runtime env backend и worker включает работу без почты: создание аккаунтов с паролем из UI, отсутствие SMTP/IMAP и почтового потребления. Почтовые настройки необязательны. По умолчанию `true`; порядок обновления — [работа без почты](no-mail-accounts.md).
+
 ## IAM env
 
 Backend contract:

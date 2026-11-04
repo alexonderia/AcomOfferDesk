@@ -84,6 +84,8 @@ class SendRequestNotificationEmailUseCase:
         hidden_contractor_ids: list[str] | None = None,
         include_verified_contractors: bool = True,
     ) -> EmailBatchDispatchResult:
+        if not settings.email_enabled:
+            return EmailBatchDispatchResult(operation_id=None, expected_total=0, immediate_failure_count=0, first_error_message=None)
         request = await self._request_repository.get_by_id(request_id=request_id)
         if request is None:
             return EmailBatchDispatchResult(

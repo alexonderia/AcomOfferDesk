@@ -1,0 +1,48 @@
+{
+  "source": "C:\\Users\\alexonderia\\Downloads\\Организационная структура сотрудников итог.xlsx",
+  "source_sha256": "34b0d5b8f3f9012d9166aee355950796048fa3637c03a55718fdfde1d9775434",
+  "staff_count": 45,
+  "units_target": 45,
+  "memberships_target": 45,
+  "parent_edges": 44,
+  "level_counts": {
+    "РП": 1,
+    "МРП": 4,
+    "ВС": 11,
+    "СПЕЦ": 19,
+    "МС": 9,
+    "Ст.СПЕЦ": 1
+  },
+  "role_counts": {
+    "project_manager": 1,
+    "lead_economist": 15,
+    "economist": 29
+  },
+  "branch_counts": {
+    "Миннебаева Гульгена Наилевна": 14,
+    "Плехова Виктория Александровна": 7,
+    "Хабибулин Эмиль Тэльгатович": 13,
+    "Яруллин Рамиль Маратович": 10
+  },
+  "hlistun_individual_grants": 15,
+  "passwords_generated": false,
+  "database_connections": false,
+  "checks": [
+    "45 unique names",
+    "all records reachable from one root",
+    "acyclic graph",
+    "Yelysheva -> Plekhova confirmed",
+    "45 image cards and 44 image edges",
+    "45 roster rows",
+    "role matrix extracted statically from source"
+  ],
+  "chart_dimensions": [
+    4800,
+    2740
+  ],
+  "pdf_pages": 9,
+  "verified_docx_roster_rows": 45,
+  "verified_svg_edges": 44,
+  "verified_pdf_names": 45,
+  "verified_pdf_text_within_page": true
+}

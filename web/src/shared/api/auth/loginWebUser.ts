@@ -11,6 +11,7 @@ export type AuthSessionResponse = {
     business_access?: boolean;
     onboarding_state?: string | null;
     permissions?: string[];
+    email_enabled?: boolean;
   };
 };
 

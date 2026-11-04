@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
 
+from shared.email_delivery import email_delivery_enabled
+
 logger = logging.getLogger(__name__)
 
 _DEDUP_TTL_SECONDS = max(10, int(os.getenv("EMAIL_DEDUP_TTL_SECONDS", "120")))
@@ -112,6 +114,8 @@ def _resolve_smtp_security_mode(smtp_port: int) -> str:
 
 
 async def send_email(payload: dict) -> EmailSendResult:
+    if not email_delivery_enabled():
+        return EmailSendResult(False, "EMAIL_DISABLED", "Почтовый сервис отключён")
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     username = os.getenv("EMAIL_ADDRESS")

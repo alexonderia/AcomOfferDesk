@@ -21,6 +21,7 @@ import {
   MOBILE_BOTTOM_NAV_SAFE_AREA,
 } from '@shared/lib/responsive';
 import type { HeaderConfig, HeaderMobileNavItem } from '../model/types';
+import { resolveMobileNavItems } from '../model/resolveMobileNavItems';
 import { getHeaderNavigationIcon } from './navigationIcons';
 
 type MobileBottomNavigationProps = {
@@ -104,7 +105,7 @@ export const MobileBottomNavigation = ({ config, onLogout }: MobileBottomNavigat
       ? config.mobileNavItems
       : resolveFallbackItems(config);
 
-    return sourceItems.filter((item) => !item.disabled).slice(0, 4);
+    return resolveMobileNavItems(sourceItems);
   }, [config]);
 
   const activeKey = useMemo(() => {

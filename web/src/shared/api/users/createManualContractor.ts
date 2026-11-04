@@ -7,6 +7,10 @@ export type CreateManualContractorPayload = {
   company_mail?: string;
   address?: string;
   note?: string;
+  login?: string;
+  password?: string;
+  password_confirmation?: string;
+  existing_user_id?: string;
 };
 
 type ApiResponse = {

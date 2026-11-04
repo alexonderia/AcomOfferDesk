@@ -15,8 +15,10 @@ import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
 import ModeEditOutline from '@mui/icons-material/ModeEditOutline';
 import PersonOutline from '@mui/icons-material/PersonOutline';
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined';
+import MonitorHeartOutlined from '@mui/icons-material/MonitorHeartOutlined';
 
 const iconByKey: Record<string, ReactNode> = {
+  system: <MonitorHeartOutlined fontSize="small" />,
   users: <PersonOutline fontSize="small" />,
   hierarchy: <LanOutlinedIcon fontSize="small" />,
   requests: <InsertDriveFileOutlined fontSize="small" />,

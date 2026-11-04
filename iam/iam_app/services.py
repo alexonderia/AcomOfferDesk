@@ -52,6 +52,8 @@ _SECRET_DETAIL_KEYS = {
     "password_hash",
     "initial_password",
     "new_password",
+    "current_password",
+    "password_confirmation",
     "access_token",
     "refresh_token",
     "authorization_code",
@@ -77,7 +79,8 @@ def _safe_details(details: dict | None) -> dict:
 
 
 def _password_version(changed_at) -> int:
-    return int(as_utc(changed_at).timestamp()) if changed_at is not None else 0
+    # A same-second password change must invalidate previously signed browser sessions.
+    return int(as_utc(changed_at).timestamp() * 1_000_000) if changed_at is not None else 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,6 +348,120 @@ class IamService:
             details={"account_id": str(account_id), "role": normalized_role},
         )
         return AccountResult(account, normalized_role, True)
+
+    async def provision_direct_credentials(
+        self, *, account_id: uuid.UUID, login: str, role_name: str, initial_password: str,
+    ) -> RegistrationCredentialsResult:
+        """Create a ready account; retries never overwrite an existing credential."""
+        existing = await self._accounts.get(account_id, for_update=True)
+        if existing is not None:
+            role = await self._roles.get_by_id(existing.role_id)
+            credential = await self._credentials.get(account_id, for_update=True)
+            direct = await self._audit.has_event(account_id=account_id, event_type="account.direct_provisioned")
+            if (
+                not direct or existing.auth_status != "active" or existing.login != login.strip()
+                or role is None or not role.is_active or role.name != role_name.strip() or credential is None
+                or not credential.password_hash
+                or not await verify_password(initial_password, credential.password_hash)
+            ):
+                raise Conflict("idempotency conflict")
+            return RegistrationCredentialsResult(existing, role.name, False, True)
+        result = await self.provision_registration_credentials(
+            account_id=account_id, login=login, role_name=role_name, initial_password=initial_password,
+        )
+        result.account.auth_status = "active"
+        result.account.required_actions = []
+        await self._record_audit(
+            account_id=account_id, session_id=None, event_type="account.direct_provisioned",
+            success=True, details={"source": "administrative_creation"},
+        )
+        await self._db.flush()
+        return result
+
+    async def change_own_password(
+        self, *, account_id: uuid.UUID, session_id: uuid.UUID,
+        current_password: str, new_password: str,
+    ) -> None:
+        from iam_app.errors import CurrentPasswordMismatch
+
+        account = await self._accounts.get(account_id, for_update=True)
+        auth_session = await self._sessions.get(session_id, for_update=True)
+        if (
+            account is None or account.auth_status != "active" or auth_session is None
+            or auth_session.account_id != account_id or auth_session.revoked_at is not None
+            or as_utc(auth_session.expires_at) <= utc_now()
+        ):
+            raise Unauthorized()
+        credential = await self._credentials.get(account_id, for_update=True)
+        if credential is None or not credential.password_hash or not await verify_password(current_password, credential.password_hash):
+            await self._record_audit(
+                account_id=account_id, session_id=session_id, event_type="password.change_failed",
+                success=False, details={"reason": "current_password_mismatch"},
+            )
+            self._persist_security_failure()
+            raise CurrentPasswordMismatch()
+        if not 12 <= len(new_password) <= 128:
+            raise Conflict("password policy")
+        credential.password_hash = await hash_password(new_password)
+        credential.password_algo = "argon2id"
+        credential.password_changed_at = utc_now()
+        credential.updated_at = utc_now()
+        credential.failed_login_count = 0
+        credential.locked_until = None
+        for purpose in PASSWORD_ACTION_PURPOSES:
+            await self._actions.invalidate_active(account_id=account_id, purpose=purpose, consumed_at=utc_now())
+        await self.revoke_all(account_id=account_id, reason="password_changed")
+        await self._record_audit(
+            account_id=account_id, session_id=session_id, event_type="password.changed",
+            success=True, details={},
+        )
+
+    async def reset_user_password(
+        self, *, account_id: uuid.UUID, new_password: str,
+        actor_account_id: uuid.UUID, actor_session_id: uuid.UUID,
+    ) -> None:
+        actor = await self._accounts.get(actor_account_id)
+        actor_role = await self._roles.get_by_id(actor.role_id) if actor else None
+        actor_session = await self._sessions.get(actor_session_id)
+        now = utc_now()
+        if (
+            actor is None or actor.auth_status != "active" or actor_role is None
+            or not actor_role.is_active or actor_role.name != "superadmin"
+            or actor_session is None or actor_session.account_id != actor_account_id
+            or actor_session.revoked_at is not None or as_utc(actor_session.expires_at) <= now
+        ):
+            raise Forbidden()
+        account = await self._accounts.get(account_id, for_update=True)
+        if account is None:
+            raise NotFound()
+        role = await self._roles.get_by_id(account.role_id)
+        if account_id == actor_account_id or role is None or role.name == "superadmin":
+            raise Forbidden()
+        if not 12 <= len(new_password) <= 128:
+            raise Conflict("password policy")
+        credential = await self._credentials.get(account_id, for_update=True)
+        if credential is None:
+            credential = AccountCredential(account_id=account_id)
+            await self._credentials.add(credential)
+        credential.password_hash = await hash_password(new_password)
+        credential.password_algo = "argon2id"
+        credential.password_changed_at = now
+        credential.updated_at = now
+        credential.failed_login_count = 0
+        credential.locked_until = None
+        account.required_actions = [action for action in (account.required_actions or []) if action not in PASSWORD_ACTION_PURPOSES]
+        account.updated_at = now
+        for purpose in PASSWORD_ACTION_PURPOSES:
+            await self._actions.invalidate_active(account_id=account_id, purpose=purpose, consumed_at=now)
+        await self._codes.invalidate_active(account_id=account_id, consumed_at=now)
+        await self.revoke_all(
+            account_id=account_id, reason="administrator_password_reset",
+            actor_account_id=actor_account_id, actor_session_id=actor_session_id,
+        )
+        await self._record_admin_audit_or_log(
+            actor_account_id=actor_account_id, actor_session_id=actor_session_id,
+            event_type="password.administratively_reset", details={"target_account_id": str(account_id)},
+        )
 
     async def provision_registration_credentials(
         self,

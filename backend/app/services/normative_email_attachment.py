@@ -33,7 +33,7 @@ class NormativeEmailAttachmentService:
         try:
             content_bytes = await self._file_service.read_bytes(db_file=db_file)
         except NotFound as exc:
-            raise Conflict("Файл выбранного нормативного документа недоступен для отправки") from exc
+            raise Conflict("Файл выбранного нормативного документа недоступен для отправки. Загрузите документ повторно или выберите другой.") from exc
 
         return EmailAttachment(
             filename=normative_file.original_name,

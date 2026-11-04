@@ -91,10 +91,14 @@ class ChatRealtimeRuntime:
         event: OutboundEnvelope,
         exclude_user_ids: set[str] | None = None,
     ) -> set[str]:
+        user_ids = await self.manager.subscribed_user_ids(chat_id=chat_id)
+        user_ids.difference_update(exclude_user_ids or set())
+        allowed = await self.service.authorized_recipients(offer_id=chat_id, user_ids=user_ids) if user_ids else set()
         delivered_user_ids = await self.manager.broadcast_to_chat(
             chat_id=chat_id,
             event=event,
             exclude_user_ids=exclude_user_ids,
+            allowed_user_ids=allowed,
         )
         return delivered_user_ids
 

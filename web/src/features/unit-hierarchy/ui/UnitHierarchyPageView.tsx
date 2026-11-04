@@ -192,7 +192,7 @@ const collectOverviewStaffCount = (
 ) => {
   const cardStaffCount = overviewCards.reduce((sum, card) => sum + card.totalStaff, 0);
   const rootOnlyStaffCount = departments.reduce(
-    (sum, department) => sum + collectDepartmentRootOnlyStaff(department).length,
+    (sum, department) => sum + (overviewCards.some((card) => card.unit.unit_id === department.unit_id) ? 0 : collectDepartmentRootOnlyStaff(department).length),
     0,
   );
 
@@ -246,11 +246,13 @@ const buildOverviewUnitCards = (department: UnitNode, normalizedQuery: string): 
     ? department.name.toLocaleLowerCase('ru').includes(normalizedQuery)
     : true;
 
-  return department.children
+  const showRoot = department.children.length === 0 || Boolean(normalizedQuery && department.members.some((member) => matchesMemberQuery(member, normalizedQuery)));
+  return (showRoot ? [department, ...department.children] : department.children)
     .map((unit) => {
+      const displayedUnit = unit === department && department.children.length > 0 ? { ...unit, children: [] } : unit;
       const filteredUnit = !normalizedQuery || departmentMatches
-        ? unit
-        : filterUnitTree(unit, normalizedQuery);
+        ? displayedUnit
+        : filterUnitTree(displayedUnit, normalizedQuery);
 
       if (!filteredUnit) {
         return null;
@@ -259,9 +261,9 @@ const buildOverviewUnitCards = (department: UnitNode, normalizedQuery: string): 
       return {
         department,
         filteredUnit,
-        totalContractors: collectUniqueMembers(unit, true).length,
-        totalStaff: collectUniqueMembers(unit, false).length,
-        totalUnits: countUnits(unit),
+        totalContractors: collectUniqueMembers(displayedUnit, true).length,
+        totalStaff: collectUniqueMembers(displayedUnit, false).length,
+        totalUnits: countUnits(displayedUnit),
         visibleContractors: collectUniqueMembers(filteredUnit, true),
         visibleStaff: collectUniqueMembers(filteredUnit, false),
         visibleUnits: countUnits(filteredUnit),
@@ -819,6 +821,8 @@ export const UnitHierarchyPageView = () => {
     findRootUnitForUnit,
     loadTree,
     unassignedUsers,
+    unassignedUsersError,
+    loadUnassignedUsers,
     isLoadingUnassignedUsers,
     assignMemberState,
     isAssigningMember,
@@ -1205,8 +1209,8 @@ export const UnitHierarchyPageView = () => {
               <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Ничего не найдено</Typography>
               <Typography variant="body2" color="text.secondary">
                 {departmentScope === 'all'
-                  ? 'По выбранному фильтру не найдено объединений второго уровня. Попробуйте изменить поиск или выбрать конкретное подразделение.'
-                  : `В подразделении «${scopedDepartment?.name ?? 'Без названия'}» не найдено объединений второго уровня. Попробуйте изменить поиск.`}
+                  ? 'По выбранному фильтру не найдены подразделения или сотрудники. Измените поиск или выберите подразделение.'
+                  : `В подразделении «${scopedDepartment?.name ?? 'Без названия'}» нет подходящих подразделений или сотрудников. Измените поиск.`}
               </Typography>
               <Button variant="outlined" onClick={() => setSearchQuery('')}>
                 Сбросить фильтр
@@ -1573,7 +1577,8 @@ export const UnitHierarchyPageView = () => {
 
               <Divider />
 
-              {isLoadingUnassignedUsers && unassignedMembers.length === 0 ? (
+              {unassignedUsersError ? <Alert severity="error" action={<Button onClick={() => void loadUnassignedUsers()}>Повторить</Button>}>{unassignedUsersError}</Alert> : null}
+              {unassignedUsersError && unassignedMembers.length === 0 ? null : isLoadingUnassignedUsers && unassignedMembers.length === 0 ? (
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ py: 0.5 }}>
                   <CircularProgress size={16} />
                   <Typography variant="body2" color="text.secondary">

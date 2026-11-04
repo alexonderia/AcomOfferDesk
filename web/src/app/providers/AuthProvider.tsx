@@ -23,6 +23,7 @@ export type AuthSession = {
   businessAccess: boolean;
   onboardingState: string | null;
   permissions: string[];
+  emailEnabled?: boolean;
 };
 
 type AuthContextValue = {
@@ -46,6 +47,7 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
   businessAccess: response.data.business_access ?? false,
   onboardingState: response.data.onboarding_state ?? null,
   permissions: response.data.permissions ?? [],
+  emailEnabled: response.data.email_enabled ?? true,
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {

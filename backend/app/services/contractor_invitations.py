@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 from app.core.config import settings
+from app.core.email_mode import ensure_email_enabled
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser
 from app.domain.authorization import require_permission
@@ -83,6 +84,8 @@ class ContractorInvitationService:
         )
         if current_user.role_id == settings.contractor_role_id:
             raise Forbidden("Контрагент не может отправлять приглашения")
+
+        ensure_email_enabled()
 
         normalized_valid, invalid = self._normalize_emails(emails)
         if len(normalized_valid) > settings.contractor_invite_max_emails_per_request:

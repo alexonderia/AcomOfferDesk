@@ -10,6 +10,7 @@ from aiormq.exceptions import AMQPConnectionError
 
 from .consumers import handle_message
 from shared.broker import EXCHANGE, QUEUE_EMAIL, RK_EMAIL
+from shared.email_delivery import email_delivery_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,10 @@ async def _connect_with_retry(rabbitmq_url: str) -> AbstractRobustConnection:
 
 async def run_worker() -> None:
     logging.basicConfig(level=logging.INFO)
+    if not email_delivery_enabled():
+        logger.info("Email delivery is disabled; the queue remains untouched")
+        await asyncio.Future()
+        return
     rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
     connection = await _connect_with_retry(rabbitmq_url)
 

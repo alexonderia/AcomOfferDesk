@@ -66,8 +66,9 @@ const scenarios: RoleScenario[] = [
     allowedRoutes: [
       { path: '/requests', markerRegex: /\u0417\u0430\u044f\u0432\u043a/i },
       { path: '/admin', markerRegex: /\u042d\u043a\u043e\u043d\u043e\u043c|\u041f\u043e\u043b\u044c\u0437/i },
+      { path: '/pm-dashboard', markerRegex: /Процесс работы|Заявк/i },
     ],
-    forbiddenRoutes: ['/pm-dashboard', '/feedback'],
+    forbiddenRoutes: ['/feedback'],
   },
   {
     name: 'operator',

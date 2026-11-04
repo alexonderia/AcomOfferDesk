@@ -61,15 +61,16 @@ class StaffAccessScopeService:
             return False
         if request_owner_user_id == current_user.user_id:
             return True
-        if await self._department_scope.is_user_in_current_user_department(
+        if (
+            current_user.role_id == settings.project_manager_role_id
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ)
+        ) and await self._department_scope.is_user_in_current_user_department(
             current_user=current_user,
             target_user_id=request_owner_user_id,
         ):
             return True
-        visible_user_ids = await self._hierarchy.get_visible_user_ids(current_user=current_user)
-        if visible_user_ids is None:
-            return True
-        return request_owner_user_id in visible_user_ids
+        owner_ids = await self._hierarchy.get_unit_scope_user_ids(user_id=current_user.user_id)
+        return request_owner_user_id in owner_ids
 
     async def can_manage_request_owner(
         self,

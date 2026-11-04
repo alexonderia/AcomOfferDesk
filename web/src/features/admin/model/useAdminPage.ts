@@ -23,10 +23,12 @@ import { useSystemToasts } from '@shared/ui/toasts';
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const innRegex = /^\d{10}$|^\d{12}$/;
 
-const schema = z
+const buildSchema = (emailEnabled: boolean) => z
   .object({
     role_id: z.number({ required_error: 'Выберите роль' }),
     login: z.string().optional(),
+    password: z.string().optional(),
+    password_confirmation: z.string().optional(),
     mail: z.string().optional(),
     full_name: z.string().optional(),
     phone: z.string().optional(),
@@ -131,13 +133,21 @@ const schema = z
       });
     }
 
-    if (!mail) {
+    if (!emailEnabled) {
+      if ((data.password?.length ?? 0) < 12 || (data.password?.length ?? 0) > 128) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Пароль должен содержать от 12 до 128 символов', path: ['password'] });
+      }
+      if (data.password !== data.password_confirmation) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Пароли не совпадают', path: ['password_confirmation'] });
+      }
+    }
+    if (emailEnabled && !mail) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'E-mail обязателен для будущей привязки учётной записи',
         path: ['mail']
       });
-    } else if (!emailRegex.test(mail)) {
+    } else if (mail && !emailRegex.test(mail)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Некорректный формат e-mail',
@@ -169,10 +179,12 @@ const schema = z
 
   });
 
-export type AdminUserFormValues = z.infer<typeof schema>;
+export type AdminUserFormValues = z.infer<ReturnType<typeof buildSchema>>;
 
 export const useAdminPage = () => {
   const { session } = useAuth();
+  const emailEnabled = session?.emailEnabled ?? true;
+  const schema = useMemo(() => buildSchema(emailEnabled), [emailEnabled]);
   const [searchParams, setSearchParams] = useSearchParams();
   const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
   const isProjectManager = session?.roleId === ROLE.PROJECT_MANAGER;
@@ -279,6 +291,8 @@ export const useAdminPage = () => {
     defaultValues: {
       role_id: preferredCreateRoleId,
       login: '',
+      password: '',
+      password_confirmation: '',
       mail: '',
       full_name: '',
       phone: '',
@@ -419,6 +433,8 @@ export const useAdminPage = () => {
     reset({
       role_id: preferredCreateRoleId,
       login: '',
+      password: '',
+      password_confirmation: '',
       mail: '',
       full_name: '',
       phone: '',
@@ -469,15 +485,15 @@ export const useAdminPage = () => {
           company_phone: values.company_phone?.trim() ?? '',
           company_mail: values.company_mail?.trim() || undefined,
           address: values.address?.trim() || undefined,
-          note: values.note?.trim() || undefined
+          note: values.note?.trim() || undefined,
+          ...(!emailEnabled && (values.login || values.password || values.password_confirmation) ? { login: values.login?.trim(), password: values.password, password_confirmation: values.password_confirmation } : {}),
         });
 
         if (response.outcome === 'duplicate_found' && response.duplicate) {
           const email = response.duplicate.companyMail ? `, e-mail: ${response.duplicate.companyMail}` : '';
-          showErrorToast(`Найден существующий контрагент: ИНН ${response.duplicate.inn}, ${response.duplicate.companyName}${email}.`);
-          return;
+          showSuccessToast(`Использован существующий контрагент: ИНН ${response.duplicate.inn}, ${response.duplicate.companyName}${email}.`);
         }
-        showSuccessToast(`Контрагент ${response.userId} создан.`);
+        if (response.outcome === 'created') showSuccessToast(`Контрагент ${response.userId} создан.`);
       } else {
         const response = await registerUser({
           login: values.login?.trim() ?? '',
@@ -486,6 +502,8 @@ export const useAdminPage = () => {
           full_name: values.full_name?.trim() || undefined,
           phone: values.phone?.trim() || undefined,
           unit_id: values.unit_id ?? undefined,
+          password: emailEnabled ? undefined : values.password,
+          password_confirmation: emailEnabled ? undefined : values.password_confirmation,
         });
 
         showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
@@ -506,6 +524,7 @@ export const useAdminPage = () => {
 
   return {
     isLeadLike,
+    emailEnabled,
     isAdmin,
     canViewRoleIds,
     isDialogOpen,

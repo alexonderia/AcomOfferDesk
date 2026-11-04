@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Path
 
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
+from app.core.email_mode import ensure_email_enabled
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser
 from app.domain.policies import UserPolicy
@@ -35,6 +36,7 @@ async def create_registration_invitation(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> RegistrationInviteResponse:
     UserPolicy.ensure_can_invite_registration(current_user)
+    ensure_email_enabled()
     raw_token = RegistrationInvitationService().create_contractor_invitation(
         current_user=current_user,
         email=payload.email,
@@ -97,6 +99,7 @@ async def submit_registration(
     payload: RegistrationSubmitRequest,
     uow: UnitOfWork = Depends(get_uow),
 ) -> RegistrationSubmitResponse:
+    ensure_email_enabled()
     async with uow:
         result = await RegistrationSubmitService(uow).submit(
             token=payload.token,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from fastapi.exceptions import RequestValidationError
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -104,3 +105,12 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
         content={"detail": "Сервис авторизации временно недоступен"},
         headers={"Cache-Control": "no-store"},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Validation input may contain credentials, including errors on the whole body.
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+        for error in exc.errors()
+    ]})

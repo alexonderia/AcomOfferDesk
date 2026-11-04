@@ -6,7 +6,7 @@ AcomOfferDesk — внутренняя платформа для работы с
 
 - frontend: React SPA (`web`)
 - backend: FastAPI (`backend`)
-- auth: временно недоступна (Stage 1 IAM migration, fail-closed)
+- auth: IAM, BFF-сессии и проверка доступа на backend; [режим без почты и пароли](docs/operations/no-mail-accounts.md)
 - infra runtime: Docker Compose (`gateway`, `rabbitmq`, `minio`, `notifications_worker`)
 - внешняя БД: `order_database` (отдельный репозиторий)
 

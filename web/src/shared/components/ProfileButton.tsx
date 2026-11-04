@@ -34,6 +34,7 @@ import {
   updateMyProfile
 } from '@shared/api/users/getCurrentUserProfile';
 import { ROLE } from '@shared/constants/roles';
+import { PasswordChangeForm } from '@shared/components/PasswordChangeForm';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 import { useSystemToasts, useToastMessageEffect } from '@shared/ui/toasts';
@@ -454,7 +455,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       });
       let verificationDetail: string | null = null;
       if (shouldRequestVerification && normalizedMail) {
-        const verificationResult = await requestEmailVerification(normalizedMail);
+        const verificationResult = (session?.emailEnabled ?? true) ? await requestEmailVerification(normalizedMail) : { detail: 'Email сохранён. Почтовый сервис отключён.' };
         verificationDetail = verificationResult.detail;
       }
       setProfile(nextProfile);
@@ -507,7 +508,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
       }
 
       if (normalizedEmail) {
-        const verificationResult = await requestEmailVerification(normalizedEmail);
+        const verificationResult = (session?.emailEnabled ?? true) ? await requestEmailVerification(normalizedEmail) : { detail: 'Email сохранён. Почтовый сервис отключён.' };
         verificationDetail = verificationResult.detail;
       }
 
@@ -674,6 +675,13 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                 <DataRow label="E-mail" value={profile?.mail ?? null} />
               </Stack>
 
+              {open && profile.actions.manage_credentials ? (
+                <>
+                  <Divider />
+                  <PasswordChangeForm />
+                </>
+              ) : null}
+
               {showCompanyInfo ? <Divider /> : null}
 
               {canSetUnavailability ? (
@@ -784,7 +792,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                           <Switch
                             checked={notificationPreferences.preferences[item.type].email}
                             onChange={(_, checked) => handleNotificationTypeChannelChange(item.type, checked)}
-                            disabled={!notificationPreferences.emailAvailable || isSavingNotificationPreferences}
+                            disabled={session?.emailEnabled === false || !notificationPreferences.emailAvailable || isSavingNotificationPreferences}
                           />
                         </Box>
                       ];

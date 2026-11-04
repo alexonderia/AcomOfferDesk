@@ -66,7 +66,13 @@ MAIN хранит только бизнес-факты. Технические a
 
 ### Ручное создание
 
-`POST /users/register` и `POST /users/manual-contractor` создают MAIN `active`, IAM `active` без пароля и unverified email. Password setup автоматически не отправляется. Первый доступ идёт через generic recovery (логин или email): при `password_hash=NULL` — IAM `first_access` (RabbitMQ), затем `password_setup` (direct SMTP). После первой установки пароля IAM записывает `accounts.required_actions=["complete_profile"]` без TTL и без action token. Первое сохранение профиля вызывает IAM complete и убирает `complete_profile`.
+При включённой почте `POST /users/register` и `POST /users/manual-contractor` создают MAIN `active`, IAM `active` без пароля и unverified email. Password setup автоматически не отправляется. Первый доступ идёт через generic recovery (логин или email): при `password_hash=NULL` — IAM `first_access` (RabbitMQ), затем `password_setup` (direct SMTP). После первой установки пароля IAM записывает `accounts.required_actions=["complete_profile"]` без TTL и без action token. Первое сохранение профиля вызывает IAM complete и убирает `complete_profile`.
+
+При `EMAIL_ENABLED=false` создание сотрудника требует начального пароля и подтверждения; email необязателен. IAM `direct-credentials` создаёт готовую active identity без `complete_profile`, записывая источник в аудит. Повторы не меняют действующие credentials. Ручной контрагент может получить доступ при создании либо остаться справочной карточкой без пароля. Саморегистрация `review` по-прежнему требует verified email для approval.
+
+### Смена собственного пароля
+
+`POST /users/me/password` требует текущий пароль и совпадающие новый/повтор длиной 12–128 символов. Account/session ID берутся из авторизации; проверка и Argon2-хеширование выполняются IAM. После успеха отзываются refresh-сессии и setup/reset-токены, инвалидируется IAM browser session и очищаются cookie клиента. Access JWT других клиентов действуют до `exp`. Операция не использует почту и доступна в обоих режимах. [Эксплуатационный контракт](../operations/no-mail-accounts.md).
 
 ### Session
 

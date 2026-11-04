@@ -107,12 +107,14 @@ class WebSocketConnectionManager:
         chat_id: int,
         event: OutboundEnvelope,
         exclude_user_ids: set[str] | None = None,
+        allowed_user_ids: set[str] | None = None,
     ) -> set[str]:
         async with self._lock:
             targets = [
                 state
                 for state in self._connections.values()
                 if chat_id in state.subscriptions and state.user_id not in (exclude_user_ids or set())
+                and (allowed_user_ids is None or state.user_id in allowed_user_ids)
             ]
 
         delivered_user_ids: set[str] = set()
@@ -121,6 +123,10 @@ class WebSocketConnectionManager:
             if await self._send(state=state, payload=payload):
                 delivered_user_ids.add(state.user_id)
         return delivered_user_ids
+
+    async def subscribed_user_ids(self, *, chat_id: int) -> set[str]:
+        async with self._lock:
+            return {state.user_id for state in self._connections.values() if chat_id in state.subscriptions}
 
     async def is_user_subscribed(self, *, user_id: str, chat_id: int) -> bool:
         async with self._lock:

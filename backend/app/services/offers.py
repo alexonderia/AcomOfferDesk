@@ -1,7 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import re
-import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,7 +12,6 @@ from app.domain.authorization import has_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPolicy
-from app.models.orm_models import CompanyContact, Profile, User
 from app.repositories.chats import ChatRepository, ChatState
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.files import FileRepository
@@ -48,44 +45,7 @@ DEFAULT_PARTNER_CARD_NAME = (
     "АКТУАЛЬНАЯ_1_4_2.pdf"
 )
 EDITABLE_OFFER_STATUSES = {"submitted", "accepted", "rejected", "deleted"}
-PLACEHOLDER_TEXT = "Не указано"
-_LOGIN_CLEANUP_PATTERN = re.compile(r"[^a-z0-9_]+")
-_LOGIN_COLLAPSE_PATTERN = re.compile(r"_+")
-_CYRILLIC_TO_LATIN = {
-    "а": "a",
-    "б": "b",
-    "в": "v",
-    "г": "g",
-    "д": "d",
-    "е": "e",
-    "ё": "e",
-    "ж": "zh",
-    "з": "z",
-    "и": "i",
-    "й": "y",
-    "к": "k",
-    "л": "l",
-    "м": "m",
-    "н": "n",
-    "о": "o",
-    "п": "p",
-    "р": "r",
-    "с": "s",
-    "т": "t",
-    "у": "u",
-    "ф": "f",
-    "х": "h",
-    "ц": "ts",
-    "ч": "ch",
-    "ш": "sh",
-    "щ": "sch",
-    "ъ": "",
-    "ы": "y",
-    "ь": "",
-    "э": "e",
-    "ю": "yu",
-    "я": "ya",
-}
+MAX_CHAT_MESSAGE_LENGTH = 3000
 
 
 @dataclass(frozen=True)
@@ -465,6 +425,13 @@ class OfferService:
         if chat is None:
             raise NotFound("Chat not found")
 
+        reconcile = getattr(self._chats, "reconcile_participants", None)
+        if callable(reconcile):
+            from app.services.unit_hierarchy import UnitHierarchyService
+            managers = await UnitHierarchyService(self._users).get_user_managers(user_id=request.id_user)
+            primary = {request.id_user, offer.id_user}
+            desired = primary | {manager.user_id for manager in managers if manager.status == "active"}
+            await reconcile(chat_id=chat.id, user_ids=desired, primary_user_ids=primary)
         chat_state = await self._chats.get_chat_state_for_user(chat_id=chat.id, user_id=current_user.user_id)
         if chat_state is None:
             if await self._can_access_chat_without_participation(
@@ -489,10 +456,12 @@ class OfferService:
         request_owner_user_id: str,
         require_send: bool,
     ) -> bool:
+        if current_user.role_id == settings.superadmin_role_id:
+            return True
+        if require_send:
+            return has_permission(current_user, PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE) and await self._is_user_inside_current_department_scope(current_user=current_user, target_user_id=request_owner_user_id)
         if current_user.role_id == settings.project_manager_role_id:
             return not require_send
-        if require_send:
-            return False
         has_department_chat_permission = has_permission(
             current_user,
             PermissionCodes.DEPARTMENT_CHATS_READ,
@@ -563,131 +532,23 @@ class OfferService:
             note=note,
         )
 
-    def _build_login_slug(self, company_name: str) -> str:
-        normalized_name = unicodedata.normalize("NFKC", company_name.strip().lower())
-        transliterated: list[str] = []
-        for char in normalized_name:
-            if char in _CYRILLIC_TO_LATIN:
-                transliterated.append(_CYRILLIC_TO_LATIN[char])
-                continue
-            if char.isascii() and char.isalnum():
-                transliterated.append(char)
-                continue
-            transliterated.append("_")
 
-        candidate = "".join(transliterated)
-        candidate = _LOGIN_CLEANUP_PATTERN.sub("_", candidate)
-        candidate = _LOGIN_COLLAPSE_PATTERN.sub("_", candidate).strip("_")
-        if candidate:
-            return candidate
-        return "contractor"
 
-    async def _build_manual_login(self, *, company_name: str) -> str:
-        date_suffix = datetime.now().strftime("%d_%m")
-        base_slug = self._build_login_slug(company_name)
-        base_candidate = f"{base_slug}_{date_suffix}"
-        if len(base_candidate) > 120:
-            base_candidate = base_candidate[:120].rstrip("_")
-        if len(base_candidate) < 3:
-            base_candidate = f"{base_candidate}xxx"[:3]
 
-        if not await self._users.exists(base_candidate):
-            return base_candidate
 
-        index = 1
-        while True:
-            suffix = f"_{index}"
-            login_candidate = f"{base_candidate[: max(0, 128 - len(suffix))]}{suffix}"
-            if not await self._users.exists(login_candidate):
-                return login_candidate
-            index += 1
-            if index > 1000:
-                raise Conflict("Unable to generate unique login for manual contractor")
+    async def _create_manual_contractor(self, *, current_user: CurrentUser, contractor_data: ManualContractorCreateInput) -> tuple[str, bool]:
+        from app.services.users import ManualContractorService, ManualContractorCreateInput as SharedContractorInput
 
-    async def _find_existing_manual_contractor_user_id(
-        self,
-        *,
-        contractor_data: ManualContractorCreateInput,
-    ) -> str | None:
-        matched_user_ids = await self._users.find_matching_contractor_user_ids(
-            contractor_role_id=settings.contractor_role_id,
-            email=contractor_data.company_mail,
-            inn=contractor_data.inn,
-            company_name=contractor_data.company_name,
+        service = ManualContractorService(self._users, self._profiles, self._company_contacts, None, self._units)
+        data = SharedContractorInput(
+            company_name=contractor_data.company_name, inn=contractor_data.inn,
+            company_phone=contractor_data.company_phone, company_mail=contractor_data.company_mail,
+            address=contractor_data.address, note=contractor_data.note,
         )
-        if not matched_user_ids:
-            return None
-        if len(matched_user_ids) > 1:
-            raise Conflict("Найдено несколько похожих контрагентов. Уточните данные и повторите попытку.")
-        return matched_user_ids[0]
-
-    async def _bind_to_creator_root_units_if_needed(
-        self,
-        *,
-        current_user: CurrentUser,
-        contractor_user_id: str,
-    ) -> None:
-        if self._units is None or current_user.role_id == settings.contractor_role_id:
-            return
-        creator_root_unit_ids = await self._contractor_unit_service().list_direct_root_unit_ids_for_user(
-            user_id=current_user.user_id,
+        result = await service._create_or_reuse_validated(
+            current_user=current_user, data=service._validate_manual_contractor_create_data(data=data),
         )
-        if not creator_root_unit_ids:
-            return
-        await self._contractor_unit_service().bind_user_to_root_units(
-            user_id=contractor_user_id,
-            root_unit_ids=creator_root_unit_ids,
-            assigned_by_user_id=current_user.user_id,
-        )
-
-    async def _create_manual_contractor(
-        self,
-        *,
-        current_user: CurrentUser,
-        contractor_data: ManualContractorCreateInput,
-    ) -> tuple[str, bool]:
-        existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(
-            contractor_data=contractor_data,
-        )
-        if existing_contractor_user_id is not None:
-            await self._bind_to_creator_root_units_if_needed(
-                current_user=current_user,
-                contractor_user_id=existing_contractor_user_id,
-            )
-            return existing_contractor_user_id, False
-
-        login = await self._build_manual_login(company_name=contractor_data.company_name)
-        await self._users.add(
-            User(
-                id=login,
-                id_role=settings.contractor_role_id,
-                status="active",
-            )
-        )
-        await self._profiles.add(
-            Profile(
-                id=login,
-                full_name=PLACEHOLDER_TEXT,
-                phone=PLACEHOLDER_TEXT,
-                mail=PLACEHOLDER_TEXT,
-            )
-        )
-        await self._company_contacts.add(
-            CompanyContact(
-                id=login,
-                company_name=contractor_data.company_name,
-                inn=contractor_data.inn,
-                phone=contractor_data.company_phone,
-                mail=contractor_data.company_mail or PLACEHOLDER_TEXT,
-                address=contractor_data.address or PLACEHOLDER_TEXT,
-                note=contractor_data.note or PLACEHOLDER_TEXT,
-            )
-        )
-        await self._bind_to_creator_root_units_if_needed(
-            current_user=current_user,
-            contractor_user_id=login,
-        )
-        return login, True
+        return result.user_id, result.created
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: str) -> ContractorRequestView:
         require_permission(
@@ -858,7 +719,7 @@ class OfferService:
             contractor_user_id=resolved_contractor_user_id,
         )
         if existing_offer is not None and existing_offer.status != "deleted":
-            raise Conflict("Offer for this contractor already exists")
+            raise Conflict("Для этого контрагента уже существует КП по выбранной заявке")
 
         offer = await self._offers.create(
             request_id=request.id,
@@ -921,6 +782,9 @@ class OfferService:
         eligible: list[ManualOfferEligibleContractor] = []
         for contractor, profile, company, _tg_user, _legacy_account_id in rows:
             if contractor.status != "active":
+                continue
+            existing_offer = await self._offers.get_contractor_offer_for_request(request_id=request.id, contractor_user_id=contractor.id)
+            if existing_offer is not None and existing_offer.status != "deleted":
                 continue
             if await self._requests.is_hidden_for_contractor(
                 request_id=request.id,
@@ -1078,18 +942,11 @@ class OfferService:
                 PermissionCodes.OFFERS_UPDATE,
                 message="Insufficient permissions to edit offer",
             )
-        elif has_department_offer_update_scope:
-            pass
-        elif has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE):
             await self._ensure_can_manage_offer_for_internal_user(
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
-            )
-        else:
-            raise Forbidden(
-                "Insufficient permissions to upload offer files",
             )
 
         if (
@@ -1163,18 +1020,11 @@ class OfferService:
                 PermissionCodes.OFFERS_UPDATE,
                 message="Insufficient permissions to edit offer",
             )
-        elif has_department_offer_update_scope:
-            pass
-        elif has_permission(current_user, PermissionCodes.OFFERS_DETAILS_UPDATE):
             await self._ensure_can_manage_offer_for_internal_user(
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
-            )
-        else:
-            raise Forbidden(
-                "Insufficient permissions to delete offer files",
             )
 
         detached = await self._offers.detach_file(offer_id=offer.id, file_id=file_id)
@@ -1292,17 +1142,12 @@ class OfferService:
                 PermissionCodes.OFFERS_UPDATE,
                 message="Insufficient permissions to edit offer",
             )
-        elif has_department_offer_update_scope:
-            pass
-        elif has_permission(current_user, PermissionCodes.OFFERS_AMOUNT_UPDATE):
             await self._ensure_can_manage_offer_for_internal_user(
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
                 offer_owner_user_id=offer.id_user,
                 allow_department_request_update=False,
             )
-        else:
-            raise Forbidden("Insufficient permissions to update offer amount")
         if (
             current_user.role_id == settings.contractor_role_id
             and current_user.user_id == offer.id_user
@@ -1464,13 +1309,15 @@ class OfferService:
         attachments: list[PreparedUpload] | None = None,
         existing_file_refs: list[ExistingAttachmentFileInput] | None = None,
     ) -> OfferMessageMutationResult:
+        normalized_text = text.strip()
+        if len(normalized_text) > MAX_CHAT_MESSAGE_LENGTH:
+            raise Conflict(f"Максимум {MAX_CHAT_MESSAGE_LENGTH} символов в сообщении")
         offer, request, chat, _ = await self._require_chat_context(
             current_user=current_user,
             offer_id=offer_id,
             require_send=True,
         )
 
-        normalized_text = text.strip()
         new_attachments = attachments or []
         stored_file_refs = existing_file_refs or []
         has_file_payload = bool(new_attachments or stored_file_refs)
@@ -1708,6 +1555,14 @@ class OfferService:
         offer_owner_user_id: str,
         request_owner_user_id: str,
     ) -> None:
+        if (
+            has_permission(current_user, PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE)
+            and await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            )
+        ):
+            return
         if has_permission(current_user, PermissionCodes.CHAT_MESSAGE_SEND):
             OfferPolicy.ensure_can_send_chat_message(
                 current_user,
@@ -1722,17 +1577,6 @@ class OfferService:
                 )
             ):
                 raise Forbidden("Insufficient permissions to send chat message")
-            return
-        if (
-            has_permission(
-                current_user,
-                PermissionCodes.DEPARTMENT_CHATS_SEND_MESSAGE,
-            )
-            and await self._is_user_inside_current_department_scope(
-                current_user=current_user,
-                target_user_id=request_owner_user_id,
-            )
-        ):
             return
         raise Forbidden("Insufficient permissions to send chat message")
 

@@ -12,16 +12,20 @@ import {
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import { createManualOfferForRequest } from '@shared/api/offers/createManualOfferForRequest';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { getFileKey } from '@shared/lib/files';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
 import { useLiveFieldVisibility, textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 import { useToastMessageEffect } from '@shared/ui/toasts';
+import { ManualContractorDuplicatePanel } from '@features/contractors/components/ManualContractorDuplicatePanel';
+import type { ManualContractorDuplicate } from '@shared/api/users/getManualContractorDuplicates';
 
 type Props = {
   open: boolean;
@@ -129,6 +133,19 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     onClose();
   };
 
+  const handleSelectDuplicate = (item: ManualContractorDuplicate) => {
+    if (item.canSelect !== true || isSubmitting) return;
+    const option: RequestContractorItem = {
+      user_id: item.userId, full_name: item.fullName, company_name: item.companyName,
+      mail: item.mail, company_mail: item.companyMail,
+      can_select: true, disabled_reason: null,
+    };
+    setContractorOptions((items) => [...items.filter((value) => value.user_id !== option.user_id), option]);
+    setSelectedContractor(option);
+    setContractorMode('existing');
+    setErrorMessage(null);
+  };
+
   const parsedAmount = useMemo(() => parseAmount(offerAmount), [offerAmount]);
   const trimmedCompanyName = companyName.trim();
   const trimmedInn = inn.trim();
@@ -178,7 +195,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
       return false;
     }
     if (contractorMode === 'existing') {
-      return Boolean(selectedContractor);
+      return selectedContractor?.can_select === true;
     }
     return Boolean(
       trimmedCompanyName
@@ -210,6 +227,9 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
   const submitBlockReason = useMemo(() => {
     if (contractorMode === 'existing' && !selectedContractor) {
       return 'Выберите контрагента';
+    }
+    if (contractorMode === 'existing' && selectedContractor?.can_select !== true) {
+      return selectedContractor?.disabled_reason ?? 'Этот контрагент недоступен для выбора';
     }
     return companyNameError
       || innError
@@ -292,7 +312,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
     <Dialog
       open={open}
       onClose={handleClose}
-      maxWidth="sm"
+      maxWidth={contractorMode === 'new' ? 'md' : 'sm'}
       fullWidth
       PaperProps={{
         sx: dialogPaperSx
@@ -333,6 +353,23 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
                 onChange={(_, value) => setSelectedContractor(value)}
                 isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
                 getOptionLabel={getContractorOptionLabel}
+                getOptionDisabled={(option) => option.can_select !== true}
+                disabledItemsFocusable
+                ListboxProps={{
+                  sx: { '& .MuiAutocomplete-option[aria-disabled="true"]': { pointerEvents: 'auto' } }
+                }}
+                renderOption={(props, option) => (
+                  <Tooltip key={option.user_id} title={option.disabled_reason ?? ''} describeChild disableInteractive placement="top">
+                    <Box component="li" {...props} onClick={option.can_select === true ? props.onClick : undefined}>
+                      <Stack spacing={0.25} sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                        <Typography variant="body2">{getContractorOptionLabel(option)}</Typography>
+                        {option.disabled_reason ? (
+                          <Typography variant="caption">{option.disabled_reason}</Typography>
+                        ) : null}
+                      </Stack>
+                    </Box>
+                  </Tooltip>
+                )}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -347,11 +384,12 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
                 </Alert>
               ) : !isLoadingContractors && contractorOptions.length === 0 ? (
                 <Alert severity="info">
-                  Нет доступных контрагентов. Здесь отображаются активные контрагенты в области заявки, которым ещё не создано КП по этой заявке. Проверьте их статус и подразделение или выберите «Создать нового».
+                  Нет доступных контрагентов. Здесь отображаются активные контрагенты в области заявки. Проверьте их статус и подразделение или выберите «Создать нового».
                 </Alert>
               ) : null}
             </Stack>
           ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) 300px' }, gap: 2, alignItems: 'start' }}>
             <Stack spacing={0.75}>
               <TextField
                 label="Наименование компании"
@@ -372,6 +410,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
                   markTouched('inn');
                 }}
                 {...textFieldAutocompleteProps('inn')}
+                inputProps={{ ...textFieldAutocompleteProps('inn').inputProps, inputMode: 'numeric', maxLength: 12 }}
                 error={Boolean(resolveVisibleError('inn', innError))}
                 helperText={resolveVisibleError('inn', innError) ?? undefined}
               />
@@ -423,6 +462,12 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
                 helperText={resolveVisibleError('note', noteError) ?? undefined}
               />
             </Stack>
+            <ManualContractorDuplicatePanel
+              open={open} requestId={requestId}
+              companyName={companyName} inn={inn} companyMail={companyMail}
+              onSelect={handleSelectDuplicate} disabled={isSubmitting}
+            />
+            </Box>
           )}
 
           <TextField
@@ -487,12 +532,16 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
             {files.length > 0 ? (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {files.map((file) => (
-                  <Chip
-                    key={getFileKey(file)}
-                    label={file.name}
-                    variant="outlined"
-                    onDelete={() => setFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
-                  />
+                  <FilePreviewTrigger key={getFileKey(file)} source={{ name: file.name, file }}>
+                    {(openPreview) => (
+                      <Chip
+                        label={file.name}
+                        onClick={openPreview}
+                        variant="outlined"
+                        onDelete={() => setFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
+                      />
+                    )}
+                  </FilePreviewTrigger>
                 ))}
               </Box>
             ) : null}

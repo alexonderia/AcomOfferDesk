@@ -1,4 +1,5 @@
 import { MouseEvent as ReactMouseEvent, useState, type ReactNode } from 'react';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
@@ -9,9 +10,11 @@ import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined
 import { Box, ButtonBase, Chip, Collapse, Divider, MenuItem, Paper, Select, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestDetailsOffer } from '@shared/api/requests/getRequestDetails';
-import { StatusPill } from '@shared/components/StatusPill';
+import { StatusPill } from '@shared/ui/StatusPill';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
+import { ContractorLoginAccessBadge } from '@features/contractors/components/ContractorLoginAccessBadge';
+import type { ContractorLoginAccess } from '@shared/api/contractors/getContractorLoginAccess';
 
 export type OfferDecisionStatus = 'accepted' | 'rejected' | '';
 
@@ -22,6 +25,8 @@ export type OfferStatusOption = {
 
 type OfferMobileCardProps = {
   offer: RequestDetailsOffer;
+  loginAccess?: ContractorLoginAccess;
+  isLoginAccessLoading?: boolean;
   selectedStatus: OfferDecisionStatus;
   statusOptions: OfferStatusOption[];
   acceptedOfferId?: number | null;
@@ -35,6 +40,8 @@ type OfferMobileCardProps = {
 
 type OffersTableProps = {
   offers: RequestDetailsOffer[];
+  contractorLoginAccess?: ReadonlyMap<string, ContractorLoginAccess>;
+  isLoginAccessLoading?: boolean;
   statusMap: Record<number, OfferDecisionStatus>;
   acceptedOfferId?: number | null;
   isLoading?: boolean;
@@ -160,6 +167,8 @@ const getOfferStatusLabel = (status: string | null) => {
 
 const OfferMobileCard = ({
   offer,
+  loginAccess,
+  isLoginAccessLoading,
   selectedStatus,
   statusOptions,
   acceptedOfferId,
@@ -181,6 +190,10 @@ const OfferMobileCard = ({
       label: 'Контрагент',
       content: (
         <Stack spacing={0.35}>
+          {offer.actions.view_contractor_info ? <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary">Вход в личный кабинет</Typography>
+            <ContractorLoginAccessBadge access={loginAccess} loading={isLoginAccessLoading} />
+          </Stack> : null}
           {getCounterpartyInfo(offer).map((line) => (
             <Typography key={`ctr-${offer.offer_id}-${line}`} variant="body2">
               {line}
@@ -215,7 +228,8 @@ const OfferMobileCard = ({
         offer.files.length > 0 ? (
           <Stack direction="row" flexWrap="wrap" gap={0.7}>
             {offer.files.map((file) => (
-              <Tooltip key={`card-file-${file.id}`} title={file.name} arrow>
+              <FilePreviewTrigger key={`card-file-${file.id}`} source={{ name: file.name, downloadUrl: file.download_url }} onDownload={() => onDownloadFile(file.download_url, file.name)}>
+                {(openPreview) => <Tooltip title={file.name} arrow>
                 <Chip
                   label={getFileLabelWithHint(file.name)}
                   variant="outlined"
@@ -231,12 +245,10 @@ const OfferMobileCard = ({
                       whiteSpace: 'nowrap'
                     }
                   }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void onDownloadFile(file.download_url, file.name);
-                  }}
+                  onClick={openPreview}
                 />
-              </Tooltip>
+              </Tooltip>}
+              </FilePreviewTrigger>
             ))}
           </Stack>
         ) : (
@@ -433,7 +445,9 @@ export const OffersTable = ({
   onOpenWorkspace,
   onDownloadFile,
   canChangeStatus = true,
-  onAddClick
+  onAddClick,
+  contractorLoginAccess,
+  isLoginAccessLoading
 }: OffersTableProps) => {
   const theme = useTheme();
   const [expandedCardsById, setExpandedCardsById] = useState<Record<number, boolean>>({});
@@ -516,6 +530,10 @@ export const OffersTable = ({
         const counterpartyInfo = getCounterpartyInfo(offer);
         return (
           <Stack spacing={0.5}>
+            {offer.actions.view_contractor_info ? <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary">Вход в личный кабинет</Typography>
+              <ContractorLoginAccessBadge access={contractorLoginAccess?.get(offer.contractor_user_id ?? '')} loading={isLoginAccessLoading} />
+            </Stack> : null}
             {counterpartyInfo.map((item) => (
               <Typography key={item} variant="body2">
                 {item}
@@ -570,7 +588,8 @@ export const OffersTable = ({
         offer.files.length > 0 ? (
           <Stack direction="row" flexWrap="wrap" gap={0.7}>
             {offer.files.map((file) => (
-              <Tooltip key={file.id} title={file.name} arrow>
+              <FilePreviewTrigger key={file.id} source={{ name: file.name, downloadUrl: file.download_url }} onDownload={() => onDownloadFile(file.download_url, file.name)}>
+                {(openPreview) => <Tooltip title={file.name} arrow>
                 <Chip
                   label={getFileLabelWithHint(file.name)}
                   variant="outlined"
@@ -586,12 +605,10 @@ export const OffersTable = ({
                       whiteSpace: 'nowrap'
                     }
                   }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void onDownloadFile(file.download_url, file.name);
-                  }}
+                  onClick={openPreview}
                 />
-              </Tooltip>
+              </Tooltip>}
+              </FilePreviewTrigger>
             ))}
           </Stack>
         ) : (
@@ -692,6 +709,8 @@ export const OffersTable = ({
       renderCard={(offer) => (
         <OfferMobileCard
           offer={offer}
+          loginAccess={contractorLoginAccess?.get(offer.contractor_user_id ?? '')}
+          isLoginAccessLoading={isLoginAccessLoading}
           selectedStatus={statusMap[offer.offer_id] ?? ''}
           statusOptions={statusOptions}
           acceptedOfferId={acceptedOfferId}

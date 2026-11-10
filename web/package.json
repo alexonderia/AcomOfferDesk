@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/copy-pdf-assets.mjs",
     "dev": "vite --host 0.0.0.0 --port 4173",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
@@ -23,11 +24,15 @@
     "@hookform/resolvers": "^3.9.0",
     "@mui/icons-material": "^5.16.7",
     "@mui/material": "^5.16.7",
+    "dompurify": "3.4.17",
+    "mammoth": "1.13.0",
     "notistack": "^3.0.2",
+    "pdfjs-dist": "6.5.438",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.52.2",
     "react-router-dom": "^6.26.2",
+    "read-excel-file": "9.3.14",
     "zod": "^3.23.8"
   },
   "devDependencies": {

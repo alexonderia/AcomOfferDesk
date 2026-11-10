@@ -209,6 +209,7 @@ export const useAdminPage = () => {
   const [contractors, setContractors] = useState<ContractorListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [creationNotice, setCreationNotice] = useState<{ message: string; visibleToCreator: boolean } | null>(null);
   const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
   const [isLoadingUnitOptions, setIsLoadingUnitOptions] = useState(false);
   const loadUsersRequestIdRef = useRef(0);
@@ -449,6 +450,7 @@ export const useAdminPage = () => {
   }, [preferredCreateRoleId, reset]);
 
   const openCreateDialog = useCallback(() => {
+    setCreationNotice(null);
     resetForm();
     setIsDialogOpen(true);
   }, [resetForm]);
@@ -506,10 +508,25 @@ export const useAdminPage = () => {
           password_confirmation: emailEnabled ? undefined : values.password_confirmation,
         });
 
-        showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
+        const roleLabel = getRoleLabel(response.data.role_id);
+        const visibleToCreator = response.data.visible_to_creator !== false;
+        const message = `Сотрудник ${response.data.user_id} создан. Роль: ${roleLabel}.`;
+        setCreationNotice({
+          visibleToCreator,
+          message: visibleToCreator ? message : `${message} Он не входит в вашу область видимости. Обратитесь к суперадминистратору для назначения сотрудника в доступное вам подразделение.`,
+        });
+        showSuccessToast(message);
+        const createdTab = (Object.keys(roleByTab) as UserTab[]).find((tab) => roleByTab[tab] === response.data.role_id);
+        handleClose();
+        if (!isLeadLike && createdTab && createdTab !== activeTab) {
+          handleTabChange(createdTab);
+          return;
+        }
+        await loadUsers();
+        return;
       }
 
-      resetForm();
+      handleClose();
       await loadUsers();
     } catch (error) {
       showErrorToast(
@@ -535,6 +552,7 @@ export const useAdminPage = () => {
     contractors,
     isLoadingUsers,
     usersError,
+    creationNotice,
     canUpdateStatus,
     canUpdateRole,
     roleUpdateOptions,

@@ -37,6 +37,11 @@ from app.schemas.offers import (
     OfferWorkspaceResponse,
 )
 from app.schemas.requests import RequestFileSchema
+from app.schemas.users import (
+    ManualContractorDuplicateItemSchema,
+    ManualContractorDuplicateListData,
+    ManualContractorDuplicateListResponse,
+)
 from app.services.chat_realtime import ChatRealtimeService, build_offer_service
 from app.services.files import FileService, PreparedUpload
 from app.services.offers import ManualContractorCreateInput
@@ -271,6 +276,30 @@ async def list_eligible_manual_offer_contractors(
         data=ManualOfferEligibleContractorListData(
             items=[ManualOfferEligibleContractorItem(**item.__dict__) for item in items]
         )
+    )
+
+
+@router.get(
+    "/requests/{request_id}/offers/manual/contractor-duplicates",
+    response_model=ManualContractorDuplicateListResponse,
+)
+async def list_manual_offer_contractor_duplicates(
+    request_id: str = PathParam(..., min_length=1),
+    company_name: str | None = Query(default=None, max_length=256),
+    inn: str | None = Query(default=None, max_length=32),
+    company_mail: str | None = Query(default=None, max_length=256),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualContractorDuplicateListResponse:
+    async with uow:
+        items = await build_offer_service(uow).list_manual_offer_contractor_duplicates(
+            current_user=current_user, request_id=request_id,
+            company_name=company_name, inn=inn, company_mail=company_mail,
+        )
+    return ManualContractorDuplicateListResponse(
+        data=ManualContractorDuplicateListData(
+            items=[ManualContractorDuplicateItemSchema(**item.__dict__) for item in items],
+        ),
     )
 
 

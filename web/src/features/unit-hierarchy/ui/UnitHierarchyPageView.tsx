@@ -41,6 +41,7 @@ import { ContractorBindingsDialog } from './ContractorBindingsDialog';
 import { PeopleFlatList, PeopleTree } from './PeopleTree';
 import { UnitOrgReadonlyList } from './UnitOrgReadonlyList';
 import { UnitOrgChart } from './UnitOrgChart';
+import { HierarchyProfileProvider } from './HierarchyProfileProvider';
 import {
   hierarchyCanvasBackground,
   hierarchyPageColors,
@@ -780,6 +781,7 @@ export const UnitHierarchyPageView = () => {
     setSelectedDepartmentId,
     setSelectedEditorUnitId,
     editorRootUnit,
+    isSuperadmin,
     canCreateRootUnit,
     canManageUnitMembers,
     activeUnitDetails,
@@ -1193,12 +1195,17 @@ export const UnitHierarchyPageView = () => {
   }
 
   return (
+    <HierarchyProfileProvider>
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pb: 1 }}>
       {departments.length === 0 ? (
         <Card variant="outlined" sx={sectionCardSx}>
           <CardContent>
             <Typography variant="body2" color="text.secondary">
-              Пока нет подразделений. Создайте первое корневое подразделение.
+              {isSuperadmin
+                ? canCreateRootUnit
+                  ? 'Пока нет подразделений. Создайте первое корневое подразделение.'
+                  : 'Пока нет подразделений.'
+                : 'Вас пока не назначили ни в одно действующее подразделение. Обратитесь к администратору для назначения — после этого станет доступна схема иерархии.'}
             </Typography>
           </CardContent>
         </Card>
@@ -1910,6 +1917,7 @@ export const UnitHierarchyPageView = () => {
         </DialogActions>
       </Dialog>
     </Box>
+    </HierarchyProfileProvider>
   );
 };
 

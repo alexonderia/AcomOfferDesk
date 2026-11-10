@@ -180,7 +180,7 @@ export const ContractorRequestDetailsPage = () => {
         }
         existingFiles={request.files}
         canDeleteRequestFiles={false}
-        onDownloadFile={(downloadUrl, fileName) => void downloadFile(downloadUrl, fileName)}
+        onDownloadFile={(downloadUrl, fileName) => downloadFile(downloadUrl, fileName)}
         onRemoveExistingFile={() => undefined}
         newFiles={[]}
         onRemoveNewFile={() => undefined}

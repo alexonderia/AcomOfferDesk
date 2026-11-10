@@ -14,6 +14,7 @@ import { ROLE } from '@shared/constants/roles';
 import { getErrorMessage, formatSettledTaskErrors, joinUserFacingErrors } from '@shared/lib/errors';
 import { mergeUniqueFiles } from '@shared/lib/files';
 import { useOfferMessages } from './useOfferMessages';
+import { useContractorLoginAccess } from '@features/contractors/hooks/useContractorLoginAccess';
 
 const workspacePollIntervalMs = 7000;
 
@@ -124,6 +125,15 @@ export const useOfferWorkspace = () => {
     () => (selectedOffer?.files ?? []).map((file) => `${file.id}:${file.name}:${file.download_url}`).join('|'),
     [selectedOffer?.files]
   );
+  const contractorAccess = useContractorLoginAccess(
+    selectedOffer?.actions.view_contractor_info && selectedOffer.contractor_user_id
+      && selectedOffer.contractor_user_id !== session?.login
+      ? [{ userId: selectedOffer.contractor_user_id }] : [],
+  );
+  const refreshContractorAccess = contractorAccess.refresh;
+  useEffect(() => {
+    if (isChatOpen) refreshContractorAccess();
+  }, [isChatOpen, refreshContractorAccess]);
 
   const {
     messages,
@@ -447,6 +457,8 @@ export const useOfferWorkspace = () => {
     navigate,
     workspace,
     contractorInfo,
+    contractorLoginAccess: contractorAccess.states.get(selectedOffer?.contractor_user_id ?? ''),
+    isContractorAccessLoading: contractorAccess.loading,
     selectedOffer,
     sortedOffers,
     selectedOfferId,

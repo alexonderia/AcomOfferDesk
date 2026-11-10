@@ -140,6 +140,7 @@ class _SubmitUow:
             add=self.add,
             get_by_external_email=self.get_by_external_email,
             get_by_user_provider=self.get_by_user_provider,
+            get_conflicting_subject=self.get_conflicting_subject,
         )
 
     async def exists(self, login: str) -> bool:
@@ -184,7 +185,11 @@ class _SubmitUow:
                 return binding
         return None
 
-    async def get_by_user_provider(self, *, user_id: str, provider: str):
+    async def get_conflicting_subject(self, *, provider: str, subject: str, exclude_user_id: str):
+        return next((item for item in self.added_bindings
+            if item.provider == provider and item.external_subject_id == subject and item.id_user != exclude_user_id), None)
+
+    async def get_by_user_provider(self, *, user_id: str, provider: str, include_inactive: bool = False):
         _ = provider
         for binding in self.added_bindings:
             if binding.id_user == user_id:
@@ -239,7 +244,7 @@ class _IamClient:
     async def put_account(self, **kwargs):
         self.provisioned.append(kwargs)
         return SimpleNamespace(
-            id="00000000-0000-4000-8000-000000000099",
+            id=str(kwargs["account_id"]),
             login=kwargs["login"],
             role=kwargs["role"],
             auth_status=kwargs["auth_status"],

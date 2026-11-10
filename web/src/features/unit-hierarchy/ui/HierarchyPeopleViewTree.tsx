@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { Box, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import type { UnitMember } from '@shared/api/units';
+import { ROLE } from '@shared/constants/roles';
+import { useHierarchyProfile } from '../model/HierarchyProfileContext';
 import { buildPeopleTree, type PersonTreeNode } from '@shared/lib/hierarchy/buildPeopleTree';
 import { HierarchyTreeBranch } from '@shared/ui/hierarchy/HierarchyTreeBranch';
 import { HierarchyViewPersonRow } from '@shared/ui/hierarchy/HierarchyViewPersonRow';
@@ -31,6 +33,7 @@ const PersonTreeNodeView = ({
   resolveHighlight?: (person: HierarchyPersonVisual) => boolean;
 }) => {
   const person = memberToPerson(node);
+  const openProfile = useHierarchyProfile();
 
   return (
     <HierarchyTreeBranch
@@ -39,6 +42,7 @@ const PersonTreeNodeView = ({
           highlight={resolveHighlight?.(person) ?? highlight}
           meta={renderMeta?.(person)}
           person={person}
+          onOpenProfile={openProfile && node.role_id !== ROLE.CONTRACTOR ? () => openProfile(node) : undefined}
           tone={resolveTone?.(person)}
           tooltipTitle={resolveTooltipTitle?.(person)}
         />

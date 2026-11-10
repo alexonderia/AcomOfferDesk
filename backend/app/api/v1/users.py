@@ -10,12 +10,10 @@ from app.core.config import settings
 from app.services.iam_bindings import recover_existing_iam_binding
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import Conflict, Forbidden
-from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.domain.policies import CurrentUser
 from app.domain.iam_status import iam_auth_status_for_user_status
 from app.infrastructure.iam_client import IamClient
-from app.models.auth_models import UserAuthAccount
 from app.schemas.users import (
     DepartmentDelegationAccessSchema,
     EconomistListData,
@@ -83,7 +81,8 @@ from app.services.users import (
     UserStatusService,
 )
 from app.services.account_recovery import AccountRecoveryService
-from app.schemas.users import UserPasswordResetRequest
+from app.schemas.users import UserPasswordResetRequest, UserProfileViewData, UserProfileViewResponse
+from app.services.user_profile_view import get_user_profile_view
 from app.services.user_password_reset import reset_user_password
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
@@ -633,6 +632,19 @@ async def set_my_unavailability_period(
     )
 
 
+@router.get("/users/{user_id}/details", response_model=UserProfileViewResponse)
+async def get_user_details(
+    response: Response,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserProfileViewResponse:
+    async with uow:
+        profile = await get_user_profile_view(users=uow.users, current_user=current_user, user_id=user_id)
+    response.headers["Cache-Control"] = "no-store"
+    return UserProfileViewResponse(data=UserProfileViewData(**asdict(profile)))
+
+
 @router.get("/users/{user_id}/profile", response_model=SubordinateProfileResponse)
 async def get_subordinate_profile(
     user_id: str = Path(...),
@@ -840,8 +852,6 @@ async def create_manual_contractor(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> ManualContractorCreateResponse:
-    if payload.password is not None and settings.email_enabled:
-        raise Conflict("Начальный пароль задаётся при создании в режиме без почты")
     async with uow:
         service = ManualContractorService(
             uow.users,
@@ -851,9 +861,11 @@ async def create_manual_contractor(
             uow.units,
             user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
+            iam_client=IamClient(),
         )
         result = await service.create_manual_contractor(
             current_user=current_user,
+            initial_password=payload.password.get_secret_value() if payload.password is not None else None,
             data=ManualContractorCreateInput(
                 company_name=payload.company_name,
                 inn=payload.inn,
@@ -865,43 +877,8 @@ async def create_manual_contractor(
                 existing_user_id=payload.existing_user_id,
             ),
         )
-        if result.created or payload.password is not None:
-            binding = await uow.user_auth_accounts.get_by_user_provider(
-                user_id=result.user_id,
-                provider="iam",
-                include_inactive=True,
-            )
-            account_id = stable_iam_account_id(result.user_id) if binding is None else binding.external_subject_id
-            if payload.password is not None:
-                if not result.created:
-                    existing_user = await uow.users.get_by_id(result.user_id)
-                    if binding is None or not binding.is_active or existing_user.status != "active":
-                        raise Conflict("Создание не изменяет доступ существующего контрагента")
-                    state = await IamClient().get_credential_state(account_id=account_id)
-                    if not state.password_set:
-                        raise Conflict("Доступ существующего контрагента настраивается отдельно администратором")
-                account = await IamClient().provision_direct_credentials(
-                    account_id=account_id, login=result.user_id, role="contractor",
-                    password=payload.password.get_secret_value(),
-                )
-            else:
-                account = await IamClient().put_account(
-                    account_id=account_id, login=result.user_id, role="contractor", auth_status="active",
-                )
-            if binding is None:
-                binding = UserAuthAccount(
-                    id_user=result.user_id,
-                    provider="iam",
-                    external_subject_id=account.id,
-                    external_username=result.user_id,
-                    external_email=payload.company_mail,
-                    is_active=True,
-                )
-                await uow.user_auth_accounts.add(binding)
-            else:
-                binding.is_active = True
-            if payload.company_mail and settings.email_enabled:
-                await AccountRecoveryService(uow).request_recovery(identifier=result.user_id)
+        if result.created and payload.company_mail and settings.email_enabled:
+            await AccountRecoveryService(uow).request_recovery(identifier=result.user_id)
     return ManualContractorCreateResponse(
         data={
             "user_id": result.user_id,

@@ -109,6 +109,8 @@ def test_registration_credential_routes_are_service_only_and_secret_free(caplog)
         "auth_status": "pending",
         "password_set": True,
         "required_actions": [],
+        "role_active": True,
+        "password_locked_until": None,
     }
     assert conflict.status_code == 409
     assert conflict.json() == {"detail": "Конфликт данных"}

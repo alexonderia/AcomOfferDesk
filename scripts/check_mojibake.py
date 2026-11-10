@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 INCLUDE_EXTENSIONS = {".py", ".ts", ".tsx", ".md", ".json", ".yml", ".yaml"}
 IGNORE_DIRS = {
     ".git",
-    ".trellis",
+    ".tmp",
+    "artifacts",
     ".venv",
     "__pycache__",
     "build",
@@ -32,6 +33,8 @@ MOJIBAKE_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 def is_ignored(path: Path) -> bool:
     rel = path.relative_to(ROOT).as_posix()
+    if rel.startswith("docs/archive/"):
+        return True
     if rel in IGNORE_FILES:
         return True
     return any(part in IGNORE_DIRS for part in path.parts)

@@ -21,7 +21,7 @@ module.exports = {
     "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     "no-undef": "off",
   },
-  ignorePatterns: ["dist", "node_modules"],
+  ignorePatterns: ["dist", "node_modules", "public/pdfjs"],
   overrides: [
     {
       files: ["**/*.test.ts", "**/*.test.tsx"],

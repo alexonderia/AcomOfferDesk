@@ -1,5 +1,7 @@
 # Руководство разработчика
 
+Общие правила работы с репозиторием: [AGENTS.md](../../AGENTS.md). Профильные соглашения: [backend](backend-guidelines.md), [frontend](frontend-guidelines.md), [жизненный цикл заявок и КП](request-offer-lifecycle.md). Команды и границы покрытия собраны в [стратегии тестирования](testing-strategy.md).
+
 ## Перед изменением
 
 1. Найдите существующий route/service/repository/component.

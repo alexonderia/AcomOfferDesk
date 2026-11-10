@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Box, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, ButtonBase, Stack, Tooltip, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { HierarchyPersonAvatar } from './HierarchyPersonAvatar';
 import {
@@ -17,6 +17,7 @@ type HierarchyViewPersonRowProps = {
   endAdornment?: ReactNode;
   highlight?: boolean;
   meta?: ReactNode;
+  onOpenProfile?: (() => void) | undefined;
   person: HierarchyPersonVisual;
   roleSuffix?: string | null;
   tone?: HierarchyPersonTone;
@@ -27,6 +28,7 @@ export const HierarchyViewPersonRow = ({
   endAdornment,
   highlight = false,
   meta,
+  onOpenProfile,
   person,
   roleSuffix,
   tone = 'default',
@@ -46,6 +48,7 @@ export const HierarchyViewPersonRow = ({
         <Stack direction="row" spacing={0.6} alignItems="center" sx={{ minWidth: 0 }}>
           {meta}
           <Typography
+            component="span"
             sx={{
               fontSize: theme.typography.body1.fontSize,
               fontWeight: highlight ? 700 : 600,
@@ -57,7 +60,23 @@ export const HierarchyViewPersonRow = ({
               minWidth: 0,
             }}
           >
-            {displayName}
+            {onOpenProfile ? (
+              <ButtonBase
+                aria-label={`Открыть карточку сотрудника ${displayName}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenProfile();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                sx={{
+                  maxWidth: '100%', textAlign: 'left', font: 'inherit', color: 'inherit',
+                  borderRadius: 0.5, '&:hover': { textDecoration: 'underline', color: 'primary.main' },
+                  '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+                }}
+              >
+                <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</Box>
+              </ButtonBase>
+            ) : displayName}
           </Typography>
         </Stack>
         <Stack direction="row" spacing={0.55} alignItems="center" sx={{ mt: 0.2, minWidth: 0 }}>

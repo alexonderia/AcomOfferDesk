@@ -3,14 +3,19 @@ import { ROLE } from '@shared/constants/roles';
 import { getScopedCreateRoleIds } from './helpers';
 
 describe('getScopedCreateRoleIds', () => {
-  it('removes contractor from employee creation tabs', () => {
+  it('limits administrator creation to the role of the current tab', () => {
     const roleIds = getScopedCreateRoleIds({
       activeTab: 'economists',
       availableRoleIds: [ROLE.ECONOMIST, ROLE.OPERATOR, ROLE.CONTRACTOR],
       sessionRoleId: ROLE.ADMIN
     });
 
-    expect(roleIds).toEqual([ROLE.ECONOMIST, ROLE.OPERATOR]);
+    expect(roleIds).toEqual([ROLE.ECONOMIST]);
+  });
+
+  it('does not offer a different role when administrator cannot create the current tab role', () => {
+    expect(getScopedCreateRoleIds({ activeTab: 'lead_economists', availableRoleIds: [ROLE.ECONOMIST, ROLE.OPERATOR], sessionRoleId: ROLE.ADMIN })).toEqual([]);
+    expect(getScopedCreateRoleIds({ activeTab: 'operators', availableRoleIds: [ROLE.ECONOMIST, ROLE.OPERATOR], sessionRoleId: ROLE.ADMIN })).toEqual([ROLE.OPERATOR]);
   });
 
   it('keeps only contractor on the contractor tab for non-superadmin users', () => {

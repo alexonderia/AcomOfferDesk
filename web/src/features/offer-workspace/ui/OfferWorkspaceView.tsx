@@ -25,12 +25,14 @@ import { useIsMobileViewport } from '@shared/lib/responsive';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { getFileKey } from '@shared/lib/files';
 import { downloadFile } from '@shared/api/fileDownload';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
 import { OFFER_WORKSPACE_CHAT_WIDTH_PX, OfferWorkspaceChatDock } from './OfferWorkspaceChatDock';
 import { useOfferWorkspace } from '../model/useOfferWorkspace';
 import { RequestDetailsMainCard } from '@features/request-details/ui/RequestDetailsMainCard';
 import { statusOptions, type RequestStatus } from '@features/request-details/model/requestDetailsUtils';
+import { ContractorLoginAccessBadge } from '@features/contractors/components/ContractorLoginAccessBadge';
 
 const offerDecisionOptions = [
   { value: 'accepted', label: 'Принято' },
@@ -106,6 +108,8 @@ export const OfferWorkspaceView = () => {
     session,
     workspace,
     contractorInfo,
+    contractorLoginAccess,
+    isContractorAccessLoading,
     selectedOffer,
     sortedOffers,
     setSelectedOfferId,
@@ -305,7 +309,7 @@ export const OfferWorkspaceView = () => {
           existingFiles={workspace.request.files}
           canDeleteRequestFiles={false}
           onDownloadFile={(downloadUrl, fileName) => {
-            void downloadFile(downloadUrl, fileName);
+            return downloadFile(downloadUrl, fileName);
           }}
           onRemoveExistingFile={() => undefined}
           newFiles={[]}
@@ -349,6 +353,10 @@ export const OfferWorkspaceView = () => {
           <Typography variant="h6" sx={{ mb: 1 }}>
             Информация о контрагенте
           </Typography>
+          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mb: 1.5 }}>
+            <Typography variant="body2" color="text.secondary">Вход в личный кабинет</Typography>
+            <ContractorLoginAccessBadge access={contractorLoginAccess} loading={isContractorAccessLoading} />
+          </Stack>
           <Stack
             direction="row"
             spacing={2}
@@ -634,26 +642,33 @@ export const OfferWorkspaceView = () => {
                   <Typography color="text.secondary">Файлы КП не прикреплены.</Typography>
                 ) : (
                   filesToRender.map((file) => (
-                    <Chip
-                      key={file.id}
-                      label={file.name}
-                      variant="outlined"
-                      sx={{ borderRadius: 999, '& .MuiChip-label': { px: 1.2 } }}
-                      onClick={() => void downloadFile(file.download_url, file.name)}
-                      onDelete={canDeleteFile && isCurrentInEditMode ? () => void handleDeleteFile(file.id) : undefined}
-                    />
+                    <FilePreviewTrigger key={file.id} source={{ name: file.name, downloadUrl: file.download_url }}>
+                      {(openPreview) => (
+                        <Chip
+                          label={file.name}
+                          variant="outlined"
+                          sx={{ borderRadius: 999, '& .MuiChip-label': { px: 1.2 } }}
+                          onClick={openPreview}
+                          onDelete={canDeleteFile && isCurrentInEditMode ? () => void handleDeleteFile(file.id) : undefined}
+                        />
+                      )}
+                    </FilePreviewTrigger>
                   ))
                 )}
                 {isCurrentInEditMode
                   ? newOfferFiles.map((file) => (
-                    <Chip
-                      key={getFileKey(file)}
-                      label={file.name}
-                      color="primary"
-                      variant="outlined"
-                      onDelete={() =>
-                        setNewOfferFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
-                    />
+                    <FilePreviewTrigger key={getFileKey(file)} source={{ name: file.name, file }}>
+                      {(openPreview) => (
+                        <Chip
+                          label={file.name}
+                          onClick={openPreview}
+                          color="primary"
+                          variant="outlined"
+                          onDelete={() =>
+                            setNewOfferFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
+                        />
+                      )}
+                    </FilePreviewTrigger>
                   ))
                   : null}
                 {canUpload && isCurrentInEditMode ? (
@@ -778,9 +793,11 @@ export const OfferWorkspaceView = () => {
             onMessageInputClick={onMessageInputClick}
             onMessageDraftChange={onMessageDraftChange}
             onDownloadAttachment={(downloadUrl, name) => {
-              void downloadFile(downloadUrl, name);
+              return downloadFile(downloadUrl, name);
             }}
             contractorUserId={selectedOffer.contractor_user_id}
+            contractorLoginAccess={canViewContractorInfo && !isContractor ? contractorLoginAccess : undefined}
+            isContractorAccessLoading={isContractorAccessLoading}
           />
         </OfferWorkspaceChatDock>
       ) : null}

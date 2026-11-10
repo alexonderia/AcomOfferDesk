@@ -64,6 +64,8 @@ class IamCredentialState:
     password_set: bool
     created: bool = False
     required_actions: tuple[str, ...] = ()
+    role_active: bool | None = None
+    password_locked_until: str | None = None
 
 
 class IamClient:
@@ -275,6 +277,8 @@ class IamClient:
             auth_status=payload["auth_status"],
             password_set=bool(payload["password_set"]),
             required_actions=tuple(payload.get("required_actions") or ()),
+            role_active=payload.get("role_active"),
+            password_locked_until=payload.get("password_locked_until"),
         )
 
     async def provision_local_development_account(

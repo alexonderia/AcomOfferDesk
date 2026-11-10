@@ -48,6 +48,9 @@ export const getScopedCreateRoleIds = ({
   sessionRoleId
 }: GetScopedCreateRoleIdsParams) => {
   const uniqueRoleIds = Array.from(new Set(availableRoleIds));
+  if (sessionRoleId === ROLE.ADMIN) {
+    return uniqueRoleIds.filter((roleId) => roleId === roleByTab[activeTab]);
+  }
   if (sessionRoleId !== ROLE.SUPERADMIN) {
     const scopedRoleIds = activeTab === 'contractors'
       ? uniqueRoleIds.filter((roleId) => roleId === ROLE.CONTRACTOR)

@@ -5,7 +5,7 @@ import { Box, ButtonBase, Collapse, Divider, Menu, MenuItem, Paper, Select, Stac
 import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
-import { StatusPill, type StatusPillTone } from '@shared/components/StatusPill';
+import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 

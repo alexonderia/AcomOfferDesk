@@ -15,8 +15,10 @@ export const ValidatedTextField = ({
   ...props
 }: ValidatedTextFieldProps) => {
   const autocompleteInputProps = fieldName ? textFieldAutocompleteProps(fieldName).inputProps : undefined;
+  const { ref: registrationRef, ...registrationProps } = registration ?? {};
   const fieldProps = {
-    ...registration,
+    ...registrationProps,
+    inputRef: registrationRef,
     inputProps: { ...autocompleteInputProps, ...inputProps },
     ...props,
   };

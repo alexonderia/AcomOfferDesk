@@ -13,6 +13,9 @@ import { textFieldAutocompleteProps, useLiveValidatedForm } from '@shared/lib/fo
 import { z } from 'zod';
 import type { OfferWorkspaceMessage } from '@shared/api/offers/offerWorkspaceActions';
 import { getFileKey, mergeUniqueFiles } from '@shared/lib/files';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
+import { ContractorChatAccessNotice } from '@features/contractors/components/ContractorChatAccessNotice';
+import type { ContractorLoginAccess } from '@shared/api/contractors/getContractorLoginAccess';
 
 const AUTO_SCROLL_THRESHOLD_PX = 64;
 
@@ -163,6 +166,8 @@ type OfferWorkspaceChatPanelProps = {
   onDownloadAttachment: (downloadUrl: string, name: string) => void;
   readOnlyNotice?: string | null;
   contractorUserId?: string;
+  contractorLoginAccess?: ContractorLoginAccess;
+  isContractorAccessLoading?: boolean;
 };
 
 export const OfferWorkspaceChatPanel = ({
@@ -180,7 +185,9 @@ export const OfferWorkspaceChatPanel = ({
   onMessageDraftChange,
   onDownloadAttachment,
   readOnlyNotice,
-  contractorUserId
+  contractorUserId,
+  contractorLoginAccess,
+  isContractorAccessLoading
 }: OfferWorkspaceChatPanelProps) => {
   const {
     control,
@@ -299,7 +306,6 @@ export const OfferWorkspaceChatPanel = ({
             </IconButton>
           </Box>
           <Divider />
-
 
           <Stack spacing={1} sx={{ p: 2, height: '100%', minHeight: 0 }}>
             <Box
@@ -510,24 +516,27 @@ export const OfferWorkspaceChatPanel = ({
                               {item.attachments.length > 0 ? (
                                 <Stack spacing={0.5} sx={{ mb: 0 }}>
                                   {item.attachments.map((attachment) => (
-                                    <Chip
-                                      key={attachment.id}
-                                      size="small"
-                                      label={attachment.name}
-                                      variant="outlined"
-                                      onClick={() => onDownloadAttachment(attachment.download_url, attachment.name)}
-                                      sx={(theme) => ({
-                                        alignSelf: isSystemVisualMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
-                                        borderColor: ownMessage
-                                          ? alpha(theme.palette.common.white, 0.35)
-                                          : theme.palette.divider,
-                                        color: ownMessage ? 'rgba(255,255,255,0.92)' : theme.palette.text.primary,
-                                        backgroundColor: ownMessage
-                                          ? alpha(theme.palette.primary.dark, 0.34)
-                                          : theme.palette.background.default,
-                                        '& .MuiChip-label': { color: 'inherit' }
-                                      })}
-                                    />
+                                    <FilePreviewTrigger key={attachment.id} source={{ name: attachment.name, downloadUrl: attachment.download_url }} onDownload={() => onDownloadAttachment(attachment.download_url, attachment.name)}>
+                                      {(openPreview) => (
+                                        <Chip
+                                          size="small"
+                                          label={attachment.name}
+                                          variant="outlined"
+                                          onClick={openPreview}
+                                          sx={(theme) => ({
+                                            alignSelf: isSystemVisualMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
+                                            borderColor: ownMessage
+                                              ? alpha(theme.palette.common.white, 0.35)
+                                              : theme.palette.divider,
+                                            color: ownMessage ? 'rgba(255,255,255,0.92)' : theme.palette.text.primary,
+                                            backgroundColor: ownMessage
+                                              ? alpha(theme.palette.primary.dark, 0.34)
+                                              : theme.palette.background.default,
+                                            '& .MuiChip-label': { color: 'inherit' }
+                                          })}
+                                        />
+                                      )}
+                                    </FilePreviewTrigger>
                                   ))}
                                 </Stack>
                               ) : null}
@@ -611,12 +620,16 @@ export const OfferWorkspaceChatPanel = ({
 
               <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1 }}>
                 {attachedFiles.map((file) => (
-                  <Chip
-                    key={getFileKey(file)}
-                    label={file.name}
-                    size="small"
-                    onDelete={() => handleRemoveAttachedFile(file)}
-                  />
+                  <FilePreviewTrigger key={getFileKey(file)} source={{ name: file.name, file }}>
+                    {(openPreview) => (
+                      <Chip
+                        label={file.name}
+                        onClick={openPreview}
+                        size="small"
+                        onDelete={() => handleRemoveAttachedFile(file)}
+                      />
+                    )}
+                  </FilePreviewTrigger>
                 ))}
               </Stack>
 
@@ -657,21 +670,24 @@ export const OfferWorkspaceChatPanel = ({
                   <Box />
                 )}
 
-                <IconButton
-                  type="submit"
-                  color="primary"
-                  disabled={!canSendMessage || isSending || !messageText.trim()}
-                  aria-label={isSending ? 'Отправка сообщения' : 'Отправить сообщение'}
-                  sx={{
-                    border: (theme) => `1px solid ${alpha(theme.palette.primary.main, 0.24)}`,
-                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                    '&:hover': {
-                      backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.2)
-                    }
-                  }}
-                >
-                  <SendRoundedIcon fontSize="small" />
-                </IconButton>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <ContractorChatAccessNotice access={contractorLoginAccess} loading={isContractorAccessLoading} />
+                  <IconButton
+                    type="submit"
+                    color="primary"
+                    disabled={!canSendMessage || isSending || !messageText.trim()}
+                    aria-label={isSending ? 'Отправка сообщения' : 'Отправить сообщение'}
+                    sx={{
+                      border: (theme) => `1px solid ${alpha(theme.palette.primary.main, 0.24)}`,
+                      backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                      '&:hover': {
+                        backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.2)
+                      }
+                    }}
+                  >
+                    <SendRoundedIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
               </Stack>
             </Box>
           </Stack>

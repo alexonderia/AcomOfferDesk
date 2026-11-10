@@ -36,6 +36,7 @@ import { getRequestContractors, type RequestContractorItem } from '@shared/api/u
 import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { DatePickerField } from '@shared/components/DatePickerField';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
 import { ToggleSection } from '@shared/components/ToggleSection';
 import {
   ALLOWED_UPLOAD_FILE_INPUT_ACCEPT,
@@ -131,6 +132,7 @@ export const CreateRequestPage = () => {
 
   const requestNumberValue = watch('requestNumber');
   const normativeFileId = watch('normativeFileId');
+  const selectedNormativeFile = actualNormativeFiles.find((item) => item.id === normativeFileId);
   const files = watch('files');
   const additionalEmails = watch('additionalEmails');
   const hiddenContractorIds = watch('hiddenContractorIds');
@@ -553,6 +555,9 @@ export const CreateRequestPage = () => {
                         : 'Выберите актуальный нормативный документ')}
                 </FormHelperText>
               </FormControl>
+              {selectedNormativeFile ? <FilePreviewTrigger source={{ name: selectedNormativeFile.original_name, downloadUrl: selectedNormativeFile.download_url }}>
+                  {(openPreview) => <Button variant="outlined" size="small" onClick={openPreview} sx={{ alignSelf: 'flex-start' }}>Предпросмотр нормативного документа</Button>}
+                </FilePreviewTrigger> : null}
             </Stack>
 
             <Stack spacing={1}>
@@ -632,21 +637,25 @@ export const CreateRequestPage = () => {
               {files.length > 0 ? (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                   {files.map((file) => (
-                    <Chip
-                      key={getFileKey(file)}
-                      label={file.name}
-                      onDelete={() => updateFiles(files.filter((item) => getFileKey(item) !== getFileKey(file)))}
-                      variant="outlined"
-                      sx={{
-                        maxWidth: '100%',
-                        borderRadius: 1,
-                        backgroundColor: 'background.paper',
-                        '& .MuiChip-label': {
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        },
-                      }}
-                    />
+                    <FilePreviewTrigger key={getFileKey(file)} source={{ name: file.name, file }}>
+                      {(openPreview) => (
+                        <Chip
+                          label={file.name}
+                          onClick={openPreview}
+                          onDelete={() => updateFiles(files.filter((item) => getFileKey(item) !== getFileKey(file)))}
+                          variant="outlined"
+                          sx={{
+                            maxWidth: '100%',
+                            borderRadius: 1,
+                            backgroundColor: 'background.paper',
+                            '& .MuiChip-label': {
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            },
+                          }}
+                        />
+                      )}
+                    </FilePreviewTrigger>
                   ))}
                 </Box>
               ) : null}

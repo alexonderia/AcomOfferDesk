@@ -1,6 +1,7 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json* ./
+COPY web/scripts/copy-pdf-assets.mjs ./scripts/copy-pdf-assets.mjs
 RUN npm install
 COPY web/ .
 RUN npm run build

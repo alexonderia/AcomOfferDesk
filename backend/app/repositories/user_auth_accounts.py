@@ -70,6 +70,14 @@ class UserAuthAccountRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_users(self, *, user_ids: list[str], provider: str) -> list[UserAuthAccount]:
+        if not user_ids:
+            return []
+        stmt = select(UserAuthAccount).where(
+            UserAuthAccount.id_user.in_(user_ids), UserAuthAccount.provider == provider,
+        ).order_by(UserAuthAccount.is_active.desc(), UserAuthAccount.id.asc())
+        return list((await self._session.execute(stmt)).scalars().all())
+
     async def list_for_provider(self, *, provider: str) -> list[UserAuthAccount]:
         stmt = (
             select(UserAuthAccount)

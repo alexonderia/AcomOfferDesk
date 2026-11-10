@@ -12,6 +12,11 @@ const getContractorRootUnitsMock = vi.fn();
 const updateContractorRootUnitsMock = vi.fn();
 const showSystemToastMock = vi.fn();
 const showErrorToastMock = vi.fn();
+const getContractorLoginAccessMock = vi.fn();
+
+vi.mock('@shared/api/contractors/getContractorLoginAccess', () => ({
+  getContractorLoginAccess: (...args: unknown[]) => getContractorLoginAccessMock(...args),
+}));
 
 let mockSession: { roleId: number; permissions?: string[] } = {
   roleId: ROLE.ADMIN,
@@ -106,6 +111,11 @@ describe('ContractorsListView editing', () => {
     updateContractorRootUnitsMock.mockReset();
     showSystemToastMock.mockReset();
     showErrorToastMock.mockReset();
+    getContractorLoginAccessMock.mockReset();
+    getContractorLoginAccessMock.mockResolvedValue([{
+      user_id: 'contractor-1', state: 'not_granted', label: 'Не выдан',
+      description: 'Для контрагента нет действующей учётной записи для входа в личный кабинет.',
+    }]);
 
     updateManualContractorMock.mockResolvedValue({ userId: 'contractor-1' });
     updateContractorStatusMock.mockResolvedValue({ userId: 'contractor-1', userStatus: 'active' });
@@ -133,6 +143,33 @@ describe('ContractorsListView editing', () => {
     expect(await screen.findByText('Иван Петров')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeInTheDocument();
     expect(screen.queryByLabelText('contractor-1-company_name')).not.toBeInTheDocument();
+  });
+
+  it('shows login availability separately from business status and refreshes it from the card', async () => {
+    renderView();
+    const icon = await screen.findByLabelText('Вход в личный кабинет: Не выдан');
+    expect(icon.parentElement).toHaveTextContent('На проверке');
+    expect(screen.queryByText('Вход в личный кабинет')).not.toBeInTheDocument();
+    expect(screen.queryByText('Не выдан')).not.toBeInTheDocument();
+    fireEvent.mouseOver(icon);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Не выдан. Для контрагента нет действующей учётной записи');
+    expect(getContractorLoginAccessMock).toHaveBeenCalledWith(['contractor-1'], expect.any(AbortSignal));
+    fireEvent.click(screen.getByText('Иван Петров'));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Вход в личный кабинет');
+    expect(screen.getByRole('dialog')).toHaveTextContent('нет действующей учётной записи');
+    getContractorLoginAccessMock.mockResolvedValue([{
+      user_id: 'contractor-1', state: 'available', label: 'Вход доступен', description: 'Контрагент может войти в личный кабинет.',
+    }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить доступ' }));
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Вход доступен'));
+    expect(getContractorLoginAccessMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a failed IAM check without claiming that access was not granted', async () => {
+    getContractorLoginAccessMock.mockRejectedValue(new Error('Недоступно'));
+    renderView();
+    expect(await screen.findByLabelText('Вход в личный кабинет: Не удалось проверить')).toBeInTheDocument();
+    expect(screen.queryByText('Не выдан')).not.toBeInTheDocument();
   });
 
   it('keeps current page while editing a row on another page', async () => {
@@ -293,7 +330,7 @@ describe('ContractorsListView editing', () => {
     await waitFor(() => {
       expect(updateContractorStatusMock).toHaveBeenCalledWith('contractor-1', { user_status: 'active' });
     });
-    expect(screen.queryByText('РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР°')).not.toBeInTheDocument();
+    expect(screen.queryByText('Изменение статуса')).not.toBeInTheDocument();
   });
 
   it('locks the status field in edit mode when status access is missing', async () => {

@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
-import { Box, ButtonBase, Card, CardContent, Chip, Divider, Stack, Typography } from '@mui/material';
-import {
-  getManualContractorDuplicates,
-  type ManualContractorDuplicate,
-} from '@shared/api/users/getManualContractorDuplicates';
+import { Alert, Box, Button, ButtonBase, Card, CardContent, Chip, Divider, Stack, Tooltip, Typography } from '@mui/material';
+import type { ManualContractorDuplicate } from '@shared/api/users/getManualContractorDuplicates';
+import { formatDate } from '@shared/lib/formatters';
+import { useManualContractorDuplicates } from '../model/useManualContractorDuplicates';
 
 type ManualContractorDuplicatePanelProps = {
   open: boolean;
   companyName?: string;
   inn?: string;
   companyMail?: string;
+  requestId?: string;
+  onSelect?: (item: ManualContractorDuplicate) => void;
+  disabled?: boolean;
 };
 
 export const ManualContractorDuplicatePanel = ({
@@ -19,36 +21,13 @@ export const ManualContractorDuplicatePanel = ({
   companyName = '',
   inn = '',
   companyMail = '',
+  requestId,
+  onSelect,
+  disabled = false,
 }: ManualContractorDuplicatePanelProps) => {
-  const [duplicates, setDuplicates] = useState<ManualContractorDuplicate[]>([]);
-  const [loading, setLoading] = useState(false);
-  const requestRef = useRef(0);
-  const hasQuery = [companyName, inn, companyMail].some((value) => value.trim().length >= 2);
-
-  useEffect(() => {
-    if (!open || !hasQuery) {
-      requestRef.current += 1;
-      setDuplicates([]);
-      setLoading(false);
-      return;
-    }
-    const requestId = requestRef.current + 1;
-    requestRef.current = requestId;
-    setLoading(true);
-    const timer = window.setTimeout(() => {
-      void getManualContractorDuplicates({ companyName, inn, companyMail })
-        .then((items) => {
-          if (requestRef.current === requestId) setDuplicates(items);
-        })
-        .catch(() => {
-          if (requestRef.current === requestId) setDuplicates([]);
-        })
-        .finally(() => {
-          if (requestRef.current === requestId) setLoading(false);
-        });
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [companyMail, companyName, hasQuery, inn, open]);
+  const { duplicates, loading, error, hasQuery, reload } = useManualContractorDuplicates({
+    open, companyName, inn, companyMail, requestId,
+  });
 
   if (!open || (!hasQuery && !loading && duplicates.length === 0)) return null;
 
@@ -56,7 +35,8 @@ export const ManualContractorDuplicatePanel = ({
     <Box
       component="aside"
       sx={{
-        width: { xs: '100%', md: 320 },
+        width: requestId ? '100%' : { xs: '100%', md: 320 },
+        minWidth: 0,
         flexShrink: 0,
         border: '1px solid',
         borderColor: duplicates.length ? 'warning.main' : 'divider',
@@ -67,11 +47,15 @@ export const ManualContractorDuplicatePanel = ({
     >
       <Box sx={{ fontWeight: 700, mb: 1 }}>Возможные дубликаты</Box>
       {loading ? <Box sx={{ color: 'text.secondary', fontSize: 14 }}>Проверяем введённые данные…</Box> : null}
-      {!loading && duplicates.length === 0 ? (
+      {error ? <Alert severity="error" action={<Button onClick={reload}>Повторить</Button>}>{error}</Alert> : null}
+      {!loading && !error && duplicates.length === 0 ? (
         <Box sx={{ color: 'text.secondary', fontSize: 14 }}>Совпадений не найдено.</Box>
       ) : null}
       <Stack spacing={1.5}>
-        {duplicates.map((item) => <DuplicateCard key={item.userId} item={item} />)}
+        {duplicates.map((item) => <DuplicateCard
+          key={item.userId} item={item} compact={Boolean(requestId)}
+          onSelect={onSelect} disabled={disabled || (Boolean(requestId) && item.canSelect !== true)}
+        />)}
       </Stack>
     </Box>
   );
@@ -84,15 +68,21 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
   </Box>
 );
 
-const DuplicateCard = ({ item }: { item: ManualContractorDuplicate }) => {
-  const [contactExpanded, setContactExpanded] = useState(true);
-  const [companyExpanded, setCompanyExpanded] = useState(true);
+const DuplicateCard = ({ item, onSelect, disabled, compact }: {
+  item: ManualContractorDuplicate;
+  onSelect?: (item: ManualContractorDuplicate) => void;
+  disabled: boolean;
+  compact: boolean;
+}) => {
+  const [contactExpanded, setContactExpanded] = useState(!compact);
+  const [companyExpanded, setCompanyExpanded] = useState(!compact);
   const valueOrPlaceholder = (value: string | null) => value?.trim() || 'Не указано';
   const statusLabel = (status: string) => ({
     active: 'Активен',
     review: 'На проверке',
     blocked: 'Заблокирован',
     inactive: 'Неактивен',
+    blacklist: 'В чёрном списке',
   }[status] ?? status);
 
   return (
@@ -110,6 +100,17 @@ const DuplicateCard = ({ item }: { item: ManualContractorDuplicate }) => {
             sx={{ flexShrink: 0, maxWidth: 125 }}
           />
         </Stack>
+        {compact && item.inn ? <Typography variant="body2" sx={{ mt: 1 }}>ИНН: {item.inn}</Typography> : null}
+        {onSelect ? (
+          <Tooltip title={item.disabledReason ?? ''} describeChild disableInteractive>
+            <span>
+              <Button fullWidth disabled={disabled} onClick={() => onSelect(item)}>
+                Использовать этого контрагента
+              </Button>
+            </span>
+          </Tooltip>
+        ) : null}
+        {item.disabledReason ? <Typography variant="caption" color="text.secondary">{item.disabledReason}</Typography> : null}
         <Divider sx={{ my: 1 }} />
         <SectionToggle label="ДЛЯ СВЯЗИ" expanded={contactExpanded} onClick={() => setContactExpanded((value) => !value)} />
         {contactExpanded ? (
@@ -128,6 +129,12 @@ const DuplicateCard = ({ item }: { item: ManualContractorDuplicate }) => {
             <InfoRow label="ИНН" value={valueOrPlaceholder(item.inn)} />
             <InfoRow label="АДРЕС" value={valueOrPlaceholder(item.address)} />
             <InfoRow label="ПРИМЕЧАНИЕ" value={valueOrPlaceholder(item.note)} />
+          </Stack>
+        ) : null}
+        {item.createdAt || item.updatedAt ? (
+          <Stack sx={{ mt: 1 }}>
+            {item.createdAt ? <InfoRow label="СОЗДАН" value={formatDate(item.createdAt, true)} /> : null}
+            {item.updatedAt ? <InfoRow label="ИЗМЕНЁН" value={formatDate(item.updatedAt, true)} /> : null}
           </Stack>
         ) : null}
       </CardContent>

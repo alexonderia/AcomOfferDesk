@@ -56,6 +56,7 @@ class RegisterUserData(BaseModel):
     user_id: str
     role_id: int
     status: str
+    visible_to_creator: bool = True
 
 
 class RegisterUserResponse(BaseModel):

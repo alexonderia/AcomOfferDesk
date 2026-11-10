@@ -59,6 +59,8 @@ async def test_iam_client_provisions_registration_credentials_and_reads_password
                     "role": "contractor",
                     "auth_status": "pending",
                     "password_set": True,
+                    "role_active": True,
+                    "password_locked_until": "2026-11-10T10:00:00Z",
                 },
             )
         return httpx.Response(
@@ -88,6 +90,8 @@ async def test_iam_client_provisions_registration_credentials_and_reads_password
 
     assert created.password_set is True
     assert state.password_set is True
+    assert state.role_active is True
+    assert state.password_locked_until == "2026-11-10T10:00:00Z"
     assert requests[0].url.path == "/internal/accounts/account-1/registration-credentials"
     assert "correct horse battery staple" not in str(state)
 

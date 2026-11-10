@@ -14,6 +14,8 @@ export type ManualContractorDuplicate = {
   status: string;
   createdAt: string | null;
   updatedAt: string | null;
+  canSelect?: boolean;
+  disabledReason?: string | null;
 };
 
 type DuplicatePayload = {
@@ -30,6 +32,8 @@ type DuplicatePayload = {
   status: string;
   created_at?: string | null;
   updated_at?: string | null;
+  can_select?: boolean | null;
+  disabled_reason?: string | null;
 };
 
 type DuplicateResponse = { data: { items: DuplicatePayload[] } };
@@ -38,6 +42,7 @@ export const getManualContractorDuplicates = async (query: {
   companyName?: string;
   inn?: string;
   companyMail?: string;
+  requestId?: string;
 }): Promise<ManualContractorDuplicate[]> => {
   const params = new URLSearchParams();
   if (query.companyName?.trim()) params.set('company_name', query.companyName.trim());
@@ -45,7 +50,9 @@ export const getManualContractorDuplicates = async (query: {
   if (query.companyMail?.trim()) params.set('company_mail', query.companyMail.trim());
   const suffix = params.toString();
   const response = await fetchJson<DuplicateResponse>(
-    `/api/v1/users/manual-contractor-duplicates${suffix ? `?${suffix}` : ''}`,
+    `${query.requestId
+      ? `/api/v1/requests/${encodeURIComponent(query.requestId)}/offers/manual/contractor-duplicates`
+      : '/api/v1/users/manual-contractor-duplicates'}${suffix ? `?${suffix}` : ''}`,
     {},
     'Не удалось проверить похожих контрагентов'
   );
@@ -63,5 +70,7 @@ export const getManualContractorDuplicates = async (query: {
     status: item.status,
     createdAt: item.created_at ?? null,
     updatedAt: item.updated_at ?? null,
+    canSelect: item.can_select === true,
+    disabledReason: item.disabled_reason ?? null,
   }));
 };

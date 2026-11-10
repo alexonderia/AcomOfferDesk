@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { UnitNode } from '@shared/api/units';
 import type { UserHierarchy } from '@shared/api/users/getUserHierarchy';
 import { buildUnitRelationKinds, buildUserHierarchyDisplayUnits, collectUniqueStaff } from './userHierarchyTreeUtils';
+import { ROLE } from '@shared/constants/roles';
 import { buildUnitPeopleTree } from '@shared/lib/hierarchy/buildUnitPeopleTree';
 
 const makeUnit = (
@@ -73,6 +74,27 @@ const baseHierarchy: UserHierarchy = {
 };
 
 describe('userHierarchyTreeUtils', () => {
+  it('keeps administration out of manager and subordinate highlights', () => {
+    const member = (userId: string, roleId: number): UnitNode['members'][number] => ({
+      user_id: userId, full_name: userId, role_id: roleId, role_name: '', status: 'active', id_parent_user: null,
+    });
+    const roots = buildUnitPeopleTree(makeUnit(1, 'Отдел', [
+      member('administrator', ROLE.ADMIN), member('project-manager', ROLE.PROJECT_MANAGER),
+    ], [makeUnit(2, 'Группа', [member('lead', ROLE.LEAD_ECONOMIST)])]));
+
+    const managerRelations = buildUnitRelationKinds({ roots, selectedUserId: 'project-manager' });
+    expect(managerRelations.get('lead')).toBe('subordinate');
+    expect(managerRelations.has('administrator')).toBe(false);
+
+    const leadRelations = buildUnitRelationKinds({ roots, selectedUserId: 'lead' });
+    expect(leadRelations.get('project-manager')).toBe('manager');
+    expect(leadRelations.has('administrator')).toBe(false);
+
+    expect([...buildUnitRelationKinds({ roots, selectedUserId: 'administrator' })]).toEqual([
+      ['administrator', 'self'],
+    ]);
+  });
+
   it('shows child units of the department with the full module subtree', () => {
     const unitsTree = [
       makeUnit(1, 'АО', [

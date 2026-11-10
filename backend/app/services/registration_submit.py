@@ -6,10 +6,9 @@ from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.exceptions import Conflict, Unauthorized
-from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.infrastructure.iam_client import IamClient
-from app.models.auth_models import UserAuthAccount
+from app.services.iam_bindings import ensure_user_iam_account
 from app.models.orm_models import CompanyContact, Profile, User
 from app.services.account_recovery import AccountRecoveryService
 from app.services.registration_admin_notify import schedule_registration_review_required_notification
@@ -104,14 +103,6 @@ class RegistrationSubmitService:
         if await self._uow.user_contact_channels.exists_primary_email(email=normalized_email):
             raise Conflict("Эта электронная почта уже используется")
 
-        account_id = stable_iam_account_id(normalized_login)
-        account = await self._iam_client.put_account(
-            account_id=account_id,
-            login=normalized_login,
-            role=role_name,
-            auth_status="pending",
-        )
-
         user = User(
             id=normalized_login,
             id_role=role_id,
@@ -144,15 +135,10 @@ class RegistrationSubmitService:
             is_verified=False,
             is_primary=True,
         )
-        await self._uow.user_auth_accounts.add(
-            UserAuthAccount(
-                id_user=normalized_login,
-                provider="iam",
-                external_subject_id=account.id,
-                external_username=normalized_login,
-                external_email=claims.email,
-                is_active=True,
-            )
+        await ensure_user_iam_account(
+            user_auth_accounts=self._uow.user_auth_accounts, user_id=normalized_login,
+            role_id=role_id, user_status="review", email=normalized_email,
+            is_new_user=True, iam_client=self._iam_client,
         )
         await AccountRecoveryService(self._uow).request_recovery(identifier=normalized_login)
         schedule_registration_review_required_notification(
@@ -188,21 +174,16 @@ class RegistrationSubmitService:
     ) -> RegistrationSubmitResult:
         if login != user.id:
             raise Conflict("Логин уже задан для этой регистрации")
+        if technical_role_name(user.id_role) != role_name:
+            raise Conflict("Роль существующей регистрации не соответствует приглашению")
         if await self._uow.profiles.exists_by_mail(email=email, exclude_user_id=user.id):
             raise Conflict("Эта электронная почта уже используется")
         if await self._uow.user_contact_channels.exists_primary_email(email=email, exclude_user_id=user.id):
             raise Conflict("Эта электронная почта уже используется")
 
-        binding = await self._uow.user_auth_accounts.get_by_user_provider(
-            user_id=user.id,
-            provider="iam",
-        )
-        account_id = binding.external_subject_id if binding is not None else str(stable_iam_account_id(user.id))
-        await self._iam_client.put_account(
-            account_id=account_id,
-            login=user.id,
-            role=role_name,
-            auth_status="pending",
+        await ensure_user_iam_account(
+            user_auth_accounts=self._uow.user_auth_accounts, user_id=user.id,
+            role_id=user.id_role, user_status=user.status, email=email, iam_client=self._iam_client,
         )
         if profile is None:
             profile = Profile(id=user.id, full_name=full_name, phone=phone, mail=email)

@@ -1,0 +1,98 @@
+source,destination
+AcomOfferDesk_Backlog_Corrections_Status.docx,docs/archive/qa/2026-11-10-backlog-corrections-status.docx
+AcomOfferDesk_Backlog_Manual_Testing.docx,docs/archive/qa/2026-08-24-backlog-manual-testing.docx
+AcomOfferDesk_IAM_and_RBAC_Report.docx,docs/archive/iam/2026-08-21-iam-and-rbac-report.docx
+AcomOfferDesk_Manual_Testing_Full_Updated.docx,docs/archive/qa/2026-08-24-manual-testing-full.docx
+backend/REAME.md,backend/README.md
+docs/development/norm-001-normative-files-manual-test.md,docs/qa/manual-regression.md
+docs/development/notification-event-map.md,docs/operations/notifications-matrix.md
+docs/development/notification-legacy-methods-audit.md,docs/archive/audits/2026-05-22-notification-legacy-methods.md
+docs/development/notification-manual-test-plan.md,docs/qa/manual-regression.md
+docs/development/registration-routes-test.docx,docs/archive/qa/2026-08-18-registration-routes-test.docx
+docs/development/req-003-request-closure.md,docs/qa/manual-regression.md
+docs/development/request-offer-lifecycle-manual-testing.md,docs/qa/manual-regression.md
+docs/development/test-catalog.md,docs/development/testing-strategy.md
+docs/development/test-coverage-map.md,docs/development/testing-strategy.md
+docs/development/test-scenarios-explained.md,docs/development/testing-strategy.md
+docs/iam/AcomOfferDesk_IAM_Architecture.docx,docs/archive/iam/2026-08-13-iam-architecture-v1.0.docx
+docs/iam/AcomOfferDesk_IAM_Architecture_v1.1.docx,docs/archive/iam/2026-08-13-iam-architecture-v1.1.docx
+docs/iam/AcomOfferDesk_IAM_Architecture_v1.2.docx,docs/archive/iam/2026-08-13-iam-architecture-v1.2.docx
+docs/iam/AcomOfferDesk_IAM_Architecture_v1.3.docx,docs/archive/iam/2026-08-13-iam-architecture-v1.3.docx
+docs/iam/AcomOfferDesk_IAM_Architecture_v1.4.docx,docs/archive/iam/2026-08-13-iam-architecture-v1.4.docx
+docs/iam/stage-2-operations.md,docs/iam/operations.md
+docs/iam/Схема_БД_13_августа.drawio,docs/archive/iam/2026-08-13-database-schema.drawio
+docs/order-database-vps.md,docs/operations/order-database-vps.md
+docs/qa/AcomOfferDesk_Five_Roles_No_Mail_Checklist.docx,docs/archive/qa/2026-11-10-five-roles-no-mail-checklist.docx
+docs/qa/AcomOfferDesk_Postrelease_Checklist.docx,docs/archive/qa/2026-10-29-postrelease-checklist.docx
+docs/qa/admin-password-reset-2026-11-04.md,docs/reports/qa/2026-11-04-admin-password-reset.md
+docs/qa/created-user-visibility-2026-11-04.md,docs/reports/qa/2026-11-04-created-user-visibility.md
+docs/qa/current-changes-test-plan-2026-11-03.md,docs/reports/qa/2026-11-03-current-changes-test-plan.md
+docs/qa/expanded-regression-2026-11-02.md,docs/reports/qa/2026-11-02-expanded-regression.md
+docs/qa/file-preview-2026-11-04.md,docs/reports/qa/2026-11-04-file-preview.md
+docs/qa/five-roles-no-mail-checklist.md,docs/archive/qa/2026-11-10-five-roles-no-mail-checklist.md
+docs/qa/five-roles-no-mail-run.csv,docs/archive/qa/2026-11-10-five-roles-no-mail-run.csv
+docs/qa/full-build-verification-2026-11-02.md,docs/reports/qa/2026-11-02-full-build-verification.md
+docs/qa/hierarchy-profiles-2026-11-04.md,docs/reports/qa/2026-11-04-hierarchy-profiles.md
+docs/qa/no-mail-regression-checklist.md,docs/archive/qa/2026-11-10-no-mail-regression-checklist.md
+docs/qa/postrelease-checklist.md,docs/archive/qa/2026-10-29-postrelease-checklist.md
+docs/qa/postrelease-run.csv,docs/archive/qa/2026-10-29-postrelease-run.csv
+docs/qa/profile-password-2026-11-03.md,docs/reports/qa/2026-11-03-profile-password.md
+docs/qa/qa47-automated-results-2026-11-02.csv,docs/reports/qa/2026-11-02-qa47-automated-results.csv
+docs/qa/remediation-code-findings.md,docs/archive/qa/2026-11-02-remediation-code-findings.md
+docs/qa/remediation-plan.md,docs/archive/qa/2026-11-02-remediation-plan.md
+docs/qa/remediation-progress.md,docs/archive/qa/2026-11-02-remediation-progress.md
+docs/qa/runtime-verification-2026-11-02.md,docs/reports/qa/2026-11-02-runtime-verification.md
+docs/qa/system-status-2026-11-04.md,docs/reports/qa/2026-11-04-system-status.md
+docs/qa/users-cleanup-2026-11-03.md,docs/reports/qa/2026-11-03-users-cleanup.md
+docs/reports/docx-structure-sample.json,docs/archive/role-guides/2026-11-10-docx-structure-sample.json
+docs/reports/reorganized-user-guide-extract.txt,docs/archive/role-guides/2026-11-10-reorganized-user-guide-extract.txt
+docs/reports/responsibility-ad-op.json,docs/archive/role-guides/2026-11-10-responsibility-ad-op.json
+docs/reports/responsibility-matrix-extract.json,docs/archive/role-guides/2026-11-10-responsibility-matrix-extract.json
+docs/reports/role-guides-from-docx.json,docs/archive/role-guides/2026-11-10-role-guides-from-docx.json
+docs/scripts/install-order-database-vps.sh,scripts/install-order-database-vps.sh
+docs/superadmin-recovery-2026-05-11.md,docs/archive/incidents/2026-05-11-superadmin-recovery.md
+migration-bundles/migration-20260511-075922/README.md,docs/archive/backups/2026-05-11-migration-bundle/README.md
+migration-bundles/migration-20260511-075922/SHA256SUMS.txt,docs/archive/backups/2026-05-11-migration-bundle/SHA256SUMS.txt
+migration-bundles/migration-20260511-075922/keycloak_groups.json,docs/archive/backups/2026-05-11-migration-bundle/keycloak_groups.json
+migration-bundles/migration-20260511-075922/keycloak_roles.json,docs/archive/backups/2026-05-11-migration-bundle/keycloak_roles.json
+migration-bundles/migration-20260511-075922/keycloak_users.json,docs/archive/backups/2026-05-11-migration-bundle/keycloak_users.json
+migration-bundles/migration-20260511-075922/order_database_data.sql,docs/archive/backups/2026-05-11-migration-bundle/order_database_data.sql
+migration-bundles/migration-20260511-075922/order_database_full.dump,docs/archive/backups/2026-05-11-migration-bundle/order_database_full.dump
+migration-bundles/migration-20260511-075922/restore_migration_bundle.sh,docs/archive/backups/2026-05-11-migration-bundle/restore_migration_bundle.sh
+output/qa-2026-11-09/AcomOfferDesk_тесты_баги_и_новый_функционал.docx,docs/reports/qa/2026-11-09-bugs-and-new-features.docx
+output/staff-import-2026-11-03-v2/README.txt,docs/archive/staff-import/2026-11-03-v2/README.txt
+output/staff-import-2026-11-03-v2/employees.csv,docs/archive/staff-import/2026-11-03-v2/employees.csv
+output/staff-import-2026-11-03-v2/employees.json,docs/archive/staff-import/2026-11-03-v2/employees.json
+output/staff-import-2026-11-03-v2/permissions-snapshot.json,docs/archive/staff-import/2026-11-03-v2/permissions-snapshot.json
+output/staff-import-2026-11-03-v2/validation.json,docs/archive/staff-import/2026-11-03-v2/validation.json
+output/staff-import-2026-11-03-v2/Иерархия сотрудников.png,docs/archive/staff-import/2026-11-03-v2/Иерархия сотрудников.png
+output/staff-import-2026-11-03-v2/Иерархия сотрудников.svg,docs/archive/staff-import/2026-11-03-v2/Иерархия сотрудников.svg
+output/staff-import-2026-11-03-v2/Реестр сотрудников.xlsx,docs/archive/staff-import/2026-11-03-v2/Реестр сотрудников.xlsx
+output/staff-import-2026-11-03-v2/ТЗ.docx,docs/archive/staff-import/2026-11-03-v2/ТЗ.docx
+output/staff-import-2026-11-03-v2/ТЗ.md,docs/archive/staff-import/2026-11-03-v2/ТЗ.md
+output/staff-import-2026-11-03-v2/ТЗ.pdf,docs/archive/staff-import/2026-11-03-v2/ТЗ.pdf
+output/staff-import-2026-11-03/README.txt,docs/archive/staff-import/2026-11-03-v1/README.txt
+output/staff-import-2026-11-03/employees.csv,docs/archive/staff-import/2026-11-03-v1/employees.csv
+output/staff-import-2026-11-03/employees.json,docs/archive/staff-import/2026-11-03-v1/employees.json
+output/staff-import-2026-11-03/imagegen-prompt.txt,docs/archive/staff-import/2026-11-03-v1/imagegen-prompt.txt
+output/staff-import-2026-11-03/permissions-snapshot.json,docs/archive/staff-import/2026-11-03-v1/permissions-snapshot.json
+output/staff-import-2026-11-03/validation.json,docs/archive/staff-import/2026-11-03-v1/validation.json
+output/staff-import-2026-11-03/Иерархия сотрудников.png,docs/archive/staff-import/2026-11-03-v1/Иерархия сотрудников.png
+output/staff-import-2026-11-03/Иерархия сотрудников.svg,docs/archive/staff-import/2026-11-03-v1/Иерархия сотрудников.svg
+output/staff-import-2026-11-03/Обзор руководителей.png,docs/archive/staff-import/2026-11-03-v1/Обзор руководителей.png
+output/staff-import-2026-11-03/Реестр сотрудников.xlsx,docs/archive/staff-import/2026-11-03-v1/Реестр сотрудников.xlsx
+output/staff-import-2026-11-03/ТЗ.docx,docs/archive/staff-import/2026-11-03-v1/ТЗ.docx
+output/staff-import-2026-11-03/ТЗ.md,docs/archive/staff-import/2026-11-03-v1/ТЗ.md
+output/staff-import-2026-11-03/ТЗ.pdf,docs/archive/staff-import/2026-11-03-v1/ТЗ.pdf
+output/staff-import-2026-11-04-v3/README.txt,docs/archive/staff-import/2026-11-04-v3/README.txt
+output/staff-import-2026-11-04-v3/employees.csv,docs/archive/staff-import/2026-11-04-v3/employees.csv
+output/staff-import-2026-11-04-v3/employees.json,docs/archive/staff-import/2026-11-04-v3/employees.json
+output/staff-import-2026-11-04-v3/permissions-snapshot.json,docs/archive/staff-import/2026-11-04-v3/permissions-snapshot.json
+output/staff-import-2026-11-04-v3/validation.json,docs/archive/staff-import/2026-11-04-v3/validation.json
+output/staff-import-2026-11-04-v3/Иерархия сотрудников.png,docs/archive/staff-import/2026-11-04-v3/Иерархия сотрудников.png
+output/staff-import-2026-11-04-v3/Иерархия сотрудников.svg,docs/archive/staff-import/2026-11-04-v3/Иерархия сотрудников.svg
+output/staff-import-2026-11-04-v3/Реестр сотрудников.xlsx,docs/archive/staff-import/2026-11-04-v3/Реестр сотрудников.xlsx
+output/staff-import-2026-11-04-v3/ТЗ.docx,docs/archive/staff-import/2026-11-04-v3/ТЗ.docx
+output/staff-import-2026-11-04-v3/ТЗ.md,docs/archive/staff-import/2026-11-04-v3/ТЗ.md
+output/staff-import-2026-11-04-v3/ТЗ.pdf,docs/archive/staff-import/2026-11-04-v3/ТЗ.pdf
+scripts/generate_role_guides.py,docs/archive/role-guides/2026-11-10-legacy-generator.py

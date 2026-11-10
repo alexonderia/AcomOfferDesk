@@ -1,14 +1,16 @@
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import {
   Alert,
   Box,
-  Button,
   CircularProgress,
   FormControl,
+  IconButton,
   MenuItem,
   Select,
   Stack,
+  Tooltip,
 } from '@mui/material';
 import { useRef, useState } from 'react';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -17,6 +19,7 @@ import { normativeFileStatusLabels, type NormativeFileItem, type NormativeFileSt
 import { hasPermission } from '@shared/auth/permissions';
 import { DataTable, type DataTableColumn } from '@shared/components/DataTable';
 import { downloadFile } from '@shared/api/fileDownload';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
 import { getUploadFileSizeError } from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { useNormativeFilesPage } from '../model/useNormativeFilesPage';
@@ -24,8 +27,18 @@ import { useNormativeFilesPage } from '../model/useNormativeFilesPage';
 const columns: DataTableColumn[] = [
   { key: 'name', label: 'Имя файла', minWidth: 280, fraction: 2.5 },
   { key: 'status', label: 'Статус', minWidth: 180, fraction: 1 },
-  { key: 'actions', label: 'Действия', minWidth: 220, fraction: 1.2 },
+  { key: 'actions', label: 'Действия', minWidth: 196, fraction: 0.8 },
 ];
+
+const fileActionSx = {
+  width: 44,
+  height: 44,
+  flexShrink: 0,
+  border: '1px solid',
+  borderColor: 'primary.main',
+  borderRadius: 1,
+  '&.Mui-disabled': { borderColor: 'action.disabledBackground' },
+};
 
 const statusOptions: NormativeFileStatus[] = ['actual', 'outdated'];
 
@@ -176,30 +189,28 @@ export const NormativeFilesPageView = () => {
             ) : (
               normativeFileStatusLabels[row.status]
             ),
-            <Stack key={`actions-${row.id}`} direction="row" spacing={1} flexWrap="wrap">
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<DownloadOutlinedIcon />}
-                onClick={() => void handleDownload(row)}
-                sx={{ textTransform: 'none', borderRadius: 1 }}
-              >
-                Скачать
-              </Button>
+            <Stack key={`actions-${row.id}`} direction="row" spacing={1} useFlexGap alignItems="center">
+              <FilePreviewTrigger source={{ name: row.original_name, downloadUrl: row.download_url }}>
+                {(openPreview) => <Tooltip title="Предпросмотр">
+                  <IconButton color="primary" aria-label="Предпросмотр" onClick={openPreview} sx={fileActionSx}>
+                    <VisibilityOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>}
+              </FilePreviewTrigger>
+              <Tooltip title="Скачать">
+                <IconButton color="primary" aria-label="Скачать" onClick={() => void handleDownload(row)} sx={fileActionSx}>
+                  <DownloadOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
               {canCreateNormativeFile ? (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  disabled={replacingId !== null}
-                  startIcon={<UploadFileOutlinedIcon />}
-                  onClick={() => {
-                    setReplacingId(row.id);
-                    replaceInputRef.current?.click();
-                  }}
-                  sx={{ textTransform: 'none', borderRadius: 1 }}
-                >
-                  Заменить
-                </Button>
+                <Tooltip title="Заменить">
+                  <Box component="span" sx={{ display: 'inline-flex' }}>
+                    <IconButton color="primary" aria-label="Заменить" disabled={replacingId !== null}
+                      onClick={() => { setReplacingId(row.id); replaceInputRef.current?.click(); }} sx={fileActionSx}>
+                      <UploadFileOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </Tooltip>
               ) : null}
             </Stack>,
           ]}

@@ -1,4 +1,4 @@
-﻿# Сервис Уведомлений (Backend)
+# Сервис Уведомлений (Backend)
 
 ## Назначение
 
@@ -6,7 +6,7 @@
 
 Подробная классификация событий находится в документе:
 
-- `docs/development/notification-event-map.md`
+- `docs/operations/notifications-matrix.md`
 
 ## Категории Уведомлений
 
@@ -270,3 +270,139 @@ Dedupe реализован best-effort через JSON-ключи в payload:
 - API/WS ошибки, попадающие в UI, показываются понятными русскими текстами без `Unauthorized/Forbidden/ValidationError/Internal Server Error`.
 - Toast/Alert не показывают технические детали (`traceback`, `sql`, `rabbitmq`, `smtp`, `jwt`).
 - Email subject/body и `notification.title/body` остаются человекочитаемыми на русском.
+
+## Контракт доставки и настроек
+
+This file documents the current notification delivery contract.
+
+## Scenario: Internal, WebSocket, and Email Delivery
+
+### 1. Scope / Trigger
+
+- Trigger: any change to business notifications, RabbitMQ delivery, notification preferences, or worker configuration.
+- The supported runtime paths are in-app persistence, WebSocket delivery, and email delivery through `notifications_worker`.
+
+### 2. Signatures
+
+- `NotificationService` creates in-app notification rows and schedules realtime delivery.
+- Backend email publishers publish to exchange `app.events` with routing key `email.send`.
+- `notifications_worker.app.consumers.handle_message(message)` consumes only email delivery messages.
+- `GET|PUT /api/v1/users/me/notification-preferences` exposes email-only preferences.
+
+### 3. Contracts
+
+- Queue: `notify.email`.
+- Routing key: `email.send`.
+- Preference modes: `email_only`, `none`, and response-only `custom`.
+- Per-type preference shape: `{"chat|request|offer|system": {"email": boolean}}`.
+- Worker environment: `RABBITMQ_URL`, SMTP keys, `EMAIL_ADDRESS`, `EMAIL_APP_PASSWORD`, `EMAIL_FROM_NAME`, `EMAIL_DEDUP_TTL_SECONDS`, and `EMAIL_SPAM_COOLDOWN_SECONDS`.
+- Existing messenger-related database values remain storage compatibility only and must not be exposed as notification channels.
+
+### 4. Validation & Error Matrix
+
+- Unsupported preference mode -> `409 Conflict`.
+- Unsupported notification type -> `409 Conflict`.
+- Unsupported channel key -> `409 Conflict`.
+- Enabling email without an available email address -> `409 Conflict`.
+- Unsupported RabbitMQ routing key -> acknowledge and skip without external delivery.
+
+### 5. Good / Base / Bad Cases
+
+- Good: a business event creates an in-app notification, reaches connected users over WebSocket, and publishes email when enabled.
+- Base: email is disabled; the in-app and WebSocket paths still operate.
+- Bad: backend publishes to an undeclared messenger queue or the worker imports an external messenger sender.
+
+### 6. Tests Required
+
+- Unit: email-only preference modes and per-type persistence.
+- Integration: request, offer, chat, and user-status events preserve in-app/process events.
+- Worker: application imports, binds only `notify.email`, and publishes email delivery results.
+- Contract: unsupported channel keys are rejected and no messenger fields are returned by profile endpoints.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+await publisher.publish("external-messenger.send", payload)
+```
+
+#### Correct
+
+```python
+await publisher.publish(RK_EMAIL, email_payload)
+```
+
+## Rules
+
+- Do not move SMTP delivery into synchronous request handling.
+- Update backend publisher, shared broker constants, worker consumer, tests, and docs together when the email payload changes.
+- Preserve delayed email and email delivery-result routes.
+
+## Scenario: Aggregated Final Email Result Notifications
+
+### 1. Scope / Trigger
+- Trigger: a user launches a multi-recipient email operation where the product needs one final in-app result notification after worker-confirmed delivery, not a burst of per-recipient system notifications.
+
+### 2. Signatures
+- Request additional emails:
+  `POST /api/v1/requests/{request_id}/email-notifications`
+- Contractor invitations:
+  `POST /api/v1/contractors/invite`
+- Outbound email payload fields:
+  `operation_id`
+  `operation_kind`
+  `operation_expected_total`
+- Delivery feedback event fields:
+  `operation_id`
+  `operation_kind`
+  `operation_expected_total`
+
+### 3. Contracts
+- `operation_id` groups all recipient deliveries that belong to one user action.
+- `operation_kind` currently supports:
+  - `request.additional_email`
+  - `contractor.invite`
+- `operation_expected_total` is the total intended recipient count for the operation, including items that may fail before worker delivery.
+- The notification center may use one hidden tracking row in `user_notifications` with `payload.tracking_only="true"` while the batch is incomplete.
+- Hidden tracking rows must not appear in list/unread APIs.
+- Hidden tracking rows must not be delivered to the SPA as visible `notification.created` items; otherwise the later finalized event may reuse the same notification id and lose its push/display update.
+- Final visible email-result notification must carry `payload.toast_channel="system"` and trigger a dedicated realtime `system.toast` event for top-center system UI, while the normal `notification.created` event still refreshes the notification center list.
+- Final user-visible notification is emitted only when:
+  - all worker delivery events for the operation are processed; and
+  - any pre-worker queue failures are accounted for.
+
+### 4. Validation & Error Matrix
+- batch operation with final worker feedback complete -> emit one final aggregated notification to the initiator
+- per-recipient worker events for a tracked batch -> do not emit separate initiator-facing `email.sent` / `email.failed` notifications
+- duplicate delivery event with same `correlation_id` inside one `operation_id` -> ignore
+- queue failure before worker delivery -> count it toward the same batch summary
+- hidden tracking row still incomplete -> exclude from notifications list and unread count
+- hidden tracking row reaches realtime/frontend state -> ignore it and still allow the later finalized notification with the same id to appear
+- final email-result notification arrives with `toast_channel=system` -> do not show business push; show only system toast plus center update
+
+### 5. Good/Base/Bad Cases
+- Good: 10 invitations started, 7 delivered, 2 worker failures, 1 queue failure -> initiator gets one final summary with `7/10`, partial success, no burst of 10 notifications.
+- Base: one-off email flow without batch metadata may still use ordinary per-email `email.sent` / `email.failed`.
+- Bad: create one system notification per recipient for a batch operation and flood the notification center, or emit a “success” summary before worker delivery finishes.
+
+### 6. Tests Required
+- Unit: worker feedback with one `operation_id` finalizes exactly one notification after the last delivery event.
+- Unit: queue-only total failure finalizes one `email.failed` aggregated summary without waiting for worker events.
+- Unit: duplicate delivery `correlation_id` inside one batch does not increment counts twice.
+- Unit/Frontend: tracking-only realtime notification is ignored, and the finalized visible notification with the same id still updates state and shows push UI.
+- Unit/Frontend: `toast_channel=system` email result emits `system.toast` and skips the bottom-right business notification push.
+- Integration: BFF/request/invite flows pass operation metadata through the existing adapters where required.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Treat every recipient result as an independent initiator-facing system notification for batch operations.
+
+#### Correct
+- Use operation metadata plus one hidden tracking notification row, then publish one final aggregated initiator-facing result when the batch is fully resolved.
+
+## Получатели модерации регистрации
+
+`user.review_required` адресуется admin и superadmin; для contractor lifecycle также security officer.
+Контрагент на проверке не получает административное уведомление. Инициирующий администратор не исключается общим фильтром автора.
+Источник текущего отбора — `ProcessNotificationEventHandler._handle_user_review_required`.

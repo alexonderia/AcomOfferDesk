@@ -33,11 +33,10 @@ from app.core.uow import UnitOfWork
 from app.domain.authentication import decode_iam_access_token
 from app.domain.auth_context import CurrentUser
 from app.domain.exceptions import AuthenticationUnavailable, Conflict, Forbidden, NotFound, Unauthorized
-from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.domain.policies import UserPolicy
 from app.infrastructure.iam_client import IamClient
-from app.models.auth_models import UserAuthAccount
+from app.services.iam_bindings import ensure_user_iam_account
 from app.schemas.auth import AuthSessionData, AuthSessionResponse, RegisterUserRequest, RegisterUserResponse
 from app.schemas.auth import PasswordChangeRequest
 from app.services.account_recovery import AccountRecoveryService, GENERIC_RECOVERY_DETAIL
@@ -457,7 +456,6 @@ async def register_user(
         raise Conflict("Начальный пароль задаётся при создании в режиме без почты")
     iam_client = IamClient()
     normalized_login = payload.login.strip()
-    account_id = stable_iam_account_id(normalized_login)
     role_name = technical_role_name(payload.role_id)
     if role_name is None:
         raise Conflict("Invalid role")
@@ -519,29 +517,17 @@ async def register_user(
                     current_user=current_user, unit_id=seed_unit_id, user_id=user.id
                 )
 
-        if settings.email_enabled:
-            account = await iam_client.put_account(
-                account_id=binding.external_subject_id if binding is not None else account_id,
-                login=user.id, role=role_name, auth_status="active",
-            )
-        else:
-            account = await iam_client.provision_direct_credentials(
-                account_id=binding.external_subject_id if binding is not None else account_id,
-                login=user.id, role=role_name, password=payload.password.get_secret_value(),
-            )
-        if binding is None:
-            binding = UserAuthAccount(
-                id_user=user.id,
-                provider="iam",
-                external_subject_id=account.id,
-                external_username=user.id,
-                external_email=payload.mail,
-                is_active=True,
-            )
-            await uow.user_auth_accounts.add(binding)
-        else:
-            binding.is_active = True
+        await ensure_user_iam_account(
+            user_auth_accounts=uow.user_auth_accounts, user_id=user.id,
+            role_id=user.id_role, user_status=user.status, email=payload.mail,
+            initial_password=payload.password.get_secret_value() if payload.password is not None else None,
+            is_new_user=is_new_user, iam_client=iam_client,
+        )
+
+        visible_ids = await UnitHierarchyService(uow.users).get_visible_user_ids(current_user=current_user)
+        visible_to_creator = visible_ids is None or user.id in visible_ids
 
     return RegisterUserResponse(
-        data={"user_id": user.id, "role_id": user.id_role, "status": user.status}
+        data={"user_id": user.id, "role_id": user.id_role, "status": user.status,
+              "visible_to_creator": visible_to_creator}
     )

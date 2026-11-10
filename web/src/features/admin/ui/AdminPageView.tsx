@@ -1,4 +1,5 @@
 import {
+  Alert,
   Autocomplete,
   Box,
   Button,
@@ -58,6 +59,7 @@ export const AdminPageView = () => {
     contractors,
     isLoadingUsers,
     usersError,
+    creationNotice,
     canUpdateStatus,
     canUpdateRole,
     roleUpdateOptions,
@@ -165,6 +167,9 @@ export const AdminPageView = () => {
 
   return (
     <Stack spacing={2}>
+      {creationNotice ? <Alert severity={creationNotice.visibleToCreator ? 'success' : 'warning'}>
+        {creationNotice.message}
+      </Alert> : null}
       {!isLeadLike ? (
         <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap" sx={{ width: '100%' }}>
           <Select
@@ -220,6 +225,9 @@ export const AdminPageView = () => {
                     ? employeePersonLabels.createDialogTitle
                     : 'Создание нового пользователя'}
               </Typography>
+              {session?.roleId === ROLE.ADMIN && !isContractorRole ? <Alert severity="info">
+                Администратор может создавать экономистов и операторов. Чтобы видеть нового сотрудника, назначьте его в доступное вам подразделение. Если назначения нет, распределить сотрудника сможет суперадминистратор.
+              </Alert> : null}
               <TextField
                 label={
                   <RequiredFieldLabel
@@ -230,7 +238,7 @@ export const AdminPageView = () => {
                 select
                 error={Boolean(getFieldError('role_id'))}
                 helperText={getFieldError('role_id')}
-                defaultValue={roleOptions[0]?.id ?? ROLE.ADMIN}
+                value={selectedRoleId}
                 {...register('role_id', { valueAsNumber: true })}
                 sx={inputFieldSx}
               >

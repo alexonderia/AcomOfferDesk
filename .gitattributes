@@ -1,2 +1,5 @@
 *.sh text eol=lf
 *.conf text eol=lf
+# Preserve the original checksummed backup on Windows checkouts.
+docs/archive/backups/**/*.json text eol=lf
+docs/archive/backups/**/*.sql text eol=lf

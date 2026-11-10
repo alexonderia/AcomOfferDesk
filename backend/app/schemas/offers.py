@@ -271,6 +271,8 @@ class ManualOfferEligibleContractorItem(BaseModel):
     company_name: str | None = None
     mail: str | None = None
     company_mail: str | None = None
+    can_select: bool
+    disabled_reason: str | None = None
 
 
 class ManualOfferEligibleContractorListData(BaseModel):

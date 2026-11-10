@@ -28,7 +28,7 @@ import { useIsMobileViewport } from '@shared/lib/responsive';
 import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
 import { ROLE } from '@shared/constants/roles';
 import { ActionButton } from '@shared/components/ActionButton';
-import { StatusPill, type StatusPillTone } from '@shared/components/StatusPill';
+import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import {

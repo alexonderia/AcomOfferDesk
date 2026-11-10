@@ -1,3 +1,10 @@
 .git
 web/node_modules
 web/dist
+web/public/pdfjs
+docs/archive
+docs/reports
+artifacts
+.tmp
+.venv
+.pytest_cache

@@ -1,6 +1,6 @@
 import type { UnitNode } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
-import { sortPersonTreeNodes, type PersonTreeNode } from './buildPeopleTree';
+import { canLeadUnitSubtree, isBusinessHierarchyRole, sortPersonTreeNodes, type PersonTreeNode } from './buildPeopleTree';
 
 const collectDescendantUserIds = (units: UnitNode[], target: Set<string>) => {
   units.forEach((unit) => {
@@ -22,15 +22,21 @@ const attachChildRoots = (
     return roots;
   }
 
-  const primaryRoot = localRoots[0] ?? null;
+  const primaryRoot = localRoots.find((node) => canLeadUnitSubtree(node.role_id));
 
   if (!primaryRoot) {
-    return [...roots, ...childRoots];
+    const peers = [...roots, ...childRoots];
+    return [
+      ...peers.filter((node) => isBusinessHierarchyRole(node.role_id)),
+      ...peers.filter((node) => !isBusinessHierarchyRole(node.role_id)),
+    ];
   }
 
-  primaryRoot.children.push(...childRoots);
+  const businessRoots = childRoots.filter((node) => isBusinessHierarchyRole(node.role_id));
+  const otherRoots = childRoots.filter((node) => !isBusinessHierarchyRole(node.role_id));
+  primaryRoot.children.push(...businessRoots);
   sortPersonTreeNodes(primaryRoot.children);
-  return roots;
+  return [...roots, ...otherRoots];
 };
 
 export const buildUnitPeopleTree = (unit: UnitNode): PersonTreeNode[] => {

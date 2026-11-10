@@ -13,6 +13,9 @@ from app.domain.iam_status import iam_auth_status_for_user_status
 from app.domain.policies import CurrentUser, UserPolicy
 from app.infrastructure.iam_client import IamClient
 from app.schemas.contractors import (
+    ContractorLoginAccessItem,
+    ContractorLoginAccessData,
+    ContractorLoginAccessResponse,
     ContractorInviteData,
     ContractorInviteRequest,
     ContractorInviteResponse,
@@ -119,6 +122,20 @@ async def list_contractors(
             offset=result.offset,
         ),
     )
+
+
+@router.get("/contractors/login-access", response_model=ContractorLoginAccessResponse)
+async def check_contractor_login_access(
+    contractor_id: list[str] = Query(min_length=1, max_length=100),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ContractorLoginAccessResponse:
+    async with uow:
+        service = ContractorService(uow.users, uow.profiles, uow.units, user_auth_accounts=uow.user_auth_accounts)
+        items = await service.check_login_access(current_user=current_user, contractor_ids=contractor_id)
+    return ContractorLoginAccessResponse(data=ContractorLoginAccessData(
+        items=[ContractorLoginAccessItem(**asdict(item)) for item in items],
+    ))
 
 
 @router.get("/contractors/{contractor_id}", response_model=ContractorProfileResponse)

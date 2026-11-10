@@ -113,10 +113,10 @@ export const getMyHierarchy = async (): Promise<UserHierarchy> => {
   return mapHierarchy(response);
 };
 
-export const getUserHierarchy = async (userId: string): Promise<UserHierarchy> => {
+export const getUserHierarchy = async (userId: string, signal?: AbortSignal): Promise<UserHierarchy> => {
   const response = await fetchJson<UserHierarchyResponse>(
-    `/api/v1/users/${userId}/hierarchy`,
-    { method: 'GET' },
+    `/api/v1/users/${encodeURIComponent(userId)}/hierarchy`,
+    { method: 'GET', signal },
     'Ошибка загрузки иерархии сотрудника'
   );
 

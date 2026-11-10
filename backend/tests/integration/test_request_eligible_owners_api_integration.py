@@ -117,5 +117,7 @@ def test_manual_contractor_duplicate_suggestions_return_safe_preview(
             "status": "active",
             "created_at": "2026-08-01 10:00:00",
             "updated_at": "2026-08-02 11:00:00",
+            "can_select": None,
+            "disabled_reason": None,
         },
     ]

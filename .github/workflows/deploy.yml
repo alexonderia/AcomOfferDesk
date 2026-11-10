@@ -28,7 +28,7 @@ jobs:
 
             fail_order_db_prerequisite() {
               echo "ORDER_DB_PREREQUISITE: $1" >&2
-              echo "See docs/order-database-vps.md (also: empty flyway/sql on VPS — sync flyway/sql from order_database main, then flyway migrate)." >&2
+              echo "See docs/operations/order-database-vps.md (also: empty flyway/sql on VPS — sync flyway/sql from order_database main, then flyway migrate)." >&2
               echo "Full reinstall (new volume): run install-order-database-vps.sh until INSTALL_SUCCESS." >&2
               exit 1
             }
@@ -130,7 +130,7 @@ jobs:
 
             require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'flyway_schema_history';" "1"
 
-            # Пустой flyway/sql на диске давал только baseline без версионных миграций → нет user_auth_accounts и 500 на OAuth callback (см. docs/order-database-vps.md).
+            # Пустой flyway/sql на диске давал только baseline без версионных миграций → нет user_auth_accounts и 500 на OAuth callback (см. docs/operations/order-database-vps.md).
             if [ ! -d "$ORDER_DB_DIR/flyway/sql" ]; then
               fail_order_db_prerequisite "Missing directory $ORDER_DB_DIR/flyway/sql."
             fi

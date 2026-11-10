@@ -41,6 +41,19 @@ class UserListResponse(BaseModel):
     data: UserListData
 
 
+class UserProfileViewData(BaseModel):
+    user_id: str
+    role_id: int
+    status: str
+    full_name: str | None = None
+    phone: str | None = None
+    mail: str | None = None
+
+
+class UserProfileViewResponse(BaseModel):
+    data: UserProfileViewData
+
+
 class UserPasswordResetRequest(BaseModel):
     new_password: SecretStr = Field(min_length=12, max_length=128)
     password_confirmation: SecretStr = Field(min_length=12, max_length=128)
@@ -418,6 +431,8 @@ class ManualContractorDuplicateItemSchema(BaseModel):
     status: str
     created_at: str | None = None
     updated_at: str | None = None
+    can_select: bool | None = None
+    disabled_reason: str | None = None
 
 
 class ManualContractorDuplicateListData(BaseModel):

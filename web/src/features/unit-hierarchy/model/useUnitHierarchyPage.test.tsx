@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROLE } from '@shared/constants/roles';
+import type { UnitNode } from '@shared/api/units';
 import { useUnitHierarchyPage } from './useUnitHierarchyPage';
 
 const useAuthMock = vi.fn();
@@ -37,7 +38,7 @@ vi.mock('@shared/ui/toasts', () => ({
   }),
 }));
 
-const treeResponse = [
+const treeResponse: UnitNode[] = [
   {
     unit_id: 1,
     name: 'Финансы',
@@ -53,6 +54,7 @@ const treeResponse = [
         members: [
           {
             user_id: 'econ-1',
+            id_parent_user: null,
             full_name: 'Экономист 1',
             role_id: ROLE.ECONOMIST,
             role_name: 'Экономист',
@@ -238,21 +240,54 @@ describe('useUnitHierarchyPage', () => {
     expect(result.current.canCreateRootUnit).toBe(true);
   });
 
-  it('creates a second-level unit and opens it in the graph editor', async () => {
+  it.each([
+    { editorUnitId: null, parentUnitId: 1 },
+    { editorUnitId: 1, parentUnitId: 1 },
+    { editorUnitId: 2, parentUnitId: 2 },
+  ])('creates a child of $parentUnitId without changing the current chart ($editorUnitId)', async ({ editorUnitId, parentUnitId }) => {
     const { result } = renderHook(() => useUnitHierarchyPage());
 
     await waitFor(() => expect(result.current.selectedDepartment?.unit_id).toBe(1));
 
+    const parent = parentUnitId === 1 ? treeResponse[0]! : treeResponse[0]!.children[0]!;
+    const child = { ...parent, unit_id: 3, name: 'Проект Б', id_parent: parentUnitId, members: [], children: [] };
+    const refreshedTree = structuredClone(treeResponse);
+    const refreshedParent = parentUnitId === 1 ? refreshedTree[0]! : refreshedTree[0]!.children[0]!;
+    refreshedParent.children.push(child);
+    createUnitMock.mockResolvedValue(child);
+    let resolveRefresh!: (tree: typeof treeResponse) => void;
+    getUnitsTreeMock.mockImplementationOnce(() => new Promise<typeof treeResponse>((resolve) => {
+      resolveRefresh = resolve;
+    }));
+
     act(() => {
-      result.current.openCreateChildDialog(result.current.selectedDepartment!);
+      result.current.setSelectedEditorUnitId(editorUnitId);
+      result.current.setActiveUnitDetailsId(parentUnitId);
+      result.current.openCreateChildDialog(parent);
     });
+
+    let submission!: Promise<void>;
+    act(() => {
+      submission = result.current.submitUnit({ name: 'Проект Б' });
+    });
+    await waitFor(() => expect(getUnitsTreeMock).toHaveBeenCalledTimes(2));
+
+    // A pending refresh must not unmount the chart or navigate to the new child.
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.selectedEditorUnitId).toBe(editorUnitId);
+    expect(result.current.activeUnitDetails?.unit_id).toBe(parentUnitId);
 
     await act(async () => {
-      await result.current.submitUnit({ name: 'Проект Б' });
+      resolveRefresh(refreshedTree);
+      await submission;
     });
 
-    expect(createUnitMock).toHaveBeenCalledWith({ name: 'Проект Б', id_parent: 1 });
+    expect(createUnitMock).toHaveBeenCalledWith({ name: 'Проект Б', id_parent: parentUnitId });
     expect(showSuccessToastMock).toHaveBeenCalledWith('Объединение создано');
+    expect(result.current.selectedEditorUnitId).toBe(editorUnitId);
+    expect(result.current.selectedDepartmentId).toBe(1);
+    expect(result.current.activeUnitDetails?.children).toContainEqual(child);
+    expect(result.current.unitDialogState.mode).toBeNull();
   });
 
   it('adds a member into the active unit', async () => {

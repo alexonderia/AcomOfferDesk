@@ -32,7 +32,7 @@ import { updateManualContractor } from '@shared/api/users/updateManualContractor
 import { getUserHierarchy, type UserHierarchy } from '@shared/api/users/getUserHierarchy';
 import { getUserHierarchyUnitsTree } from '@shared/api/users/getUserHierarchyUnitsTree';
 import type { UnitNode } from '@shared/api/units';
-import { UserHierarchyTree } from './UserHierarchyTree';
+import { EmployeeCardDialog } from './EmployeeCardDialog';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { ROLE } from '@shared/constants/roles';
 import {
@@ -55,6 +55,7 @@ import {
   userStatusLabelByValue,
   userStatusMemoText,
   EmailWithVerifiedMark,
+  formatPhoneForView,
 } from './UserCardPrimitives';
 import {
   getSubordinateProfile,
@@ -189,14 +190,6 @@ const contractorStatusToneByValue: Record<string, 'success' | 'warning' | 'error
 const ContractorStatusPill = ({ value }: { value: string | null | undefined }) => (
   <BaseStatusPill label={toStatusLabel(value)} tone={contractorStatusToneByValue[normalizeAnyStatus(value)] ?? 'info'} />
 );
-
-const formatPhoneForView = (value: string | null | undefined) => {
-  if (!value) {
-    return null;
-  }
-  const formatted = formatRuPhone(value);
-  return formatted || value;
-};
 
 type UserMobileCardProps = {
   row: UserRow;
@@ -1444,113 +1437,20 @@ export const UsersTable = ({
           />
         </Stack>
 
-        <Dialog
+        <EmployeeCardDialog
           open={Boolean(selectedUser)}
           onClose={() => {
             setSelectedUser(null);
             setOpenSubordinateUnavailability(false);
           }}
-          maxWidth="sm"
-          fullWidth
-          aria-labelledby="user-card-dialog-title"
-          PaperProps={{
-            sx: dialogPaperSx
-          }}
+          user={selectedUser}
+          hierarchy={userHierarchy}
+          unitsTree={userHierarchyUnitsTree}
+          isLoadingHierarchy={isLoadingUserHierarchy}
+          hierarchyError={userHierarchyError}
+          showEmailVerification={canViewEmailVerification}
+          headerActions={selectedUser ? <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} /> : null}
         >
-          <DialogContent sx={dialogContentSx}>
-            {selectedUser ? (
-              <Stack spacing={2}>
-                <Typography id="user-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
-                  Карточка сотрудника
-                </Typography>
-
-                <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} />
-
-                <Box
-                  sx={{
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    p: { xs: 1.4, sm: 1.6 },
-                    backgroundColor: 'background.paper'
-                  }}
-                >
-                  <Stack spacing={1.2}>
-                    <SourceSection title="Сотрудник" source="users">
-                      <Box
-                        sx={{
-                          display: 'grid',
-                          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                          gap: 1.5
-                        }}
-                      >
-                        <InfoRow label="Логин" value={selectedUser.user_id} />
-                        <Stack spacing={0.2} sx={{ alignItems: 'flex-start' }}>
-                          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            Статус users
-                          </Typography>
-                          <UserStatusPill value={selectedUser.status} />
-                        </Stack>
-                      </Box>
-                    </SourceSection>
-
-                    <SourceSection title="Профиль сотрудника" source="profiles">
-                      <Stack spacing={1.2}>
-                        <InfoRow label="ФИО" value={selectedUser.full_name} />
-                        <Box
-                          sx={{
-                            display: 'grid',
-                            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-                            gap: 1.2
-                          }}
-                        >
-                          <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
-                          <InfoRow
-                            label="E-mail"
-                            value={
-                              <EmailWithVerifiedMark
-                                mail={selectedUser.mail}
-                                verified={Boolean(selectedUser.email_verified)}
-                                showMark={canViewEmailVerification}
-                              />
-                            }
-                          />
-                        </Box>
-                      </Stack>
-                    </SourceSection>
-                  </Stack>
-                </Box>
-
-                <SourceSection title="Иерархия по объединениям" source="units">
-                  <Stack spacing={1.2}>
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
-                        gap: 1.2
-                      }}
-                    >
-                      <InfoRow label="Объединения" value={selectedUser.units_count} />
-                      <InfoRow label="Руководители" value={selectedUser.managers_count} />
-                      <InfoRow label="Подчинённые" value={selectedUser.subordinates_count} />
-                    </Box>
-
-                    {isLoadingUserHierarchy ? (
-                      <Typography variant="body2" color="text.secondary">
-                        Загружаем связи сотрудника...
-                      </Typography>
-                    ) : null}
-
-                    {userHierarchyError ? (
-                      <Alert severity="warning">{userHierarchyError}</Alert>
-                    ) : null}
-
-                    {userHierarchy ? (
-                      <UserHierarchyTree hierarchy={userHierarchy} unitsTree={userHierarchyUnitsTree} />
-                    ) : null}
-                  </Stack>
-                </SourceSection>
-
                 {subordinateProfile ? (
                   <Stack spacing={1.2}>
                     {subordinateError ? <Alert severity="warning">{subordinateError}</Alert> : null}
@@ -1737,22 +1637,7 @@ export const UsersTable = ({
                   </Stack>
                 ) : null}
 
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
-                  <Button
-                    variant="outlined"
-                    onClick={() => {
-                      setSelectedUser(null);
-                      setOpenSubordinateUnavailability(false);
-                    }}
-                    sx={{ borderRadius: 1, textTransform: 'none' }}
-                  >
-                    Закрыть
-                  </Button>
-                </Stack>
-              </Stack>
-            ) : null}
-          </DialogContent>
-        </Dialog>
+        </EmployeeCardDialog>
       </>
     );
   }
@@ -1858,7 +1743,7 @@ export const UsersTable = ({
                 }}
               >
                 <Stack spacing={1.2}>
-                  <SourceSection title="Пользователь" source="users">
+                  <SourceSection title="Пользователь">
                     <Box
                       sx={{
                         display: 'grid',
@@ -1869,14 +1754,14 @@ export const UsersTable = ({
                       <InfoRow label="Логин" value={selectedUser.user_id} />
                       <Stack spacing={0.2} sx={{ alignItems: 'flex-start' }}>
                         <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          Статус users
+                          Статус
                         </Typography>
                         <UserStatusPill value={selectedUser.status} />
                       </Stack>
                     </Box>
                   </SourceSection>
 
-                  <SourceSection title="Профиль пользователя" source="profiles">
+                  <SourceSection title="Профиль пользователя">
                     <Stack spacing={1.2}>
                       <InfoRow label="ФИО" value={selectedUser.full_name} />
                       <Box
@@ -1901,7 +1786,7 @@ export const UsersTable = ({
                     </Stack>
                   </SourceSection>
 
-                  <SourceSection title="Контакты компании" source="company_contacts">
+                  <SourceSection title="Контакты компании">
                     <Stack spacing={1.2}>
                       <Box
                         sx={{

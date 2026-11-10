@@ -19,6 +19,15 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
     users_repo.get_role_by_id = AsyncMock(return_value=SimpleNamespace(role="Контрагент"))
     users_repo.list_active_units = AsyncMock(return_value=[(101, None)])
     users_repo.list_active_unit_memberships = AsyncMock(return_value=[("economist-1", 101)])
+    users_repo.get_by_id.return_value = SimpleNamespace(id="contractor-existing", id_role=settings.contractor_role_id, status="active")
+    companies_repo = AsyncMock()
+    companies_repo.get_by_id.return_value = SimpleNamespace(mail="office@example.com")
+    bindings_repo = AsyncMock()
+    bindings_repo.get_by_user_provider.return_value = None
+    bindings_repo.get_conflicting_subject.return_value = None
+    iam_client = SimpleNamespace(put_account=AsyncMock(side_effect=lambda **kw: SimpleNamespace(
+        id=kw["account_id"], login=kw["login"], role=kw["role"], auth_status=kw["auth_status"],
+    )))
 
     units_repo = AsyncMock()
     units_repo.list_user_root_unit_ids = AsyncMock(return_value=[101])
@@ -31,9 +40,10 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
     service = ManualContractorService(
         users=users_repo,
         profiles=AsyncMock(),
-        company_contacts=AsyncMock(),
-        user_auth_accounts=AsyncMock(),
+        company_contacts=companies_repo,
+        user_auth_accounts=bindings_repo,
         units=units_repo,
+        iam_client=iam_client,
     )
 
     current_user = CurrentUser(
@@ -63,6 +73,8 @@ async def test_create_manual_contractor_reuses_duplicate_and_binds_to_creator_ro
     assert added_membership.id_unit == 101
     assert added_membership.id_user == "contractor-existing"
     users_repo.add.assert_not_awaited()
+    iam_client.put_account.assert_awaited_once()
+    bindings_repo.add.assert_awaited_once()
 
 
 @pytest.mark.asyncio

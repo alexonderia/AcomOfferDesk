@@ -13,6 +13,7 @@ from iam_app.repositories import (
     ActionTokenRepository,
     AuditRepository,
     CredentialRepository,
+    RoleRepository,
 )
 from iam_app.services import IamService
 
@@ -21,6 +22,54 @@ ROLE = "economist"
 PASSWORD = "registration password 123"
 REDIRECT_URI = "http://testserver/api/v1/auth/callback"
 VERIFIER = "v" * 64
+
+
+@pytest.mark.asyncio
+async def test_identity_synchronization_does_not_reset_password_or_unblock_account(session) -> None:
+    service = IamService(session)
+    await service.seed_rbac({"contractor": ["requests.view"]})
+    account_id = uuid.uuid4()
+    first = await service.provision_registration_credentials(
+        account_id=account_id, login="contractor.sync", role_name="contractor", initial_password=PASSWORD,
+    )
+    credential = await CredentialRepository(session).get(account_id)
+    password_hash = credential.password_hash
+    first.account.auth_status = 'blocked'
+    first.account.required_actions = ['complete_profile']
+    await session.flush()
+
+    repeated = await service.create_account(account_id=account_id, login='contractor.sync', role_name='contractor', auth_status='active')
+
+    assert repeated.created is False
+    assert repeated.account.auth_status == 'blocked'
+    assert repeated.account.required_actions == ['complete_profile']
+    assert credential.password_hash == password_hash
+
+
+@pytest.mark.asyncio
+async def test_credential_state_reports_role_and_temporary_lock_without_changing_credentials(session) -> None:
+    service = IamService(session)
+    await service.seed_rbac({"contractor": ["requests.view"]})
+    account_id = uuid.uuid4()
+    await service.provision_registration_credentials(
+        account_id=account_id, login="contractor.login-state", role_name="contractor", initial_password=PASSWORD,
+    )
+    credential = await CredentialRepository(session).get(account_id)
+    password_hash = credential.password_hash
+    locked_until = utc_now() + timedelta(minutes=2)
+    credential.locked_until = locked_until
+    await session.flush()
+
+    state = await service.get_credential_state(account_id=account_id)
+
+    assert state.role_active is True
+    assert state.password_locked_until == locked_until
+    assert state.password_set is True
+    assert credential.password_hash == password_hash
+    role = await RoleRepository(session).get_by_name("contractor")
+    role.is_active = False
+    await session.flush()
+    assert (await service.get_credential_state(account_id=account_id)).role_active is False
 
 
 @pytest.mark.asyncio

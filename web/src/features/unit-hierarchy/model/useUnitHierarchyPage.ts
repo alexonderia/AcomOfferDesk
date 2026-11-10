@@ -200,7 +200,8 @@ export const useUnitHierarchyPage = () => {
   const [isAssigningMember, setIsAssigningMember] = useState(false);
   const deferredMemberSearch = useDeferredValue(memberDialogState.search);
 
-  const canCreateRootUnit = hasPermission(session, 'units.create') && session?.roleId === ROLE.SUPERADMIN;
+  const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
+  const canCreateRootUnit = hasPermission(session, 'units.create') && isSuperadmin;
   const canManageUnitMembers = hasPermission(session, 'units.members.manage');
 
   const departments = useMemo(
@@ -297,7 +298,10 @@ export const useUnitHierarchyPage = () => {
   }, [canManageUnitMembers]);
 
   const loadTree = useCallback(async (preserveSelection = true) => {
-    setIsLoading(true);
+    // Keep the current chart mounted during updates to preserve its zoom and scroll.
+    if (!preserveSelection) {
+      setIsLoading(true);
+    }
     setError(null);
     void loadUnassignedUsers();
     try {
@@ -397,15 +401,12 @@ export const useUnitHierarchyPage = () => {
         });
         showSuccessToast('Объединение обновлено');
       } else {
-        const createdUnit = await createUnit({
+        await createUnit({
           name: normalizedName,
           id_parent: unitDialogState.mode === 'create-child' && unitDialogState.unit
             ? unitDialogState.unit.unit_id
             : undefined,
         });
-        if (createdUnit.id_parent === selectedDepartment?.unit_id) {
-          setSelectedEditorUnitId(createdUnit.unit_id);
-        }
         showSuccessToast(unitDialogState.mode === 'create-root' ? 'Подразделение создано' : 'Объединение создано');
       }
 
@@ -604,6 +605,7 @@ export const useUnitHierarchyPage = () => {
     departmentStaff,
     departmentContractors,
     selectedDepartmentUnitOptions,
+    isSuperadmin,
     canCreateRootUnit,
     canManageUnitMembers,
     activeUnitDetails,

@@ -42,7 +42,7 @@ from iam_app.core.security import (
 from iam_app.db import get_session
 from iam_app.errors import Forbidden, IamError, RateLimited
 from iam_app.schemas import (
-    AccountCredentialStateResponse,
+    AccountLoginStateResponse,
     AccountPermissionGrantsPutRequest,
     AccountPermissionsResponse,
     AccountPutRequest,
@@ -559,21 +559,23 @@ async def put_registration_credentials(
 
 @router.get(
     "/internal/accounts/{account_id}/credential-state",
-    response_model=AccountCredentialStateResponse,
+    response_model=AccountLoginStateResponse,
     dependencies=[Depends(require_internal_service)],
 )
 async def get_account_credential_state(
     account_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-) -> AccountCredentialStateResponse:
+) -> AccountLoginStateResponse:
     result = await IamService(session).get_credential_state(account_id=account_id)
-    return AccountCredentialStateResponse(
+    return AccountLoginStateResponse(
         id=result.account.id,
         login=result.account.login,
         role=result.role_name,
         auth_status=result.account.auth_status,
         password_set=result.password_set,
         required_actions=list(result.required_actions),
+        role_active=result.role_active,
+        password_locked_until=result.password_locked_until,
     )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -79,6 +80,11 @@ class AccountCredentialStateResponse(BaseModel):
     auth_status: str
     password_set: bool
     required_actions: list[str] = Field(default_factory=list)
+
+
+class AccountLoginStateResponse(AccountCredentialStateResponse):
+    role_active: bool | None = None
+    password_locked_until: datetime | None = None
 
 
 class RegistrationCredentialsResponse(AccountCredentialStateResponse):

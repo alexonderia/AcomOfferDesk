@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -13,10 +13,6 @@ import {
   Stack,
 } from '@mui/material';
 import { createManualContractor } from '@shared/api/users/createManualContractor';
-import {
-  getManualContractorDuplicates,
-  type ManualContractorDuplicate,
-} from '@shared/api/users/getManualContractorDuplicates';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
 import { useLiveValidatedForm } from '@shared/lib/forms';
@@ -24,6 +20,8 @@ import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { sectionTitleSx } from '@shared/theme/sectionTitleSx';
 import { InitialAccountFields, type InitialAccountValues } from '@shared/components/InitialAccountFields';
+import { normalizeOptionalContractorValue } from '@shared/lib/manualContractorEditing';
+import { ManualContractorDuplicatePanel } from './ManualContractorDuplicatePanel';
 
 type ContractorCreateDialogProps = {
   open: boolean;
@@ -64,9 +62,6 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
   const [existingUserId, setExistingUserId] = useState<string | undefined>();
   const { showSuccessToast, showErrorToast } = useSystemToasts();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [duplicates, setDuplicates] = useState<ManualContractorDuplicate[]>([]);
-  const [duplicatesLoading, setDuplicatesLoading] = useState(false);
-  const duplicateRequestRef = useRef(0);
   const defaultValues = useMemo<FormValues>(
     () => ({
       companyName: '',
@@ -95,6 +90,8 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
   const innValue = watch('inn');
   const companyPhoneValue = watch('companyPhone');
   const companyMailValue = watch('companyMail');
+  const addressValue = watch('address');
+  const noteValue = watch('note');
   const touchedMap = touchedFields as Partial<Record<keyof FormValues, unknown>>;
   const dirtyMap = dirtyFields as Partial<Record<keyof FormValues, unknown>>;
   const getFieldError = (field: keyof FormValues) => {
@@ -109,43 +106,6 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
   const isCompanyNameValid = hasValue(companyNameValue) && !errors.companyName;
   const isInnValid = hasValue(innValue) && !errors.inn;
   const isCompanyPhoneValid = hasValue(companyPhoneValue) && !errors.companyPhone;
-  const hasDuplicateQuery = [companyNameValue, innValue, companyMailValue]
-    .some((value) => (value?.trim().length ?? 0) >= 2);
-
-  useEffect(() => {
-    if (!open) {
-      duplicateRequestRef.current += 1;
-      setDuplicates([]);
-      setDuplicatesLoading(false);
-      return;
-    }
-    const query = {
-      companyName: companyNameValue?.trim() ?? '',
-      inn: innValue?.trim() ?? '',
-      companyMail: companyMailValue?.trim() ?? '',
-    };
-    if (![query.companyName, query.inn, query.companyMail].some((value) => value.length >= 2)) {
-      setDuplicates([]);
-      setDuplicatesLoading(false);
-      return;
-    }
-    const requestId = duplicateRequestRef.current + 1;
-    duplicateRequestRef.current = requestId;
-    setDuplicatesLoading(true);
-    const timer = window.setTimeout(() => {
-      void getManualContractorDuplicates(query)
-        .then((items) => {
-          if (duplicateRequestRef.current === requestId) setDuplicates(items);
-        })
-        .catch(() => {
-          if (duplicateRequestRef.current === requestId) setDuplicates([]);
-        })
-        .finally(() => {
-          if (duplicateRequestRef.current === requestId) setDuplicatesLoading(false);
-        });
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [companyMailValue, companyNameValue, innValue, open]);
 
   useEffect(() => {
     if (!open) {
@@ -210,6 +170,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
             label={<RequiredFieldLabel label="Наименование компании" isValid={isCompanyNameValid} />}
             fieldName="companyName"
             registration={register('companyName')}
+            value={companyNameValue ?? ''}
             error={Boolean(getFieldError('companyName'))}
             helperText={getFieldError('companyName')}
             fullWidth
@@ -218,6 +179,8 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
             label={<RequiredFieldLabel label="ИНН" isValid={isInnValid} />}
             fieldName="inn"
             registration={register('inn')}
+            value={innValue ?? ''}
+            inputProps={{ inputMode: 'numeric', maxLength: 12 }}
             error={Boolean(getFieldError('inn'))}
             helperText={getFieldError('inn')}
             fullWidth
@@ -246,6 +209,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
             label="E-mail компании"
             fieldName="companyMail"
             registration={register('companyMail')}
+            value={companyMailValue ?? ''}
             error={Boolean(getFieldError('companyMail'))}
             helperText={getFieldError('companyMail')}
             fullWidth
@@ -254,6 +218,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
             label="Адрес"
             fieldName="address"
             registration={register('address')}
+            value={addressValue ?? ''}
             error={Boolean(getFieldError('address'))}
             helperText={getFieldError('address')}
             fullWidth
@@ -262,6 +227,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
             label="Примечание"
             fieldName="note"
             registration={register('note')}
+            value={noteValue ?? ''}
             error={Boolean(getFieldError('note'))}
             helperText={getFieldError('note')}
             multiline
@@ -272,57 +238,22 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
           {!emailEnabled ? <InitialAccountFields values={account} onChange={(field, value) => setAccount((old) => ({ ...old, [field]: value }))} disabled={isSubmitting} /> : null}
         </Stack>
         </Box>
-        {(hasDuplicateQuery || duplicatesLoading || duplicates.length > 0) ? <Box
-          component="aside"
-          sx={{
-            width: { xs: '100%', md: 320 },
-            flexShrink: 0,
-            border: '1px solid',
-            borderColor: duplicates.length ? 'warning.main' : 'divider',
-            borderRadius: 2,
-            p: 2,
-            bgcolor: 'background.paper',
-            position: { md: 'sticky' },
-            top: 0,
+        <ManualContractorDuplicatePanel
+          open={open} companyName={companyNameValue} inn={innValue} companyMail={companyMailValue}
+          disabled={isSubmitting}
+          onSelect={(item) => {
+            setExistingUserId(item.userId);
+            setAccount({ login: '', password: '', password_confirmation: '' });
+            reset({
+              companyName: normalizeOptionalContractorValue(item.companyName),
+              inn: normalizeOptionalContractorValue(item.inn),
+              companyPhone: normalizeOptionalContractorValue(item.companyPhone),
+              companyMail: normalizeOptionalContractorValue(item.companyMail),
+              address: normalizeOptionalContractorValue(item.address),
+              note: normalizeOptionalContractorValue(item.note),
+            });
           }}
-        >
-          <Box sx={{ fontWeight: 700, mb: 1 }}>Возможные дубликаты</Box>
-          {duplicatesLoading ? <Box sx={{ color: 'text.secondary', fontSize: 14 }}>Проверяем введённые данные…</Box> : null}
-          {!duplicatesLoading && duplicates.length === 0 ? (
-            <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
-              {![companyNameValue, innValue, companyMailValue].some((value) => (value?.trim().length ?? 0) >= 2)
-                ? 'Введите название, ИНН или e-mail.'
-                : 'Совпадений не найдено.'}
-            </Box>
-          ) : null}
-          <Stack spacing={1}>
-            {duplicates.map((item) => (
-              <Box key={item.userId} sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 1 }}>
-                <Box sx={{ fontWeight: 600, mb: 0.5 }}>{item.companyName || item.fullName || item.userId}</Box>
-                <Button onClick={() => {
-                  setExistingUserId(item.userId);
-                  setAccount({ login: '', password: '', password_confirmation: '' });
-                  reset({ companyName: item.companyName ?? '', inn: item.inn ?? '', companyPhone: item.companyPhone ?? '', companyMail: item.companyMail ?? '', address: item.address ?? '', note: item.note ?? '' });
-                }}>Использовать этого контрагента</Button>
-                <Stack spacing={0.2} sx={{ fontSize: 13, color: 'text.secondary' }}>
-                  <Box>ID: {item.userId}</Box>
-                  <Box>Статус: {item.status}</Box>
-                  {item.fullName ? <Box>ФИО: {item.fullName}</Box> : null}
-                  {item.phone ? <Box>Телефон: {item.phone}</Box> : null}
-                  {item.mail ? <Box>Личный email: {item.mail}</Box> : null}
-                  {item.companyName ? <Box>Компания: {item.companyName}</Box> : null}
-                  {item.inn ? <Box>ИНН: {item.inn}</Box> : null}
-                  {item.companyPhone ? <Box>Телефон компании: {item.companyPhone}</Box> : null}
-                  {item.companyMail ? <Box sx={{ overflowWrap: 'anywhere' }}>Email компании: {item.companyMail}</Box> : null}
-                  {item.address ? <Box>Адрес: {item.address}</Box> : null}
-                  {item.note ? <Box>Примечание: {item.note}</Box> : null}
-                  {item.createdAt ? <Box>Создан: {item.createdAt}</Box> : null}
-                  {item.updatedAt ? <Box>Изменён: {item.updatedAt}</Box> : null}
-                </Stack>
-              </Box>
-            ))}
-          </Stack>
-        </Box> : null}
+        />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button variant="outlined" onClick={handleClose} disabled={isSubmitting}>

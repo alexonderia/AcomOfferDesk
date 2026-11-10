@@ -5,8 +5,8 @@
 Этот документ — быстрый troubleshooting по типовым сбоям на VPS.
 
 Смежные документы:
-- [order_database на VPS](./order-database-vps.md)
-- [Окружения](./environments.md)
+- [order_database на VPS](order-database-vps.md)
+- [Окружения](environments.md)
 - [Чек-лист релиза](../release/release-checklist.md)
 
 Полный журнал с контекстом: **`vvv-web/devops_manual`** — [docs/acom-offer-desk-archive/vps-troubleshooting-2026-03.md](https://github.com/vvv-web/devops_manual/blob/acom-offer-postgres-vps-2026-03-31/docs/acom-offer-desk-archive/vps-troubleshooting-2026-03.md).
@@ -17,9 +17,9 @@
 
 **Причина:** схема **`order_database`** на VPS не доведена миграциями Flyway (частый случай — **пустой** каталог **`/opt/order_database/flyway/sql`** при живом Postgres и только **baseline** в **`flyway_schema_history`**).
 
-**После включения CI:** при каждом деплое с ветки **`test`** миграции копируются из **`deploy/order_database/flyway/sql`** репозитория приложения; если **`user_auth_accounts`** всё ещё нет — проверьте prerequisite из **[order-database-vps.md](./order-database-vps.md)** и полноту снимка **`V*.sql`** в репозитории.
+**После включения CI:** при каждом деплое с ветки **`test`** миграции копируются из **`deploy/order_database/flyway/sql`** репозитория приложения; если **`user_auth_accounts`** всё ещё нет — проверьте prerequisite из **[order-database-vps.md](order-database-vps.md)** и полноту снимка **`V*.sql`** в репозитории.
 
-**Куда смотреть:** пошагово — **[order-database-vps.md](./order-database-vps.md)** (разделы **«Рассинхрон: пустой flyway/sql»** и **«Связь с GitHub Actions deploy»**). Полный пересоздающий том сценарий — только **`scripts/install-order-database-vps.sh`**, если осознанно готовы к новому volume.
+**Куда смотреть:** пошагово — **[order-database-vps.md](order-database-vps.md)** (разделы **«Рассинхрон: пустой flyway/sql»** и **«Связь с GitHub Actions deploy»**). Полный пересоздающий том сценарий — только **`scripts/install-order-database-vps.sh`**, если осознанно готовы к новому volume.
 
 ---
 
@@ -27,7 +27,7 @@
 
 **Причина:** код приложения новее схемы БД — не выкатили соответствующие **`V*.sql`** в **`deploy/order_database/flyway/sql`** или деплой шёл до добавления шага миграции в CI.
 
-**Куда смотреть:** **[order-database-vps.md](./order-database-vps.md)** — раздел **«Рассинхрон: UI / API 500 из-за отсутствующих колонок»**.
+**Куда смотреть:** **[order-database-vps.md](order-database-vps.md)** — раздел **«Рассинхрон: UI / API 500 из-за отсутствующих колонок»**.
 
 ---
 

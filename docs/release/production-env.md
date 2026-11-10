@@ -2,7 +2,7 @@
 
 Обязательные IAM параметры backend: `IAM_INTERNAL_BASE_URL`, `IAM_PUBLIC_BASE_URL`, `IAM_ISSUER`, `IAM_AUDIENCE`, `IAM_SIGNING_PUBLIC_KEY`, `IAM_SIGNING_KID`, `IAM_INTERNAL_SERVICE_TOKEN`. Private IAM signing key хранится только в IAM runtime env и не передаётся backend.
 
-Также обязательны application DB, RabbitMQ, S3/MinIO, SMTP и cookie/security settings. Секреты не хранятся в репозитории.
+Также обязательны application DB, RabbitMQ, S3/MinIO и cookie/security settings. SMTP/email параметры обязательны при `EMAIL_ENABLED=true`; отключённый режим описан в [работе без почты](../operations/no-mail-accounts.md). Секреты не хранятся в репозитории.
 
 Production требования:
 

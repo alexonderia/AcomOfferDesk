@@ -17,6 +17,7 @@ export type RegisterUserResponse = {
     user_id: string;
     role_id: number;
     status: string;
+    visible_to_creator?: boolean;
   };
 };
 

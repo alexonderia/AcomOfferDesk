@@ -114,6 +114,7 @@ const buildViewState = (): any => ({
     { unitId: 2, label: 'Финансовый блок / Проект А' },
     { unitId: 3, label: 'Финансовый блок / Проект А / Группа 1' },
   ],
+  isSuperadmin: true,
   canCreateRootUnit: true,
   canManageUnitMembers: true,
   activeUnitDetails: null,
@@ -219,6 +220,34 @@ describe('UnitHierarchyPageView', () => {
     expect(screen.queryByLabelText('Открыть контрагентов объединения Проект А')).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /Сотрудники|Контрагенты/ })).not.toBeInTheDocument();
     expect(screen.getByText('Экономист 1')).toBeInTheDocument();
+  });
+
+  it('explains that an employee without a visible hierarchy has not been assigned', () => {
+    const state = buildViewState();
+    Object.assign(state, { tree: [], departments: [], selectedDepartment: null, isSuperadmin: false, canCreateRootUnit: false, canManageUnitMembers: false });
+    useUnitHierarchyPageMock.mockReturnValue(state);
+    useAuthMock.mockReturnValue({ session: { roleId: 6, permissions: ['units.read'] } });
+    renderView();
+    expect(screen.getByText(/Вас пока не назначили ни в одно действующее подразделение/)).toHaveTextContent('Обратитесь к администратору');
+    expect(screen.queryByText(/Создайте первое корневое подразделение/)).not.toBeInTheDocument();
+  });
+
+  it('offers root creation to a superadmin when the system has no departments', () => {
+    const state = buildViewState();
+    Object.assign(state, { tree: [], departments: [], selectedDepartment: null });
+    useUnitHierarchyPageMock.mockReturnValue(state);
+    renderView();
+    expect(screen.getByText('Пока нет подразделений. Создайте первое корневое подразделение.')).toBeInTheDocument();
+    expect(screen.queryByText(/Вас пока не назначили/)).not.toBeInTheDocument();
+  });
+
+  it('does not suggest assignment or creation to a superadmin without create permission', () => {
+    const state = buildViewState();
+    Object.assign(state, { tree: [], departments: [], selectedDepartment: null, canCreateRootUnit: false });
+    useUnitHierarchyPageMock.mockReturnValue(state);
+    renderView();
+    expect(screen.getByText('Пока нет подразделений.')).toBeInTheDocument();
+    expect(screen.queryByText(/Вас пока не назначили|Создайте первое корневое подразделение/)).not.toBeInTheDocument();
   });
 
   it('shows a root employee when there are no second-level units', () => {

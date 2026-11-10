@@ -317,7 +317,7 @@ def test_no_mail_creation_has_ready_binding_and_no_email_channel(test_client, mo
     assert uow.users._users["new-no-mail"].status == "active"
     assert uow.user_auth_accounts._bindings["new-no-mail"].is_active
     assert ("new-no-mail", 1) in uow.users._memberships
-    assert response.json()["data"] == {"user_id": "new-no-mail", "role_id": settings.economist_role_id, "status": "active"}
+    assert response.json()["data"] == {"user_id": "new-no-mail", "role_id": settings.economist_role_id, "status": "active", "visible_to_creator": True}
     payload["password_confirmation"] = "different password 123"
     rejected = test_client.post("/api/v1/users/register", json=payload)
     assert rejected.status_code == 422
@@ -378,7 +378,7 @@ def test_duplicate_contractor_creation_cannot_initialize_existing_credentials(te
     uow.users.find_matching_contractor_user_ids = AsyncMock(return_value=['contractor-1'])
     class ExistingAccountClient(_FakeIamClient):
         async def get_credential_state(self, **kwargs):
-            return SimpleNamespace(password_set=False)
+            return SimpleNamespace(login='contractor-1', role='contractor', password_set=False)
         async def provision_direct_credentials(self, **kwargs):
             raise AssertionError('Existing contractor credentials must not be claimed through dedupe')
     monkeypatch.setattr('app.api.v1.users.IamClient', ExistingAccountClient)
@@ -411,6 +411,50 @@ def test_superadmin_can_restore_accidentally_converted_employee(test_client, mon
     assert response.status_code == 200
     assert uow.users._users['eco-1'].id_role == settings.economist_role_id
     assert ('eco-1', 2) in uow.users._memberships
+
+
+@pytest.mark.parametrize('email_enabled', [True, False])
+def test_unassigned_admin_creation_reports_visibility_and_superadmin_can_find_employee(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user, email_enabled,
+):
+    _set_fake_iam(monkeypatch)
+    monkeypatch.setattr(settings, 'email_enabled', email_enabled)
+    uow = _UsersUow()
+    uow.users._memberships = [(user_id, unit_id) for user_id, unit_id in uow.users._memberships if user_id != 'admin-1']
+    set_uow(uow)
+    set_current_user(make_current_user(user_id='admin-1', role_id=settings.admin_role_id, permissions={PermissionCodes.USERS_CREATE, PermissionCodes.USERS_READ}))
+    payload = {'login': 'unassigned-new', 'role_id': settings.economist_role_id, 'mail': 'new@example.com'}
+    if not email_enabled:
+        payload.update(password='Initial password 123', password_confirmation='Initial password 123')
+    response = test_client.post('/api/v1/users/register', json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['visible_to_creator'] is False
+    assert 'unassigned-new' in uow.users._users
+    assert uow.user_auth_accounts._bindings['unassigned-new'].is_active
+    assert not any(user_id == 'unassigned-new' for user_id, _ in uow.users._memberships)
+    admin_list = test_client.get(f'/api/v1/users?role_id={settings.economist_role_id}')
+    assert admin_list.status_code == 200
+    assert 'unassigned-new' not in {item['user_id'] for item in admin_list.json()['data']['items']}
+    set_current_user(make_current_user(user_id='superadmin-1', role_id=settings.superadmin_role_id, permissions={PermissionCodes.USERS_READ}))
+    root_list = test_client.get(f'/api/v1/users?role_id={settings.economist_role_id}')
+    assert root_list.status_code == 200, root_list.text
+    assert 'unassigned-new' in {item['user_id'] for item in root_list.json()['data']['items']}
+
+
+def test_admin_cannot_create_lead_economist_even_with_users_create(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user,
+):
+    _set_fake_iam(monkeypatch)
+    monkeypatch.setattr(settings, 'email_enabled', False)
+    uow = _UsersUow()
+    set_uow(uow)
+    set_current_user(make_current_user(user_id='admin-1', role_id=settings.admin_role_id, permissions={PermissionCodes.USERS_CREATE}))
+    response = test_client.post('/api/v1/users/register', json={
+        'login': 'forbidden-lead', 'role_id': settings.lead_economist_role_id,
+        'password': 'Initial password 123', 'password_confirmation': 'Initial password 123',
+    })
+    assert response.status_code == 403
+    assert 'forbidden-lead' not in uow.users._users
 
 
 def test_admin_can_create_user_with_permission(

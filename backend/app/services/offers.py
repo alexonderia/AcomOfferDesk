@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Awaitable, Callable
@@ -28,6 +28,7 @@ from app.services.department_scope import DepartmentScopeService
 from app.services.contractor_units import ContractorUnitService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.notifications import NotificationService
+from app.services.users import ManualContractorDuplicateItem, ManualContractorService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.infrastructure.delayed_notification_publisher import schedule_unread_chat_email_notification
 from app.services.contractor_outbound_notifications import notify_contractor_offer_updated
@@ -201,6 +202,8 @@ class ManualOfferEligibleContractor:
     company_name: str | None
     mail: str | None
     company_mail: str | None
+    can_select: bool
+    disabled_reason: str | None
 
 
 class OfferService:
@@ -539,7 +542,7 @@ class OfferService:
     async def _create_manual_contractor(self, *, current_user: CurrentUser, contractor_data: ManualContractorCreateInput) -> tuple[str, bool]:
         from app.services.users import ManualContractorService, ManualContractorCreateInput as SharedContractorInput
 
-        service = ManualContractorService(self._users, self._profiles, self._company_contacts, None, self._units)
+        service = ManualContractorService(self._users, self._profiles, self._company_contacts, self._user_auth_accounts, self._units)
         data = SharedContractorInput(
             company_name=contractor_data.company_name, inn=contractor_data.inn,
             company_phone=contractor_data.company_phone, company_mail=contractor_data.company_mail,
@@ -783,9 +786,6 @@ class OfferService:
         for contractor, profile, company, _tg_user, _legacy_account_id in rows:
             if contractor.status != "active":
                 continue
-            existing_offer = await self._offers.get_contractor_offer_for_request(request_id=request.id, contractor_user_id=contractor.id)
-            if existing_offer is not None and existing_offer.status != "deleted":
-                continue
             if await self._requests.is_hidden_for_contractor(
                 request_id=request.id,
                 contractor_user_id=contractor.id,
@@ -796,6 +796,11 @@ class OfferService:
                 request=request,
             ):
                 continue
+            existing_offer = await self._offers.get_contractor_offer_for_request(
+                request_id=request.id,
+                contractor_user_id=contractor.id,
+            )
+            has_existing_offer = existing_offer is not None and existing_offer.status != "deleted"
             eligible.append(
                 ManualOfferEligibleContractor(
                     user_id=contractor.id,
@@ -803,9 +808,41 @@ class OfferService:
                     company_name=company.company_name if company else None,
                     mail=profile.mail if profile else None,
                     company_mail=company.mail if company else None,
+                    can_select=not has_existing_offer,
+                    disabled_reason=(
+                        "Данный контрагент уже приложил КП к текущей заявке"
+                        if has_existing_offer else None
+                    ),
                 )
             )
         return eligible
+
+    async def list_manual_offer_contractor_duplicates(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: str,
+        company_name: str | None = None,
+        inn: str | None = None,
+        company_mail: str | None = None,
+    ) -> list[ManualContractorDuplicateItem]:
+        options = await self.list_eligible_contractors_for_manual_offer(
+            current_user=current_user, request_id=request_id,
+        )
+        options_by_id = {option.user_id: option for option in options}
+        contractor_service = ManualContractorService(
+            self._users, self._profiles, self._company_contacts,
+            self._user_auth_accounts, self._units,
+        )
+        items = await contractor_service._find_possible_duplicates(
+            current_user=current_user, company_name=company_name,
+            inn=inn, company_mail=company_mail,
+            allowed_contractor_user_ids=set(options_by_id),
+        )
+        return [replace(
+            item, can_select=options_by_id[item.user_id].can_select,
+            disabled_reason=options_by_id[item.user_id].disabled_reason,
+        ) for item in items]
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)

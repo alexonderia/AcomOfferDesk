@@ -11,6 +11,8 @@ import { getHierarchyEmptyStateSx } from '@shared/ui/hierarchy/hierarchyThemeSty
 import type { HierarchyPersonVisual } from '@shared/ui/hierarchy/hierarchyPersonUtils';
 import { HierarchyPeopleViewTree } from './HierarchyPeopleViewTree';
 import { outlinedIconButtonSx } from './unitHierarchyStyles';
+import { ROLE } from '@shared/constants/roles';
+import { useHierarchyProfile } from '../model/HierarchyProfileContext';
 
 export type { PersonTreeNode } from '@shared/lib/hierarchy/buildPeopleTree';
 export { buildPeopleTree } from '@shared/lib/hierarchy/buildPeopleTree';
@@ -78,13 +80,17 @@ const ManagePersonRow = ({
   onAssign?: ((member: UnitMember) => void) | undefined;
   onMove?: ((member: UnitMember) => void) | undefined;
   onRemove?: ((member: UnitMember) => void) | undefined;
-}) => (
-  <HierarchyViewPersonRow
-    endAdornment={<MemberActions member={member} onAssign={onAssign} onMove={onMove} onRemove={onRemove} />}
-    highlight={isRoot}
-    person={memberToPerson(member)}
-  />
-);
+}) => {
+  const openProfile = useHierarchyProfile();
+  return (
+    <HierarchyViewPersonRow
+      endAdornment={<MemberActions member={member} onAssign={onAssign} onMove={onMove} onRemove={onRemove} />}
+      highlight={isRoot}
+      person={memberToPerson(member)}
+      onOpenProfile={openProfile && member.role_id !== ROLE.CONTRACTOR ? () => openProfile(member) : undefined}
+    />
+  );
+};
 
 const renderManageBranch = (
   node: PersonTreeNode,
@@ -184,6 +190,7 @@ export const PeopleFlatList = ({
   readonly?: boolean;
   title: string;
 }) => {
+  const openProfile = useHierarchyProfile();
   const isReadonly = readonly || (!onAssign && !onRemove);
 
   return (
@@ -206,7 +213,8 @@ export const PeopleFlatList = ({
       ) : isReadonly ? (
         <Stack spacing={0.15}>
           {members.map((member) => (
-            <HierarchyViewPersonRow key={member.user_id} highlight person={memberToPerson(member)} />
+            <HierarchyViewPersonRow key={member.user_id} highlight person={memberToPerson(member)}
+              onOpenProfile={openProfile && member.role_id !== ROLE.CONTRACTOR ? () => openProfile(member) : undefined} />
           ))}
         </Stack>
       ) : (

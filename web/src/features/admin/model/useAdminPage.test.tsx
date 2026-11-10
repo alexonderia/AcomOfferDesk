@@ -255,4 +255,47 @@ describe('useAdminPage', () => {
       unit_id: 2,
     });
   });
+
+  it('does not offer leading economist creation to an administrator', async () => {
+    useAuthMock.mockReturnValue({ session: { ...baseSession, roleId: ROLE.ADMIN } });
+    const { result } = renderHook(useAdminPage, { wrapper });
+    act(() => result.current.handleTabChange('lead_economists'));
+    await waitFor(() => expect(result.current.activeTab).toBe('lead_economists'));
+    expect(result.current.canOpenCreateDialog).toBe(false);
+    act(() => result.current.handleTabChange('operators'));
+    await waitFor(() => expect(result.current.roleOptions).toEqual([{ id: ROLE.OPERATOR, label: 'Оператор' }]));
+    act(() => result.current.openCreateDialog());
+    expect(result.current.form.getValues('role_id')).toBe(ROLE.OPERATOR);
+  });
+
+  it('closes creation and navigates to the actual created role for superadmin', async () => {
+    registerUserMock.mockResolvedValue({ data: { user_id: 'new-economist', role_id: ROLE.ECONOMIST, status: 'active', visible_to_creator: true } });
+    const { result } = renderHook(useAdminPage, { wrapper });
+    act(() => result.current.handleTabChange('lead_economists'));
+    await waitFor(() => expect(result.current.activeTab).toBe('lead_economists'));
+    act(() => result.current.openCreateDialog());
+    await act(async () => {
+      await result.current.onSubmit({ role_id: ROLE.ECONOMIST, login: 'new-economist', mail: 'new@example.com' });
+    });
+    await waitFor(() => expect(result.current.activeTab).toBe('economists'));
+    expect(result.current.isDialogOpen).toBe(false);
+    expect(result.current.creationNotice).toEqual({ message: 'Сотрудник new-economist создан. Роль: Экономист.', visibleToCreator: true });
+    expect(getUsersMock).toHaveBeenLastCalledWith(ROLE.ECONOMIST);
+  });
+
+  it('explains that an unassigned new employee is outside the creator visibility', async () => {
+    useAuthMock.mockReturnValue({ session: { ...baseSession, roleId: ROLE.ADMIN } });
+    registerUserMock.mockResolvedValue({ data: { user_id: 'unassigned', role_id: ROLE.ECONOMIST, status: 'active', visible_to_creator: false } });
+    const { result } = renderHook(useAdminPage, { wrapper });
+    act(() => result.current.handleTabChange('economists'));
+    await waitFor(() => expect(result.current.activeTab).toBe('economists'));
+    act(() => result.current.openCreateDialog());
+    await act(async () => {
+      await result.current.onSubmit({ role_id: ROLE.ECONOMIST, login: 'unassigned', mail: 'new@example.com' });
+    });
+    expect(result.current.creationNotice?.visibleToCreator).toBe(false);
+    expect(result.current.creationNotice?.message).toContain('Роль: Экономист');
+    expect(result.current.creationNotice?.message).toContain('Обратитесь к суперадминистратору');
+    expect(result.current.isDialogOpen).toBe(false);
+  });
 });

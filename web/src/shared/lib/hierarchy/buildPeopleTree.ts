@@ -4,8 +4,6 @@ import { ROLE } from '@shared/constants/roles';
 export type PersonTreeNode = UnitMember & { children: PersonTreeNode[] };
 
 const rolePriority: Record<number, number> = {
-  [ROLE.SUPERADMIN]: 6,
-  [ROLE.ADMIN]: 5,
   [ROLE.PROJECT_MANAGER]: 4,
   [ROLE.LEAD_ECONOMIST]: 3,
   [ROLE.ECONOMIST]: 2,
@@ -13,6 +11,10 @@ const rolePriority: Record<number, number> = {
 };
 
 const getRolePriority = (roleId: number) => rolePriority[roleId] ?? 0;
+
+export const isBusinessHierarchyRole = (roleId: number) => getRolePriority(roleId) > 0;
+
+export const canLeadUnitSubtree = (roleId: number) => getRolePriority(roleId) > getRolePriority(ROLE.OPERATOR);
 
 export const sortPersonTreeNodes = (list: PersonTreeNode[]) => {
   list.sort((left, right) => {

@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OfferWorkspaceView } from "@features/offer-workspace/ui/OfferWorkspaceView";
 import { appTheme } from "@shared/theme/appTheme";
+import { ContractorChatAccessNotice } from '@features/contractors/components/ContractorChatAccessNotice';
+import type { ContractorLoginAccess } from '@shared/api/contractors/getContractorLoginAccess';
 
 const useOfferWorkspaceMock = vi.fn();
 const showErrorToastMock = vi.fn();
@@ -50,8 +52,10 @@ vi.mock("@features/offer-workspace/ui/OfferWorkspaceChatPanel", () => ({
   OfferWorkspaceChatPanel: (props: {
     canSendMessage: boolean;
     canSendMessageWithAttachments: boolean;
+    contractorLoginAccess?: ContractorLoginAccess;
   }) => (
     <div data-testid="workspace-chat-panel">
+      <ContractorChatAccessNotice access={props.contractorLoginAccess} />
       <div data-testid="chat-can-send-message">{String(props.canSendMessage)}</div>
       <div data-testid="chat-can-attach">{String(props.canSendMessageWithAttachments)}</div>
     </div>
@@ -394,5 +398,20 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
 
     expect(showErrorToastMock).toHaveBeenCalledWith("Недостаточно прав для выполнения действия");
     expect(screen.queryByText("Недостаточно прав для выполнения действия")).not.toBeInTheDocument();
+  });
+
+  it('shows the same access state in contractor data and chat, preserving message actions', async () => {
+    useOfferWorkspaceMock.mockReturnValue({
+      ...buildWorkspaceHookState({ isContractor: false }),
+      contractorLoginAccess: { user_id: 'contractor-1', state: 'password_not_set', label: 'Пароль не задан', description: '' },
+      isContractorAccessLoading: false,
+    });
+    renderWithTheme();
+    expect(screen.getByLabelText('Вход в личный кабинет: Пароль не задан')).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.mouseOver(screen.getByRole('button', { name: 'У контрагента нет доступа к системе' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Контрагент не может войти в систему: пароль не задан');
+    expect(screen.getByTestId('chat-can-send-message')).toHaveTextContent('true');
+    expect(screen.queryByRole('button', { name: /Проверить/ })).not.toBeInTheDocument();
   });
 });

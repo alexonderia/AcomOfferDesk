@@ -14,6 +14,7 @@ import { EmailWithVerifiedMark } from '@features/admin/components/UserCardPrimit
 import { ContractorStatusPill, formatPhoneForView } from './contractorUi';
 
 type ContractorMobileCardProps = {
+  loginAccess?: ReactNode;
   row: UserListItem;
   canViewEmailVerification?: boolean;
   isContactExpanded: boolean;
@@ -24,6 +25,7 @@ type ContractorMobileCardProps = {
 };
 
 export const ContractorMobileCard = ({
+  loginAccess,
   row,
   canViewEmailVerification = false,
   isContactExpanded,
@@ -101,7 +103,10 @@ export const ContractorMobileCard = ({
           >
             {title}
           </Typography>
-          <ContractorStatusPill value={row.status} />
+          <Stack direction="row" alignItems="center" gap={0.5} sx={{ flexShrink: 0 }}>
+            <ContractorStatusPill value={row.status} />
+            {loginAccess}
+          </Stack>
         </Stack>
 
         <Divider />

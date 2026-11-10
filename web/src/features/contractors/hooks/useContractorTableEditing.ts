@@ -158,7 +158,10 @@ export const useContractorTableEditing = ({
       return next;
     });
 
-    let nextDraftForValidation: ContractorEditDraft = {};
+    const nextDraftForValidation: ContractorEditDraft = {
+      ...(draftsById[row.userId] ?? {}),
+      [field]: normalizedValue,
+    };
 
     setDraftsById((prev) => {
       const currentDraft = prev[row.userId] ?? {};
@@ -169,7 +172,6 @@ export const useContractorTableEditing = ({
       if (!isContractorFieldDirty(row, field, nextDraft)) {
         delete nextDraft[field];
       }
-      nextDraftForValidation = nextDraft;
       const next = { ...prev };
       if (Object.keys(nextDraft).length === 0) {
         delete next[row.userId];
@@ -195,7 +197,7 @@ export const useContractorTableEditing = ({
       }
       return next;
     });
-  }, []);
+  }, [draftsById]);
 
   const handleCancel = useCallback(() => {
     setDraftsById({});

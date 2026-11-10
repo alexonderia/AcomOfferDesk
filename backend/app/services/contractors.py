@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import asyncio
+from datetime import datetime
 
 from app.core.config import settings
+from app.core.datetime_utils import normalize_to_utc, utc_now
 from app.domain.auth_context import CurrentUser
-from app.domain.exceptions import Conflict, NotFound
-from app.domain.policies import UserPolicy
+from app.domain.exceptions import AuthenticationUnavailable, Conflict, Forbidden, NotFound, Unauthorized
+from app.domain.authorization import has_permission
+from app.domain.permissions import PermissionCodes
+from app.domain.policies import OfferPolicy, UserPolicy
 from app.repositories.profiles import ProfileRepository
 from app.repositories.units import UnitRepository
 from app.repositories.users import UserRepository
+from app.repositories.user_auth_accounts import UserAuthAccountRepository
+from app.infrastructure.iam_client import IamClient
 from app.services.contractor_units import ContractorRootUnitBindingsState, ContractorUnitService
 from app.services.users import UserStatusService, UserStatusUpdateResult
 
@@ -58,16 +65,116 @@ class ContractorProfileResult:
     created_at: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ContractorLoginAccessResult:
+    user_id: str
+    state: str
+    label: str
+    description: str
+
+
+_LOGIN_ACCESS_STATES = {
+    "available": ("Вход доступен", "Учётная запись активна, пароль задан. Контрагент может войти в личный кабинет."),
+    "not_granted": ("Не выдан", "Для контрагента нет действующей учётной записи для входа в личный кабинет."),
+    "blocked": ("Вход отключён", "Вход недоступен из-за статуса контрагента или его учётной записи."),
+    "pending": ("Ожидает активации", "Учётная запись или контрагент ещё не одобрены для работы в личном кабинете."),
+    "password_not_set": ("Пароль не задан", "Учётная запись существует, но пароль для входа ещё не задан."),
+    "setup_required": ("Нужно заполнить профиль", "Вход доступен, но перед началом работы контрагенту нужно заполнить профиль."),
+    "temporarily_locked": ("Временно заблокирован", "Вход временно заблокирован после неудачных попыток. Повторите проверку позже."),
+    "unknown": ("Не удалось проверить", "Не удалось подтвердить возможность входа. Повторите проверку позже."),
+}
+
+
+def _login_access(user_id: str, state: str) -> ContractorLoginAccessResult:
+    label, description = _LOGIN_ACCESS_STATES[state]
+    return ContractorLoginAccessResult(user_id=user_id, state=state, label=label, description=description)
+
+
 class ContractorService:
     def __init__(
         self,
         users: UserRepository,
         profiles: ProfileRepository,
         units: UnitRepository | None = None,
+        user_auth_accounts: UserAuthAccountRepository | None = None,
+        iam_client: IamClient | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._units = units
+        self._user_auth_accounts = user_auth_accounts
+        self._iam_client = iam_client or IamClient()
+
+    async def check_login_access(
+        self, *, current_user: CurrentUser, contractor_ids: list[str],
+    ) -> list[ContractorLoginAccessResult]:
+        if not (
+            has_permission(current_user, PermissionCodes.CONTRACTORS_READ)
+            or has_permission(current_user, PermissionCodes.USERS_READ)
+            or has_permission(current_user, PermissionCodes.OFFERS_CONTRACTOR_INFO_READ)
+        ):
+            raise Forbidden("Недостаточно прав для проверки доступа контрагентов")
+        ids = list(dict.fromkeys(contractor_ids))
+        rows = await self._users.list_by_ids_with_profiles_and_roles(user_ids=ids)
+        users_by_id = {user.id: user for user, _profile, _role in rows}
+        scope = self._contractor_unit_service()
+        for user_id in ids:
+            if not (
+                has_permission(current_user, PermissionCodes.CONTRACTORS_READ)
+                or has_permission(current_user, PermissionCodes.USERS_READ)
+            ):
+                OfferPolicy.ensure_can_view_contractor_info(current_user, contractor_user_id=user_id)
+            user = users_by_id.get(user_id)
+            if user is None or user.id_role != settings.contractor_role_id:
+                raise NotFound("Контрагент не найден")
+            await scope.ensure_can_access_contractor(current_user=current_user, contractor_user_id=user_id)
+        if self._user_auth_accounts is None:
+            raise RuntimeError("Contractor login access requires auth account repository")
+        bindings = await self._user_auth_accounts.list_for_users(user_ids=ids, provider="iam")
+        bindings_by_user = {}
+        for binding in bindings:
+            # Repository orders active bindings first, then by stable ID.
+            bindings_by_user.setdefault(binding.id_user, binding)
+        semaphore = asyncio.Semaphore(4)
+        iam_unavailable = False
+
+        async def check(user_id: str) -> ContractorLoginAccessResult:
+            nonlocal iam_unavailable
+            user = users_by_id[user_id]
+            binding = bindings_by_user.get(user_id)
+            if binding is None:
+                return _login_access(user_id, "not_granted")
+            if not binding.is_active or user.status in {"inactive", "blacklist"}:
+                return _login_access(user_id, "blocked")
+            if user.status != "active":
+                return _login_access(user_id, "pending")
+            async with semaphore:
+                if iam_unavailable:
+                    return _login_access(user_id, "unknown")
+                try:
+                    state = await self._iam_client.get_credential_state(account_id=binding.external_subject_id)
+                    if state.id != binding.external_subject_id or state.login != user_id or state.role != "contractor":
+                        return _login_access(user_id, "unknown")
+                    if state.auth_status in {"blocked", "disabled"} or state.role_active is False:
+                        return _login_access(user_id, "blocked")
+                    if state.auth_status == "pending":
+                        return _login_access(user_id, "pending")
+                    if state.auth_status != "active" or state.role_active is not True:
+                        return _login_access(user_id, "unknown")
+                    if not state.password_set:
+                        return _login_access(user_id, "password_not_set")
+                    if state.password_locked_until is not None:
+                        locked_until = normalize_to_utc(datetime.fromisoformat(state.password_locked_until))
+                        if locked_until > utc_now():
+                            return _login_access(user_id, "temporarily_locked")
+                    return _login_access(user_id, "setup_required" if state.required_actions else "available")
+                except NotFound:
+                    return _login_access(user_id, "not_granted")
+                except (AuthenticationUnavailable, Unauthorized, Conflict, ValueError, TypeError):
+                    iam_unavailable = True
+                    return _login_access(user_id, "unknown")
+
+        return list(await asyncio.gather(*(check(user_id) for user_id in ids)))
 
     async def list_contractors(
         self,

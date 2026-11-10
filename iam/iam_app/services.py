@@ -127,6 +127,8 @@ class AccountCredentialState:
     role_name: str
     password_set: bool
     required_actions: tuple[str, ...] = ()
+    role_active: bool | None = None
+    password_locked_until: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -595,6 +597,8 @@ class IamService:
             role_name=role.name,
             password_set=bool(credential and credential.password_hash),
             required_actions=tuple(self._normalize_required_actions(account.required_actions)),
+            role_active=role.is_active,
+            password_locked_until=credential.locked_until if credential else None,
         )
 
     async def provision_local_development_account(

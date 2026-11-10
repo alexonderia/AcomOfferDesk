@@ -5,8 +5,8 @@
 Этот документ покрывает только внешний `order_database` на VPS: Flyway, init, восстановление рассинхронов.
 
 Смежные документы:
-- [VPS troubleshooting](./vps-troubleshooting.md)
-- [Окружения](./environments.md)
+- [VPS troubleshooting](vps-troubleshooting.md)
+- [Окружения](environments.md)
 - [Чек-лист релиза](../release/release-checklist.md)
 
 Источник схемы и init: репозиторий **[alexonderia/order_database](https://github.com/alexonderia/order_database)**, ветка **`main`**.  
@@ -25,7 +25,7 @@
 
 ## Автоматический сценарий
 
-Скрипт **[scripts/install-order-database-vps.sh](../scripts/install-order-database-vps.sh)**:
+Скрипт **[scripts/install-order-database-vps.sh](../../scripts/install-order-database-vps.sh)**:
 
 1. Скачивает `main` (GitHub API tarball при наличии токена).
 2. Раскладывает дерево в **`/opt/order_database`** (переменная **`ORDER_DB_DIR`**).
@@ -44,7 +44,7 @@ ssh root@VPS "export GITHUB_TOKEN='$TOKEN'; bash /root/install-order-database-vp
 
 В логе в конце должно быть **`INSTALL_SUCCESS`**.
 
-После пересоздания **`backend`** вручную всегда пересоздавайте **`gateway`**, иначе возможен **502** на API (см. **[vps-troubleshooting.md](./vps-troubleshooting.md)**).
+После пересоздания **`backend`** вручную всегда пересоздавайте **`gateway`**, иначе возможен **502** на API (см. **[vps-troubleshooting.md](vps-troubleshooting.md)**).
 
 ## Связь с GitHub Actions deploy
 

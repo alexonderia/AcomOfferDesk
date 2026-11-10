@@ -6,11 +6,16 @@ export type RequestContractorItem = {
   company_name: string | null;
   mail: string | null;
   company_mail: string | null;
+  can_select: boolean;
+  disabled_reason: string | null;
 };
 
 type RequestContractorListResponse = {
   data: {
-    items: RequestContractorItem[];
+    items: (Omit<RequestContractorItem, 'can_select' | 'disabled_reason'> & {
+      can_select?: boolean;
+      disabled_reason?: string | null;
+    })[];
   };
 };
 
@@ -33,7 +38,9 @@ export const getRequestContractors = async (requestId?: string): Promise<GetRequ
       full_name: item.full_name ?? null,
       company_name: item.company_name ?? null,
       mail: item.mail ?? null,
-      company_mail: item.company_mail ?? null
+      company_mail: item.company_mail ?? null,
+      can_select: item.can_select === true,
+      disabled_reason: item.disabled_reason ?? null
     }))
   };
 };

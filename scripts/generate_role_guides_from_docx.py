@@ -2,6 +2,7 @@
 """Generate web/src/shared/content/roleGuides.ts from Reorganized-user-guide.docx."""
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -12,9 +13,7 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCX = Path(r"c:\Users\alexonderia\Downloads\Reorganized-user-guide.docx")
 OUTPUT = ROOT / "web/src/shared/content/roleGuides.ts"
-DEBUG_JSON = ROOT / "docs/reports/role-guides-from-docx.json"
 
 NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": NS_W}
@@ -336,19 +335,25 @@ def emit_ts(roles: dict[str, dict]) -> str:
 
 
 def main() -> None:
-    if not DOCX.exists():
-        raise FileNotFoundError(DOCX)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input", type=Path, help="Source DOCX with the approved role guides")
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    parser.add_argument("--debug-output", type=Path, help="Optional parsed JSON for inspection")
+    args = parser.parse_args()
+    if not args.input.is_file():
+        parser.error(f"Source DOCX does not exist: {args.input}")
 
-    document = Document(DOCX)
+    document = Document(args.input)
     roles = parse_document(document)
 
-    DEBUG_JSON.parent.mkdir(parents=True, exist_ok=True)
-    DEBUG_JSON.write_text(json.dumps(roles, ensure_ascii=False, indent=2), encoding="utf-8")
+    if args.debug_output:
+        args.debug_output.parent.mkdir(parents=True, exist_ok=True)
+        args.debug_output.write_text(json.dumps(roles, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(emit_ts(roles), encoding="utf-8")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(emit_ts(roles), encoding="utf-8")
 
-    print(f"Wrote {OUTPUT}")
+    print(f"Wrote {args.output}")
     for key, _, title in ROLE_MAP:
         sections = roles[key]["sections"]
         blocks = sum(len(s["blocks"]) for s in sections)

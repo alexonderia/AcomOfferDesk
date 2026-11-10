@@ -3,6 +3,12 @@ import { Box, Stack, Typography } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
+import { formatRuPhone } from '@shared/lib/phone';
+
+export const formatPhoneForView = (value: string | null | undefined) => {
+  if (!value) return null;
+  return formatRuPhone(value) || value;
+};
 
 const userStatusLabelByValue: Record<string, string> = {
   review: 'На проверке',
@@ -131,11 +137,9 @@ export const InfoRow = ({ label, value }: { label: string; value: ReactNode }) =
 
 export const SourceSection = ({
   title,
-  source,
   children,
 }: {
   title: string;
-  source: string;
   children: ReactNode;
 }) => (
   <Box
@@ -148,28 +152,9 @@ export const SourceSection = ({
     }}
   >
     <Stack spacing={1.2}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" rowGap={0.6}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.primary' }}>
-          {title}
-        </Typography>
-        <Box
-          component="span"
-          sx={{
-            px: 1,
-            py: 0.2,
-            borderRadius: 99,
-            border: '1px solid',
-            borderColor: 'divider',
-            backgroundColor: 'background.default',
-            color: 'text.secondary',
-            fontSize: 12,
-            fontWeight: 700,
-            letterSpacing: '0.03em',
-          }}
-        >
-          {source}
-        </Box>
-      </Stack>
+      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+        {title}
+      </Typography>
       {children}
     </Stack>
   </Box>

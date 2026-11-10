@@ -1,6 +1,22 @@
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.schemas.actions import UserActionsSchema
+
+
+class ContractorLoginAccessItem(BaseModel):
+    user_id: str
+    state: Literal["available", "not_granted", "blocked", "pending", "password_not_set", "setup_required", "temporarily_locked", "unknown"]
+    label: str
+    description: str
+
+
+class ContractorLoginAccessData(BaseModel):
+    items: list[ContractorLoginAccessItem]
+
+
+class ContractorLoginAccessResponse(BaseModel):
+    data: ContractorLoginAccessData
 
 
 class ContractorRootUnitBindingItemSchema(BaseModel):

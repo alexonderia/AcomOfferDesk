@@ -7,10 +7,10 @@ type ResponseShape = {
   };
 };
 
-export const getUserHierarchyUnitsTree = async (userId: string): Promise<UnitNode[]> => {
+export const getUserHierarchyUnitsTree = async (userId: string, signal?: AbortSignal): Promise<UnitNode[]> => {
   const response = await fetchJson<ResponseShape>(
-    `/api/v1/users/${userId}/hierarchy/units-tree`,
-    { method: 'GET' },
+    `/api/v1/users/${encodeURIComponent(userId)}/hierarchy/units-tree`,
+    { method: 'GET', signal },
     'Ошибка загрузки иерархии объединений сотрудника',
   );
 

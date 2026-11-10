@@ -24,6 +24,7 @@ from app.services.contractor_email_notifications import (
     notify_contractor_status_changed_email,
 )
 from app.infrastructure.iam_client import IamClient
+from app.services.iam_bindings import ensure_user_iam_account
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.registration_admin_notify import schedule_registration_review_required_notification
 from app.services.department_scope import DepartmentScopeService
@@ -898,6 +899,8 @@ class ManualContractorDuplicateItem:
     status: str
     created_at: str | None
     updated_at: str | None
+    can_select: bool | None = None
+    disabled_reason: str | None = None
 
 
 class ManualContractorService:
@@ -910,6 +913,7 @@ class ManualContractorService:
         units: UnitRepository | None = None,
         user_contact_channels=None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        iam_client: IamClient | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
@@ -918,6 +922,7 @@ class ManualContractorService:
         self._units = units
         self._user_contact_channels = user_contact_channels
         self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._iam_client = iam_client
 
     def _contractor_unit_service(self) -> ContractorUnitService:
         if self._units is None:
@@ -1112,13 +1117,18 @@ class ManualContractorService:
         *,
         current_user: CurrentUser,
         data: ManualContractorCreateInput,
+        initial_password: str | None = None,
     ) -> ManualContractorCreateResult:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
+        if initial_password is not None and settings.email_enabled:
+            raise Conflict("Начальный пароль задаётся при создании в режиме без почты")
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
-        return await self._create_or_reuse_validated(current_user=current_user, data=normalized_data)
+        return await self._create_or_reuse_validated(
+            current_user=current_user, data=normalized_data, initial_password=initial_password,
+        )
 
-    async def _create_or_reuse_validated(self, *, current_user: CurrentUser, data: ManualContractorCreateInput) -> ManualContractorCreateResult:
+    async def _create_or_reuse_validated(self, *, current_user: CurrentUser, data: ManualContractorCreateInput, initial_password: str | None = None) -> ManualContractorCreateResult:
         # Authorization belongs to the calling use case (directory or request offer).
         normalized_data = data
         lock = getattr(self._users, "lock_contractor_identity", None)
@@ -1143,6 +1153,7 @@ class ManualContractorService:
                 current_user=current_user,
                 contractor_user_id=existing_contractor_user_id,
             )
+            await self._synchronize_iam_account(user_id=existing_contractor_user_id, initial_password=initial_password, is_new_user=False)
             return ManualContractorCreateResult(
                 user_id=existing_contractor_user_id,
                 created=False,
@@ -1158,12 +1169,31 @@ class ManualContractorService:
             current_user=current_user,
             contractor_user_id=login,
         )
+        await self._synchronize_iam_account(user_id=login, initial_password=initial_password, is_new_user=True)
         return ManualContractorCreateResult(
             user_id=login,
             created=True,
             company_name=normalized_data.company_name,
             inn=normalized_data.inn,
             company_mail=normalized_data.company_mail,
+        )
+
+    async def _synchronize_iam_account(self, *, user_id: str, initial_password: str | None, is_new_user: bool) -> None:
+        if self._user_auth_accounts is None:
+            raise RuntimeError("Manual contractor creation requires IAM binding repository")
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("Контрагент не найден")
+        company = await self._company_contacts.get_by_id(user_id)
+        try:
+            email = validate_optional_email(company.mail, allow_placeholder=False) if company else None
+        except ValueError:
+            # Identity synchronization does not depend on legacy contact data.
+            email = None
+        await ensure_user_iam_account(
+            user_auth_accounts=self._user_auth_accounts, user_id=user.id,
+            role_id=user.id_role, user_status=user.status, email=email,
+            initial_password=initial_password, is_new_user=is_new_user, iam_client=self._iam_client,
         )
 
     async def list_possible_duplicates(
@@ -1175,6 +1205,24 @@ class ManualContractorService:
         company_mail: str | None = None,
     ) -> list[ManualContractorDuplicateItem]:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
+
+        return await self._find_possible_duplicates(
+            current_user=current_user, company_name=company_name,
+            inn=inn, company_mail=company_mail,
+        )
+
+    async def _find_possible_duplicates(
+        self,
+        *,
+        current_user: CurrentUser,
+        company_name: str | None = None,
+        inn: str | None = None,
+        company_mail: str | None = None,
+        allowed_contractor_user_ids: set[str] | None = None,
+    ) -> list[ManualContractorDuplicateItem]:
+        """Search within the calling use case's authorized contractor scope."""
+        if allowed_contractor_user_ids == set():
+            return []
 
         search_values = [
             value.strip()
@@ -1199,6 +1247,8 @@ class ManualContractorService:
                 offset=0,
             )
             for user, profile, company, _legacy_user, _legacy_account_id in rows:
+                if allowed_contractor_user_ids is not None and user.id not in allowed_contractor_user_ids:
+                    continue
                 company_name_value = (company.company_name if company else None) or ''
                 inn_value = (company.inn if company else None) or ''
                 company_mail_value = (company.mail if company else None) or ''
@@ -1211,7 +1261,7 @@ class ManualContractorService:
                     )
                 ):
                     continue
-                if self._units is not None and not await self._contractor_unit_service().can_access_contractor(
+                if allowed_contractor_user_ids is None and self._units is not None and not await self._contractor_unit_service().can_access_contractor(
                     current_user=current_user,
                     contractor_user_id=user.id,
                 ):

@@ -8,8 +8,6 @@ __pycache__/
 venv/
 /node_modules/
 web/node_modules/
-new_web/
-new_web/node_modules/
 dist/
 build/
 .env
@@ -23,14 +21,16 @@ build/
 *.sqlite3
 *.tsbuildinfo
 .DS_Store
-.claude/
-.cursor/
-.codex/
-.agents/
-.trellis/
 artifacts/
 /backups/
 .tmp/
 .deploy-state/
-AGENTS.md
 scripts/local-smoke-infra.commands.ps1
+/web/public/pdfjs/
+# Private local workflow history; current instructions are versioned in AGENTS.md.
+/docs/archive/trellis/*.zip
+/docs/archive/local/*.zip
+# Office/editor lock and recovery files.
+~$*
+**/~$*
+*.bkp

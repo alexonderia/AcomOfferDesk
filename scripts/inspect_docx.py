@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -10,8 +11,7 @@ from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-DOCX = Path(r"c:\Users\alexonderia\Downloads\Reorganized-user-guide.docx")
-OUT = Path(__file__).resolve().parents[1] / "docs/reports/docx-structure-sample.json"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def iter_blocks(document: Document):
@@ -52,7 +52,13 @@ def table_to_dict(table: Table) -> dict:
 
 
 def main() -> None:
-    doc = Document(DOCX)
+    parser = argparse.ArgumentParser(description="Inspect the first 81 DOCX blocks")
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/docx/structure-sample.json")
+    args = parser.parse_args()
+    if not args.input.is_file():
+        parser.error(f"Source DOCX does not exist: {args.input}")
+    doc = Document(args.input)
     sample: list[dict] = []
     count = 0
     for kind, block in iter_blocks(doc):
@@ -75,8 +81,9 @@ def main() -> None:
             sample.append({"kind": "tbl", **table_to_dict(block)})
         count += 1
 
-    OUT.write_text(json.dumps(sample, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Wrote {OUT}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(sample, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Wrote {args.output}")
 
 
 if __name__ == "__main__":

@@ -77,6 +77,8 @@ describe('ContractorInviteDialog', () => {
     const preview = screen.getByTitle('Предпросмотр письма');
     expect(preview).toHaveAttribute('srcdoc');
     expect(preview).toHaveAttribute('scrolling', 'no');
+    expect(preview).toHaveAttribute('sandbox', 'allow-same-origin');
+    expect(preview.getAttribute('srcdoc')).toContain("font-family:'Alabuga Sans',sans-serif");
     expect(preview.getAttribute('srcdoc')).toContain('<!DOCTYPE html>');
     expect(preview.getAttribute('srcdoc')).toContain('<html lang="ru">');
     expect(preview.getAttribute('srcdoc')).toContain('https://acomofferdesk.example.com');

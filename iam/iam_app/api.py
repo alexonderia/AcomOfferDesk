@@ -525,6 +525,7 @@ async def reset_user_password(
     await IamService(session).reset_user_password(
         account_id=account_id, new_password=payload.new_password.get_secret_value(),
         actor_account_id=payload.actor_account_id, actor_session_id=payload.actor_session_id,
+        department_scope_verified=payload.department_scope_verified,
     )
     return Response(status_code=204)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from app.infrastructure.email.email_templates.email_typography import build_email_font_head
 from app.infrastructure.email.email_templates.email_contact_blocks import (
     build_contact_html_block,
     build_contact_text_block,
@@ -26,18 +27,19 @@ def build_contractor_review_email_payload(*, to_email: str) -> EmailMessagePaylo
         html_content=f"""
 <!DOCTYPE html>
 <html lang="ru">
+  {build_email_font_head()}
   <body style="margin:0;padding:0;background-color:#f6f8fb;">
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f6f8fb;padding:24px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
             <tr>
-              <td style="padding:24px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:22px;font-weight:700;">
+              <td style="padding:24px 28px 8px 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:22px;font-weight:700;">
                 AcomOfferDesk
               </td>
             </tr>
             <tr>
-              <td style="padding:0 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
+              <td style="padding:0 28px 24px 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:16px;line-height:24px;">
                 {escape(REGISTRATION_COMPLETED_BODY)}
               </td>
             </tr>
@@ -72,7 +74,7 @@ def build_contractor_access_opened_email_payload(
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
                     <td bgcolor="#0969da" style="border-radius:6px;">
-                      <a href="{escaped_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                      <a href="{escaped_url}" style="display:inline-block;padding:12px 20px;font-family:'Alabuga Sans',sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
                         {AUTHORIZATION_BUTTON_LABEL}
                       </a>
                     </td>
@@ -81,7 +83,7 @@ def build_contractor_access_opened_email_payload(
               </td>
             </tr>
             <tr>
-              <td style="padding:8px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+              <td style="padding:8px 28px 24px 28px;font-family:'Alabuga Sans',sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Если кнопка не работает, откройте ссылку вручную:<br/>
                 <a href="{escaped_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_url}</a>
               </td>
@@ -98,18 +100,19 @@ def build_contractor_access_opened_email_payload(
         html_content=f"""
 <!DOCTYPE html>
 <html lang="ru">
+  {build_email_font_head()}
   <body style="margin:0;padding:0;background-color:#f6f8fb;">
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f6f8fb;padding:24px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
             <tr>
-              <td style="padding:24px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:22px;font-weight:700;">
+              <td style="padding:24px 28px 8px 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:22px;font-weight:700;">
                 AcomOfferDesk
               </td>
             </tr>
             <tr>
-              <td style="padding:0 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
+              <td style="padding:0 28px 0 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:16px;line-height:24px;">
                 {escape(ACCESS_OPENED_BODY)}
               </td>
             </tr>
@@ -149,7 +152,7 @@ def build_contractor_access_closed_email_payload(
     extra_text_html = (
         f"""
             <tr>
-              <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+              <td style="padding:8px 28px 0 28px;font-family:'Alabuga Sans',sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 {escape(contact_text)}
               </td>
             </tr>
@@ -164,18 +167,19 @@ def build_contractor_access_closed_email_payload(
         html_content=f"""
 <!DOCTYPE html>
 <html lang="ru">
+  {build_email_font_head()}
   <body style="margin:0;padding:0;background-color:#f6f8fb;">
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f6f8fb;padding:24px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
             <tr>
-              <td style="padding:24px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:22px;font-weight:700;">
+              <td style="padding:24px 28px 8px 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:22px;font-weight:700;">
                 AcomOfferDesk
               </td>
             </tr>
             <tr>
-              <td style="padding:0 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
+              <td style="padding:0 28px 8px 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:16px;line-height:24px;">
                 {escape(ACCESS_CLOSED_BODY)}
               </td>
             </tr>

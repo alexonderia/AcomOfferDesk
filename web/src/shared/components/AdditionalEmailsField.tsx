@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { isValidAdditionalEmail, mergeAdditionalEmails, splitAdditionalEmails } from '@shared/lib/additionalEmails';
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
+import { RequiredFieldLabel } from './forms/RequiredFieldLabel';
 
 export type AdditionalEmailsFieldHandle = {
   commitPendingInput: () => string[] | null;
@@ -23,6 +24,7 @@ type AdditionalEmailsFieldProps = {
   emails: string[];
   onChange: (emails: string[]) => void;
   disabled?: boolean;
+  required?: boolean;
   label?: string;
   description?: string;
   placeholder?: string;
@@ -39,6 +41,7 @@ export const AdditionalEmailsField = forwardRef<AdditionalEmailsFieldHandle, Add
       emails,
       onChange,
       disabled = false,
+      required = false,
       label = 'Дополнительные e-mail для рассылки',
       description = 'Можно добавить адреса, которых нет в базе верифицированных контрагентов.',
       placeholder = 'name@example.com',
@@ -87,7 +90,7 @@ export const AdditionalEmailsField = forwardRef<AdditionalEmailsFieldHandle, Add
         {!hideHeader ? (
           <>
             <Typography variant="subtitle1" fontWeight={600}>
-              {label}
+              {required ? <RequiredFieldLabel label={label} isValid={emails.length > 0 && !errorMessage} /> : label}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {description}
@@ -102,10 +105,12 @@ export const AdditionalEmailsField = forwardRef<AdditionalEmailsFieldHandle, Add
         >
           <TextField
             fullWidth
+            label={required && hideHeader ? <RequiredFieldLabel label={label} isValid={emails.length > 0 && !errorMessage} /> : undefined}
             placeholder={placeholder}
             value={inputValue}
             disabled={disabled}
             {...textFieldAutocompleteProps('mail')}
+            inputProps={{ ...textFieldAutocompleteProps('mail').inputProps, 'aria-label': label, 'aria-required': required || undefined }}
             error={Boolean(errorMessage)}
             helperText={errorMessage ?? helperText}
             InputProps={

@@ -83,7 +83,7 @@ from app.services.users import (
 from app.services.account_recovery import AccountRecoveryService
 from app.schemas.users import UserPasswordResetRequest, UserProfileViewData, UserProfileViewResponse
 from app.services.user_profile_view import get_user_profile_view
-from app.services.user_password_reset import reset_user_password
+from app.services.user_password_reset import reset_user_password, resolve_password_reset_scope
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
 from app.services.user_contractor_delegations import UserContractorDelegationsService
@@ -123,6 +123,7 @@ def _user_list_schema(
     current_user: CurrentUser,
     item,
     subordinate_ids: set[str] | None = None,
+    password_reset_scope: set[str] | None = None,
 ) -> UserListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
@@ -136,6 +137,7 @@ def _user_list_schema(
         target_role_id=item.role_id,
         is_manual=is_manual,
         is_hierarchy_subordinate=is_hierarchy_subordinate,
+        is_in_password_reset_scope=item.user_id in (password_reset_scope or set()),
     )
     return UserListItemSchema(**data)
 
@@ -285,10 +287,11 @@ async def list_users(
         service = UserQueryService(uow.users, uow.user_status_periods)
         users = await service.list_users(current_user=current_user, role_id=role_id)
         subordinate_ids = await service.resolve_hierarchy_subordinate_user_ids(current_user=current_user)
+        password_reset_scope = await resolve_password_reset_scope(uow.users, current_user=current_user)
 
     return UserListResponse(
         data=UserListData(
-            items=[_user_list_schema(current_user, item, subordinate_ids) for item in users],
+            items=[_user_list_schema(current_user, item, subordinate_ids, password_reset_scope) for item in users],
         ),
     )
 

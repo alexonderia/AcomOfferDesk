@@ -1,12 +1,16 @@
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
 import { IconButton, InputAdornment, TextField, Tooltip, type TextFieldProps } from '@mui/material';
-import { forwardRef, useState } from 'react';
+import { forwardRef, isValidElement, useState } from 'react';
+import { RequiredFieldLabel } from './RequiredFieldLabel';
 
 export const PasswordTextField = forwardRef<HTMLDivElement, Omit<TextFieldProps, 'type'>>(
   function PasswordTextField({ InputProps, label, disabled, ...props }, ref) {
     const [visible, setVisible] = useState(false);
-    const fieldLabel = typeof label === 'string' ? label.toLowerCase() : 'пароль';
+    const labelText = typeof label === 'string'
+      ? label
+      : isValidElement<{ label: string }>(label) && label.type === RequiredFieldLabel ? label.props.label : 'пароль';
+    const fieldLabel = labelText.toLowerCase();
     const actionLabel = `${visible ? 'Скрыть' : 'Показать'} ${fieldLabel}`;
 
     return (
@@ -25,6 +29,7 @@ export const PasswordTextField = forwardRef<HTMLDivElement, Omit<TextFieldProps,
                 <Tooltip title={actionLabel}>
                   <IconButton
                     type="button"
+                    color="primary"
                     edge="end"
                     aria-label={actionLabel}
                     aria-pressed={visible}

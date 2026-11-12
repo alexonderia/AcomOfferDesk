@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app.core.config import settings
+
 from app.infrastructure.email.email_templates.contractor_invitation_email import (
     build_contractor_invitation_email_payload,
 )
@@ -25,6 +27,31 @@ from app.infrastructure.email.email_templates.verification_email import (
 
 def _deadline() -> datetime:
     return datetime(2026, 5, 12, 10, 30, tzinfo=timezone.utc)
+
+
+def test_email_loads_bundled_font_from_public_portal(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "web_base_url", "https://portal.example/")
+    payload = build_contractor_invitation_email_payload(
+        to_email="contractor@example.com",
+        portal_url="https://portal.example/login",
+        contact_name=None,
+        contact_email=None,
+        contact_phone=None,
+        contact_text=None,
+    )
+    assert "url('https://portal.example/maintenance-assets/fonts/alabuga-sans-regular.woff2')" in payload.html_content
+    assert "font-family:'Alabuga Sans',sans-serif" in payload.html_content
+    assert "font-family:Arial" not in payload.html_content
+
+
+def test_email_without_public_url_has_no_relative_font_request(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "web_base_url", None)
+    monkeypatch.setattr(settings, "public_backend_base_url", None)
+    payload = build_contractor_access_opened_email_payload(
+        to_email="contractor@example.com", authorization_url=None,
+    )
+    assert "maintenance-assets" not in payload.html_content
+    assert "font-family:'Alabuga Sans',sans-serif" in payload.html_content
 
 
 def test_request_notification_payload_contains_subject_urls_token_and_warning() -> None:

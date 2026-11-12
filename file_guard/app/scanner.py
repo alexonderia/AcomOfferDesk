@@ -436,7 +436,7 @@ class FileScanner:
         logger.info("Проверяем PDF-файл: сигнатуру, структуру и активное содержимое")
         if not content_bytes.startswith(b"%PDF-"):
             return ("invalid_pdf", "PDF is corrupted or unreadable")
-        if self._contains_suspicious_pdf_tokens(content_bytes):
+        if self._contains_suspicious_pdf_tokens(content_bytes, inspect_metadata=PdfReader is not None):
             return ("invalid_pdf", "PDF contains active content")
 
         if PdfReader is not None:
@@ -446,13 +446,24 @@ class FileScanner:
                     return ("encrypted_pdf_not_allowed", "Encrypted PDF files are not allowed")
                 if len(reader.pages) < 1:
                     return ("invalid_pdf", "PDF is corrupted or unreadable")
+                from .pdf_security import inspect_pdf_metadata
+
+                metadata = inspect_pdf_metadata(reader, max_metadata_bytes=settings.max_file_size_bytes)
+                if b"/EmbeddedFile" in content_bytes and not metadata:
+                    return ("invalid_pdf", "PDF contains an invalid attachment")
                 logger.info("PDF успешно разобран через pypdf: pages=%s", len(reader.pages))
-                return None
             except Exception:
-                logger.info("pypdf не смог разобрать PDF; проверяем сигнатуру")
+                logger.info("PDF не прошёл разбор или проверку содержимого")
                 if b"/Encrypt" in content_bytes[:65536]:
                     return ("encrypted_pdf_not_allowed", "Encrypted PDF files are not allowed")
                 return ("invalid_pdf", "PDF is corrupted or unreadable")
+            # Scan decoded metadata as well as the full PDF; MIME and a valid C2PA
+            # envelope do not establish that an attachment is malware-free.
+            for data in metadata:
+                failure = self._scan_antivirus(content_bytes=data)
+                if failure is not None:
+                    return failure
+            return None
 
         if b"%%EOF" not in content_bytes[-2048:]:
             return ("invalid_pdf", "PDF is corrupted or unreadable")
@@ -463,8 +474,12 @@ class FileScanner:
         return None
 
     @staticmethod
-    def _contains_suspicious_pdf_tokens(content_bytes: bytes) -> bool:
-        return any(token in content_bytes for token in _SUSPICIOUS_PDF_TOKENS)
+    def _contains_suspicious_pdf_tokens(content_bytes: bytes, *, inspect_metadata: bool = False) -> bool:
+        return any(
+            token in content_bytes
+            for token in _SUSPICIOUS_PDF_TOKENS
+            if not (inspect_metadata and token == b"/EmbeddedFile")
+        )
 
     def _validate_office(self, *, extension: str, content_bytes: bytes) -> tuple[str, str] | None:
         logger.info("Проверяем Office-файл: extension=%s", extension)

@@ -17,7 +17,7 @@ import { ROLE } from '@shared/constants/roles';
 import { isValidRuPhone } from '@shared/lib/phone';
 import { buildUnitOptions, type UnitOption } from '@shared/lib/hierarchy/buildUnitOptions';
 import { addUserButtonSx, employeePersonLabels, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
-import { getScopedCreateRoleIds, resolveUserTabFromParam } from './helpers';
+import { getScopedCreateRoleIds, matchesUserSearch, resolveUserTabFromParam } from './helpers';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -207,9 +207,10 @@ export const useAdminPage = () => {
   );
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [contractors, setContractors] = useState<ContractorListItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const isGlobalSearch = Boolean(searchQuery.trim());
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
-  const [creationNotice, setCreationNotice] = useState<{ message: string; visibleToCreator: boolean } | null>(null);
   const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
   const [isLoadingUnitOptions, setIsLoadingUnitOptions] = useState(false);
   const loadUsersRequestIdRef = useRef(0);
@@ -226,7 +227,7 @@ export const useAdminPage = () => {
       if (session?.roleId === ROLE.SUPERADMIN) {
         [ROLE.ADMIN, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
       } else if (session?.roleId === ROLE.ADMIN) {
-        [ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
+        [ROLE.ECONOMIST].forEach(addRole);
       } else if (session?.roleId === ROLE.LEAD_ECONOMIST) {
         [ROLE.ECONOMIST].forEach(addRole);
       }
@@ -253,10 +254,7 @@ export const useAdminPage = () => {
   const preferredCreateRoleId = roleOptions[0]?.id ?? roleByTab[activeTab];
 
   const roleUpdateOptions = useMemo(() => {
-    if (canUpdateRoleAny) {
-      if (session?.roleId === ROLE.ADMIN) {
-        return [ROLE.ECONOMIST, ROLE.OPERATOR];
-      }
+    if (canUpdateRoleAny && session?.roleId === ROLE.SUPERADMIN) {
       return [
         ROLE.ADMIN,
         ROLE.CONTRACTOR,
@@ -267,14 +265,17 @@ export const useAdminPage = () => {
         ROLE.OPERATOR
       ];
     }
+    if (canUpdateRoleAny && session?.roleId === ROLE.ADMIN) {
+      return [ROLE.ECONOMIST];
+    }
     if (!canUpdateRoleEconomy) {
       return [];
     }
     if (session?.roleId === ROLE.PROJECT_MANAGER) {
-      return [ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR];
+      return [ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST];
     }
     if (session?.roleId === ROLE.LEAD_ECONOMIST) {
-      return [ROLE.ECONOMIST, ROLE.OPERATOR];
+      return [ROLE.ECONOMIST];
     }
     return [];
   }, [canUpdateRoleAny, canUpdateRoleEconomy, session?.roleId]);
@@ -285,7 +286,7 @@ export const useAdminPage = () => {
   }, [isLeadLike]);
 
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
-  const { showErrorToast, showSuccessToast } = useSystemToasts();
+  const { showErrorToast, showSuccessToast, showSystemToast } = useSystemToasts();
 
   const form = useLiveValidatedForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
@@ -311,14 +312,14 @@ export const useAdminPage = () => {
   const selectedRoleId = watch('role_id');
   const isContractorRole = selectedRoleId === ROLE.CONTRACTOR;
 
-  const handleTabChange = (value: UserTab) => {
+  const handleTabChange = useCallback((value: UserTab) => {
     setActiveTab(value);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('users_tab', value);
       return next;
     }, { replace: true });
-  };
+  }, [setSearchParams]);
 
   useEffect(() => {
     if (!isDialogOpen || !canShowUnitOnCreate || selectedRoleId === ROLE.CONTRACTOR) {
@@ -390,7 +391,21 @@ export const useAdminPage = () => {
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      if (!isLeadLike && activeTab === 'contractors') {
+      if (isGlobalSearch) {
+        const [response, contractorItems] = await Promise.all([
+          getUsers(),
+          hasPermission(session, 'contractors.read')
+            ? listContractors()
+            : !isLeadLike
+              ? getUsers(roleByTab.contractors).then((result) => result.items.map(mapUserListItemToContractorListItem))
+              : Promise.resolve([]),
+        ]);
+        if (loadUsersRequestIdRef.current !== requestId) {
+          return;
+        }
+        setUsers(response.items.filter((user) => user.role_id !== ROLE.CONTRACTOR));
+        setContractors(contractorItems);
+      } else if (!isLeadLike && activeTab === 'contractors') {
         const items = hasPermission(session, 'contractors.read')
           ? await listContractors()
           : (await getUsers(roleByTab.contractors)).items.map(mapUserListItemToContractorListItem);
@@ -412,6 +427,8 @@ export const useAdminPage = () => {
       if (loadUsersRequestIdRef.current !== requestId) {
         return;
       }
+      setUsers([]);
+      setContractors([]);
       setUsersError(
         error instanceof Error
           ? error.message
@@ -424,11 +441,24 @@ export const useAdminPage = () => {
         setIsLoadingUsers(false);
       }
     }
-  }, [activeTab, isLeadLike, session]);
+  }, [activeTab, isGlobalSearch, isLeadLike, session]);
 
   useEffect(() => {
     void loadUsers();
+    return () => {
+      loadUsersRequestIdRef.current += 1;
+    };
   }, [loadUsers]);
+
+  const visibleUsers = useMemo(() => isGlobalSearch ? users.filter((user) => matchesUserSearch(searchQuery, [
+    user.user_id, user.full_name, user.phone, user.mail, getRoleLabel(user.role_id),
+  ])) : users, [getRoleLabel, isGlobalSearch, searchQuery, users]);
+
+  const visibleContractors = useMemo(() => isGlobalSearch ? contractors.filter((contractor) => matchesUserSearch(searchQuery, [
+    contractor.userId, contractor.fullName, contractor.phone, contractor.mail,
+    contractor.companyName, contractor.inn, contractor.companyPhone, contractor.companyMail,
+    contractor.address, contractor.note, getRoleLabel(contractor.roleId),
+  ])) : contractors, [contractors, getRoleLabel, isGlobalSearch, searchQuery]);
 
   const resetForm = useCallback(() => {
     reset({
@@ -450,7 +480,6 @@ export const useAdminPage = () => {
   }, [preferredCreateRoleId, reset]);
 
   const openCreateDialog = useCallback(() => {
-    setCreationNotice(null);
     resetForm();
     setIsDialogOpen(true);
   }, [resetForm]);
@@ -511,11 +540,14 @@ export const useAdminPage = () => {
         const roleLabel = getRoleLabel(response.data.role_id);
         const visibleToCreator = response.data.visible_to_creator !== false;
         const message = `Сотрудник ${response.data.user_id} создан. Роль: ${roleLabel}.`;
-        setCreationNotice({
-          visibleToCreator,
-          message: visibleToCreator ? message : `${message} Он не входит в вашу область видимости. Обратитесь к суперадминистратору для назначения сотрудника в доступное вам подразделение.`,
-        });
-        showSuccessToast(message);
+        if (visibleToCreator) {
+          showSuccessToast(message);
+        } else {
+          showSystemToast({
+            severity: 'warning',
+            message: `${message} Он не входит в вашу область видимости. Обратитесь к суперадминистратору для назначения сотрудника в доступное вам подразделение.`,
+          });
+        }
         const createdTab = (Object.keys(roleByTab) as UserTab[]).find((tab) => roleByTab[tab] === response.data.role_id);
         handleClose();
         if (!isLeadLike && createdTab && createdTab !== activeTab) {
@@ -548,11 +580,13 @@ export const useAdminPage = () => {
     openCreateDialog,
     activeTab,
     handleTabChange,
-    users,
-    contractors,
+    users: visibleUsers,
+    contractors: visibleContractors,
+    searchQuery,
+    setSearchQuery,
+    isGlobalSearch,
     isLoadingUsers,
     usersError,
-    creationNotice,
     canUpdateStatus,
     canUpdateRole,
     roleUpdateOptions,

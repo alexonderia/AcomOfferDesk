@@ -51,7 +51,7 @@ export const HierarchyViewPersonRow = ({
             component="span"
             sx={{
               fontSize: theme.typography.body1.fontSize,
-              fontWeight: highlight ? 700 : 600,
+              fontWeight: 500,
               lineHeight: 1.25,
               color: 'text.primary',
               whiteSpace: 'nowrap',

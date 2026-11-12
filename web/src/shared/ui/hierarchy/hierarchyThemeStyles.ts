@@ -148,7 +148,7 @@ export const getHierarchyAvatarSx = (
   width: 36,
   height: 36,
   fontSize: themeTokens.typography.body2FontSize,
-  fontWeight: 700,
+  fontWeight: 500,
   bgcolor: highlight
     ? alpha(toneColor, 0.16)
     : alpha(toneColor, 0.1),

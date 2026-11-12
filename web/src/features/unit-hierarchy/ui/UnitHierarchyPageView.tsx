@@ -35,6 +35,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions, useSetPageBreadcrumbItems } from '@app/layouts/PageBreadcrumbActions';
 import type { UnitMember, UnitNode } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { useToastMessageEffect } from '@shared/ui/toasts';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
 import { ContractorBindingsDialog } from './ContractorBindingsDialog';
@@ -123,7 +124,8 @@ const UnitFormDialog = ({
           <TextField
             autoFocus
             fullWidth
-            label="Название"
+            label={<RequiredFieldLabel label="Название" isValid={Boolean(name.trim())} />}
+            inputProps={{ 'aria-required': true }}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
@@ -1811,7 +1813,8 @@ export const UnitHierarchyPageView = () => {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Сотрудник"
+                label={<RequiredFieldLabel label="Сотрудник" isValid={Boolean(memberDialogState.selectedUserId)} />}
+                inputProps={{ ...params.inputProps, 'aria-required': true }}
                 placeholder="Начните вводить имя или логин"
               />
             )}

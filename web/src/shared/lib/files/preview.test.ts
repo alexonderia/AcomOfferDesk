@@ -72,6 +72,9 @@ describe('authorized file previews', () => {
     expect(html).not.toContain('javascript:');
     expect(html).not.toContain('<a ');
     expect(html).toContain("default-src 'none'");
+    expect(html).toContain("font-src data:");
+    expect(html).toContain('font:16px/1.5 "Alabuga Sans",sans-serif');
+    expect(html).toContain('@font-face');
   });
 
   it('reads real XLSX sheets and cached formula values without evaluating code', async () => {

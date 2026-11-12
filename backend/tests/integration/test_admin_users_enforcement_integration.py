@@ -9,7 +9,7 @@ import pytest
 from app.api.dependencies import get_current_user
 from app.core.config import settings
 from app.domain.exceptions import Unauthorized
-from app.domain.permissions import PermissionCodes
+from app.domain.permissions import PermissionCodes, get_known_permissions
 from app.services import users as users_service
 
 
@@ -476,14 +476,77 @@ def test_admin_can_create_user_with_permission(
     response = test_client.post(
         "/api/v1/users/register",
         json={
-            "login": "new-operator",
-            "role_id": settings.operator_role_id,
-            "mail": "new-operator@example.com",
+            "login": "new-economist",
+            "role_id": settings.economist_role_id,
+            "mail": "new-economist@example.com",
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["data"]["user_id"] == "new-operator"
+    assert response.json()["data"]["user_id"] == "new-economist"
+
+
+@pytest.mark.parametrize("email_enabled", [True, False])
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("role_id", [
+    settings.superadmin_role_id,
+    settings.admin_role_id,
+    settings.contractor_role_id,
+    settings.project_manager_role_id,
+    settings.lead_economist_role_id,
+    settings.economist_role_id,
+    settings.operator_role_id,
+    settings.security_officer_role_id,
+])
+def test_only_superadmin_can_register_operator_even_with_all_permissions(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user,
+    email_enabled, existing, role_id,
+):
+    calls = []
+
+    class OperatorClient(_FakeIamClient):
+        async def get_credential_state(self, **kwargs):
+            calls.append({"role": "operator", **kwargs})
+            return SimpleNamespace(login="operator-1", role="operator", password_set=True)
+
+        async def put_account(self, **kwargs):
+            calls.append(kwargs)
+            return await super().put_account(**kwargs)
+
+        async def provision_direct_credentials(self, **kwargs):
+            calls.append(kwargs)
+            return await super().provision_direct_credentials(**kwargs)
+
+    monkeypatch.setattr("app.api.v1.auth.IamClient", OperatorClient)
+    monkeypatch.setattr(settings, "email_enabled", email_enabled)
+    uow = _UsersUow()
+    set_uow(uow)
+    set_current_user(make_current_user(
+        user_id="admin-1", role_id=role_id, permissions=get_known_permissions(),
+    ))
+    login = "operator-1" if existing else "new-operator"
+    payload = {"login": login, "role_id": settings.operator_role_id, "mail": "operator@example.com"}
+    if not email_enabled:
+        payload.update(password="Initial password 123", password_confirmation="Initial password 123")
+    before_users = set(uow.users._users)
+    before_bindings = dict(uow.user_auth_accounts._bindings)
+    before_memberships = list(uow.users._memberships)
+
+    response = test_client.post("/api/v1/users/register", json=payload)
+
+    if role_id == settings.superadmin_role_id:
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["role_id"] == settings.operator_role_id
+        assert uow.users._users[login].id_role == settings.operator_role_id
+        assert uow.user_auth_accounts._bindings[login].is_active
+        assert calls and all(call["role"] == "operator" for call in calls)
+    else:
+        assert response.status_code == 403, response.text
+        assert "только суперадминистратор" in response.json()["detail"]
+        assert set(uow.users._users) == before_users
+        assert uow.user_auth_accounts._bindings == before_bindings
+        assert uow.users._memberships == before_memberships
+        assert not calls
 
 
 def test_lead_economist_register_auto_assigns_creator_unit(
@@ -858,11 +921,44 @@ def test_admin_can_assign_allowed_role_only_in_shared_root_scope(
         )
     )
 
-    allowed = test_client.patch("/api/v1/users/eco-1/role", json={"role_id": settings.operator_role_id})
-    foreign = test_client.patch("/api/v1/users/pm-2/role", json={"role_id": settings.operator_role_id})
+    allowed = test_client.patch("/api/v1/users/operator-1/role", json={"role_id": settings.economist_role_id})
+    foreign = test_client.patch("/api/v1/users/pm-2/role", json={"role_id": settings.economist_role_id})
 
     assert allowed.status_code == 200
     assert foreign.status_code == 403
+
+
+@pytest.mark.parametrize("role_id", [
+    settings.admin_role_id,
+    settings.contractor_role_id,
+    settings.project_manager_role_id,
+    settings.lead_economist_role_id,
+    settings.economist_role_id,
+    settings.operator_role_id,
+    settings.security_officer_role_id,
+])
+@pytest.mark.parametrize("permission", [
+    PermissionCodes.USERS_ROLE_UPDATE_ANY,
+    PermissionCodes.USERS_ROLE_UPDATE_ECONOMY,
+])
+def test_non_superadmin_cannot_assign_operator_with_role_update_grant(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user, role_id, permission,
+):
+    class NoRoleUpdateClient(_FakeIamClient):
+        async def update_role(self, **kwargs):
+            raise AssertionError("Denied operator assignment must not change IAM")
+
+    monkeypatch.setattr("app.api.v1.users.IamClient", NoRoleUpdateClient)
+    uow = _UsersUow()
+    set_uow(uow)
+    set_current_user(make_current_user(user_id="lead-1", role_id=role_id, permissions={permission}))
+
+    response = test_client.patch("/api/v1/users/eco-1/role", json={"role_id": settings.operator_role_id})
+
+    assert response.status_code == 403, response.text
+    assert "только суперадминистратор" in response.json()["detail"]
+    assert uow.users._users["eco-1"].id_role == settings.economist_role_id
+    assert uow.users._users["eco-1"].id_parent == "lead-1"
 
 
 def test_user_without_role_update_permission_cannot_change_role(
@@ -1184,3 +1280,54 @@ def test_anonymous_user_gets_401_for_users_endpoint(test_client, api_app):
     response = test_client.get("/api/v1/users")
 
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize('target_id,expected_status', [
+    ('eco-1', 204), ('lead-1', 204), ('contractor-1', 204),
+    ('pm-2', 403), ('superadmin-1', 403), ('admin-1', 403),
+])
+def test_admin_password_reset_enforces_department_on_http_request(
+    test_client, monkeypatch, set_uow, set_current_user, make_current_user, target_id, expected_status,
+):
+    from unittest.mock import AsyncMock
+    from app.domain.iam_roles import technical_role_name
+
+    uow = _UsersUow()
+    uow.users._memberships.append(('contractor-1', 2))
+    target = uow.users._users[target_id]
+    iam = SimpleNamespace(
+        get_credential_state=AsyncMock(return_value=SimpleNamespace(login=target_id, role=technical_role_name(target.id_role))),
+        reset_user_password=AsyncMock(),
+    )
+    monkeypatch.setattr('app.services.user_password_reset.IamClient', lambda: iam)
+    set_uow(uow)
+    set_current_user(make_current_user(user_id='admin-1', role_id=settings.admin_role_id,
+                                      permissions={PermissionCodes.USERS_PASSWORD_UPDATE}))
+    response = test_client.post(f'/api/v1/users/{target_id}/password/reset', json={
+        'new_password': 'Scoped replacement password 123',
+        'password_confirmation': 'Scoped replacement password 123',
+        # A browser cannot assert scope: the backend must derive it independently.
+        'department_scope_verified': True,
+    })
+    assert response.status_code == expected_status
+    if expected_status == 204:
+        assert not response.content
+        iam.reset_user_password.assert_awaited_once()
+        assert iam.reset_user_password.call_args.kwargs['department_scope_verified'] is True
+    else:
+        iam.get_credential_state.assert_not_awaited()
+        iam.reset_user_password.assert_not_awaited()
+
+
+def test_user_list_password_action_comes_from_department_scope(
+    test_client, set_uow, set_current_user, make_current_user,
+):
+    set_uow(_UsersUow())
+    set_current_user(make_current_user(user_id='admin-1', role_id=settings.admin_role_id,
+                                      permissions={PermissionCodes.USERS_READ, PermissionCodes.USERS_PASSWORD_UPDATE}))
+    response = test_client.get('/api/v1/users')
+    assert response.status_code == 200
+    items = {item['user_id']: item for item in response.json()['data']['items']}
+    assert items['eco-1']['actions']['can_reset_password'] is True
+    assert items['admin-1']['actions']['can_reset_password'] is False
+    assert 'pm-2' not in items

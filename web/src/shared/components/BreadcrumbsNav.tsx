@@ -89,7 +89,7 @@ export const BreadcrumbsNav = ({ items, trailing }: BreadcrumbsNavProps) => {
         <span />
       )}
       {trailing ? (
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ ml: 'auto' }}>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ ml: 'auto', minWidth: 0, maxWidth: '100%' }}>
           {trailing}
         </Stack>
       ) : null}

@@ -43,6 +43,7 @@ describe('accountStateDraft', () => {
         manage_manual_contractor: false,
         manage_own_profile: true,
         manage_credentials: false,
+        reset_password: false,
         manage_company_contacts: true,
         manage_own_unavailability: false,
         manage_subordinate_unavailability: false,

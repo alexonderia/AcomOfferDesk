@@ -3,16 +3,20 @@ import {
   Autocomplete,
   Box,
   Button,
+  CircularProgress,
   Dialog,
   DialogContent,
+  IconButton,
+  InputAdornment,
   MenuItem,
   Select,
   Stack,
   TextField,
-  Typography,
-  type SelectChangeEvent
+  Typography
 } from '@mui/material';
 import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import SearchRounded from '@mui/icons-material/SearchRounded';
 import { useTheme } from '@mui/material/styles';
 import { useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions } from '@app/layouts/PageBreadcrumbActions';
@@ -34,6 +38,7 @@ import { useIsMobileViewport } from '@shared/lib/responsive';
 import { employeePersonLabels, type UserTab } from '../model/constants';
 import { useAdminPage, type AdminUserFormValues } from '../model/useAdminPage';
 import { InitialAccountFields } from '@shared/components/InitialAccountFields';
+import { AccountAccessSection } from '@shared/components/AccountAccessSection';
 
 const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
@@ -57,9 +62,11 @@ export const AdminPageView = () => {
     handleTabChange,
     users,
     contractors,
+    searchQuery,
+    setSearchQuery,
+    isGlobalSearch,
     isLoadingUsers,
     usersError,
-    creationNotice,
     canUpdateStatus,
     canUpdateRole,
     roleUpdateOptions,
@@ -94,9 +101,6 @@ export const AdminPageView = () => {
   const innValue = watch('inn');
   const companyPhoneValue = watch('company_phone');
   const isEmployeesTab = activeTab !== 'contractors';
-  const handleRoleSelectChange = (event: SelectChangeEvent<UserTab>) => {
-    handleTabChange(event.target.value as UserTab);
-  };
 
   const companyPhoneRegistration = register('company_phone');
   const phoneRegistration = register('phone');
@@ -117,10 +121,28 @@ export const AdminPageView = () => {
   const isCompanyNameFieldValid = hasValue(companyNameValue) && !errors.company_name;
   const isInnFieldValid = hasValue(innValue) && !errors.inn;
   const isCompanyPhoneFieldValid = hasValue(companyPhoneValue) && !errors.company_phone;
+  const passwordValue = watch('password') ?? '';
+  const isPasswordFieldValid = passwordValue.length >= 12 && passwordValue.length <= 128;
+  const isPasswordConfirmationFieldValid = isPasswordFieldValid && watch('password_confirmation') === passwordValue;
   const selectedUnitOption = unitOptions.find((option) => option.unitId === selectedUnitId) ?? null;
-  const canInviteContractors = emailEnabled && activeTab === 'contractors' && hasPermission(session, 'users.registration.invite');
+  const canInviteContractors = emailEnabled && !isGlobalSearch && activeTab === 'contractors' && hasPermission(session, 'users.registration.invite');
 
-  const breadcrumbActions = useMemo(
+  const categorySelect = useMemo(() => !isLeadLike ? (
+    <Select
+      size="small"
+      value={activeTab}
+      onChange={(event) => handleTabChange(event.target.value as UserTab)}
+      disabled={isGlobalSearch}
+      inputProps={{ 'aria-label': 'Категория пользователей' }}
+      sx={{ width: { xs: '100%', sm: 240 }, flexShrink: 0 }}
+    >
+      {userTabs.map((tab) => (
+        <MenuItem key={tab.value} value={tab.value}>{tab.label}</MenuItem>
+      ))}
+    </Select>
+  ) : null, [activeTab, handleTabChange, isGlobalSearch, isLeadLike, userTabs]);
+
+  const inviteAction = useMemo(
     () => {
       if (!canInviteContractors) {
         return null;
@@ -161,52 +183,85 @@ export const AdminPageView = () => {
     [canInviteContractors, isMobileViewport, theme]
   );
 
+  const breadcrumbActions = useMemo(() => (
+    <Stack
+      direction={{ xs: 'column', sm: 'row' }}
+      gap={1.5}
+      alignItems={{ sm: 'center' }}
+      sx={{ width: { xs: '100%', sm: 'auto' }, maxWidth: '100%' }}
+    >
+      <TextField
+        size="small"
+        inputProps={{ 'aria-label': 'Поиск пользователей' }}
+        placeholder="Логин, ФИО, контакты, компания или ИНН"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        sx={{ width: { xs: '100%', sm: 320 }, maxWidth: '100%' }}
+        InputProps={{
+          startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment>,
+          endAdornment: searchQuery ? (
+            <InputAdornment position="end">
+              <IconButton size="small" aria-label="Очистить поиск" onClick={() => setSearchQuery('')}>
+                <CloseRounded fontSize="small" />
+              </IconButton>
+            </InputAdornment>
+          ) : undefined,
+        }}
+      />
+      {categorySelect}
+      {inviteAction}
+    </Stack>
+  ), [categorySelect, inviteAction, searchQuery, setSearchQuery]);
+
   useSetPageBreadcrumbActions(breadcrumbActions);
 
   useToastMessageEffect({ message: usersError });
 
+  const contractorList = (
+    <ContractorsListView
+      contractors={contractors}
+      showSearch={false}
+      toolbarBetweenSearchAndActions={!isGlobalSearch ? categorySelect : undefined}
+      isLoading={isLoadingUsers}
+      emptyMessage="Список пользователей пока пуст."
+      onStatusUpdated={loadUsers}
+      onAddClick={!isGlobalSearch && canOpenCreateDialog ? openCreateDialog : undefined}
+    />
+  );
+  const employeeList = (
+    <UsersTable
+      users={users}
+      showSearch={false}
+      toolbarBetweenSearchAndActions={!isGlobalSearch ? categorySelect : undefined}
+      isLoading={isLoadingUsers}
+      emptyMessage={employeePersonLabels.emptyList}
+      getRoleLabel={getRoleLabel}
+      isContractorsTab={false}
+      canViewRoleIds={canViewRoleIds}
+      canUpdateStatus={canUpdateStatus}
+      canUpdateRole={canUpdateRole}
+      allowedRoleOptions={roleUpdateOptions}
+      onStatusUpdated={loadUsers}
+      onAddClick={!isGlobalSearch && canOpenCreateDialog ? openCreateDialog : undefined}
+    />
+  );
+
   return (
     <Stack spacing={2}>
-      {creationNotice ? <Alert severity={creationNotice.visibleToCreator ? 'success' : 'warning'}>
-        {creationNotice.message}
-      </Alert> : null}
-      {!isLeadLike ? (
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap" sx={{ width: '100%' }}>
-          <Select
-            size="small"
-            value={activeTab}
-            onChange={handleRoleSelectChange}
-            sx={{ minWidth: { xs: '100%', sm: 300 }, flexShrink: 0 }}
-          >
-            {userTabs.map((tab) => (
-              <MenuItem key={tab.value} value={tab.value}>{tab.label}</MenuItem>
-            ))}
-          </Select>
-        </Stack>
-      ) : null}
-      {activeTab === 'contractors' ? (
-        <ContractorsListView
-          contractors={contractors}
-          isLoading={isLoadingUsers}
-          emptyMessage="Список пользователей пока пуст."
-          onStatusUpdated={loadUsers}
-          onAddClick={canOpenCreateDialog ? openCreateDialog : undefined}
-        />
-      ) : (
-        <UsersTable
-          users={users}
-          isLoading={isLoadingUsers}
-          emptyMessage={isEmployeesTab ? employeePersonLabels.emptyList : 'Список пользователей пока пуст.'}
-          getRoleLabel={getRoleLabel}
-          isContractorsTab={false}
-          canViewRoleIds={canViewRoleIds}
-          canUpdateStatus={canUpdateStatus}
-          canUpdateRole={canUpdateRole}
-          allowedRoleOptions={roleUpdateOptions}
-          onStatusUpdated={loadUsers}
-          onAddClick={canOpenCreateDialog ? openCreateDialog : undefined}
-        />
-      )}
+      {isGlobalSearch ? (
+        isLoadingUsers ? (
+          <Stack direction="row" spacing={1} alignItems="center" role="status">
+            <CircularProgress size={20} />
+            <Typography>Поиск пользователей…</Typography>
+          </Stack>
+        ) : usersError ? <Alert severity="error">Не удалось выполнить поиск пользователей.</Alert> : (
+          <Stack spacing={2}>
+            {users.length > 0 ? <Stack spacing={1}><Typography variant="h6">Сотрудники</Typography>{employeeList}</Stack> : null}
+            {contractors.length > 0 ? <Stack spacing={1}><Typography variant="h6">Контрагенты</Typography>{contractorList}</Stack> : null}
+            {users.length === 0 && contractors.length === 0 ? <Typography color="text.secondary" role="status">Пользователи не найдены.</Typography> : null}
+          </Stack>
+        )
+      ) : activeTab === 'contractors' ? contractorList : employeeList}
 
       <Dialog
         open={isDialogOpen}
@@ -226,7 +281,7 @@ export const AdminPageView = () => {
                     : 'Создание нового пользователя'}
               </Typography>
               {session?.roleId === ROLE.ADMIN && !isContractorRole ? <Alert severity="info">
-                Администратор может создавать экономистов и операторов. Чтобы видеть нового сотрудника, назначьте его в доступное вам подразделение. Если назначения нет, распределить сотрудника сможет суперадминистратор.
+                Администратор может создавать экономистов. Роль «Оператор» назначает только суперадминистратор. Чтобы видеть нового сотрудника, назначьте его в доступное вам подразделение. Если назначения нет, распределить сотрудника сможет суперадминистратор.
               </Alert> : null}
               <TextField
                 label={
@@ -236,6 +291,7 @@ export const AdminPageView = () => {
                   />
                 }
                 select
+                inputProps={{ 'aria-required': true }}
                 error={Boolean(getFieldError('role_id'))}
                 helperText={getFieldError('role_id')}
                 value={selectedRoleId}
@@ -254,7 +310,6 @@ export const AdminPageView = () => {
                   <Typography sx={sectionTitleSx}>
                     Данные для регистрации
                   </Typography>
-                  {!emailEnabled ? <InitialAccountFields values={{ login: watch('login') ?? '', password: watch('password') ?? '', password_confirmation: watch('password_confirmation') ?? '' }} onChange={(field, value) => setValue(field, value, { shouldDirty: true, shouldValidate: true })} /> : null}
                   <ValidatedTextField
                     label={<RequiredFieldLabel label="Наименование компании" isValid={isCompanyNameFieldValid} />}
                     fieldName="company_name"
@@ -316,38 +371,36 @@ export const AdminPageView = () => {
                     registration={register('note')}
                     sx={inputFieldSx}
                   />
+                  {emailEnabled ? <AccountAccessSection emailEnabled /> : <InitialAccountFields values={{ login: watch('login') ?? '', password: watch('password') ?? '', password_confirmation: watch('password_confirmation') ?? '' }} onChange={(field, value) => setValue(field, value, { shouldDirty: true, shouldValidate: true })} />}
                 </>
               ) : (
                 <>
+                  <AccountAccessSection emailEnabled={emailEnabled}>
+                    <ValidatedTextField
+                      label={<RequiredFieldLabel label="Логин" isValid={isLoginFieldValid} />}
+                      fieldName="login"
+                      error={Boolean(getFieldError('login'))}
+                      helperText={getFieldError('login')}
+                      registration={register('login')}
+                      sx={inputFieldSx}
+                    />
+                    {!emailEnabled ? <>
+                      <ValidatedTextField label={<RequiredFieldLabel label="Пароль" isValid={isPasswordFieldValid} />} fieldName="password" type="password" autoComplete="new-password" registration={register('password')} error={Boolean(getFieldError('password'))} helperText={getFieldError('password') ?? 'От 12 до 128 символов'} inputProps={{ maxLength: 128 }} />
+                      <ValidatedTextField label={<RequiredFieldLabel label="Повтор пароля" isValid={isPasswordConfirmationFieldValid} />} fieldName="password_confirmation" type="password" autoComplete="new-password" registration={register('password_confirmation')} error={Boolean(getFieldError('password_confirmation'))} helperText={getFieldError('password_confirmation')} inputProps={{ maxLength: 128 }} />
+                    </> : null}
+                  </AccountAccessSection>
+
                   <Typography sx={sectionTitleSx}>
-                    Данные для входа
+                    {employeePersonLabels.profileSectionTitle}
                   </Typography>
                   <ValidatedTextField
-                    label={<RequiredFieldLabel label="Логин" isValid={isLoginFieldValid} />}
-                    fieldName="login"
-                    error={Boolean(getFieldError('login'))}
-                    helperText={getFieldError('login')}
-                    registration={register('login')}
-                    sx={inputFieldSx}
-                  />
-                  <ValidatedTextField
-                    label={emailEnabled ? <RequiredFieldLabel label="E-mail" isValid={isMailFieldValid} /> : 'E-mail (необязательно)'}
+                    label={emailEnabled ? <RequiredFieldLabel label="E-mail" isValid={isMailFieldValid} /> : 'E-mail'}
                     fieldName="mail"
                     error={Boolean(getFieldError('mail'))}
                     helperText={getFieldError('mail')}
                     registration={register('mail')}
                     sx={inputFieldSx}
                   />
-
-                  {!emailEnabled ? <>
-                    <Typography color="text.secondary">Почта отключена. Пользователь сможет сразу войти с заданными данными.</Typography>
-                    <ValidatedTextField label="Пароль" fieldName="password" type="password" autoComplete="new-password" registration={register('password')} error={Boolean(getFieldError('password'))} helperText={getFieldError('password') ?? 'От 12 до 128 символов'} inputProps={{ maxLength: 128 }} />
-                    <ValidatedTextField label="Повтор пароля" fieldName="password_confirmation" type="password" autoComplete="new-password" registration={register('password_confirmation')} error={Boolean(getFieldError('password_confirmation'))} helperText={getFieldError('password_confirmation')} inputProps={{ maxLength: 128 }} />
-                  </> : null}
-
-                  <Typography sx={sectionTitleSx}>
-                    {employeePersonLabels.profileSectionTitle}
-                  </Typography>
                   <ValidatedTextField
                     label="ФИО"
                     fieldName="full_name"

@@ -4,6 +4,7 @@ COPY web/package.json web/package-lock.json* ./
 COPY web/scripts/copy-pdf-assets.mjs ./scripts/copy-pdf-assets.mjs
 RUN npm install
 COPY web/ .
+COPY shared/fonts /app/shared/fonts
 RUN npm run build
 
 FROM nginx:1.27-alpine

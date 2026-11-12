@@ -4,6 +4,7 @@ from datetime import datetime
 from html import escape
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from app.infrastructure.email.email_templates.email_typography import build_email_font_head
 from app.infrastructure.email.email_templates.email_contact_blocks import (
     EmailContactInfo,
     build_contact_html_block,
@@ -111,7 +112,7 @@ def _build_html(
     warning_html = (
         f"""
             <tr>
-              <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#b45309;font-size:14px;line-height:22px;">
+              <td style="padding:8px 28px 0 28px;font-family:'Alabuga Sans',sans-serif;color:#b45309;font-size:14px;line-height:22px;">
                 <strong>Внимание:</strong> {escape(attachment_warning)}
               </td>
             </tr>
@@ -123,18 +124,19 @@ def _build_html(
     return f"""
 <!DOCTYPE html>
 <html lang="ru">
+  {build_email_font_head()}
   <body style="margin:0;padding:0;background-color:#f6f8fb;">
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f6f8fb;padding:24px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
             <tr>
-              <td style="padding:24px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:22px;font-weight:700;">
+              <td style="padding:24px 28px 8px 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:22px;font-weight:700;">
                 AcomOfferDesk
               </td>
             </tr>
             <tr>
-              <td style="padding:0 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
+              <td style="padding:0 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:16px;line-height:24px;">
                 {invitation_intro_html}
                 Поступила новая заявка <strong>№{request_id}</strong>.<br/><br/>
                 <strong>Описание:</strong> {escaped_description}<br/>
@@ -145,7 +147,7 @@ def _build_html(
             {contact_html}
             {warning_html}
             <tr>
-              <td style="padding:8px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+              <td style="padding:8px 28px 24px 28px;font-family:'Alabuga Sans',sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Ссылка для входа:<br/>
                 <a href="{escaped_portal_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_portal_url}</a>
               </td>

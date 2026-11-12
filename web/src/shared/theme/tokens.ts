@@ -51,7 +51,7 @@ export const themeTokens = {
   },
   typography: {
     // Keep in sync with the web-owned typography.css tokens.
-    fontFamily: '"Inter", "Segoe UI", sans-serif',
+    fontFamily: '"Alabuga Sans", sans-serif',
     bodyFontSize: 16,
     body2FontSize: 14,
     captionFontSize: 12,

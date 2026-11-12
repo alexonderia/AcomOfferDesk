@@ -1,0 +1,63 @@
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-thin.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-extra-light.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-light.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-regular.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-medium.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-bold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-extra-bold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Alabuga Sans';
+  src: url('./alabuga-sans-black.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+}

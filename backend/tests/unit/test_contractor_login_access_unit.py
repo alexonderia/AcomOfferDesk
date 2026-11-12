@@ -117,3 +117,13 @@ async def test_contractor_offer_info_permission_cannot_inspect_other_identity(co
     with pytest.raises(Forbidden):
         await ctx.service.check_login_access(current_user=actor, contractor_ids=[ctx.user.id])
     ctx.iam.get_credential_state.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_contractor_can_check_own_access_with_offer_info_permission(context, make_current_user):
+    ctx = context
+    actor = make_current_user(user_id=ctx.user.id, role_id=settings.contractor_role_id,
+                              permissions={PermissionCodes.OFFERS_CONTRACTOR_INFO_READ})
+    [result] = await ctx.service.check_login_access(current_user=actor, contractor_ids=[ctx.user.id])
+    assert result.state == 'available'
+    ctx.iam.get_credential_state.assert_awaited_once_with(account_id=ctx.binding.external_subject_id)

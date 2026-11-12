@@ -35,6 +35,7 @@ class ChatActionsSchema(BaseModel):
 
 
 class UserActionsSchema(BaseModel):
+    can_reset_password: bool = False
     can_view_profile: bool = False
     can_update_status: bool = False
     can_manage_contractor_unit_bindings: bool = False

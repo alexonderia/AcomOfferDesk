@@ -63,4 +63,33 @@ describe('password visibility', () => {
     expect(screen.getByLabelText('Логин для входа', { exact: false })).toHaveAttribute('type', 'text');
     expect(change).not.toHaveBeenCalled();
   });
+
+  it('marks the whole initial-access block only while it is being filled', () => {
+    const empty = { login: '', password: '', password_confirmation: '' };
+    const change = vi.fn();
+    const fields = (values: typeof empty) => <ThemeProvider theme={appTheme}><InitialAccountFields values={values} onChange={change} /></ThemeProvider>;
+    const view = render(fields(empty));
+    expect(screen.queryAllByTitle('Обязательное поле')).toHaveLength(0);
+    expect(screen.getByLabelText('Логин для входа')).not.toBeRequired();
+
+    view.rerender(fields({ ...empty, password: 'short' }));
+    for (const name of ['Логин для входа', 'Начальный пароль', 'Повтор начального пароля']) {
+      expect(screen.getByLabelText(name).closest('.MuiFormControl-root')?.querySelector('label [title]')).toHaveAttribute('title', 'Обязательное поле');
+    }
+    expect(screen.getByLabelText('Логин для входа')).toBeRequired();
+    expect(screen.getByLabelText('Начальный пароль')).toBeRequired();
+    expect(screen.getByLabelText('Повтор начального пароля')).toBeRequired();
+    expect(screen.getByRole('button', { name: 'Показать начальный пароль' })).toBeVisible();
+
+    view.rerender(fields({ login: 'new-user', password: 'Password 123456', password_confirmation: 'different' }));
+    expect(screen.getByLabelText('Повтор начального пароля').closest('.MuiFormControl-root')?.querySelector('label [title]')).toHaveAttribute('title', 'Обязательное поле');
+    view.rerender(fields({ login: 'new-user', password: 'Password 123456', password_confirmation: 'Password 123456' }));
+    expect(screen.queryAllByTitle('Обязательное поле')).toHaveLength(0);
+    for (const name of ['Логин для входа', 'Начальный пароль', 'Повтор начального пароля']) {
+      expect(screen.getByLabelText(name).closest('.MuiFormControl-root')?.querySelector('label [title]')).toHaveAttribute('title', 'Поле заполнено верно');
+    }
+    view.rerender(fields(empty));
+    expect(screen.queryAllByTitle('Поле заполнено верно')).toHaveLength(0);
+    expect(screen.getByLabelText('Начальный пароль')).not.toBeRequired();
+  });
 });

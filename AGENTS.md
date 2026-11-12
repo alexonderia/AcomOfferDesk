@@ -33,6 +33,7 @@
 - Отсутствующий action flag означает скрытое или недоступное действие.
 - IAM — единственный runtime identity provider. Identity связывается только через активный `user_auth_accounts(provider='iam')`.
 - Functional permissions берутся из проверенного IAM JWT. `users.id_role` не является их источником или fallback.
+- Назначать роль «Оператор» при создании пользователя или смене роли может только суперадмин по проверенной IAM-роли; общие permissions и индивидуальные grants не отменяют этот инвариант.
 - Индивидуальные grants хранятся в IAM и добавляются к permissions роли; удаление grant не отнимает право, унаследованное от роли.
 - Unit hierarchy, memberships, business status и resource policies остаются в Acom.
 - Session bootstrap, refresh и logout идут через BFF; SPA не хранит и не декодирует access/refresh tokens.

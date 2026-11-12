@@ -3,6 +3,7 @@ import type { ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { useChatRealtime } from '@app/providers/ChatRealtimeProvider';
+import { useSetPageBreadcrumbItems } from '@app/layouts/PageBreadcrumbActions';
 import { getOfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import type { OfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import { getOfferContractorInfo } from '@shared/api/offers/getOfferContractorInfo';
@@ -127,7 +128,6 @@ export const useOfferWorkspace = () => {
   );
   const contractorAccess = useContractorLoginAccess(
     selectedOffer?.actions.view_contractor_info && selectedOffer.contractor_user_id
-      && selectedOffer.contractor_user_id !== session?.login
       ? [{ userId: selectedOffer.contractor_user_id }] : [],
   );
   const refreshContractorAccess = contractorAccess.refresh;
@@ -288,6 +288,23 @@ export const useOfferWorkspace = () => {
   }, [connectionState, loadMessages, refreshWorkspace, selectedOfferId]);
 
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
+  const breadcrumbItems = useMemo(() => {
+    if (!workspace || isContractor || !workspace.offers.some((offer) => offer.offer_id === offerId)) {
+      return [];
+    }
+    const requestId = workspace.request.request_id;
+    return [
+      { key: 'requests', label: 'Заявки', onClick: () => navigate('/requests') },
+      {
+        key: `request-${requestId}`,
+        label: `Заявка №${requestId}`,
+        onClick: workspace.request.actions.view_details ? () => navigate(`/requests/${requestId}`) : undefined,
+      },
+      { key: `offer-${offerId}`, label: `КП №${offerId}` },
+    ];
+  }, [isContractor, navigate, offerId, workspace]);
+  useSetPageBreadcrumbItems(breadcrumbItems);
+
   const isEconomist = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER || session?.roleId === ROLE.ECONOMIST;
   const isSelectedOfferSubmitted = selectedOffer?.status === 'submitted';
   const canUpload = Boolean(selectedOffer?.actions.upload_file) && (!isContractor || isSelectedOfferSubmitted);

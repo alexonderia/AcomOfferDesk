@@ -1,5 +1,7 @@
+@import '../../../../shared/fonts/alabuga-sans.css';
+
 :root {
-  --aod-font-family: "Inter", "Segoe UI", sans-serif;
+  --aod-font-family: "Alabuga Sans", sans-serif;
   --aod-font-h1: 32px;
   --aod-font-h2: 24px;
   --aod-font-h3: 20px;
@@ -22,4 +24,15 @@ body {
   font-size: var(--aod-font-body1);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea,
+pre,
+code,
+kbd,
+samp {
+  font-family: inherit;
 }

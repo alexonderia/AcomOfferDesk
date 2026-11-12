@@ -107,11 +107,13 @@ class IamClient:
     async def reset_user_password(
         self, *, account_id: str, new_password: str,
         actor_account_id: str, actor_session_id: str,
+        department_scope_verified: bool = False,
     ) -> None:
         await self._request(
             "POST", f"/internal/accounts/{account_id}/password/reset",
             json={"new_password": new_password, "actor_account_id": actor_account_id,
-                  "actor_session_id": actor_session_id},
+                  "actor_session_id": actor_session_id,
+                  "department_scope_verified": department_scope_verified},
         )
 
     async def provision_direct_credentials(

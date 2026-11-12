@@ -286,9 +286,9 @@ export const appTheme = createTheme({
     },
     MuiIconButton: {
       styleOverrides: {
-        root: {
-          color: tokens.color.text.primary
-        }
+        root: ({ ownerState }) => ({
+          color: ownerState.color === 'default' && !ownerState.disabled ? tokens.color.text.primary : undefined
+        })
       }
     }
   }

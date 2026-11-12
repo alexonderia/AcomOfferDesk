@@ -421,6 +421,7 @@ class IamService:
     async def reset_user_password(
         self, *, account_id: uuid.UUID, new_password: str,
         actor_account_id: uuid.UUID, actor_session_id: uuid.UUID,
+        department_scope_verified: bool = False,
     ) -> None:
         actor = await self._accounts.get(actor_account_id)
         actor_role = await self._roles.get_by_id(actor.role_id) if actor else None
@@ -428,10 +429,17 @@ class IamService:
         now = utc_now()
         if (
             actor is None or actor.auth_status != "active" or actor_role is None
-            or not actor_role.is_active or actor_role.name != "superadmin"
+            or not actor_role.is_active or actor_role.name not in {"superadmin", "admin"}
             or actor_session is None or actor_session.account_id != actor_account_id
             or actor_session.revoked_at is not None or as_utc(actor_session.expires_at) <= now
         ):
+            raise Forbidden()
+        _, actor_permissions = await self._role_and_permissions(actor)
+        if "users.password.update" not in actor_permissions:
+            raise Forbidden()
+        # Org structure belongs to Acom. Only its authenticated internal adapter
+        # may attest that the target is in this administrator's department.
+        if actor_role.name == "admin" and not department_scope_verified:
             raise Forbidden()
         account = await self._accounts.get(account_id, for_update=True)
         if account is None:
@@ -462,7 +470,10 @@ class IamService:
         )
         await self._record_admin_audit_or_log(
             actor_account_id=actor_account_id, actor_session_id=actor_session_id,
-            event_type="password.administratively_reset", details={"target_account_id": str(account_id)},
+            event_type="password.administratively_reset", details={
+                "target_account_id": str(account_id),
+                "authorization_scope": "department" if actor_role.name == "admin" else "global",
+            },
         )
 
     async def provision_registration_credentials(

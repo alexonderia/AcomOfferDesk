@@ -7,6 +7,7 @@ import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
 import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { ActionButton } from '@shared/components/ActionButton';
+import { RequiredFieldLabel } from './forms/RequiredFieldLabel';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 import { getUploadFileSizeError } from '@shared/lib/files';
 import { useSystemToasts } from '@shared/ui/toasts';
@@ -198,6 +199,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
               }}
             >
               <Stack spacing={1.2}>
+                <Typography variant="subtitle2"><RequiredFieldLabel label="Нормативный документ" isValid={Boolean(selectedFile && !getUploadFileSizeError(selectedFile))} /></Typography>
                 <input
                   ref={inputRef}
                   type="file"

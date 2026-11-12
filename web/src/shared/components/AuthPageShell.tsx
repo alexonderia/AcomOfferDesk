@@ -2,12 +2,13 @@ import { Box, Paper, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import { AppFooter } from '@shared/components/AppFooter';
+import { themeTokens } from '@shared/theme/tokens';
 
 const AUTH_PRIMARY = '#2f6fd6';
 const AUTH_PRIMARY_DARK = '#245bb5';
 const AUTH_TEXT = '#1f2a44';
 const AUTH_BORDER = '#d3dbe7';
-const AUTH_FONT = 'Inter, "Segoe UI", sans-serif';
+const AUTH_FONT = themeTokens.typography.fontFamily;
 const NARROW_AUTH_QUERY = '(max-width: 640px)';
 
 type AuthPageShellProps = {
@@ -95,10 +96,13 @@ export const AuthPageShell = ({
         width: 40,
         height: 40,
         backgroundColor: '#f5f8ff',
-        color: '#4a5875',
+        color: AUTH_PRIMARY,
         '&:hover': {
           backgroundColor: '#ebf2ff',
-          color: AUTH_TEXT,
+          color: AUTH_PRIMARY_DARK,
+        },
+        '&.Mui-disabled': {
+          color: 'action.disabled',
         },
       },
     }}

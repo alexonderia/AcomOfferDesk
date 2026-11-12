@@ -25,6 +25,7 @@ type UsersRow = {
   managers_count?: number;
   subordinates_count?: number;
   actions?: {
+    can_reset_password?: boolean;
     can_view_profile?: boolean;
     can_update_status?: boolean;
     can_manage_contractor_unit_bindings?: boolean;

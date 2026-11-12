@@ -31,7 +31,7 @@ async def account(service, session, login, role):
 
 async def prepare(session, actor_role='superadmin'):
     service = IamService(session)
-    await service.seed_rbac({'superadmin': ['users.create'], 'economist': ['requests.view'], 'admin': ['users.create']})
+    await service.seed_rbac({'superadmin': ['users.create', 'users.password.update'], 'economist': ['requests.view', 'users.password.update'], 'admin': ['users.create', 'users.password.update']})
     actor, actor_session = await account(service, session, 'reset.actor', actor_role)
     target, target_session = await account(service, session, 'reset.target', 'economist')
     return service, actor, actor_session, target, target_session
@@ -106,6 +106,38 @@ async def test_reset_preserves_nonactive_target_status(session, status):
 
 
 @pytest.mark.asyncio
+async def test_admin_reset_requires_backend_department_attestation_and_records_scope(session):
+    service, actor, actor_session, target, target_session = await prepare(session, 'admin')
+    await service.reset_user_password(account_id=target.id, new_password=NEW,
+                                     actor_account_id=actor.id, actor_session_id=actor_session.id,
+                                     department_scope_verified=True)
+    assert await verify_password(NEW, (await CredentialRepository(session).get(target.id)).password_hash)
+    assert target_session.revoked_at is not None and actor_session.revoked_at is None
+    events = await AuditRepository(session).list_events()
+    event = next(e for e in events if e.event_type == 'password.administratively_reset')
+    assert event.details['authorization_scope'] == 'department'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case', ['self', 'superadmin_target', 'economist_with_permission', 'revoked_session', 'missing_permission'])
+async def test_department_attestation_never_bypasses_iam_role_session_or_target_protection(session, case):
+    actor_role = 'economist' if case == 'economist_with_permission' else 'admin'
+    service, actor, actor_session, target, target_session = await prepare(session, actor_role)
+    if case == 'self': target = actor
+    if case == 'superadmin_target': target, target_session = await account(service, session, 'root.target', 'superadmin')
+    if case == 'revoked_session': actor_session.revoked_at = utc_now()
+    if case == 'missing_permission':
+        await service.seed_rbac({'admin': ['users.create']})
+    original_hash = (await CredentialRepository(session).get(target.id)).password_hash
+    with pytest.raises(Forbidden):
+        await service.reset_user_password(account_id=target.id, new_password=NEW,
+                                         actor_account_id=actor.id, actor_session_id=actor_session.id,
+                                         department_scope_verified=True)
+    assert (await CredentialRepository(session).get(target.id)).password_hash == original_hash
+    assert target_session.revoked_at is None
+
+
+@pytest.mark.asyncio
 async def test_internal_api_requires_service_token_and_redacts_invalid_password(session):
     import httpx
     from iam_app.core.config import settings
@@ -127,6 +159,31 @@ async def test_internal_api_requires_service_token_and_redacts_invalid_password(
             response = await client.post(f'/internal/accounts/{actor.id}/password/reset', headers=headers, json=payload)
             assert response.status_code == 403
             response = await client.post(path, headers=headers, json=payload)
+            assert response.status_code == 204 and response.content == b''
+            assert await verify_password(NEW, (await CredentialRepository(session).get(target.id)).password_hash)
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+
+@pytest.mark.asyncio
+async def test_admin_internal_api_requires_verified_department_from_trusted_service(session):
+    import httpx
+    from iam_app.core.config import settings
+    from iam_app.db import get_session
+    from iam_app.main import app
+
+    _, actor, actor_session, target, _ = await prepare(session, 'admin')
+    async def db_override():
+        yield session
+    app.dependency_overrides[get_session] = db_override
+    payload = {'new_password': NEW, 'actor_account_id': str(actor.id), 'actor_session_id': str(actor_session.id)}
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
+            path = f'/internal/accounts/{target.id}/password/reset'
+            headers = {'X-Acom-Service-Token': settings.internal_service_token}
+            assert (await client.post(path, headers=headers, json=payload)).status_code == 403
+            assert (await client.post(path, json={**payload, 'department_scope_verified': True})).status_code == 403
+            response = await client.post(path, headers=headers, json={**payload, 'department_scope_verified': True})
             assert response.status_code == 204 and response.content == b''
             assert await verify_password(NEW, (await CredentialRepository(session).get(target.id)).password_hash)
     finally:

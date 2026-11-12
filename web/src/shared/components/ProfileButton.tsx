@@ -702,6 +702,7 @@ export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButt
                       editor={
                         <UnavailabilityPeriodEditor
                           statusField={registerUnavailability('status')}
+                          statusValue={watchUnavailability('status')}
                           startedAtField={registerUnavailability('started_at')}
                           endedAtField={registerUnavailability('ended_at')}
                           startedAtValue={watchUnavailability('started_at') ?? ''}

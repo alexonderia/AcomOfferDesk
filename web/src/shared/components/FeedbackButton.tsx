@@ -12,6 +12,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { useState } from 'react';
 import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import { createFeedback } from '@shared/api/feedback/createFeedback';
@@ -154,11 +155,11 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
               </Typography>
 
               <ValidatedTextField
-                label="Ваш отзыв"
+                label={<RequiredFieldLabel label="Ваш отзыв" isValid={schema.shape.text.safeParse(watch('text')).success} />}
                 fieldName="text"
                 multiline
                 minRows={4}
-                inputProps={{ maxLength: 3000 }}
+                inputProps={{ maxLength: 3000, 'aria-required': true }}
                 error={Boolean(errors.text)}
                 helperText={errors.text ? `${errors.text.message} · ${currentTextLength}/3000` : `${currentTextLength}/3000`}
                 registration={register('text')}

@@ -2,6 +2,7 @@ import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
 import { InputAdornment, MenuItem, Stack, TextField } from '@mui/material';
 import type { UseFormRegisterReturn } from 'react-hook-form';
 import { DatePickerField } from './DatePickerField';
+import { RequiredFieldLabel } from './forms/RequiredFieldLabel';
 
 export const UNAVAILABILITY_REASON_OPTIONS = [
   { value: 'sick', label: 'Больничный' },
@@ -14,6 +15,7 @@ export const UNAVAILABILITY_REASON_OPTIONS = [
 
 type UnavailabilityPeriodEditorProps = {
   statusField: UseFormRegisterReturn<'status'>;
+  statusValue: string;
   startedAtField: UseFormRegisterReturn<'started_at'>;
   endedAtField: UseFormRegisterReturn<'ended_at'>;
   startedAtValue: string;
@@ -45,6 +47,7 @@ const fieldSx = {
 
 export const UnavailabilityPeriodEditor = ({
   statusField,
+  statusValue,
   startedAtField,
   endedAtField,
   startedAtValue,
@@ -61,7 +64,8 @@ export const UnavailabilityPeriodEditor = ({
       <input type="hidden" {...endedAtField} />
 
       <TextField
-        label="Причина"
+        label={<RequiredFieldLabel label="Причина" isValid={UNAVAILABILITY_REASON_OPTIONS.some((option) => option.value === statusValue) && !statusError} />}
+        inputProps={{ 'aria-required': true }}
         select
         {...statusField}
         error={Boolean(statusError)}
@@ -84,7 +88,8 @@ export const UnavailabilityPeriodEditor = ({
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
         <DatePickerField
-          label="Дата начала"
+          label={<RequiredFieldLabel label="Дата начала" isValid={Boolean(startedAtValue) && !startedAtError} />}
+          inputProps={{ 'aria-required': true }}
           value={startedAtValue}
           onChange={onStartedAtChange}
           error={Boolean(startedAtError)}
@@ -93,7 +98,8 @@ export const UnavailabilityPeriodEditor = ({
         />
 
         <DatePickerField
-          label="Дата окончания"
+          label={<RequiredFieldLabel label="Дата окончания" isValid={Boolean(endedAtValue) && endedAtValue >= startedAtValue && !endedAtError} />}
+          inputProps={{ 'aria-required': true }}
           value={endedAtValue}
           onChange={onEndedAtChange}
           error={Boolean(endedAtError)}

@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -13,7 +12,6 @@ import {
   DialogContent,
   FormControl,
   FormHelperText,
-  InputAdornment,
   InputLabel,
   MenuItem,
   Select,
@@ -37,6 +35,7 @@ import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { DatePickerField } from '@shared/components/DatePickerField';
 import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { ToggleSection } from '@shared/components/ToggleSection';
 import {
   ALLOWED_UPLOAD_FILE_INPUT_ACCEPT,
@@ -399,7 +398,7 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Номер заявки
+                <RequiredFieldLabel label="Номер заявки" isValid={isRequestNumberAvailable && !errors.requestNumber} />
               </Typography>
               <TextField
                 placeholder="Например: 2026-001"
@@ -410,19 +409,13 @@ export const CreateRequestPage = () => {
                   ?? (isCheckingRequestId ? 'Проверяем номер заявки...' : undefined)
                 }
                 {...textFieldAutocompleteProps('requestNumber')}
+                inputProps={{ ...textFieldAutocompleteProps('requestNumber').inputProps, 'aria-label': 'Номер заявки', 'aria-required': true }}
                 {...register('requestNumber', {
                   onChange: () => {
                     clearErrors('requestNumber');
                     setRequestIdStatus(null);
                   },
                 })}
-                InputProps={{
-                  endAdornment: isRequestNumberAvailable ? (
-                    <InputAdornment position="end">
-                      <CheckCircleOutlineIcon color="success" fontSize="small" />
-                    </InputAdornment>
-                  ) : undefined,
-                }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1,
@@ -466,13 +459,14 @@ export const CreateRequestPage = () => {
             >
               <Box>
                 <Typography variant="subtitle1" fontWeight={600}>
-                  Дата завершения сбора откликов
+                  <RequiredFieldLabel label="Дата завершения сбора откликов" isValid={Boolean(watch('deadlineAt')) && !errors.deadlineAt} />
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   (до 23:59)
                 </Typography>
               </Box>
               <DatePickerField
+                inputProps={{ 'aria-label': 'Дата завершения сбора откликов', 'aria-required': true }}
                 value={watch('deadlineAt')}
                 onChange={(value) => {
                   setValue('deadlineAt', value, {
@@ -495,7 +489,7 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Сумма по ТЗ
+                <RequiredFieldLabel label="Сумма по ТЗ" isValid={schema.shape.initialAmount.safeParse(watch('initialAmount')).success} />
               </Typography>
               <TextField
                 placeholder="Укажите сумму в рублях"
@@ -504,7 +498,7 @@ export const CreateRequestPage = () => {
                 helperText={errors.initialAmount?.message ?? 'Значение «Сумма по ТЗ» используется для расчета экономии по заявке.'}
                 {...textFieldAutocompleteProps('initialAmount')}
                 {...register('initialAmount')}
-                inputProps={{ min: 0, step: '0.01', inputMode: 'decimal', autoComplete: 'off' }}
+                inputProps={{ min: 0, step: '0.01', inputMode: 'decimal', autoComplete: 'off', 'aria-label': 'Сумма по ТЗ', 'aria-required': true }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1,
@@ -519,14 +513,15 @@ export const CreateRequestPage = () => {
                 Нормативный документ
               </Typography>
               <FormControl fullWidth error={Boolean(errors.normativeFileId)}>
-                <InputLabel id="normative-file-label">Нормативный документ</InputLabel>
+                <InputLabel id="normative-file-label"><RequiredFieldLabel label="Нормативный документ" isValid={Boolean(selectedNormativeFile)} /></InputLabel>
                 <Controller
                   control={control}
                   name="normativeFileId"
                   render={({ field }) => (
                     <Select
                       labelId="normative-file-label"
-                      label="Нормативный документ"
+                      label={<RequiredFieldLabel label="Нормативный документ" isValid={Boolean(selectedNormativeFile)} />}
+                      inputProps={{ 'aria-required': true }}
                       value={field.value ?? ''}
                       disabled={isLoadingNormativeFiles || !hasActualNormativeFiles}
                       onChange={(event) => {
@@ -562,7 +557,7 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Файл заявки
+                <RequiredFieldLabel label="Файл заявки" isValid={files.length > 0} />
               </Typography>
 
                 <Stack direction="row" spacing={1} alignItems="center">

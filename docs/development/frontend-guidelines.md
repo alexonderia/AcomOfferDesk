@@ -2,6 +2,19 @@
 
 React + TypeScript + Vite + MUI; рабочий пакет — `web/`. Команды проверок: [стратегия тестирования](testing-strategy.md).
 
+## Шрифт интерфейса
+
+Единственный продуктовый шрифт — **Alabuga Sans**. Исходный TTC и восемь WOFF2-начертаний хранятся в `shared/fonts/`; общий `alabuga-sans.css` объявляет семейство и веса. Google Fonts и другие внешние шрифтовые сервисы не используются. `sans-serif` остаётся системной страховкой на случай ошибки загрузки или отсутствующего символа.
+
+- Vite собирает общий CSS и WOFF2 из `shared/fonts` вместе с frontend; Docker build копирует этот каталог. В `typography.css` и `themeTokens.typography.fontFamily` задано `"Alabuga Sans", sans-serif`. Компоненты наследуют семейство из темы; собственные шрифтовые стеки не добавляются.
+- В коллекции есть веса 100, 200, 300, 400, 500, 700, 800, 900. Для 600 используются реальные контуры Medium (CSS-диапазон `500 600`), поскольку отдельного Semibold нет. Начертания 700/800 имеют исходную форму Semi Expanded, 900 — Expanded; это особенности предоставленного шрифта. Кириллица и латиница сохраняются без подмножества. Заголовки используют настоящее начертание 700.
+- IAM и страница техработ подключают `/maintenance-assets/fonts/alabuga-sans.css` через maintenance-сервис gateway. Эти файлы доступны и при недоступном web/backend. CSP IAM разрешает стили и шрифты только со своего origin; внешние источники не добавляются.
+- Изолированный DOCX-preview получает три WOFF2 как data URI в лениво загружаемом модуле `documentFonts.ts`. Его sandbox остаётся без разрешений, CSP разрешает только встроенные шрифты, изображения и стили. PDF и изображения сохраняют шрифты и оформление самого документа.
+- Предпросмотр письма использует общий CSS внутри доверенного статического iframe без разрешения скриптов. Высота preview и адаптивный footer пересчитываются после загрузки шрифтов.
+- HTML-письма получают общий CSS в `<style>` с абсолютными URL локальных WOFF2 из `WEB_BASE_URL` (или `PUBLIC_BACKEND_BASE_URL`). Клиенты, запрещающие web fonts, показывают системный sans-serif; принудительно изменить шрифт в таком почтовом клиенте нельзя. Если публичный URL не задан, ссылки на шрифты в письмо не добавляются.
+
+Повторное получение WOFF2 из предоставленного ZIP/TTC: установить инструмент `fonttools[woff]` в отдельное окружение и выполнить `python scripts/prepare_alabuga_fonts.py <путь-к-архиву-или-ttc>`. Runtime и обычная сборка не требуют FontTools. Исходный TTC не раздаётся публичным HTTP-маршрутом.
+
 ## Quality Guidelines
 
 > Code quality standards for frontend development.
@@ -22,11 +35,15 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Treat `role_id` as UX-only.
 - Default missing action flags to disabled/hidden.
 - Keep API calls in `web/src/shared/api/*` and feature hooks/models, not scattered through presentational components.
+- Поиск пользователей без видимой подписи и выбор категории размещаются в шапке страницы рядом с заголовком; поле сохраняет доступное имя «Поиск пользователей». Выбор категории также доступен в панели таблицы вне общего поиска; оба списка синхронизированы. На узком экране элементы переносятся внутри шапки.
+- На странице пользователей единое поле ищет по всем доступным сотрудникам и контрагентам независимо от выбранной категории: по логину, ФИО, контактам, роли и реквизитам компании. При непустом запросе сотрудники загружаются через `/users` без `role_id`, контрагенты — через существующий доступный API списка; серверные permissions и scope сохраняются. Результаты используют существующие таблицы и карточки сотрудников/контрагентов. Очистка поиска возвращает выбранную категорию. Смена текста внутри непустого запроса фильтрует загруженные данные без повторных запросов.
 - Employee links in hierarchy views open the shared `EmployeeCardDialog` used by the employee table, including contacts, status, and the unit hierarchy. Switching employees replaces the current card; closing or switching aborts its pending requests. Contact loading requires `users.read`, and each backend endpoint enforces the target user's scope.
 - Keep secrets out of frontend code and env examples.
 - For background polling + push UX flows, guard against burst loops: single-flight fetches, throttled refresh triggers, and ID-based dedupe for already-shown toasts.
 
 #### Convention: Subtle Hover Emphasis
+
+- Кнопки действий с синими иконками используют `IconButton color="primary"`; общий override темы не перекрывает заданный цвет и disabled-состояние. Переключатели видимости пароля в общих полях, auth-формах и IAM также используют основной синий цвет.
 
 - When highlighting an info card or details panel on hover/focus, prefer a single 1px border color change and a subtle shadow.
 - Avoid stacking a second outline ring on top of the border unless the interaction needs a strong selection state.
@@ -93,6 +110,8 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Empty combined-hierarchy slots should stay interactive: use a visible placeholder card that opens the existing assignment flow instead of introducing a new ad hoc edit path.
 
 #### Convention: Unit Hierarchy Uses Department Overview Plus Graph Editor
+
+- Имена сотрудников, подписи вакансий и инициалы в общих карточках иерархии используют Alabuga Sans Medium (`font-weight: 500`), включая карточки на схеме и в боковой панели. Выделение карточки не увеличивает жирность текста.
 
 - Keep root departments as the landing layer of the page. Show department-level staff/contractor summary first, then list second-level units as entry cards into deeper editing.
 - Keep the overview compact and scan-friendly: prefer a searchable stack of department cards with one expanded details area over rendering every department in a fully expanded wide layout.
@@ -442,9 +461,13 @@ Forms in this frontend should stay close to the page or feature that owns the in
 - Show user-facing error text in Russian.
 - Keep file inputs and other one-shot browser controls reset after use.
 - Keep submit handlers in the feature hook or owning page hook.
+- Во всех формах создания обязательные поля, выбор из списка, даты и обязательные вложения обозначаются общим `RequiredFieldLabel`: оранжевый маркер до корректного заполнения и зелёная галочка после. Валидность берётся из действующей схемы или проверки формы, включая связанные поля и проверку доступности номера заявки. Необязательные поля не получают маркер. Условно обязательный блок доступа контрагента остаётся необязательным, пока все его поля пусты; после начала заполнения маркируются все три поля.
+- Маркер скрыт от скринридера, чтобы не менять доступное имя поля; обязательность передаётся через `aria-required` или native `required`. `ValidatedTextField` автоматически добавляет `aria-required` для `RequiredFieldLabel`. В полях со встроенной звёздочкой её скрывают через `InputLabelProps.required: false`, сохраняя native `required` у input.
+- В формах создания пользователей и контрагентов данные для входа выделяются общим `AccountAccessSection`. Логин и пароль находятся внутри блока, e-mail — среди контактных данных, без пометки «необязательно». Пояснение скрыто в info-подсказке рядом с заголовком; она открывается наведением, фокусом с клавиатуры или касанием. Подсказка описывает установку/сброс пароля администратором подразделения или суперадминистратором и смену собственного пароля в профиле с текущим паролем. При включённой почте дополнительно описывается восстановление со страницы входа при наличии привязанного e-mail. Отсутствие текстовой пометки не меняет правил обязательности полей.
 
 ### Shared Form Building Blocks
 
+- `AccountAccessSection`
 - `ValidatedTextField`
 - `RequiredFieldLabel`
 - `DatePickerField`
@@ -517,6 +540,7 @@ This file documents the current notification surfaces in the frontend.
 
 - Display backend-generated notifications as the source of truth for in-app message state.
 - Use toast-style feedback for ephemeral UI confirmations and failures.
+- Результат создания пользователя показывается одним системным тостом без дублирующего Alert на странице. Если backend вернул `visible_to_creator=false`, единственный тост имеет уровень warning и объясняет ограничение области видимости.
 - Keep page-level warnings local to the feature that owns them.
 - Do not create a separate notification system in the UI when the backend already provides a notification model.
 
@@ -529,6 +553,7 @@ This file documents the current notification surfaces in the frontend.
 ## Маршруты
 
 Каноническая регистрация маршрутов — `web/src/app/routes/AppRoutes.tsx`; не поддерживайте отдельную копию полного списка путей.
+На странице КП номер родительской заявки в хлебных крошках берётся из загруженного workspace API через общий `PageBreadcrumbActionsProvider`. Параметр `requestId` в URL не обязателен и не заменяет серверный номер заявки. При уходе со страницы или переходе к ещё не загруженному КП переопределение очищается; переход к заявке доступен только при `request.actions.view_details`.
 `ProtectedRoute` ждёт bootstrap сессии; анонимный/недоступный вход направляется на `/login`, отсутствие business access — на `/account`.
 Вход начинается через `/api/v1/auth/login`; SPA не обменивает code и не читает JWT.
 `next` разрешает только локальный путь с одним начальным `/`; внешние URL, `//` и обходы через encoded slash/backslash запрещены.

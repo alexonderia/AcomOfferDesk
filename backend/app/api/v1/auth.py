@@ -469,13 +469,14 @@ async def register_user(
         if user is not None and user.id_role != payload.role_id:
             raise Conflict("Existing user has a different role")
         is_new_user = user is None
+        if user is not None:
+            await UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts).ensure_registration_role(current_user, payload.role_id)
         if not settings.email_enabled and user is not None:
             if binding is None or user.status != "active":
                 raise Conflict("Логин уже занят. Создание не изменяет существующую учётную запись")
             allowed_ids = await UnitHierarchyService(uow.users).get_visible_user_ids(current_user=current_user)
             if allowed_ids is not None and user.id not in allowed_ids:
                 raise Forbidden("Пользователь находится вне разрешённой области")
-            await UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts).ensure_registration_role(current_user, payload.role_id)
         if user is None:
             service = UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts)
             user = await service.register_user(

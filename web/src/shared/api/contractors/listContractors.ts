@@ -55,6 +55,7 @@ type ContractorListItemPayload = {
   created_at?: string | null;
   updated_at?: string | null;
   actions?: {
+    can_reset_password?: boolean;
     can_view_profile?: boolean;
     can_update_status?: boolean;
     can_update_role?: boolean;
@@ -152,4 +153,15 @@ export const listContractorsTable = async (query: ContractorListQuery = {}): Pro
   };
 };
 
-export const listContractors = async (): Promise<ContractorListItem[]> => (await listContractorsTable()).items;
+export const listContractors = async (): Promise<ContractorListItem[]> => {
+  const items: ContractorListItem[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await listContractorsTable({ limit: 100, offset });
+    items.push(...page.items);
+    offset += page.items.length;
+    if (page.items.length === 0 || offset >= page.total) {
+      return items;
+    }
+  }
+};

@@ -60,6 +60,42 @@ frontend -> backend -> file_guard -> verdict -> backend persistence
 * DOCX/XLSX: обязательные OpenXML entry, защита от zip-slip, макросов, zip-bomb и resource abuse, скриптов и активного содержимого
 * PNG/JPEG: декодируемое изображение с безопасными размерами
 
+## Служебные метаданные PDF
+
+Встроенные Content Credentials (C2PA) разрешены как пассивные данные о происхождении
+документа. Само наличие такого вложения больше не приводит к `invalid_pdf`.
+Основание формата: [спецификация C2PA](https://spec.c2pa.org/specifications/specifications/2.2/specs/C2PA_Specification.html),
+разделы «Manifest Store» и «Embedding manifests into PDFs».
+
+Исключение применяется только после структурной проверки:
+
+* file specification имеет `AFRelationship=C2PA_Manifest`;
+* MIME встроенного потока — `application/c2pa` либо прежний
+  `application/x-c2pa-manifest-store`; MIME в file specification, если указан,
+  также должен относиться к C2PA;
+* содержимое является целым контейнером JUMBF с UUID и меткой хранилища C2PA,
+  содержит manifest superbox и не имеет обрезанных либо некорректных границ блоков;
+* проверяются все PDF-объекты, включая associated files, вложения аннотаций,
+  object streams и объекты вне дерева `Names/EmbeddedFiles`;
+* разрешены несжатые потоки и Flate без дополнительных параметров декодирования;
+  суммарный размер распакованных метаданных ограничен
+  `FILE_GUARD_MAX_FILE_SIZE_BYTES`;
+* обход ограничен 100 000 PDF-объектов, контейнер C2PA — 4096 блоками JUMBF
+  и глубиной вложенности 32.
+
+Имя «Content Credentials», MIME или корректный контейнер не подтверждают
+подлинность подписи C2PA и не освобождают файл от антивирусной проверки.
+При включённом антивирусе ClamAV проверяет распакованные метаданные и исходный PDF.
+Недоступность обязательной проверки по-прежнему приводит к fail-closed.
+
+Произвольные вложения, подмена C2PA другим содержимым, JavaScript, Launch,
+OpenAction, AA, RichMedia и XFA остаются запрещёнными, в том числе рядом
+с корректным C2PA. Если PDF-парсер недоступен, исключение для вложений не применяется.
+Обычные сведения об авторе, приложении и XMP не требуют такого исключения.
+
+Проверки сервиса: `python -m pytest file_guard/tests -q` из окружения
+с установленными зависимостями `file_guard/requirements.txt`, `pytest` и `httpx`.
+
 ## Проверка Office-документов на скрипты и активное содержимое
 
 Файлы DOCX и XLSX — это ZIP-контейнеры. `file_guard` блокирует их, если внутри архива найдено:

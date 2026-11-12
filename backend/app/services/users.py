@@ -119,19 +119,17 @@ def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
     if current_user.role_id == settings.admin_role_id and has_permission(
         current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY
     ):
-        # Contractor onboarding is a separate flow; Admin may only assign the
-        # two staff roles explicitly approved for this role.
-        return {settings.economist_role_id, settings.operator_role_id}
+        # Contractor onboarding is a separate flow; Admin may only assign Economist.
+        return {settings.economist_role_id}
     if not has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):
         return set()
     if current_user.role_id == settings.project_manager_role_id:
         return {
             settings.lead_economist_role_id,
             settings.economist_role_id,
-            settings.operator_role_id,
         }
     if current_user.role_id == settings.lead_economist_role_id:
-        return {settings.economist_role_id, settings.operator_role_id}
+        return {settings.economist_role_id}
     return set()
 
 
@@ -230,6 +228,7 @@ class UserRegistrationService:
 
     async def ensure_registration_role(self, current_user: CurrentUser, role_id: int) -> None:
         UserPolicy.ensure_can_register_user(current_user)
+        UserPolicy.ensure_operator_assignment_allowed(current_user, role_id=role_id)
         target_role = await self._users.get_role_by_id(role_id)
         if target_role is None:
             raise Conflict("Роль недоступна для создания")
@@ -255,9 +254,8 @@ class UserRegistrationService:
 
         if current_role.role == ROLE_NAME_ADMIN and target_role.role not in {
             ROLE_NAME_ECONOMIST,
-            ROLE_NAME_OPERATOR,
         }:
-            raise Forbidden("Администратор может создавать только экономистов и операторов")
+            raise Forbidden("Администратор может создавать только экономистов")
 
         if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
             raise Forbidden("Ведущий экономист может создавать только экономистов")
@@ -1398,6 +1396,7 @@ class UserRoleService:
         role_id: int,
     ) -> UserRoleUpdateResult:
         UserPolicy.ensure_can_update_user_role(current_user)
+        UserPolicy.ensure_operator_assignment_allowed(current_user, role_id=role_id)
 
         user = await self._users.get_by_id(user_id)
         if user is None:

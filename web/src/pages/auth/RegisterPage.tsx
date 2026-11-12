@@ -125,7 +125,8 @@ export const RegisterPage = () => {
     >
       <Stack spacing={2.5}>
           <TextField
-            label="Email"
+            label={<RequiredFieldLabel label="Email" isValid={emailRegex.test(email.trim())} />}
+            inputProps={{ 'aria-required': true }}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             autoComplete="email"
@@ -133,6 +134,7 @@ export const RegisterPage = () => {
           />
           <TextField
             label={<RequiredFieldLabel isValid={login.trim().length >= 3} label="Логин" />}
+            inputProps={{ 'aria-required': true }}
             value={login}
             onChange={(event) => setLogin(event.target.value)}
             autoComplete="username"
@@ -141,30 +143,35 @@ export const RegisterPage = () => {
           />
           <TextField
             label={<RequiredFieldLabel isValid={Boolean(fullName.trim())} label="ФИО" />}
+            inputProps={{ 'aria-required': true }}
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
             fullWidth
           />
           <TextField
             label={<RequiredFieldLabel isValid={isValidRuPhone(phone)} label="Телефон" />}
+            inputProps={{ 'aria-required': true }}
             value={phone}
             onChange={(event) => setPhone(formatRuPhone(event.target.value))}
             fullWidth
           />
           <TextField
             label={<RequiredFieldLabel isValid={Boolean(companyName.trim())} label="Компания" />}
+            inputProps={{ 'aria-required': true }}
             value={companyName}
             onChange={(event) => setCompanyName(event.target.value)}
             fullWidth
           />
           <TextField
             label={<RequiredFieldLabel isValid={innRegex.test(inn.trim())} label="ИНН" />}
+            inputProps={{ 'aria-required': true }}
             value={inn}
             onChange={(event) => setInn(event.target.value)}
             fullWidth
           />
           <TextField
             label={<RequiredFieldLabel isValid={isValidRuPhone(companyPhone)} label="Телефон компании" />}
+            inputProps={{ 'aria-required': true }}
             value={companyPhone}
             onChange={(event) => setCompanyPhone(formatRuPhone(event.target.value))}
             fullWidth

@@ -301,6 +301,7 @@ class UserActionBuilder:
         target_role_id: int,
         is_manual: bool = False,
         is_hierarchy_subordinate: bool | None = None,
+        is_in_password_reset_scope: bool = False,
     ) -> UserActionsSchema:
         can_manage_subordinate_target = _can_manage_subordinate_target(
             current_user,
@@ -354,6 +355,10 @@ class UserActionBuilder:
             can_update_role = False
             can_update_manager = False
         return UserActionsSchema(
+            can_reset_password=UserPolicy.can_reset_user_password(
+                current_user, target_user_id=target_user_id, target_role_id=target_role_id,
+                is_in_department=is_in_password_reset_scope,
+            ),
             can_view_profile=can_manage_subordinate_target,
             can_update_status=can_update_status,
             can_manage_contractor_unit_bindings=(
@@ -414,11 +419,17 @@ class ContractorActionBuilder:
         current_user: CurrentUser,
         *,
         is_manual: bool = False,
+        target_user_id: str | None = None,
+        is_in_password_reset_scope: bool = False,
     ) -> UserActionsSchema:
         can_update_status = UserPolicy.can_update_contractor_profile_status(current_user)
         can_manage_manual_contractor = UserPolicy.can_manage_manual_contractors(current_user)
         can_manage_manual_contractor = can_manage_manual_contractor and is_manual
         return UserActionsSchema(
+            can_reset_password=target_user_id is not None and UserPolicy.can_reset_user_password(
+                current_user, target_user_id=target_user_id, target_role_id=settings.contractor_role_id,
+                is_in_department=is_in_password_reset_scope,
+            ),
             can_view_profile=UserPolicy.can_read_contractor_profile(current_user),
             can_update_role=(current_user.role_id == settings.superadmin_role_id and has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY)),
             can_update_status=can_update_status,

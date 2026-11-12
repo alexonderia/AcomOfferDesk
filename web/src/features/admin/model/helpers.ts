@@ -1,6 +1,11 @@
 import { ROLE } from '@shared/constants/roles';
 import { roleByTab, type UserTab } from './constants';
 
+export const matchesUserSearch = (query: string, values: Array<string | null | undefined>) => {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  return values.some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
+};
+
 export const resolveUserTabFromParam = (value: string | null): UserTab => {
   if (
     value === 'economists' ||
@@ -47,7 +52,8 @@ export const getScopedCreateRoleIds = ({
   availableRoleIds,
   sessionRoleId
 }: GetScopedCreateRoleIdsParams) => {
-  const uniqueRoleIds = Array.from(new Set(availableRoleIds));
+  const uniqueRoleIds = Array.from(new Set(availableRoleIds))
+    .filter((roleId) => roleId !== ROLE.OPERATOR || sessionRoleId === ROLE.SUPERADMIN);
   if (sessionRoleId === ROLE.ADMIN) {
     return uniqueRoleIds.filter((roleId) => roleId === roleByTab[activeTab]);
   }

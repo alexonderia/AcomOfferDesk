@@ -22,6 +22,13 @@ import type {
   SubplanFormValues,
 } from './planDashboardForms';
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
+import { rootPlanSchema, subplanSchema, delegateSchema } from './planDashboardForms';
+import type { SafeParseReturnType } from 'zod';
+
+const requiredLabel = (label: string, field: string, validation: SafeParseReturnType<unknown, unknown>) => (
+  <RequiredFieldLabel label={label} isValid={validation.success || !validation.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === field)} />
+);
 
 type PlanDialogsProps = {
   isMutating: boolean;
@@ -80,6 +87,9 @@ export const PlanDialogs = ({
   onConfirmDelete,
   onConfirmClose,
 }: PlanDialogsProps) => {
+  const rootValidation = rootPlanSchema.safeParse(rootPlanForm.watch());
+  const subplanValidation = subplanSchema.safeParse(subplanForm.watch());
+  const delegateValidation = delegateSchema.safeParse(delegateForm.watch());
   return (
     <>
       <Dialog open={rootDialogOpen} onClose={onCloseRootDialog} fullWidth maxWidth="sm">
@@ -87,7 +97,9 @@ export const PlanDialogs = ({
         <DialogContent>
           <Stack spacing={1.2} sx={{ mt: 0.5 }}>
             <TextField
-              label="Название плана"
+              label={requiredLabel('Название плана', 'name', rootValidation)}
+              required
+              InputLabelProps={{ required: false }}
               size="small"
               error={Boolean(rootPlanForm.formState.errors.name)}
               helperText={rootPlanForm.formState.errors.name?.message}
@@ -96,9 +108,10 @@ export const PlanDialogs = ({
             />
             <TextField
               type="date"
-              label="Дата начала"
+              label={requiredLabel('Дата начала', 'periodStart', rootValidation)}
+              required
               size="small"
-              InputLabelProps={{ shrink: true }}
+              InputLabelProps={{ shrink: true, required: false }}
               error={Boolean(rootPlanForm.formState.errors.periodStart)}
               helperText={rootPlanForm.formState.errors.periodStart?.message}
               {...textFieldAutocompleteProps('periodStart')}
@@ -106,16 +119,19 @@ export const PlanDialogs = ({
             />
             <TextField
               type="date"
-              label="Дата окончания"
+              label={requiredLabel('Дата окончания', 'periodEnd', rootValidation)}
+              required
               size="small"
-              InputLabelProps={{ shrink: true }}
+              InputLabelProps={{ shrink: true, required: false }}
               error={Boolean(rootPlanForm.formState.errors.periodEnd)}
               helperText={rootPlanForm.formState.errors.periodEnd?.message}
               {...textFieldAutocompleteProps('periodEnd')}
               {...rootPlanForm.register('periodEnd')}
             />
             <TextField
-              label="Сумма плана"
+              label={requiredLabel('Сумма плана', 'planAmount', rootValidation)}
+              required
+              InputLabelProps={{ required: false }}
               size="small"
               error={Boolean(rootPlanForm.formState.errors.planAmount)}
               helperText={rootPlanForm.formState.errors.planAmount?.message}
@@ -143,7 +159,9 @@ export const PlanDialogs = ({
               Родитель: {subplanNode?.plan_name}
             </Typography>
             <TextField
-              label="Название подплана"
+              label={requiredLabel('Название подплана', 'name', subplanValidation)}
+              required
+              InputLabelProps={{ required: false }}
               size="small"
               error={Boolean(subplanForm.formState.errors.name)}
               helperText={subplanForm.formState.errors.name?.message}
@@ -151,10 +169,11 @@ export const PlanDialogs = ({
               {...subplanForm.register('name')}
             />
             <FormControl fullWidth size="small" error={Boolean(subplanForm.formState.errors.childUserId)}>
-              <InputLabel id="subplan-child-user-label">Исполнитель</InputLabel>
+              <InputLabel id="subplan-child-user-label">{requiredLabel('Исполнитель', 'childUserId', subplanValidation)}</InputLabel>
               <Select
                 labelId="subplan-child-user-label"
-                label="Исполнитель"
+                label={requiredLabel('Исполнитель', 'childUserId', subplanValidation)}
+                inputProps={{ 'aria-required': true }}
                 value={subplanForm.watch('childUserId')}
                 onChange={(event) => {
                   subplanForm.setValue('childUserId', event.target.value, { shouldValidate: true });
@@ -177,9 +196,10 @@ export const PlanDialogs = ({
             </FormControl>
             <TextField
               type="date"
-              label="Дата начала подплана"
+              label={requiredLabel('Дата начала подплана', 'periodStart', subplanValidation)}
+              required
               size="small"
-              InputLabelProps={{ shrink: true }}
+              InputLabelProps={{ shrink: true, required: false }}
               inputProps={{
                 min: subplanNode?.period_start,
                 max: subplanNode?.period_end,
@@ -191,9 +211,10 @@ export const PlanDialogs = ({
             />
             <TextField
               type="date"
-              label="Дата окончания подплана"
+              label={requiredLabel('Дата окончания подплана', 'periodEnd', subplanValidation)}
+              required
               size="small"
-              InputLabelProps={{ shrink: true }}
+              InputLabelProps={{ shrink: true, required: false }}
               inputProps={{
                 min: subplanNode?.period_start,
                 max: subplanNode?.period_end,
@@ -204,7 +225,9 @@ export const PlanDialogs = ({
               {...subplanForm.register('periodEnd')}
             />
             <TextField
-              label="Сумма подплана"
+              label={requiredLabel('Сумма подплана', 'amount', subplanValidation)}
+              required
+              InputLabelProps={{ required: false }}
               size="small"
               error={Boolean(subplanForm.formState.errors.amount)}
               helperText={subplanForm.formState.errors.amount?.message}
@@ -230,10 +253,11 @@ export const PlanDialogs = ({
               План: {delegateNode?.plan_name}
             </Typography>
             <FormControl fullWidth size="small" error={Boolean(delegateForm.formState.errors.childUserId)}>
-              <InputLabel id="delegate-child-user-label">Подчиненный</InputLabel>
+              <InputLabel id="delegate-child-user-label">{requiredLabel('Подчиненный', 'childUserId', delegateValidation)}</InputLabel>
               <Select
                 labelId="delegate-child-user-label"
-                label="Подчиненный"
+                label={requiredLabel('Подчиненный', 'childUserId', delegateValidation)}
+                inputProps={{ 'aria-required': true }}
                 value={delegateForm.watch('childUserId')}
                 onChange={(event) => {
                   delegateForm.setValue('childUserId', event.target.value, { shouldValidate: true });
@@ -253,9 +277,10 @@ export const PlanDialogs = ({
             </FormControl>
             <TextField
               type="date"
-              label="Дата начала делегирования"
+              label={requiredLabel('Дата начала делегирования', 'childPeriodStart', delegateValidation)}
+              required
               size="small"
-              InputLabelProps={{ shrink: true }}
+              InputLabelProps={{ shrink: true, required: false }}
               inputProps={{
                 min: delegateNode?.period_start,
                 max: delegateNode?.period_end,
@@ -266,7 +291,9 @@ export const PlanDialogs = ({
               {...delegateForm.register('childPeriodStart')}
             />
             <TextField
-              label="Сумма делегирования"
+              label={requiredLabel('Сумма делегирования', 'childPlanAmount', delegateValidation)}
+              required
+              InputLabelProps={{ required: false }}
               size="small"
               error={Boolean(delegateForm.formState.errors.childPlanAmount)}
               helperText={delegateForm.formState.errors.childPlanAmount?.message}

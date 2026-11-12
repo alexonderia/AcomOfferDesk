@@ -45,7 +45,7 @@ document.querySelectorAll("[data-password-toggle]").forEach((button) => {
 """
 def _page_csp(script_nonce: str) -> str:
     return (
-        "default-src 'none'; style-src 'unsafe-inline'; "
+        "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
         f"script-src 'nonce-{script_nonce}'; img-src data:; "
         "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
     )
@@ -65,7 +65,7 @@ _PAGE_STYLE = """
 html, body {
   min-height: 100%;
   margin: 0;
-  font-family: Inter, "Segoe UI", sans-serif;
+  font-family: "Alabuga Sans", sans-serif;
   font-size: 16px;
   color: var(--aod-text);
   -webkit-font-smoothing: antialiased;
@@ -150,10 +150,10 @@ input:-webkit-autofill:focus {
   border: 0;
   border-radius: 999px;
   background: #f5f8ff;
-  color: var(--aod-text-muted);
+  color: var(--aod-primary);
   cursor: pointer;
 }
-.aod-password-toggle:hover { background: #ebf2ff; color: var(--aod-text); }
+.aod-password-toggle:hover { background: #ebf2ff; color: var(--aod-primary-dark); }
 .aod-password-toggle svg {
   width: 20px;
   height: 20px;
@@ -348,6 +348,7 @@ def render_browser_page(*, title: str, body: str, status_code: int = 200) -> HTM
     response = HTMLResponse(
         "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<link rel="stylesheet" href="/maintenance-assets/fonts/alabuga-sans.css">'
         '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%232563eb%22%2F%3E%3Cpath%20d%3D%22M13.5%206h5L27%2027h-5l-1.6-4.4h-8.8L10%2027H5L13.5%206Zm-.4%2012.6h5.8L16%2010.8l-2.9%207.8Z%22%20fill%3D%22%23fff%22%20fill-rule%3D%22evenodd%22%2F%3E%3C%2Fsvg%3E">'
         f"<title>{html.escape(title)}</title>"
         f"<style>{_PAGE_STYLE}</style></head>"

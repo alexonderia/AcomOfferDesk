@@ -75,6 +75,7 @@ const buildContractor = (): ContractorListItem => ({
     update_manager: false,
     manage_own_profile: false,
     manage_credentials: false,
+    reset_password: false,
     manage_company_contacts: false,
     manage_own_unavailability: false,
     manage_subordinate_unavailability: false,

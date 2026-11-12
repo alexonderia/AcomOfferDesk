@@ -49,7 +49,7 @@ const sectionSx = {
 
 const captionSx = {
   color: '#4a5875',
-  fontFamily: 'Inter, "Segoe UI", sans-serif',
+  fontFamily: 'inherit',
   fontSize: '12px',
   fontWeight: 500,
   lineHeight: 1.55,
@@ -58,7 +58,7 @@ const captionSx = {
 const brandSx = {
   justifySelf: 'center',
   color: '#1f2a44',
-  fontFamily: 'Inter, "Segoe UI", sans-serif',
+  fontFamily: 'inherit',
   fontSize: '14px',
   fontWeight: 550,
   letterSpacing: '0.1px',
@@ -109,6 +109,12 @@ export const AppFooter = () => {
       });
     };
 
+    let active = true;
+    const updateAfterFonts = () => {
+      if (active) updateLayout();
+    };
+    void document.fonts?.ready.then(updateAfterFonts);
+    document.fonts?.addEventListener('loadingdone', updateAfterFonts);
     updateLayout();
     media.addEventListener('change', updateLayout);
 
@@ -118,6 +124,8 @@ export const AppFooter = () => {
       });
       observer.observe(element);
       return () => {
+        active = false;
+        document.fonts?.removeEventListener('loadingdone', updateAfterFonts);
         observer.disconnect();
         media.removeEventListener('change', updateLayout);
       };
@@ -125,6 +133,8 @@ export const AppFooter = () => {
 
     window.addEventListener('resize', updateLayout);
     return () => {
+      active = false;
+      document.fonts?.removeEventListener('loadingdone', updateAfterFonts);
       window.removeEventListener('resize', updateLayout);
       media.removeEventListener('change', updateLayout);
     };

@@ -20,6 +20,7 @@ import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { sectionTitleSx } from '@shared/theme/sectionTitleSx';
 import { InitialAccountFields, type InitialAccountValues } from '@shared/components/InitialAccountFields';
+import { AccountAccessSection } from '@shared/components/AccountAccessSection';
 import { normalizeOptionalContractorValue } from '@shared/lib/manualContractorEditing';
 import { ManualContractorDuplicatePanel } from './ManualContractorDuplicatePanel';
 
@@ -235,7 +236,7 @@ export const ContractorCreateDialog = ({ open, onClose, onCreated, emailEnabled 
             fullWidth
           />
           {submitError ? <Alert severity="error">{submitError}</Alert> : null}
-          {!emailEnabled ? <InitialAccountFields values={account} onChange={(field, value) => setAccount((old) => ({ ...old, [field]: value }))} disabled={isSubmitting} /> : null}
+          {emailEnabled ? <AccountAccessSection emailEnabled /> : <InitialAccountFields values={account} onChange={(field, value) => setAccount((old) => ({ ...old, [field]: value }))} disabled={isSubmitting} />}
         </Stack>
         </Box>
         <ManualContractorDuplicatePanel

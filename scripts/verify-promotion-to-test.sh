@@ -48,7 +48,7 @@ if command -v docker >/dev/null 2>&1; then
     export APP_RUNTIME_ENV_FILE="./$ENV_TEMPLATE"
     export IAM_RUNTIME_ENV_FILE="./.env.iam.example"
     export IAM_MIGRATION_ENV_FILE="./.env.iam-db.example"
-    if docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/dev/null 2>&1; then
+    if docker compose --env-file "$ENV_TEMPLATE" -f docker-compose.yml -f docker-compose.prod.yml config >/dev/null 2>&1; then
       ok "docker compose config (prod stack) renders"
     else
       fail "docker compose config failed for prod stack (see error above)"

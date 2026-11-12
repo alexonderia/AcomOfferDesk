@@ -1,6 +1,8 @@
 x-runtime-env: &runtime-env
   env_file:
     - ${APP_RUNTIME_ENV_FILE:-./.env}
+  environment:
+    EMAIL_ENABLED: "${EMAIL_ENABLED:?Set EMAIL_ENABLED=true or EMAIL_ENABLED=false in the Compose env file}"
 
 services:
   iam_migrations:
@@ -136,6 +138,7 @@ services:
     volumes:
       - ./infra/maintenance/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./infra/maintenance/index.html:/usr/share/nginx/html/index.html:ro
+      - ./shared/fonts:/usr/share/nginx/html/maintenance-assets/fonts:ro
     expose:
       - "80"
     healthcheck:

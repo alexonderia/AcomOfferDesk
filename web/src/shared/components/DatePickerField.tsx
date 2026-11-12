@@ -13,14 +13,15 @@ import {
   Typography,
   type SxProps,
   type Theme,
+  type TextFieldProps,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 
 type DatePickerFieldProps = {
   value: string;
   onChange: (value: string) => void;
-  label?: string;
+  label?: ReactNode;
   placeholder?: string;
   error?: boolean;
   helperText?: string;
@@ -29,6 +30,7 @@ type DatePickerFieldProps = {
   showDropdownIcon?: boolean;
   allowClear?: boolean;
   sx?: SxProps<Theme>;
+  inputProps?: TextFieldProps['inputProps'];
 };
 
 const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -75,6 +77,7 @@ export const DatePickerField = ({
   showDropdownIcon = true,
   allowClear = true,
   sx,
+  inputProps,
 }: DatePickerFieldProps) => {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [viewDate, setViewDate] = useState(() => parseValue(value) ?? new Date());
@@ -120,7 +123,7 @@ export const DatePickerField = ({
         error={error}
         helperText={helperText}
         onClick={openCalendar}
-        inputProps={{ readOnly: true }}
+        inputProps={{ ...inputProps, readOnly: true }}
         fullWidth={fullWidth}
         InputLabelProps={label ? undefined : { shrink: false }}
         InputProps={{

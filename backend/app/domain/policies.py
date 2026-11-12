@@ -17,6 +17,25 @@ def _is_allowed(checker) -> bool:
 
 class UserPolicy:
     @staticmethod
+    def can_reset_passwords(current_user: CurrentUser) -> bool:
+        return (
+            current_user.role_id in {settings.superadmin_role_id, settings.admin_role_id}
+            and has_permission(current_user, PermissionCodes.USERS_PASSWORD_UPDATE)
+        )
+
+    @staticmethod
+    def can_reset_user_password(
+        current_user: CurrentUser, *, target_user_id: str, target_role_id: int,
+        is_in_department: bool = False,
+    ) -> bool:
+        return (
+            UserPolicy.can_reset_passwords(current_user)
+            and target_role_id != settings.superadmin_role_id
+            and target_user_id != current_user.user_id
+            and (current_user.role_id == settings.superadmin_role_id or is_in_department)
+        )
+
+    @staticmethod
     def can_manage_review_onboarding(current_user: CurrentUser) -> bool:
         if current_user.status == "active" and current_user.onboarding_state == "first_login":
             return True
@@ -147,6 +166,12 @@ class UserPolicy:
             PermissionCodes.USERS_CREATE,
             message="Только администратор, суперадминистратор и ведущий экономист могут управлять пользователями-экономистами",
         )
+
+    @staticmethod
+    def ensure_operator_assignment_allowed(current_user: CurrentUser, *, role_id: int) -> None:
+        """Operator assignment is restricted by IAM role, regardless of grants."""
+        if role_id == settings.operator_role_id and current_user.role_id != settings.superadmin_role_id:
+            raise Forbidden("Назначать роль «Оператор» может только суперадминистратор")
 
     @staticmethod
     def can_login(status: str) -> bool:

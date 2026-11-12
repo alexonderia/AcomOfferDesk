@@ -68,7 +68,7 @@ def build_contact_html_block(
     body = "".join(parts)
     return f"""
             <tr>
-              <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+              <td style="padding:16px 28px 0 28px;font-family:'Alabuga Sans',sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 {body}
               </td>
             </tr>
@@ -84,7 +84,7 @@ def build_primary_button_html(*, label: str, url: str) -> str:
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
                     <td bgcolor="#0969da" style="border-radius:6px;">
-                      <a href="{escaped_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                      <a href="{escaped_url}" style="display:inline-block;padding:12px 20px;font-family:'Alabuga Sans',sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
                         {escaped_label}
                       </a>
                     </td>

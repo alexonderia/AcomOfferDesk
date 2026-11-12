@@ -1,17 +1,15 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ROLE } from '@shared/constants/roles';
 import { appTheme } from '@shared/theme/appTheme';
 import { UserPasswordResetButton } from './UserPasswordResetButton';
 
-const mocks = vi.hoisted(() => ({ reset: vi.fn(), success: vi.fn(), roleId: 1 }));
-vi.mock('@app/providers/AuthProvider', () => ({ useAuth: () => ({ session: { roleId: mocks.roleId } }) }));
+const mocks = vi.hoisted(() => ({ reset: vi.fn(), success: vi.fn() }));
 vi.mock('@shared/api/users/resetUserPassword', () => ({ resetUserPassword: mocks.reset }));
 vi.mock('@shared/ui/toasts', () => ({ useSystemToasts: () => ({ showSuccessToast: mocks.success }) }));
 
-const mount = (roleId: number = ROLE.ECONOMIST) => render(
-  <ThemeProvider theme={appTheme}><UserPasswordResetButton userId="employee" roleId={roleId} /></ThemeProvider>,
+const mount = (canResetPassword: boolean | undefined = true) => render(
+  <ThemeProvider theme={appTheme}><UserPasswordResetButton userId="employee" canResetPassword={canResetPassword} /></ThemeProvider>,
 );
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Сбросить пароль' }));
 const fill = () => {
@@ -20,16 +18,15 @@ const fill = () => {
 };
 
 describe('administrator password reset', () => {
-  beforeEach(() => { vi.clearAllMocks(); mocks.roleId = ROLE.SUPERADMIN; });
+  beforeEach(() => { vi.clearAllMocks(); });
 
-  it.each([ROLE.ADMIN, ROLE.CONTRACTOR, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR])('hides action for role %s', (roleId) => {
-    mocks.roleId = roleId;
-    mount();
+  it('hides action when the backend denies reset', () => {
+    mount(false);
     expect(screen.queryByRole('button', { name: 'Сбросить пароль' })).not.toBeInTheDocument();
   });
 
-  it('protects every superadmin account', () => {
-    mount(ROLE.SUPERADMIN);
+  it('hides action when the backend action flag is absent', () => {
+    render(<UserPasswordResetButton userId="employee" />);
     expect(screen.queryByRole('button', { name: 'Сбросить пароль' })).not.toBeInTheDocument();
   });
 

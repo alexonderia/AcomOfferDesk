@@ -19,7 +19,9 @@ import { inviteContractors } from '@shared/api/contractors/inviteContractors';
 import { getNormativeFiles } from '@shared/api/normative/getNormativeFiles';
 import type { NormativeFileItem } from '@shared/api/normative/types';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { useSystemToasts } from '@shared/ui/toasts';
+import fontStyles from '../../../../../shared/fonts/alabuga-sans.css?inline';
 
 type ContractorInviteDialogProps = {
   open: boolean;
@@ -35,18 +37,29 @@ const PREVIEW_CONTACT_EMAIL = 'VKhlistun@alabuga.ru';
 
 const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
 <html lang="ru">
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+      ${fontStyles}
+      body{overflow-wrap:anywhere}
+      @media(max-width:480px){
+        table[width="600"]>tbody>tr>td{padding-left:12px!important;padding-right:12px!important}
+        table[width="600"]>tbody>tr:first-child>td{font-size:18px!important}
+      }
+    </style>
+  </head>
   <body style="margin:0;padding:0;background-color:#f6f8fb;">
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f6f8fb;padding:24px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e6e8eb;border-radius:10px;">
             <tr>
-              <td style="padding:24px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:22px;font-weight:700;">
+              <td style="padding:24px 28px 8px 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:22px;font-weight:700;">
                 AcomOfferDesk
               </td>
             </tr>
             <tr>
-              <td style="padding:0 28px;font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:24px;">
+              <td style="padding:0 28px;font-family:'Alabuga Sans',sans-serif;color:#111827;font-size:16px;line-height:24px;">
                 Вы приглашены к работе в системе AcomOfferDesk.<br/><br/>
                 Инструкция по получению доступа приложена к письму в виде презентации.
               </td>
@@ -56,7 +69,7 @@ const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
                     <td bgcolor="#0969da" style="border-radius:6px;">
-                      <span style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;cursor:default;">
+                      <span style="display:inline-block;padding:12px 20px;font-family:'Alabuga Sans',sans-serif;font-size:16px;color:#ffffff;text-decoration:none;cursor:default;">
                         Перейти к системе
                       </span>
                     </td>
@@ -65,7 +78,7 @@ const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
               </td>
             </tr>
             <tr>
-              <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+              <td style="padding:16px 28px 0 28px;font-family:'Alabuga Sans',sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Если удобнее, вы можете связаться с контактным лицом напрямую:<br/>
                 <strong>${PREVIEW_CONTACT_NAME}</strong><br/>
                 Телефон: ${PREVIEW_CONTACT_PHONE}<br/>
@@ -73,7 +86,7 @@ const INVITATION_PREVIEW_HTML = `<!DOCTYPE html>
               </td>
             </tr>
             <tr>
-              <td style="padding:8px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+              <td style="padding:8px 28px 24px 28px;font-family:'Alabuga Sans',sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Ссылка для входа:<br/>
                 ${PREVIEW_PORTAL_URL}
               </td>
@@ -100,6 +113,7 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
   const { showErrorToast, showSuccessToast } = useSystemToasts();
   const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const previewResizeObserverRef = useRef<ResizeObserver | null>(null);
   const [emails, setEmails] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [normativeFiles, setNormativeFiles] = useState<NormativeFileItem[]>([]);
@@ -117,10 +131,8 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
       return;
     }
 
-    const nextHeight = Math.max(
-      frameDocument.body?.scrollHeight ?? 0,
-      frameDocument.documentElement?.scrollHeight ?? 0
-    );
+    const borderHeight = (frame?.offsetHeight ?? 0) - (frame?.clientHeight ?? 0);
+    const nextHeight = Math.ceil(frameDocument.body?.getBoundingClientRect().height ?? 0) + borderHeight;
     if (nextHeight > 0) {
       setPreviewFrameHeight(nextHeight);
     }
@@ -130,6 +142,7 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
     if (!open) {
       setPreviewFrameHeight(null);
     }
+    return () => previewResizeObserverRef.current?.disconnect();
   }, [open]);
 
   useEffect(() => {
@@ -228,10 +241,11 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
       <DialogContent>
         <Stack spacing={2} mt={0.5}>
           <FormControl fullWidth error={Boolean(normativeFilesError)}>
-            <InputLabel id="contractor-invite-normative-file-label">Презентация-инструкция</InputLabel>
+            <InputLabel id="contractor-invite-normative-file-label"><RequiredFieldLabel label="Презентация-инструкция" isValid={hasNormativeSelection} /></InputLabel>
             <Select
               labelId="contractor-invite-normative-file-label"
-              label="Презентация-инструкция"
+              label={<RequiredFieldLabel label="Презентация-инструкция" isValid={hasNormativeSelection} />}
+              inputProps={{ 'aria-required': true }}
               value={selectedNormativeFileId ?? ''}
               disabled={isLoadingNormativeFiles || normativeFiles.length === 0}
               onChange={(event) => {
@@ -272,11 +286,21 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
               <Box
                 component="iframe"
                 title="Предпросмотр письма"
-                sandbox=""
+                sandbox="allow-same-origin"
                 ref={previewFrameRef}
                 srcDoc={INVITATION_PREVIEW_HTML}
                 scrolling="no"
-                onLoad={syncPreviewFrameHeight}
+                onLoad={() => {
+                  previewResizeObserverRef.current?.disconnect();
+                  const frameDocument = previewFrameRef.current?.contentDocument;
+                  if (frameDocument?.body && typeof ResizeObserver !== 'undefined') {
+                    const observer = new ResizeObserver(syncPreviewFrameHeight);
+                    observer.observe(frameDocument.body);
+                    previewResizeObserverRef.current = observer;
+                  }
+                  syncPreviewFrameHeight();
+                  void frameDocument?.fonts?.ready.then(syncPreviewFrameHeight);
+                }}
                 sx={{
                   display: 'block',
                   width: '100%',
@@ -292,6 +316,8 @@ export const ContractorInviteDialog = ({ open, onClose }: ContractorInviteDialog
           </Box>
 
           <AdditionalEmailsField
+            required
+            label="E-mail получателей"
             ref={additionalEmailsFieldRef}
             emails={emails}
             onChange={(nextEmails) => {

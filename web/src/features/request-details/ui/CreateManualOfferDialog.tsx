@@ -20,6 +20,7 @@ import { createManualOfferForRequest } from '@shared/api/offers/createManualOffe
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { getFileKey } from '@shared/lib/files';
 import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { useLiveFieldVisibility, textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
@@ -373,7 +374,8 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="Выберите контрагента"
+                    label={<RequiredFieldLabel label="Выберите контрагента" isValid={selectedContractor?.can_select === true} />}
+                    inputProps={{ ...params.inputProps, 'aria-required': true }}
                     placeholder="Компания, ФИО, email или логин"
                   />
                 )}
@@ -392,30 +394,31 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) 300px' }, gap: 2, alignItems: 'start' }}>
             <Stack spacing={0.75}>
               <TextField
-                label="Наименование компании"
+                label={<RequiredFieldLabel label="Наименование компании" isValid={!companyNameError} />}
                 value={companyName}
                 onChange={(event) => {
                   setCompanyName(event.target.value);
                   markTouched('companyName');
                 }}
                 {...textFieldAutocompleteProps('companyName')}
+                inputProps={{ ...textFieldAutocompleteProps('companyName').inputProps, 'aria-required': true }}
                 error={Boolean(resolveVisibleError('companyName', companyNameError))}
                 helperText={resolveVisibleError('companyName', companyNameError) ?? undefined}
               />
               <TextField
-                label="ИНН"
+                label={<RequiredFieldLabel label="ИНН" isValid={!innError} />}
                 value={inn}
                 onChange={(event) => {
                   setInn(event.target.value);
                   markTouched('inn');
                 }}
                 {...textFieldAutocompleteProps('inn')}
-                inputProps={{ ...textFieldAutocompleteProps('inn').inputProps, inputMode: 'numeric', maxLength: 12 }}
+                inputProps={{ ...textFieldAutocompleteProps('inn').inputProps, inputMode: 'numeric', maxLength: 12, 'aria-required': true }}
                 error={Boolean(resolveVisibleError('inn', innError))}
                 helperText={resolveVisibleError('inn', innError) ?? undefined}
               />
               <TextField
-                label="Телефон компании"
+                label={<RequiredFieldLabel label="Телефон компании" isValid={!companyPhoneError} />}
                 value={companyPhone}
                 onChange={(event) => {
                   setCompanyPhone(formatRuPhone(event.target.value));
@@ -423,6 +426,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
                 }}
                 placeholder="+7 (900) 999-88-77"
                 {...textFieldAutocompleteProps('companyPhone')}
+                inputProps={{ ...textFieldAutocompleteProps('companyPhone').inputProps, 'aria-required': true }}
                 error={Boolean(resolveVisibleError('companyPhone', companyPhoneError))}
                 helperText={resolveVisibleError('companyPhone', companyPhoneError) ?? undefined}
               />

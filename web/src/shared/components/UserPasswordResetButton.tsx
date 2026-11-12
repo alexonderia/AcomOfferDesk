@@ -1,12 +1,10 @@
 import { Alert, Button, Dialog, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useState } from 'react';
-import { useAuth } from '@app/providers/AuthProvider';
 import { resetUserPassword } from '@shared/api/users/resetUserPassword';
-import { ROLE } from '@shared/constants/roles';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { PasswordTextField } from './forms/PasswordTextField';
 
-type Props = { userId: string; roleId: number };
+type Props = { userId: string; canResetPassword?: boolean };
 
 const ResetForm = ({ userId, onClose }: { userId: string; onClose: () => void }) => {
   const { showSuccessToast } = useSystemToasts();
@@ -52,10 +50,9 @@ const ResetForm = ({ userId, onClose }: { userId: string; onClose: () => void })
   );
 };
 
-export const UserPasswordResetButton = ({ userId, roleId }: Props) => {
-  const { session } = useAuth();
+export const UserPasswordResetButton = ({ userId, canResetPassword = false }: Props) => {
   const [open, setOpen] = useState(false);
-  if (session?.roleId !== ROLE.SUPERADMIN || roleId === ROLE.SUPERADMIN) return null;
+  if (!canResetPassword) return null;
   return (
     <>
       <Button variant="outlined" onClick={() => setOpen(true)}>Сбросить пароль</Button>

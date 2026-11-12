@@ -276,6 +276,10 @@ def test_login_page_has_password_recovery_link() -> None:
     assert 'aria-label="Перейти в Битрикс"' in response.text
     assert 'aria-label="Открыть MAX"' in response.text
     assert "img-src data:" in response.headers["content-security-policy"]
+    assert 'href="/maintenance-assets/fonts/alabuga-sans.css"' in response.text
+    assert "font-src 'self';" in response.headers["content-security-policy"]
+    assert "style-src 'self' 'unsafe-inline';" in response.headers["content-security-policy"]
+    assert "fonts.googleapis.com" not in response.text
     assert "script-src 'nonce-" in response.headers["content-security-policy"]
     assert 'data-password-toggle' in response.text
     assert 'aria-label="Показать пароль"' in response.text

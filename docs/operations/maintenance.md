@@ -28,6 +28,7 @@
   - `maintenance` is a dedicated internal nginx service on `project_net`.
   - `maintenance` is never published directly with public `ports`.
   - `gateway` remains the single public entrypoint.
+  - `shared/fonts` монтируется read-only в `/usr/share/nginx/html/maintenance-assets/fonts`. CSS и WOFF2 Alabuga Sans доступны через существующий маршрут `/maintenance-assets/` для IAM, страницы техработ и HTML-писем независимо от web/backend. Другие файлы каталога, включая исходный TTC, возвращают `404`; неизвестный шрифт не подменяется HTML-страницей. Публичные шрифты допускают CORS без credentials, срок кеширования — один час.
 - Automatic fallback contract:
   - `/` falls back to the maintenance page when `web` is unavailable.
   - Browser-facing auth endpoints under `/api/v1/auth/` (`login` and `callback`) also fall back to the maintenance page when `backend` is unavailable.

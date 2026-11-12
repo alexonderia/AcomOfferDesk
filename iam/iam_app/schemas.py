@@ -107,6 +107,7 @@ class AdminPasswordResetRequest(BaseModel):
     new_password: SecretStr = Field(min_length=12, max_length=128)
     actor_account_id: uuid.UUID
     actor_session_id: uuid.UUID
+    department_scope_verified: bool = False
 
 
 class AccountPermissionGrantsPutRequest(BaseModel):

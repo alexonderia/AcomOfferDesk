@@ -51,6 +51,9 @@ export default defineConfig({
     },
   },
   server: {
+    fs: {
+      allow: [__dirname, path.resolve(__dirname, '../shared/fonts')],
+    },
     port: 3000,
     host: true,
     proxy: {

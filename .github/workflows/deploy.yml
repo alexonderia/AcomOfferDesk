@@ -107,6 +107,10 @@ jobs:
               fail_order_db_prerequisite "$COMPOSE_ENV_FILE is missing; docker compose cannot load runtime env."
             fi
 
+            # Validate runtime selection before migrations or container changes.
+            # EMAIL_ENABLED must be explicit and shared by backend and worker.
+            docker compose --env-file "$COMPOSE_ENV_FILE" config --quiet
+
             if ! docker network inspect project_net >/dev/null 2>&1; then
               fail_order_db_prerequisite "Docker network project_net is missing."
             fi

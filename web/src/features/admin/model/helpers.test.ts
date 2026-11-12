@@ -15,7 +15,7 @@ describe('getScopedCreateRoleIds', () => {
 
   it('does not offer a different role when administrator cannot create the current tab role', () => {
     expect(getScopedCreateRoleIds({ activeTab: 'lead_economists', availableRoleIds: [ROLE.ECONOMIST, ROLE.OPERATOR], sessionRoleId: ROLE.ADMIN })).toEqual([]);
-    expect(getScopedCreateRoleIds({ activeTab: 'operators', availableRoleIds: [ROLE.ECONOMIST, ROLE.OPERATOR], sessionRoleId: ROLE.ADMIN })).toEqual([ROLE.OPERATOR]);
+    expect(getScopedCreateRoleIds({ activeTab: 'operators', availableRoleIds: [ROLE.ECONOMIST, ROLE.OPERATOR], sessionRoleId: ROLE.ADMIN })).toEqual([]);
   });
 
   it('keeps only contractor on the contractor tab for non-superadmin users', () => {
@@ -36,6 +36,12 @@ describe('getScopedCreateRoleIds', () => {
     });
 
     expect(roleIds).toEqual([ROLE.CONTRACTOR, ROLE.ADMIN, ROLE.ECONOMIST]);
+  });
+
+  it.each([ROLE.ADMIN, ROLE.CONTRACTOR, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR, undefined])('excludes operator creation for non-superadmin role %s', (sessionRoleId) => {
+    expect(getScopedCreateRoleIds({
+      activeTab: 'operators', availableRoleIds: [ROLE.ECONOMIST, ROLE.OPERATOR], sessionRoleId,
+    })).not.toContain(ROLE.OPERATOR);
   });
 
   it('moves the current superadmin page role to the first position', () => {

@@ -107,6 +107,8 @@ const subordinateProfileRoleIds = new Set<number>([
 
 type UsersTableProps = {
   users: UserListItem[];
+  showSearch?: boolean;
+  toolbarBetweenSearchAndActions?: ReactNode;
   isLoading?: boolean;
   emptyMessage: string;
   onAddClick?: () => void;
@@ -652,6 +654,8 @@ const canManageSubordinateRoleForStatus = (
 
 export const UsersTable = ({
   users,
+  showSearch = true,
+  toolbarBetweenSearchAndActions,
   isLoading,
   emptyMessage,
   onAddClick,
@@ -1031,10 +1035,6 @@ export const UsersTable = ({
       return [];
     }
 
-    if (!allowedRoleOptions.includes(row.id_role)) {
-      return [];
-    }
-
     const hasAlternativeRole = allowedRoleOptions.some((roleId) => roleId !== row.id_role);
     if (!hasAlternativeRole) {
       return [];
@@ -1285,6 +1285,7 @@ export const UsersTable = ({
               select
               size="small"
               value={row.id_role}
+              SelectProps={{ inputProps: { 'aria-label': `Роль пользователя ${row.id}` } }}
               disabled={updatingUserId === row.id}
               onClick={(event) => event.stopPropagation()}
               onChange={(event) => {
@@ -1297,6 +1298,9 @@ export const UsersTable = ({
               }}
               sx={{ minWidth: 140 }}
             >
+              {!editableRoleOptions.includes(row.id_role) && (
+                <MenuItem value={row.id_role} disabled>{row.role}</MenuItem>
+              )}
               {editableRoleOptions.map((roleId) => (
                 <MenuItem key={roleId} value={roleId}>
                   {getRoleLabel(roleId)}
@@ -1392,6 +1396,8 @@ export const UsersTable = ({
             isLoading={isLoading}
             noRowsLabel={emptyMessage}
             searchPlaceholder="Найти сотрудника"
+            showSearch={showSearch}
+            toolbarBetweenSearchAndActions={toolbarBetweenSearchAndActions}
             addButtonLabel="Добавить сотрудника"
             onAddClick={onAddClick}
             minTableWidth={840}
@@ -1449,7 +1455,7 @@ export const UsersTable = ({
           isLoadingHierarchy={isLoadingUserHierarchy}
           hierarchyError={userHierarchyError}
           showEmailVerification={canViewEmailVerification}
-          headerActions={selectedUser ? <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} /> : null}
+          headerActions={selectedUser ? <UserPasswordResetButton userId={selectedUser.user_id} canResetPassword={selectedUser.actions.reset_password} /> : null}
         >
                 {subordinateProfile ? (
                   <Stack spacing={1.2}>
@@ -1496,6 +1502,7 @@ export const UsersTable = ({
                       editor={
                         <UnavailabilityPeriodEditor
                           statusField={registerSubordinateUnavailability('status')}
+                          statusValue={watchSubordinateUnavailability('status')}
                           startedAtField={registerSubordinateUnavailability('started_at')}
                           endedAtField={registerSubordinateUnavailability('ended_at')}
                           startedAtValue={watchSubordinateUnavailability('started_at') ?? ''}
@@ -1651,6 +1658,8 @@ export const UsersTable = ({
         isLoading={isLoading}
         noRowsLabel={emptyMessage}
         searchPlaceholder="Найти контрагента"
+        showSearch={showSearch}
+        toolbarBetweenSearchAndActions={toolbarBetweenSearchAndActions}
         addButtonLabel="Добавить контрагента"
         onAddClick={onAddClick}
         minTableWidth={980}
@@ -1731,7 +1740,7 @@ export const UsersTable = ({
                 Карточка контрагента
               </Typography>
 
-              <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} />
+              <UserPasswordResetButton userId={selectedUser.user_id} canResetPassword={selectedUser.actions.reset_password} />
 
               <Box
                 sx={{

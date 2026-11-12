@@ -153,6 +153,8 @@ const formatDateTime = (value: string | null) => {
 
 export type ContractorsListViewProps = {
   contractors: ContractorListItem[];
+  showSearch?: boolean;
+  toolbarBetweenSearchAndActions?: ReactNode;
   isLoading?: boolean;
   emptyMessage: string;
   onStatusUpdated: () => Promise<void>;
@@ -161,6 +163,8 @@ export type ContractorsListViewProps = {
 
 export const ContractorsListView = ({
   contractors,
+  showSearch = true,
+  toolbarBetweenSearchAndActions,
   isLoading = false,
   emptyMessage,
   onStatusUpdated,
@@ -676,6 +680,8 @@ export const ContractorsListView = ({
         isLoading={isLoading || isSaving}
         noRowsLabel={emptyMessage}
         searchPlaceholder="Найти контрагента"
+        showSearch={showSearch}
+        toolbarBetweenSearchAndActions={toolbarBetweenSearchAndActions}
         addButtonLabel="Добавить контрагента"
         onAddClick={onAddClick}
         showAddAction={Boolean(onAddClick)}
@@ -805,7 +811,7 @@ export const ContractorsListView = ({
               <Typography id="contractor-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
                 Карточка контрагента
               </Typography>
-              <UserPasswordResetButton userId={selectedUser.user_id} roleId={selectedUser.role_id} />
+              <UserPasswordResetButton userId={selectedUser.user_id} canResetPassword={selectedUser.actions.reset_password} />
               <SourceSection title="Вход в личный кабинет">
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ sm: 'center' }}>
                   <ContractorLoginAccessBadge access={loginAccess.get(selectedUser.user_id)} loading={isCheckingLoginAccess} />

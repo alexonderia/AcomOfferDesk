@@ -37,6 +37,7 @@ from app.services.contractors import ContractorService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
 from app.services.registration_invitations import RegistrationInvitationService
 from app.services.users import UserStatusService
+from app.services.user_password_reset import resolve_password_reset_scope
 
 router = APIRouter()
 
@@ -52,13 +53,15 @@ def _ru_user_status(status: str) -> str:
     return USER_STATUS_RU.get(status, status)
 
 
-def _contractor_list_item(current_user: CurrentUser, item) -> ContractorListItemSchema:
+def _contractor_list_item(current_user: CurrentUser, item, password_reset_scope: set[str] | None = None) -> ContractorListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     is_manual = data.pop("is_manual")
     data["actions"] = ContractorActionBuilder.build_contractor_actions(
         current_user,
         is_manual=is_manual,
+        target_user_id=item.user_id,
+        is_in_password_reset_scope=item.user_id in (password_reset_scope or set()),
     )
     return ContractorListItemSchema(**data)
 
@@ -113,10 +116,11 @@ async def list_contractors(
             limit=limit,
             offset=offset,
         )
+        password_reset_scope = await resolve_password_reset_scope(uow.users, current_user=current_user)
 
     return ContractorListResponse(
         data=ContractorListData(
-            items=[_contractor_list_item(current_user, item) for item in result.items],
+            items=[_contractor_list_item(current_user, item, password_reset_scope) for item in result.items],
             total=result.total,
             limit=result.limit,
             offset=result.offset,

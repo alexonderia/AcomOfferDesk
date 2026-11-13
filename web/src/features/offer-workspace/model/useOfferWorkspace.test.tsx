@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PageBreadcrumbActionsProvider, usePageBreadcrumbItemsState } from '@app/layouts/PageBreadcrumbActions';
 import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
 import { getOfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
+import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { normalizeChatActions, normalizeOfferActions, normalizeRequestActions } from '@shared/api/mappers';
 import type { OfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import { ROLE } from '@shared/constants/roles';
@@ -24,6 +25,7 @@ vi.mock('@app/providers/ChatRealtimeProvider', () => ({
   useChatRealtime: () => ({ client: mocks.client, connectionState: 'connected', onEvent: mocks.onEvent }),
 }));
 vi.mock('@shared/api/offers/getOfferWorkspace', () => ({ getOfferWorkspace: vi.fn() }));
+vi.mock('@shared/api/offers/updateOfferStatus', () => ({ updateOfferStatus: vi.fn() }));
 vi.mock('@shared/api/contractors/getContractorLoginAccess', () => ({ getContractorLoginAccess: vi.fn() }));
 vi.mock('@shared/api/offers/getOfferContractorInfo', () => ({
   getOfferContractorInfo: vi.fn().mockRejectedValue(new Error('Contractor details unavailable in fixture')),
@@ -52,8 +54,9 @@ const workspaceFixture = (canViewDetails = true): OfferWorkspace => {
 
 const Breadcrumbs = () => <BreadcrumbsNav items={usePageBreadcrumbItemsState()} />;
 const Workspace = () => {
-  const { contractorLoginAccess, isContractorAccessLoading } = useOfferWorkspace();
-  return <><Breadcrumbs /><ContractorLoginAccessBadge access={contractorLoginAccess} loading={isContractorAccessLoading} /></>;
+  const { contractorLoginAccess, isContractorAccessLoading, canDeleteOffer, handleDeleteOffer } = useOfferWorkspace();
+  return <><Breadcrumbs /><ContractorLoginAccessBadge access={contractorLoginAccess} loading={isContractorAccessLoading} />
+    <button type="button" disabled={!canDeleteOffer} onClick={() => void handleDeleteOffer()}>Удалить КП</button></>;
 };
 const renderWorkspace = (path = '/offers/61/workspace') => render(
   <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -67,12 +70,43 @@ const renderWorkspace = (path = '/offers/61/workspace') => render(
 );
 
 describe('offer workspace breadcrumbs', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.session.roleId = ROLE.PROJECT_MANAGER;
     mocks.session.login = 'staff';
     vi.mocked(getOfferWorkspace).mockResolvedValue(workspaceFixture());
     vi.mocked(getContractorLoginAccess).mockResolvedValue([]);
+  });
+
+  it.each([ROLE.SUPERADMIN, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST])(
+    'deletes the selected offer for staff role %s when the server permits it', async (roleId) => {
+      mocks.session.roleId = roleId;
+      const workspace = workspaceFixture();
+      workspace.offer.actions.delete = true;
+      const deletedWorkspace = workspaceFixture();
+      deletedWorkspace.offer.status = 'deleted';
+      vi.mocked(getOfferWorkspace).mockResolvedValueOnce(workspace).mockResolvedValue(deletedWorkspace);
+      vi.mocked(updateOfferStatus).mockResolvedValue({ offer: { id: 61, status: 'deleted' } });
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      renderWorkspace();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: 'Удалить КП' }));
+      await waitFor(() => expect(updateOfferStatus).toHaveBeenCalledWith({ offer_id: 61, status: 'deleted' }));
+      expect(confirm).toHaveBeenCalledOnce();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeDisabled());
+    },
+  );
+
+  it('does not send deletion after cancelling the confirmation', async () => {
+    const workspace = workspaceFixture();
+    workspace.offer.actions.delete = true;
+    vi.mocked(getOfferWorkspace).mockResolvedValue(workspace);
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить КП' }));
+    expect(updateOfferStatus).not.toHaveBeenCalled();
   });
 
   it.each(['/offers/61/workspace', '/offers/61/workspace?requestId=999'])(

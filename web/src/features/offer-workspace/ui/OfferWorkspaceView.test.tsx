@@ -1,6 +1,6 @@
 ﻿import type { ReactNode } from "react";
 import { ThemeProvider } from "@mui/material/styles";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OfferWorkspaceView } from "@features/offer-workspace/ui/OfferWorkspaceView";
@@ -72,7 +72,7 @@ const buildWorkspaceHookState = (overrides?:
     canSendMessageWithAttachments: boolean;
     canEditOfferStatus: boolean;
     canEditOfferAmount: boolean;
-    canDeleteOwnOffer: boolean;
+    canDeleteOffer: boolean;
     createOffer: boolean;
     offerAccept: boolean;
     offerReject: boolean;
@@ -180,7 +180,7 @@ const buildWorkspaceHookState = (overrides?:
     canSetReceivedMessages: true,
     canEditOfferStatus: overrides?.canEditOfferStatus ?? false,
     canEditOfferAmount: overrides?.canEditOfferAmount ?? true,
-    canDeleteOwnOffer: overrides?.canDeleteOwnOffer ?? true,
+    canDeleteOffer: overrides?.canDeleteOffer ?? overrides?.offerDelete ?? true,
     isContractor: overrides?.isContractor ?? true,
     acceptedOfferId: null,
     offerAmountInput: "120",
@@ -191,6 +191,7 @@ const buildWorkspaceHookState = (overrides?:
     handleStatusChange: vi.fn(),
     handleOfferAmountSave: vi.fn(),
     handleDeleteOffer: vi.fn(),
+    handleCancelOfferEditing: vi.fn(),
     handleCreateNewOffer: vi.fn(),
     onSendMessage: vi.fn(),
     onMessageInputClick: vi.fn(),
@@ -236,7 +237,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
         canDeleteFile: false,
         canSendMessage: false,
         canSendMessageWithAttachments: false,
-        canDeleteOwnOffer: false,
+        canDeleteOffer: false,
         canEditOfferAmount: false,
         createOffer: false,
         offerEditAmount: false,
@@ -271,6 +272,37 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     expect(screen.getByText("Выберите статус")).toBeInTheDocument();
   });
 
+  it('shows staff deletion with a trash icon only in edit mode', () => {
+    const state = buildWorkspaceHookState({ isContractor: false, canDeleteOffer: true,
+      canEditOfferAmount: false, canUpload: false, canDeleteFile: false, permissions: ['offers.status.update'] });
+    useOfferWorkspaceMock.mockReturnValue(state);
+    renderWithTheme();
+    expect(screen.queryByRole('button', { name: 'Удалить КП' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }));
+    const deleteButton = screen.getByRole('button', { name: 'Удалить КП' });
+    expect(within(deleteButton).getByTestId('DeleteOutlineIcon')).toBeInTheDocument();
+    fireEvent.click(deleteButton);
+    expect(state.handleDeleteOffer).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(screen.queryByRole('button', { name: 'Удалить КП' })).not.toBeInTheDocument();
+  });
+
+  it('hides staff delete action when the backend does not allow deletion', () => {
+    useOfferWorkspaceMock.mockReturnValue(buildWorkspaceHookState({ isContractor: false,
+      canDeleteOffer: false, offerDelete: false }));
+    renderWithTheme();
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }));
+    expect(screen.queryByRole('button', { name: 'Удалить КП' })).not.toBeInTheDocument();
+  });
+
+  it('disables deletion while a status update is running', () => {
+    useOfferWorkspaceMock.mockReturnValue({ ...buildWorkspaceHookState({ isContractor: false }),
+      isUpdatingOfferStatus: true });
+    renderWithTheme();
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }));
+    expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeDisabled();
+  });
+
   it.each(["closed", "cancelled"] as const)(
     "renders offer workspace read-only when request is %s",
     (requestStatus) => {
@@ -281,7 +313,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
           canEditOfferAmount: true,
           canUpload: true,
           canDeleteFile: true,
-          canDeleteOwnOffer: true,
+          canDeleteOffer: true,
           offerAccept: true,
           offerReject: true,
           permissions: ["offers.update", "offers.amount.update"],
@@ -295,6 +327,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
       expect(screen.queryByText("Выберите статус")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Добавить файлы")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Сохранить" })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Удалить КП' })).not.toBeInTheDocument();
     }
   );
 
@@ -314,6 +347,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     useOfferWorkspaceMock.mockReturnValue(
       buildWorkspaceHookState({
         isContractor: false,
+        canDeleteOffer: false,
         canEditOfferAmount: true,
         permissions: ["offers.amount.update"],
       })
@@ -371,6 +405,7 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
 
     currentState = buildWorkspaceHookState({
       isContractor: false,
+      canDeleteOffer: false,
       canEditOfferAmount: true,
       permissions: ["offers.amount.update"],
     });
@@ -413,5 +448,38 @@ describe("OfferWorkspaceView action-driven CTAs", () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Контрагент не может войти в систему: пароль не задан');
     expect(screen.getByTestId('chat-can-send-message')).toHaveTextContent('true');
     expect(screen.queryByRole('button', { name: /Проверить/ })).not.toBeInTheDocument();
+  });
+  it('shows blacklist from workspace profile beside contractor information', () => {
+    const state = buildWorkspaceHookState({ isContractor: false });
+    useOfferWorkspaceMock.mockReturnValue({
+      ...state,
+      workspace: { ...state.workspace, profile: { full_name: 'Поставщик', phone: '', mail: '', status: 'blacklist' } },
+    });
+    renderWithTheme();
+    expect(screen.getByText('В черном списке')).toBeVisible();
+  });
+
+  it.each([
+    ['active', 'available', 'Вход доступен', 'Активен'],
+    ['blacklist', 'blocked', 'Вход отключён', 'В черном списке'],
+  ] as const)('does not duplicate profile status %s with equivalent login status', (status, accessState, accessLabel, profileLabel) => {
+    const state = buildWorkspaceHookState({ isContractor: false });
+    useOfferWorkspaceMock.mockReturnValue({ ...state,
+      workspace: { ...state.workspace, profile: { full_name: 'Поставщик', phone: '', mail: '', status } },
+      contractorLoginAccess: { user_id: 'contractor-1', state: accessState, label: accessLabel, description: '' },
+      isContractorAccessLoading: false,
+    });
+    renderWithTheme();
+    expect(screen.getByText(profileLabel)).toBeVisible();
+    expect(screen.queryByLabelText(`Вход в личный кабинет: ${accessLabel}`)).not.toBeInTheDocument();
+    expect(screen.queryByText('Вход в личный кабинет')).not.toBeInTheDocument();
+  });
+
+  it('shows the business status once instead of the active-response label', () => {
+    useOfferWorkspaceMock.mockReturnValue(buildWorkspaceHookState({ isContractor: false }));
+    renderWithTheme();
+    expect(screen.getAllByText('На рассмотрении')).toHaveLength(1);
+    expect(screen.queryByText('Активный отклик')).not.toBeInTheDocument();
+    expect(screen.queryByText('Неактивный отклик')).not.toBeInTheDocument();
   });
 });

@@ -38,6 +38,7 @@ export type OfferWorkspace = {
   offer: WorkspaceOfferItem;
   offers: WorkspaceOfferItem[];
   profile: {
+    status?: string | null;
     full_name: string;
     phone: string;
     mail: string;
@@ -97,6 +98,7 @@ type ApiResponse = {
     };
     contractor?: {
       user_id: string;
+      status?: string | null;
       full_name: string | null;
       phone: string | null;
       mail: string | null;
@@ -143,6 +145,7 @@ export const getOfferWorkspace = async (offerId: number): Promise<OfferWorkspace
     offers: normalizedOffers.length > 0 ? normalizedOffers : [normalizedCurrentOffer],
     profile: response.data.contractor
       ? {
+          status: response.data.contractor.status,
           full_name: response.data.contractor.full_name ?? '',
           phone: response.data.contractor.phone ?? '',
           mail: response.data.contractor.mail ?? ''

@@ -152,6 +152,25 @@ async def test_consumer_handler_handles_invalid_payload_without_crash(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_unassigned_warning_reaches_initiating_manager_and_deduplicates(monkeypatch):
+    repo = _FakeNotificationsRepo()
+    monkeypatch.setattr(process_events_module, "UnitOfWork", lambda: _FakeProcessUow(repo))
+    handler = process_events_module.ProcessNotificationEventHandler()
+    event = build_process_notification_event(event_type="system.warning", actor_user_id="owner-1",
+        entity_type="request", entity_id="REQ-1", request_id="REQ-1", payload={
+            "recipient_user_ids": ["owner-1"], "title": "Заявка требует распределения",
+            "body": "Ответственный сотрудник в чёрном списке.", "link_url": "/requests/REQ-1",
+        })
+    await handler.handle(payload=event.to_payload())
+    await handler.handle(payload=event.to_payload())
+    assert len(repo.created) == 1
+    notification = repo.created[0]
+    assert notification.user_id == "owner-1"
+    assert notification.type == "system.warning"
+    assert notification.link_url == "/requests/REQ-1"
+
+
+@pytest.mark.asyncio
 async def test_after_commit_hooks_not_executed_when_commit_fails():
     session = _FakeSession(fail_commit=True)
     uow = UnitOfWork(session_factory=lambda: session)

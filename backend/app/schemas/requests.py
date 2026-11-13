@@ -41,6 +41,7 @@ class OfferItemSchema(BaseModel):
     contractor_contact_mail: str | None
     contractor_address: str | None
     contractor_note: str | None
+    contractor_status: str | None = None
     files: list[RequestFileSchema]
     unread_messages_count: int
     actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
@@ -67,6 +68,7 @@ class RequestItemSchema(BaseModel):
     owner_full_name: str | None
     owner_phone: str | None = None
     owner_mail: str | None = None
+    owner_warning: str | None = None
     chosen_offer_id: int | None
     id_plan: int | None = None
     stats: RequestStatsSchema

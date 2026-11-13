@@ -52,6 +52,7 @@ vi.mock("@shared/api/fileDownload", () => ({
 vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
   RequestDetailsMainCard: (props: {
     canEditRequest: boolean;
+    ownerWarning?: string | null;
     canUpdateRequestStatus?: boolean;
     canDeleteRequestFiles: boolean;
     canUploadRequestFiles: boolean;
@@ -67,6 +68,7 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
     } | null;
   }) => (
     <div data-testid="request-details-main-card">
+      {props.ownerWarning ? <div role="alert">{props.ownerWarning}</div> : null}
       <div data-testid="main-can-edit-request">{String(props.canEditRequest)}</div>
       <div data-testid="main-can-update-request-status">{String(Boolean(props.canUpdateRequestStatus))}</div>
       <div data-testid="main-can-delete-request-files">{String(props.canDeleteRequestFiles)}</div>
@@ -186,6 +188,13 @@ describe("RequestDetailsView action-driven CTAs", () => {
   beforeEach(() => {
     vi.mocked(getRequestDetails).mockReset();
     vi.mocked(updateRequestDetails).mockReset();
+  });
+
+  it('passes the server owner warning to the request card', async () => {
+    const warning = 'Заявка не распределена: ответственный сотрудник в чёрном списке.';
+    vi.mocked(getRequestDetails).mockResolvedValue({ ...buildRequestDetails(), owner_warning: warning } as never);
+    renderWithTheme();
+    expect(await screen.findByRole('alert')).toHaveTextContent(warning);
   });
 
   it("enables critical request/offers controls when backend actions are true", async () => {

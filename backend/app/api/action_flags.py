@@ -124,6 +124,7 @@ class OfferActionBuilder:
         can_accept_in_scope: bool | None = None,
         can_reject_in_scope: bool | None = None,
         offer_is_manual: bool = False,
+        contractor_status: str | None = None,
     ) -> OfferActionsSchema:
         can_manage_request_offer = (
             RequestPolicy.can_edit(
@@ -204,6 +205,7 @@ class OfferActionBuilder:
             ) and can_mutate_offer,
             can_accept=(
                 can_accept_in_scope
+                and contractor_status == "active"
                 and offer_status != "accepted"
                 and not has_other_accepted_offer
                 and (True if has_custom_accept_scope else can_update_status)
@@ -659,6 +661,7 @@ class OfferActionResolver:
             can_accept_in_scope=can_accept_in_scope,
             can_reject_in_scope=can_reject_in_scope,
             offer_is_manual=offer_is_manual,
+            contractor_status=offer_owner.status,
         )
         chat_actions = ChatActionBuilder.build(
             current_user,

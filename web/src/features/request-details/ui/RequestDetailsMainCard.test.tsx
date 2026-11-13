@@ -1,14 +1,13 @@
 import { ThemeProvider } from '@mui/material/styles';
 import type { MutableRefObject } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RequestDetailsMainCard } from './RequestDetailsMainCard';
 import { appTheme } from '@shared/theme/appTheme';
 
-vi.mock('@shared/lib/responsive', () => ({
-  useIsMobileViewport: () => false
-}));
+let mobile = false;
+vi.mock('@shared/lib/responsive', () => ({ useIsMobileViewport: () => mobile }));
 
 const statusOptions = [
   { value: 'open', label: 'Open' },
@@ -17,7 +16,7 @@ const statusOptions = [
   { value: 'cancelled', label: 'Cancelled' }
 ] as const;
 
-const renderCard = (responsibleContact?: { fullName?: string | null; phone?: string | null; mail?: string | null }) =>
+const renderCard = (responsibleContact?: { fullName?: string | null; phone?: string | null; mail?: string | null }, ownerWarning?: string) =>
   render(
     <ThemeProvider theme={appTheme}>
       <RequestDetailsMainCard
@@ -34,6 +33,7 @@ const renderCard = (responsibleContact?: { fullName?: string | null; phone?: str
         isDescriptionExpanded={false}
         onToggleDescription={() => undefined}
         ownerField={<div>Owner field</div>}
+        ownerWarning={ownerWarning}
         responsibleContact={responsibleContact}
         existingFiles={[]}
         canDeleteRequestFiles={false}
@@ -69,6 +69,20 @@ const renderCard = (responsibleContact?: { fullName?: string | null; phone?: str
   );
 
 describe('RequestDetailsMainCard', () => {
+  beforeEach(() => { mobile = false; });
+
+  it.each([false, true])('shows an accessible owner warning on mobile=%s', (isMobile) => {
+    mobile = isMobile;
+    const warning = 'Заявка не распределена: ответственный сотрудник неактивен. Требуется назначить ответственного.';
+    renderCard(undefined, warning);
+    expect(screen.getByRole('alert')).toHaveTextContent(warning);
+    expect(screen.getByRole('alert')).toBeVisible();
+  });
+
+  it('does not show a warning without backend metadata', () => {
+    renderCard();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
   it('renders responsible contact block when contact data is provided', () => {
     renderCard({
       fullName: 'Alice Example',

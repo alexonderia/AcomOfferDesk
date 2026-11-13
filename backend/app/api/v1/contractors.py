@@ -173,6 +173,8 @@ async def update_contractor_status(
             uow.users,
             uow.profiles,
             uow.user_auth_accounts,
+            requests=uow.requests,
+            offers=uow.offers,
             user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )

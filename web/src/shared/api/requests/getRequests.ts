@@ -15,6 +15,7 @@ export type RequestWithOfferStats = {
   id: string;
   id_user: string;
   owner_full_name?: string | null;
+  owner_warning?: string | null;
   status: string;
   status_label: string;
   deadline_at: string;

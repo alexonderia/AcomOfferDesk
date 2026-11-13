@@ -73,6 +73,7 @@ class ContractorInfo:
     company_mail: str | None
     address: str | None
     note: str | None
+    status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -910,6 +911,7 @@ class OfferService:
             ],
             contractor=ContractorInfo(
                 user_id=offer.id_user,
+                status=(await self._users.map_statuses(user_ids=[offer.id_user])).get(offer.id_user),
                 full_name=profile.full_name if profile else None,
                 phone=profile.phone if profile else None,
                 mail=profile.mail if profile else None,
@@ -932,6 +934,7 @@ class OfferService:
 
         return ContractorInfo(
             user_id=contractor_user_id,
+            status=(await self._users.map_statuses(user_ids=[contractor_user_id])).get(contractor_user_id),
             full_name=profile.full_name if profile else None,
             phone=profile.phone if profile else None,
             mail=profile.mail if profile else None,
@@ -1097,6 +1100,9 @@ class OfferService:
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        if status == "accepted":
+            # Take the user lock before the request lock, as profile blocking does.
+            await self._users.lock_status_change(user_id=offer.id_user)
         await self._requests.lock_offer_lifecycle(request_id=request.id)
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
 
@@ -1124,6 +1130,10 @@ class OfferService:
                 )
         status_changed = offer.status != status
         previous_status = offer.status
+        if status == "accepted":
+            contractor_status = (await self._users.map_statuses(user_ids=[offer.id_user])).get(offer.id_user)
+            if contractor_status != "active":
+                raise Conflict("Нельзя принять КП неактивного контрагента или контрагента в чёрном списке")
         if status == "accepted" and status_changed:
             if await self._requests.has_accepted_offer_for_request(
                 request_id=request.id,

@@ -14,6 +14,7 @@ from app.schemas.requests import RequestFileSchema
 
 
 class ContractorInfoSchema(BaseModel):
+    status: str | None = None
     user_id: str
     full_name: str | None
     phone: str | None

@@ -13,6 +13,7 @@ export type RequestDetailsOffer = {
   status_label?: string | null;
   offer_workspace_url?: string | null;
   contractor_user_id?: string | null;
+  contractor_status?: string | null;
   contractor_company_name?: string | null;
   contractor_full_name?: string | null;
   contractor_phone?: string | null;
@@ -35,6 +36,7 @@ export type RequestDetailsOffer = {
 };
 
 export type RequestDetails = {
+  owner_warning?: string | null;
   id: string;
   id_user: string;
   owner_full_name?: string | null;
@@ -62,6 +64,7 @@ export type RequestDetails = {
 };
 
 type ApiRequestItem = RequestEntity & {
+  owner_warning?: string | null;
   owner_phone?: string | null;
   owner_mail?: string | null;
   actions?: {
@@ -117,6 +120,7 @@ export const getRequestDetails = async (requestId: string): Promise<RequestDetai
     owner_full_name: item.owner_full_name ?? null,
     owner_phone: item.owner_phone ?? null,
     owner_mail: item.owner_mail ?? null,
+    owner_warning: item.owner_warning ?? null,
     status: item.status,
     status_label: item.status_label,
     initial_amount: item.initial_amount ?? null,

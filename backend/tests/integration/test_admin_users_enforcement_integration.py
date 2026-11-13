@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -25,6 +26,9 @@ ROLE_NAMES = {
 
 
 class _UsersRepo:
+    async def lock_status_change(self, *, user_id: str):
+        pass
+
     def __init__(self) -> None:
         self._session = object()
         self._users: dict[str, SimpleNamespace] = {
@@ -260,6 +264,9 @@ class _UnitsRepo:
 
 class _UsersUow:
     def __init__(self) -> None:
+        self.requests = AsyncMock()
+        self.requests.list_in_progress_requests_by_owner_ids.return_value = []
+        self.offers = AsyncMock()
         self.users = _UsersRepo()
         self.units = _UnitsRepo(self.users)
         self.profiles = _ProfilesRepo(self.users)

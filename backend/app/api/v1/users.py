@@ -971,6 +971,8 @@ async def update_user_status(
             uow.profiles,
             uow.user_auth_accounts,
             units=uow.units,
+            requests=uow.requests,
+            offers=uow.offers,
             user_contact_channels=uow.user_contact_channels,
             notification_preferences=UserNotificationPreferencesService(
                 uow.user_contact_channels,

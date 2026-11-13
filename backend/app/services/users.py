@@ -16,6 +16,8 @@ from app.domain.policies import CurrentUser, UserPolicy
 from app.models.orm_models import CompanyContact, Profile, Role, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
+from app.repositories.requests import RequestRepository
+from app.repositories.offers import OfferRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.units import UnitRepository
@@ -1547,6 +1549,8 @@ class UserStatusService:
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
         units: UnitRepository | None = None,
+        requests: RequestRepository | None = None,
+        offers: OfferRepository | None = None,
     ):
         self._users = users
         self._profiles = profiles
@@ -1556,6 +1560,57 @@ class UserStatusService:
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
         self._units = units
+        self._requests = requests
+        self._offers = offers
+
+    async def _handle_blocked_profile(self, *, current_user: CurrentUser, user: User) -> None:
+        if self._requests is None:
+            return
+        if user.id_role == settings.contractor_role_id:
+            if self._offers is None:
+                raise RuntimeError("Contractor status changes require offer repository")
+            offers = await self._offers.list_accepted_for_contractor(user_id=user.id)
+            for offer in offers:
+                await self._requests.lock_offer_lifecycle(request_id=offer.id_request)
+                request = await self._requests.get_by_id(request_id=offer.id_request)
+                if request is None or request.status not in {"open", "review"}:
+                    continue
+                offer = await self._offers.get_by_id(offer_id=offer.id)
+                if offer is None or offer.status != "accepted":
+                    continue
+                await self._offers.update_status(offer=offer, status="rejected")
+                self._schedule_process_notification_event(build_process_notification_event(
+                    event_type="offer.status_changed",
+                    actor_user_id=current_user.user_id,
+                    entity_type="offer", entity_id=offer.id,
+                    request_id=request.id, offer_id=offer.id,
+                    payload={
+                        "recipient_user_ids": [request.id_user],
+                        "old_status": "accepted", "new_status": "rejected",
+                        "reason": "contractor_unavailable", "contractor_status": user.status,
+                    },
+                ))
+            return
+
+        requests = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=[user.id])
+        if not requests:
+            return
+        managers = await UnitHierarchyService(self._users).get_user_managers(user_id=user.id)
+        recipients = sorted({manager.user_id for manager in managers if manager.status == "active"})
+        for request in requests:
+            self._schedule_process_notification_event(build_process_notification_event(
+                event_type="system.warning", actor_user_id=current_user.user_id,
+                entity_type="request", entity_id=request.id, request_id=request.id,
+                payload={
+                    "recipient_user_ids": recipients,
+                    "title": "Заявка требует распределения",
+                    "body": f"Заявка №{request.id} стала нераспределённой: ответственный сотрудник "
+                            + ("в чёрном списке." if user.status == "blacklist" else "неактивен."),
+                    "link_url": f"/requests/{request.id}",
+                    "request_id": request.id, "previous_owner_user_id": user.id,
+                    "reason": "owner_unavailable", "owner_status": user.status,
+                },
+            ))
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -1581,6 +1636,8 @@ class UserStatusService:
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Неподдерживаемое значение users.status")
 
+        if self._requests is not None:
+            await self._users.lock_status_change(user_id=user_id)
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise NotFound("Пользователь не найден")
@@ -1623,6 +1680,8 @@ class UserStatusService:
                 raise Conflict("Нельзя подтвердить регистрацию до подтверждения email")
         status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
+        if status_changed and user_status in {"inactive", "blacklist"}:
+            await self._handle_blocked_profile(current_user=current_user, user=user)
 
         result = UserStatusUpdateResult(
             user_id=user.id,

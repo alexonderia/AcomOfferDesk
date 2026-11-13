@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+import pytest
 
 from app.api.v1 import offers as offers_api
 from app.api.v1 import requests as requests_api
@@ -24,14 +25,16 @@ def _dt() -> datetime:
     return datetime(2026, 5, 7, 10, 0, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("viewer_role", [settings.lead_economist_role_id, settings.contractor_role_id])
 def test_requests_list_contract_has_item_actions_without_top_level_permissions(
     test_client,
     monkeypatch,
     set_current_user,
     make_current_user,
+    viewer_role,
 ):
     user = make_current_user(
-        role_id=settings.lead_economist_role_id,
+        role_id=viewer_role,
         permissions={PermissionCodes.REQUESTS_READ, PermissionCodes.REQUESTS_AMOUNTS_READ},
     )
     set_current_user(user)
@@ -50,6 +53,7 @@ def test_requests_list_contract_has_item_actions_without_top_level_permissions(
                 closed_at=None,
                 owner_user_id="owner-1",
                 owner_full_name="Owner",
+                owner_warning="Заявка не распределена: ответственный сотрудник неактивен.",
                 chosen_offer_id=None,
                 id_plan=None,
                 count_submitted=0,
@@ -70,6 +74,10 @@ def test_requests_list_contract_has_item_actions_without_top_level_permissions(
     assert "permissions" not in data
     assert len(data["items"]) == 1
     assert "actions" in data["items"][0]
+    assert data["items"][0]["owner_warning"] == (
+        None if viewer_role == settings.contractor_role_id
+        else "Заявка не распределена: ответственный сотрудник неактивен."
+    )
 
 
 def test_open_requests_contract_has_item_actions_without_top_level_permissions(
@@ -252,6 +260,7 @@ def test_offer_workspace_contract_contains_request_offer_chat_actions(
                 ),
                 offers=[],
                 contractor=SimpleNamespace(
+                    status="active",
                     user_id="contractor-1",
                     full_name="Contractor",
                     phone=None,

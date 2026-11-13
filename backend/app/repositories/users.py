@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, and_, cast, func, or_, select, update
+from sqlalchemy import BigInteger, and_, cast, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, with_expression
 
@@ -42,6 +42,19 @@ def _telegram_id_expr():
 class UserRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    async def lock_status_change(self, *, user_id: str) -> None:
+        """Serialize blocking a contractor with accepting their offers."""
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"user-status:{user_id}"},
+        )
+
+    async def map_statuses(self, *, user_ids: list[str]) -> dict[str, str]:
+        if not user_ids:
+            return {}
+        result = await self._session.execute(select(User.id, User.status).where(User.id.in_(user_ids)))
+        return dict(result.all())
 
     async def lock_contractor_identity(self, *, inn: str) -> None:
         await self._session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"contractor:{inn.strip()}", 0))))
@@ -206,6 +219,7 @@ class UserRepository:
             select(User)
             .options(with_expression(User.tg_user_id, _telegram_id_expr()))
             .where(User.id == user_id)
+            .execution_options(populate_existing=True)
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()

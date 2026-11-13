@@ -2,6 +2,7 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -56,6 +57,7 @@ type RequestDetailsMainCardProps = {
   isDescriptionExpanded: boolean;
   onToggleDescription: () => void;
   ownerField: ReactNode;
+  ownerWarning?: string | null;
   responsibleContact?: ResponsibleContact | null;
   existingFiles: RequestDetailsFile[];
   canDeleteRequestFiles: boolean;
@@ -105,6 +107,7 @@ export const RequestDetailsMainCard = ({
   isDescriptionExpanded,
   onToggleDescription,
   ownerField,
+  ownerWarning,
   responsibleContact,
   existingFiles,
   canDeleteRequestFiles,
@@ -291,6 +294,7 @@ export const RequestDetailsMainCard = ({
             ) : null}
           </Stack>
           {ownerField}
+          {ownerWarning ? <Alert severity="warning" sx={{ overflowWrap: 'anywhere' }}>{ownerWarning}</Alert> : null}
         </Stack>
       </Box>
 

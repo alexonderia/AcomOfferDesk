@@ -6,6 +6,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
+import { WarningTooltip } from '@shared/ui/WarningTooltip';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
@@ -472,6 +473,7 @@ const RequestMobileCard = ({
                                                 {detail.value}
                                             </Typography>
                                         )}
+                                        {isOwnerDetail && !isContractor ? <WarningTooltip message={row.owner_warning} /> : null}
                                     </Stack>
                                 </Stack>
                             );
@@ -636,8 +638,9 @@ export const RequestsTable = ({
             filterOptions: ownerFilterOptions,
             getFilterValue: (row) => row.owner_full_name ?? row.id_user,
             getSearchValue: (row) => row.owner_full_name ?? row.id_user,
-            renderCell: (row) =>
-                canEditOwner && row.actions.change_owner ? (
+            renderCell: (row) => (
+              <Stack direction="row" spacing={0.6} alignItems="center" sx={{ minWidth: 0 }}>
+                {canEditOwner && row.actions.change_owner ? (
                     <Select
                         size="small"
                         value={row.id_user}
@@ -657,7 +660,10 @@ export const RequestsTable = ({
                     </Select>
                 ) : (
                     <Typography variant="body2">{row.owner_full_name ?? row.id_user}</Typography>
-                )
+                )}
+                {!isContractor ? <WarningTooltip message={row.owner_warning} /> : null}
+              </Stack>
+            )
         },
         {
             id: 'updated',

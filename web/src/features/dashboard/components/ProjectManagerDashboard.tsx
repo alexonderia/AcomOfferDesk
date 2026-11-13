@@ -29,6 +29,7 @@ import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails'
 import { ROLE } from '@shared/constants/roles';
 import { ActionButton } from '@shared/components/ActionButton';
 import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
+import { WarningTooltip } from '@shared/ui/WarningTooltip';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import {
@@ -535,10 +536,12 @@ export const ProjectManagerDashboard = () => {
                   const selectedOwner = assignmentState[request.request_id] ?? (requestsTab === 'unassigned' ? '' : request.owner_user_id);
                   const requestOwnerActiveUnavailability = activeUnavailabilityByUser[request.owner_user_id] ?? null;
                   const requestOwnerUpcomingUnavailability = upcomingUnavailabilityByUser[request.owner_user_id] ?? null;
-                  const requestOwnerWarningTooltip = getRequestOwnerWarningTooltip({
-                    activePeriod: requestOwnerActiveUnavailability,
-                    upcomingPeriod: requestOwnerUpcomingUnavailability,
-                  });
+                  const requestOwnerWarningTooltip = request.owner_warning || (requestsTab !== 'unassigned'
+                    ? getRequestOwnerWarningTooltip({
+                      activePeriod: requestOwnerActiveUnavailability,
+                      upcomingPeriod: requestOwnerUpcomingUnavailability,
+                    })
+                    : null);
                   const ownerDisplayName =
                     request.owner_full_name
                     || employeeNameById[request.owner_user_id]
@@ -628,34 +631,8 @@ export const ProjectManagerDashboard = () => {
                                     {ownerDisplayName}
                                   </Typography>
                                 </Tooltip>
-                                {requestsTab !== 'unassigned' && requestOwnerWarningTooltip ? (
-                                  <Tooltip title={requestOwnerWarningTooltip} arrow>
-                                    <Box
-                                      component="span"
-                                      tabIndex={0}
-                                      role="img"
-                                      aria-label={requestOwnerWarningTooltip}
-                                      sx={{
-                                        width: 18,
-                                        height: 18,
-                                        borderRadius: '50%',
-                                        backgroundColor: requestOwnerActiveUnavailability ? '#fef2f2' : '#fff7ed',
-                                        border: `1px solid ${requestOwnerActiveUnavailability ? '#ef4444' : '#f59e0b'}`,
-                                        color: requestOwnerActiveUnavailability ? '#dc2626' : '#d97706',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: 12,
-                                        fontWeight: 800,
-                                        lineHeight: 1,
-                                        cursor: 'help',
-                                        flexShrink: 0
-                                      }}
-                                    >
-                                      !
-                                    </Box>
-                                  </Tooltip>
-                                ) : null}
+                                <WarningTooltip message={requestOwnerWarningTooltip}
+                                  severity={requestOwnerActiveUnavailability ? 'error' : 'warning'} />
                               </Stack>
                             </Box>
                           </Box>

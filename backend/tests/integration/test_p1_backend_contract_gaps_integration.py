@@ -10,6 +10,7 @@ import asyncio
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -59,7 +60,7 @@ class _DashboardRequestsRepo:
         _ = owner_ids
         return []
 
-    async def list_unassigned_requests(self, *, operator_role_id, owner_ids):
+    async def list_unassigned_requests(self, *, operator_role_id, owner_ids, unavailable_owner_ids=None):
         _ = (operator_role_id, owner_ids)
         return []
 
@@ -707,6 +708,31 @@ def _fake_iam_consume(monkeypatch, *, email: str, fail_after: int = 1):
 
 def _clear_current_user_override(api_app) -> None:
     api_app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.parametrize("owner_status", ["inactive", "blacklist"])
+@pytest.mark.parametrize("viewer_role", [settings.superadmin_role_id, settings.contractor_role_id])
+def test_dashboard_owner_warning_is_only_disclosed_to_staff(
+    test_client, set_current_user, set_uow, make_current_user, owner_status, viewer_role,
+):
+    uow = _DashboardUow()
+    uow.requests.list_unassigned_requests = AsyncMock(return_value=[SimpleNamespace(
+        id="234", id_user="blocked-owner", description="Заявка", status="open",
+        deadline_at=_dt(), created_at=_dt(), updated_at=_dt(),
+    )])
+    uow.users.map_statuses = AsyncMock(return_value={"blocked-owner": owner_status})
+    set_uow(uow)
+    set_current_user(make_current_user(role_id=viewer_role,
+        permissions={PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ}))
+    response = test_client.get("/api/v1/dashboard/responsibility")
+    assert response.status_code == 200
+    warning = response.json()["data"]["unassigned_requests"][0]["owner_warning"]
+    if viewer_role == settings.contractor_role_id:
+        assert warning is None
+        uow.users.map_statuses.assert_not_awaited()
+    else:
+        assert "Заявка не распределена" in warning
+        assert ("неактивен" if owner_status == "inactive" else "в чёрном списке") in warning
 
 
 def test_dashboard_responsibility_allows_empty_data_for_allowed_role(

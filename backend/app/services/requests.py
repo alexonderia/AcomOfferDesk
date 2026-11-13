@@ -75,6 +75,13 @@ def format_offer_status(status: str | None) -> str:
     return OFFER_STATUS_LABELS.get(status, status)
 
 
+def format_request_owner_warning(*, request_status: str, owner_status: str | None) -> str | None:
+    if request_status not in {"open", "review"} or owner_status not in {"inactive", "blacklist"}:
+        return None
+    reason = "неактивен" if owner_status == "inactive" else "в чёрном списке"
+    return f"Заявка не распределена: ответственный сотрудник {reason}. Требуется назначить ответственного."
+
+
 @dataclass(frozen=True)
 class RequestEditInput:
     status: str | None = None
@@ -120,6 +127,7 @@ class RequestListItem:
     count_accepted_total: int
     count_rejected_total: int
     unread_messages_count: int
+    owner_warning: str | None = None
     files: list[RequestFileItem] = field(default_factory=list)
 
 
@@ -171,6 +179,7 @@ class OfferItem:
     contractor_contact_mail: str | None
     contractor_address: str | None = None
     contractor_note: str | None = None
+    contractor_status: str | None = None
     files: list[RequestFileItem] = field(default_factory=list)
     unread_messages_count: int = 0
 
@@ -200,6 +209,7 @@ class RequestDetailItem:
     count_rejected_total: int
     unread_messages_count: int
     plan_name: str | None = None
+    owner_warning: str | None = None
     files: list[RequestFileItem] = field(default_factory=list)
     offers: list[OfferItem] = field(default_factory=list)
 
@@ -900,6 +910,10 @@ class RequestService:
             current_user_id=current_user.user_id,
             owner_user_ids=owner_scope_ids,
         )
+        owner_statuses = (
+            await self._users.map_statuses(user_ids=list({request.id_user for request, *_ in rows}))
+            if rows and current_user.role_id != settings.contractor_role_id else {}
+        )
 
         return [
             RequestListItem(
@@ -913,6 +927,9 @@ class RequestService:
                 closed_at=request.closed_at,
                 owner_user_id=request.id_user,
                 owner_full_name=profile.full_name if profile else None,
+                owner_warning=format_request_owner_warning(
+                    request_status=request.status, owner_status=owner_statuses.get(request.id_user),
+                ),
                 chosen_offer_id=request.id_offer,
                 id_plan=request.id_plan,
                 count_submitted=stats.count_submitted if stats else 0,
@@ -1097,12 +1114,21 @@ class RequestService:
                 current_user_id=current_user.user_id,
             )
         offers_by_id: dict[int, OfferItem] = {}
+        status_user_ids = {row[0].id_user for row in offer_rows}
+        if can_view_offers:
+            status_user_ids.add(request.id_user)
+        user_statuses = await self._users.map_statuses(user_ids=list(status_user_ids)) if status_user_ids else {}
+        owner_warning = (
+            format_request_owner_warning(request_status=request.status, owner_status=user_statuses.get(request.id_user))
+            if can_view_offers else None
+        )
         for offer, offer_file, profile, company_contact, unread_messages_count in offer_rows:
             offer_item = offers_by_id.get(offer.id)
             if offer_item is None:
                 offer_item = OfferItem(
                     offer_id=offer.id,
                     contractor_user_id=offer.id_user,
+                    contractor_status=user_statuses.get(offer.id_user),
                     status=offer.status,
                     status_label=format_offer_status(offer.status),
                     offer_amount=offer.offer_amount,
@@ -1141,6 +1167,7 @@ class RequestService:
             closed_at=request.closed_at,
             owner_user_id=request.id_user,
             owner_full_name=owner_profile.full_name if owner_profile else None,
+            owner_warning=owner_warning,
             owner_phone=owner_profile.phone if owner_profile else None,
             owner_mail=owner_profile.mail if owner_profile else None,
             chosen_offer_id=request.id_offer,

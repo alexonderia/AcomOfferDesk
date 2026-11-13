@@ -14,6 +14,7 @@ import { StatusPill } from '@shared/ui/StatusPill';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { ContractorLoginAccessBadge } from '@features/contractors/components/ContractorLoginAccessBadge';
+import { ContractorStatusPill } from '@features/contractors/components/contractorUi';
 import type { ContractorLoginAccess } from '@shared/api/contractors/getContractorLoginAccess';
 
 export type OfferDecisionStatus = 'accepted' | 'rejected' | '';
@@ -191,6 +192,7 @@ const OfferMobileCard = ({
       content: (
         <Stack spacing={0.35}>
           {offer.actions.view_contractor_info ? <Stack spacing={0.5}>
+            {offer.contractor_status ? <ContractorStatusPill value={offer.contractor_status} /> : null}
             <Typography variant="body2" color="text.secondary">Вход в личный кабинет</Typography>
             <ContractorLoginAccessBadge access={loginAccess} loading={isLoginAccessLoading} />
           </Stack> : null}
@@ -531,6 +533,7 @@ export const OffersTable = ({
         return (
           <Stack spacing={0.5}>
             {offer.actions.view_contractor_info ? <Stack spacing={0.5}>
+              {offer.contractor_status ? <ContractorStatusPill value={offer.contractor_status} /> : null}
               <Typography variant="body2" color="text.secondary">Вход в личный кабинет</Typography>
               <ContractorLoginAccessBadge access={contractorLoginAccess?.get(offer.contractor_user_id ?? '')} loading={isLoginAccessLoading} />
             </Stack> : null}

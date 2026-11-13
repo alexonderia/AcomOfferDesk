@@ -19,6 +19,9 @@ def _dt() -> datetime:
 
 
 class _DashboardUsersRepo:
+    async def map_statuses(self, *, user_ids):
+        return {user_id: "active" for user_id in user_ids}
+
     async def get_by_id(self, user_id: str):
         if user_id == "econ-1":
             return SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="pm-1")
@@ -45,7 +48,7 @@ class _DashboardRequestsRepo:
         _ = owner_ids
         return [("econ-1", "open", 2), ("econ-1", "review", 1)]
 
-    async def list_unassigned_requests(self, *, operator_role_id, owner_ids):
+    async def list_unassigned_requests(self, *, operator_role_id, owner_ids, unavailable_owner_ids=None):
         _ = (operator_role_id, owner_ids)
         return []
 
@@ -204,6 +207,20 @@ async def test_responsibility_dashboard_allows_department_dashboard_read_without
 
     assert len(dashboard.tree) == 1
     assert dashboard.tree[0].user_id == "econ-1"
+
+
+@pytest.mark.asyncio
+async def test_unassigned_requests_are_excluded_from_assigned_list(make_current_user):
+    class Requests(_DashboardRequestsRepo):
+        async def list_unassigned_requests(self, **kwargs):
+            return await self.list_in_progress_requests_by_owner_ids(owner_ids=["econ-1"])
+    service = DashboardService(users=_DashboardUsersRepo(), requests=Requests(),
+        user_status_periods=_DashboardUserStatusPeriodsRepo(), plans=_DashboardPlansRepo())
+    current_user = make_current_user(role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ})
+    dashboard = await service.get_responsibility_dashboard(current_user=current_user)
+    assert [request.request_id for request in dashboard.unassigned_requests] == [11]
+    assert dashboard.assigned_requests == []
 
 
 class _PlanRequestsRepo:

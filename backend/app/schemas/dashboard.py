@@ -23,6 +23,7 @@ class DashboardEconomistNodeSchema(BaseModel):
 
 
 class DashboardRequestItemSchema(BaseModel):
+    owner_warning: str | None = None
     request_id: str
     description: str | None
     status: str

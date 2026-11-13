@@ -1,12 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
 import { appTheme } from '@shared/theme/appTheme';
 import { RequestsTable } from './RequestsTable';
 
+let mobile = false;
 vi.mock('@shared/lib/responsive', () => ({
-  useIsMobileViewport: () => false,
+  useIsMobileViewport: () => mobile,
   MOBILE_BOTTOM_NAV_CONTENT_PADDING: 0,
   MOBILE_BOTTOM_NAV_HEIGHT_PX: 0,
   MOBILE_BOTTOM_NAV_OFFSET: 0,
@@ -42,6 +43,34 @@ const baseRequest = (): RequestWithOfferStats => ({
 });
 
 describe('RequestsTable states', () => {
+  beforeEach(() => { mobile = false; });
+
+  it.each([false, true])('explains the owner warning next to the responsible employee, mobile=%s', async (isMobile) => {
+    mobile = isMobile;
+    const warning = 'Заявка не распределена: ответственный сотрудник в чёрном списке.';
+    const onRowClick = vi.fn();
+    render(<ThemeProvider theme={appTheme}>
+      <RequestsTable requests={[{ ...baseRequest(), owner_warning: warning }]} onRowClick={onRowClick} />
+    </ThemeProvider>);
+    if (isMobile) fireEvent.click(screen.getByRole('button', { name: /Подробнее/ }));
+    const icon = await screen.findByRole('img', { name: warning });
+    fireEvent.mouseOver(icon);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(warning);
+    fireEvent.click(icon);
+    expect(onRowClick).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])('hides staff warnings from contractors, mobile=%s', (isMobile) => {
+    mobile = isMobile;
+    const warning = 'Заявка не распределена: ответственный сотрудник неактивен.';
+    render(<ThemeProvider theme={appTheme}>
+      <RequestsTable requests={[{ ...baseRequest(), owner_warning: warning }]} isContractor />
+    </ThemeProvider>);
+    if (isMobile) fireEvent.click(screen.getByRole('button', { name: /Подробнее/ }));
+    expect(screen.queryByRole('img', { name: warning })).not.toBeInTheDocument();
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+  });
   it('renders empty state when there are no rows', async () => {
     render(
       <ThemeProvider theme={appTheme}>

@@ -278,6 +278,7 @@ def _request_detail_item(*, request_id: str, owner_user_id: str) -> RequestDetai
             OfferItem(
                 offer_id=501,
                 contractor_user_id="contractor-1",
+                contractor_status="active",
                 status="submitted",
                 status_label="submitted",
                 offer_amount=90.0,

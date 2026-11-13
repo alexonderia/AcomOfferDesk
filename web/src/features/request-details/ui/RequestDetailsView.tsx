@@ -801,6 +801,7 @@ export const RequestDetailsView = () => {
                 isDescriptionExpanded={isDescriptionExpanded}
                 onToggleDescription={() => setIsDescriptionExpanded((prev) => !prev)}
                 ownerField={ownerField}
+                ownerWarning={requestDetails.owner_warning}
                 responsibleContact={{
                     fullName: requestDetails.owner_full_name ?? requestDetails.id_user ?? null,
                     phone: requestDetails.owner_phone ?? null,

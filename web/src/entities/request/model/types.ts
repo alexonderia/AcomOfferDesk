@@ -29,6 +29,7 @@ export type RequestEntity = {
   closed_at: string | null;
   owner_user_id: string;
   owner_full_name?: string | null;
+  owner_warning?: string | null;
   chosen_offer_id: EntityId | null;
   id_plan?: EntityId | null;
   plan_name?: string | null;

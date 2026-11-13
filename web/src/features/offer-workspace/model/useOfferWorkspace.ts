@@ -25,6 +25,7 @@ const buildWorkspaceSignature = (workspace: OfferWorkspace | null) => {
   }
 
   return JSON.stringify({
+    contractor_status: workspace.profile?.status,
     request: {
       id: workspace.request.request_id,
       updated_at: workspace.request.updated_at,
@@ -56,6 +57,7 @@ const buildContractorSignature = (contractor: OfferContractorInfo | null) => {
 
   return JSON.stringify({
     user_id: contractor.user_id,
+    status: contractor.status,
     full_name: contractor.full_name,
     phone: contractor.phone,
     mail: contractor.mail,
@@ -316,7 +318,10 @@ export const useOfferWorkspace = () => {
   const canSetReceivedMessages = chatActions.mark_messages_received;
   const canEditOfferStatus = !isContractor && Boolean(selectedOffer && (selectedOffer.actions.accept || selectedOffer.actions.reject));
   const canEditOfferAmount = Boolean(selectedOffer?.actions.edit_amount);
-  const canDeleteOwnOffer = isContractor && Boolean(selectedOffer?.actions.delete);
+  const canDeleteOffer = Boolean(selectedOffer?.actions.delete)
+    && selectedOffer?.status !== 'deleted'
+    && workspace?.request.status !== 'closed'
+    && workspace?.request.status !== 'cancelled';
 
   const acceptedOfferId = sortedOffers.find((item) => item.status === 'accepted')?.offer_id ?? null;
 
@@ -364,14 +369,16 @@ export const useOfferWorkspace = () => {
   };
 
   const handleDeleteOffer = async () => {
-    if (!selectedOffer || selectedOffer.status === 'deleted') return;
-    if (!window.confirm('Вы уверены, что хотите удалить отклик? После удаления отменить действие нельзя.')) return;
+    if (!selectedOffer || !canDeleteOffer || isUpdatingOfferStatus) return;
+    if (!window.confirm(isContractor
+      ? 'Вы уверены, что хотите удалить отклик? После удаления отменить действие нельзя.'
+      : 'Вы уверены, что хотите удалить КП? После удаления отменить действие нельзя.')) return;
     setIsUpdatingOfferStatus(true);
     try {
       await updateOfferStatus({ offer_id: selectedOffer.offer_id, status: 'deleted' });
       await refreshWorkspace(selectedOffer.offer_id);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Не удалось удалить отклик'));
+      setErrorMessage(getErrorMessage(error, 'Не удалось удалить КП'));
     } finally {
       setIsUpdatingOfferStatus(false);
     }
@@ -508,7 +515,7 @@ export const useOfferWorkspace = () => {
     canSetReceivedMessages,
     canEditOfferStatus,
     canEditOfferAmount,
-    canDeleteOwnOffer,
+    canDeleteOffer,
     isEconomist,
     isContractor,
     acceptedOfferId,

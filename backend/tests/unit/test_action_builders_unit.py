@@ -9,6 +9,17 @@ Focus:
 from app.core.config import settings
 from app.api.action_flags import ChatActionBuilder, ContractorActionBuilder, OfferActionBuilder, RequestActionBuilder, UserActionBuilder
 from app.domain.permissions import PermissionCodes
+import pytest
+
+
+@pytest.mark.parametrize("contractor_status, expected", [("active", True), ("inactive", False), ("blacklist", False), ("review", False), (None, False)])
+def test_accept_offer_requires_active_contractor(make_current_user, contractor_status, expected):
+    user = make_current_user(role_id=settings.superadmin_role_id,
+        permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.OFFERS_STATUS_UPDATE})
+    actions = OfferActionBuilder.build(user, offer_owner_user_id="contractor", request_owner_user_id="owner",
+        contractor_user_id="contractor", offer_status="submitted", request_status="open",
+        can_manage_in_scope=True, contractor_status=contractor_status)
+    assert actions.can_accept is expected
 
 
 def test_request_action_builder_reflects_permissions_and_status(make_current_user):

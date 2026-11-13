@@ -2,6 +2,7 @@ import { fetchJson } from '../client';
 
 export type OfferContractorInfo = {
   user_id: string;
+  status?: string | null;
   full_name: string | null;
   phone: string | null;
   mail: string | null;

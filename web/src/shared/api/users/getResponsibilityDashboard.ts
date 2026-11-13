@@ -18,6 +18,7 @@ export type ResponsibilityEmployeeNode = {
 };
 
 export type ResponsibilityDashboardRequest  = {
+  owner_warning?: string | null;
   request_id: string;
   description: string | null;
   status: string;

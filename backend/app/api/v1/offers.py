@@ -87,6 +87,7 @@ async def get_contractor_info(
     return ContractorInfoResponse(
         data={
             "user_id": contractor.user_id,
+            "status": contractor.status,
             "full_name": contractor.full_name,
             "phone": contractor.phone,
             "mail": contractor.mail,
@@ -369,6 +370,7 @@ async def get_offer_workspace(
                         offer_owner_user_id=request_offer.owner_user_id,
                         request_owner_user_id=item.request.owner_user_id,
                         contractor_user_id=request_offer.owner_user_id,
+                        contractor_status=item.contractor.status,
                         offer_status=request_offer.status,
                         request_status=item.request.status,
                         can_manage_in_scope=getattr(resolved, "can_manage_offer_in_scope", False),
@@ -390,6 +392,7 @@ async def get_offer_workspace(
             ],
             "contractor": {
                 "user_id": item.contractor.user_id,
+                "status": item.contractor.status,
                 "full_name": item.contractor.full_name,
                 "phone": item.contractor.phone,
                 "mail": item.contractor.mail,

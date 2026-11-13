@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models.auth_models import UserAuthAccount, UserContactChannel
-from app.models.orm_models import Chat, File, Message, MessageFile, Offer, OfferFile, User
+from app.models.orm_models import Chat, File, Message, MessageFile, Offer, OfferFile, Request, User
 
 
 class OfferRepository:
@@ -32,12 +32,21 @@ class OfferRepository:
         )
 
     async def get_by_id(self, *, offer_id: int) -> Offer | None:
-        stmt = select(Offer).where(Offer.id == offer_id)
+        stmt = select(Offer).where(Offer.id == offer_id).execution_options(populate_existing=True)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
     
     async def update_status(self, *, offer: Offer, status: str) -> None:
         offer.status = status
+
+    async def list_accepted_for_contractor(self, *, user_id: str) -> list[Offer]:
+        result = await self._session.execute(
+            select(Offer)
+            .join(Request, Request.id == Offer.id_request)
+            .where(Offer.id_user == user_id, Offer.status == "accepted", Request.status.in_(["open", "review"]))
+            .order_by(Offer.id_request, Offer.id)
+        )
+        return list(result.scalars().all())
 
     async def update_amount(self, *, offer: Offer, offer_amount: float) -> None:
         offer.offer_amount = offer_amount

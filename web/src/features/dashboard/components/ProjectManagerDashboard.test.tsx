@@ -1,5 +1,5 @@
 ﻿import { ThemeProvider } from "@mui/material/styles";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectManagerDashboard } from "@features/dashboard/components/ProjectManagerDashboard";
@@ -44,9 +44,8 @@ vi.mock("@shared/ui/toasts", () => ({
   }),
 }));
 
-vi.mock("@shared/lib/responsive", () => ({
-  useIsMobileViewport: () => false,
-}));
+let mobile = false;
+vi.mock("@shared/lib/responsive", () => ({ useIsMobileViewport: () => mobile }));
 
 const baseDashboardPayload = {
   tree: [],
@@ -73,11 +72,56 @@ const renderWithTheme = () =>
 
 describe("ProjectManagerDashboard widget states", () => {
   beforeEach(() => {
+    mobile = false;
     vi.mocked(getResponsibilityDashboard).mockReset();
     vi.mocked(getUnitsTree).mockReset();
     showErrorToastMock.mockReset();
     showSuccessToastMock.mockReset();
     vi.mocked(getUnitsTree).mockResolvedValue([] as never);
+  });
+
+  it.each(['hover', 'focus', 'touch'])('explains the owner warning through an icon on %s', async (interaction) => {
+    mobile = interaction === 'touch';
+    const warning = 'Заявка не распределена: ответственный сотрудник в чёрном списке. Требуется назначить ответственного.';
+    vi.mocked(getResponsibilityDashboard).mockResolvedValue({
+      ...baseDashboardPayload,
+      unassignedRequests: [{ request_id: '234', description: 'Заявка', status: 'open', status_label: 'Открыта',
+        deadline_at: '2026-11-12T10:00:00Z', created_at: '2026-11-12T10:00:00Z', updated_at: '2026-11-12T10:00:00Z',
+        owner_user_id: 'blocked-owner', owner_full_name: 'Полина Захарова', owner_warning: warning }],
+    });
+    renderWithTheme();
+    const icon = await screen.findByRole('img', { name: warning });
+    expect(icon).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    if (interaction === 'touch') {
+      fireEvent.touchStart(icon);
+    } else if (interaction === 'focus') {
+      fireEvent.keyDown(document, { key: 'Tab' });
+      // jsdom does not track keyboard modality for focusable spans.
+      const matches = icon.matches.bind(icon);
+      vi.spyOn(icon, 'matches').mockImplementation((selector) => selector === ':focus-visible' || matches(selector));
+      act(() => icon.focus());
+    } else {
+      fireEvent.mouseOver(icon);
+    }
+    expect(await screen.findByRole('tooltip', {}, { timeout: 2000 })).toHaveTextContent(warning);
+    if (interaction === 'focus') vi.restoreAllMocks();
+    if (interaction === 'touch') fireEvent.touchEnd(icon);
+    expect(screen.getByText('Полина Захарова')).toBeVisible();
+  });
+
+  it('does not show an owner warning without backend metadata', async () => {
+    vi.mocked(getResponsibilityDashboard).mockResolvedValue({
+      ...baseDashboardPayload,
+      unassignedRequests: [{ request_id: '234', description: 'Заявка', status: 'open', status_label: 'Открыта',
+        deadline_at: '2026-11-12T10:00:00Z', created_at: '2026-11-12T10:00:00Z', updated_at: '2026-11-12T10:00:00Z',
+        owner_user_id: 'operator', owner_full_name: 'Оператор' }],
+    });
+    renderWithTheme();
+    expect(await screen.findByText('Заявка #234')).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it("renders loading state while dashboard request is pending", () => {

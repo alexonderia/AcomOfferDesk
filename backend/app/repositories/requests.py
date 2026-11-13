@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import Select, and_, bindparam, delete, func, select, text
+from sqlalchemy import Select, and_, bindparam, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -78,7 +78,7 @@ class RequestRepository:
         return result.scalar_one_or_none() is not None
 
     async def get_by_id(self, *, request_id: str) -> Request | None:
-        stmt = select(Request).where(Request.id == request_id)
+        stmt = select(Request).where(Request.id == request_id).execution_options(populate_existing=True)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -486,6 +486,8 @@ class RequestRepository:
 
         stmt = (
             select(Request.id_user, Request.status, func.count(Request.id))
+            .join(User, User.id == Request.id_user)
+            .where(User.status.not_in(["inactive", "blacklist"]))
             .where(Request.id_user.in_(owner_ids), Request.status.in_(["open", "review"]))
             .group_by(Request.id_user, Request.status)
             .order_by(Request.id_user.asc(), Request.status.asc())
@@ -501,11 +503,21 @@ class RequestRepository:
         *,
         operator_role_id: int,
         owner_ids: list[str] | None = None,
+        unavailable_owner_ids: list[str] | None = None,
     ) -> list[Request]:
         stmt = (
             select(Request)
             .join(User, User.id == Request.id_user)
-            .where(User.id_role == operator_role_id, Request.status.in_(["open", "review"]))
+            .where(
+                or_(
+                    User.id_role == operator_role_id,
+                    and_(
+                        User.id.in_(unavailable_owner_ids) if unavailable_owner_ids is not None else True,
+                        User.status.in_(["inactive", "blacklist"]),
+                    ),
+                ),
+                Request.status.in_(["open", "review"]),
+            )
             .order_by(Request.created_at.desc(), Request.id.desc())
         )
         if owner_ids is not None:

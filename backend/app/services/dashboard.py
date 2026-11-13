@@ -15,7 +15,7 @@ from app.repositories.users import UserRepository
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.unit_hierarchy import UnitHierarchyService
-from app.services.requests import format_request_status
+from app.services.requests import format_request_owner_warning, format_request_status
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,7 @@ class DashboardRequestItem:
     updated_at: datetime
     owner_user_id: str
     owner_full_name: str | None
+    owner_warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -244,6 +245,11 @@ class DashboardService:
         unassigned_rows = await self._requests.list_unassigned_requests(
             operator_role_id=settings.operator_role_id,
             owner_ids=unassigned_owner_ids,
+            unavailable_owner_ids=hierarchy_scope_owner_ids,
+        )
+        unavailable_owner_statuses = (
+            await self._users.map_statuses(user_ids=list({request.id_user for request in unassigned_rows}))
+            if unassigned_rows and current_user.role_id != settings.contractor_role_id else {}
         )
         unassigned_requests = [
             DashboardRequestItem(
@@ -256,9 +262,14 @@ class DashboardService:
                 updated_at=request.updated_at,
                 owner_user_id=request.id_user,
                 owner_full_name=None,
+                owner_warning=format_request_owner_warning(
+                    request_status=request.status,
+                    owner_status=unavailable_owner_statuses.get(request.id_user),
+                ),
             )
             for request in unassigned_rows
         ]
+        unassigned_ids = {request.id for request in unassigned_rows}
 
         my_rows = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=my_owner_ids)
         my_requests = [
@@ -273,7 +284,7 @@ class DashboardService:
                 owner_user_id=request.id_user,
                 owner_full_name=by_id[request.id_user][1].full_name if request.id_user in by_id and by_id[request.id_user][1] else None,
             )
-            for request in my_rows
+            for request in my_rows if request.id not in unassigned_ids
         ]
 
         assigned_rows = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=assigned_owner_ids)
@@ -289,7 +300,7 @@ class DashboardService:
                 owner_user_id=request.id_user,
                 owner_full_name=by_id[request.id_user][1].full_name if request.id_user in by_id and by_id[request.id_user][1] else None,
             )
-            for request in assigned_rows
+            for request in assigned_rows if request.id not in unassigned_ids
         ]
 
         active_periods_by_user = await self._user_status_periods.list_active_for_users(user_ids=staff_owner_ids)

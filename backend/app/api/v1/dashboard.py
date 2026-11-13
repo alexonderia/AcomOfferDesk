@@ -56,6 +56,7 @@ def _map_request_item(item) -> DashboardRequestItemSchema:
         updated_at=item.updated_at,
         owner_user_id=item.owner_user_id,
         owner_full_name=item.owner_full_name,
+        owner_warning=item.owner_warning,
     )
 
 

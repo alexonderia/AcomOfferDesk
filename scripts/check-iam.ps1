@@ -13,7 +13,7 @@ if ($Repair) {
   & docker compose --env-file $EnvFile exec -T backend python -m app.scripts.seed_iam_rbac
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
-& docker compose --env-file $EnvFile exec -T backend python -m app.scripts.seed_iam_rbac --report
+& docker compose --env-file $EnvFile exec -T backend python -m app.scripts.seed_iam_rbac --report --strict
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& docker compose --env-file $EnvFile exec -T backend python -m app.scripts.reconcile_iam_accounts
+& docker compose --env-file $EnvFile exec -T backend python -m app.scripts.reconcile_iam_accounts --strict
 exit $LASTEXITCODE

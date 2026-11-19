@@ -4,7 +4,8 @@
 
 - Backend unit: `./scripts/test-unit.ps1` или `./scripts/test-unit.sh`.
 - Backend integration: `./scripts/test-integration.ps1` или `./scripts/test-integration.sh`.
-- IAM: `PYTHONPATH=iam python -m pytest iam/tests -q`; в PowerShell сначала `$env:PYTHONPATH = (Resolve-Path iam).Path`.
+- IAM: `./scripts/test-iam.ps1` или `bash scripts/test-iam.sh`.
+- File guard: `./scripts/test-file-guard.ps1` или `bash scripts/test-file-guard.sh`.
 - Frontend: `npm --prefix web run lint`, `npm --prefix web run test:unit`, `npm --prefix web run build`.
 - Локальные ссылки документации: `python scripts/check_docs.py` (также выполняется в CI).
 - Русские тексты: `python scripts/check_mojibake.py`.
@@ -12,10 +13,20 @@
 
 Python-команды выполняются в окружении проекта с установленными зависимостями. Указывайте `PYTHONPATH` для соответствующего пакета, поскольку backend и IAM запускаются раздельно.
 
+Для проверок IAM и file guard установите также `iam/requirements-dev.txt` и
+`file_guard/requirements.txt`. Backend tests задают `EMAIL_ENABLED=true`, если
+значение не передано через окружение; отдельные no-mail tests явно переключают
+режим. Локальный `.env` с отключённой почтой не должен менять исходный тестовый режим.
+
+Release gate включает backend unit/integration, IAM и file guard, затем live
+smoke, строгую сверку IAM и frontend lint/tests/build. Проверка не исправляет RBAC
+по умолчанию: изменение разрешается только явным `-RepairIamRbac` либо
+`REPAIR_IAM_RBAC=true`. Пропуск E2E не подтверждает готовность стенда к деплою.
+
 ## Локальный обязательный контур
 
 1. Backend unit/integration tests.
-2. IAM tests.
+2. IAM и file guard tests.
 3. Frontend lint, unit tests and build.
 4. Automated forbidden runtime integration scan:
    `backend/tests/unit/test_forbidden_integrations.py`.

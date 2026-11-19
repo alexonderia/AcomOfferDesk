@@ -60,6 +60,11 @@ frontend -> backend -> file_guard -> verdict -> backend persistence
 * DOCX/XLSX: обязательные OpenXML entry, защита от zip-slip, макросов, zip-bomb и resource abuse, скриптов и активного содержимого
 * PNG/JPEG: декодируемое изображение с безопасными размерами
 
+Пути ZIP проверяются по исходному имени entry до нормализации разделителей ОС.
+XML relationships разбираются через `defusedxml`: порядок атрибутов, кавычки,
+namespace и символьные ссылки не должны обходить запрет опасных внешних целей.
+Некорректный XML и запрещённые entity-декларации отклоняются fail-closed.
+
 ## Служебные метаданные PDF
 
 Встроенные Content Credentials (C2PA) разрешены как пассивные данные о происхождении

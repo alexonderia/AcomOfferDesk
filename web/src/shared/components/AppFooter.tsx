@@ -2,9 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import bitrixLogo from '@shared/assets/bitrix24-logo.png';
 import maxLogo from '@shared/assets/max-logo-2025.png';
+import { MAX_CONTACT_LINK } from '@shared/constants/supportContacts';
 
 const BITRIX_LINK = 'https://team.alabuga.ru/company/structure.php?set_filter_structure=Y&structure_UF_DEPARTMENT=8304&filter=Y&set_filter=Y';
-const MAX_CONTACT_LINK = 'https://max.ru/u/f9LHodD0cOIA4s2RhH3dW5NoCLRn88NF67UYfQe_rOnnM6Y1a7VW_vOUt5I';
 const NARROW_FOOTER_QUERY = '(max-width: 640px)';
 
 const iconLinkSx = {

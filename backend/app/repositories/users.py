@@ -214,13 +214,15 @@ class UserRepository:
             )
         return rows
 
-    async def get_by_id(self, user_id: str) -> User | None:
+    async def get_by_id(self, user_id: str, *, for_update: bool = False) -> User | None:
         stmt = (
             select(User)
             .options(with_expression(User.tg_user_id, _telegram_id_expr()))
             .where(User.id == user_id)
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            stmt = stmt.with_for_update(of=User)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 

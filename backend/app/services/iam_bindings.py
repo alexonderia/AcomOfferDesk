@@ -1,9 +1,78 @@
+from dataclasses import dataclass
+from uuid import UUID
+
 from app.domain.exceptions import Conflict, NotFound
 from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.domain.iam_status import iam_auth_status_for_user_status
 from app.infrastructure.iam_client import IamClient
 from app.models.auth_models import UserAuthAccount
+from app.repositories.user_auth_accounts import UserAuthAccountRepository
+
+
+@dataclass(frozen=True, slots=True)
+class IamBindingSyncResult:
+    iam_account_id: str
+    action: str
+    binding_active: bool | None
+    iam_status: str
+    password_set: bool
+
+
+async def sync_existing_iam_binding(
+    *,
+    user_auth_accounts: UserAuthAccountRepository,
+    user_id: str,
+    role_id: int,
+    iam_client: IamClient,
+    apply: bool,
+    iam_account_id: UUID | None = None,
+) -> IamBindingSyncResult:
+    """Restore local metadata from a verified IAM account without changing its credentials."""
+    role = technical_role_name(role_id)
+    if role is None:
+        raise Conflict("Роль пользователя не соответствует ни одной роли IAM")
+
+    binding = await user_auth_accounts.get_by_user_provider(
+        user_id=user_id, provider="iam", include_inactive=True,
+    )
+    if binding is not None and iam_account_id is not None and binding.external_subject_id != str(iam_account_id):
+        raise Conflict("У пользователя уже есть привязка к другой учётной записи IAM")
+    subject = binding.external_subject_id if binding is not None else str(iam_account_id or stable_iam_account_id(user_id))
+    try:
+        if str(UUID(subject)) != subject:
+            raise ValueError
+    except ValueError:
+        raise Conflict("Идентификатор существующей привязки IAM не является каноническим UUID") from None
+
+    conflict = await user_auth_accounts.get_conflicting_subject(
+        provider="iam", subject=subject, exclude_user_id=user_id,
+    )
+    if conflict is not None:
+        raise Conflict("Учётная запись IAM уже связана с другим пользователем")
+    state = await iam_client.get_credential_state(account_id=subject)
+    if state.id != subject or state.login != user_id or state.role != role:
+        raise Conflict("Идентификатор, логин или роль учётной записи IAM не соответствуют пользователю")
+
+    if binding is None:
+        action = "create_binding"
+        if apply:
+            await user_auth_accounts.add(UserAuthAccount(
+                id_user=user_id, provider="iam", external_subject_id=state.id,
+                external_username=state.login, is_active=True,
+            ))
+    elif binding.external_username != state.login:
+        action = "update_binding_login"
+        if apply:
+            binding.external_username = state.login
+    else:
+        action = "unchanged"
+
+    return IamBindingSyncResult(
+        iam_account_id=state.id, action=action,
+        binding_active=binding.is_active if binding is not None else (True if apply else None),
+        iam_status=state.auth_status, password_set=state.password_set,
+    )
 
 
 async def ensure_user_iam_account(

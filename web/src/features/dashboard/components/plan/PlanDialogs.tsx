@@ -24,9 +24,9 @@ import type {
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { rootPlanSchema, subplanSchema, delegateSchema } from './planDashboardForms';
-import type { SafeParseReturnType } from 'zod';
+import type { ZodSafeParseResult } from 'zod';
 
-const requiredLabel = (label: string, field: string, validation: SafeParseReturnType<unknown, unknown>) => (
+const requiredLabel = (label: string, field: string, validation: ZodSafeParseResult<unknown>) => (
   <RequiredFieldLabel label={label} isValid={validation.success || !validation.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === field)} />
 );
 

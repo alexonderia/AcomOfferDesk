@@ -431,6 +431,9 @@ class _OfferFilesOffersRepo:
 
 
 class _OfferFilesRequestsRepo:
+    async def lock_offer_lifecycle(self, *, request_id: str) -> None:
+        pass
+
     async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 

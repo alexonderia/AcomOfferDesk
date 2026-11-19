@@ -84,7 +84,7 @@ const profileResponse = {
 };
 
 const renderPage = () => render(
-  <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+  <MemoryRouter >
     <AccountStatePage />
   </MemoryRouter>
 );
@@ -122,7 +122,7 @@ describe('AccountStatePage refresh behavior', () => {
     });
 
     view.rerender(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter >
         <AccountStatePage />
       </MemoryRouter>
     );
@@ -152,7 +152,7 @@ describe('AccountStatePage refresh behavior', () => {
     });
 
     view.rerender(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter >
         <AccountStatePage />
       </MemoryRouter>
     );

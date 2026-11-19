@@ -116,7 +116,10 @@ def test_offer_action_builder_contractor_does_not_get_internal_accept_reject(mak
     assert actions.can_reject is False
 
 
-def test_offer_action_builder_hides_mutations_for_closed_request(make_current_user):
+@pytest.mark.parametrize("request_status, offer_status", [
+    ("closed", "submitted"), ("cancelled", "submitted"), ("open", "deleted"),
+])
+def test_offer_action_builder_hides_mutations_for_finalized_entities(make_current_user, request_status, offer_status):
     user = make_current_user(
         role_id=settings.lead_economist_role_id,
         permissions={
@@ -133,8 +136,8 @@ def test_offer_action_builder_hides_mutations_for_closed_request(make_current_us
         offer_owner_user_id="contractor-1",
         request_owner_user_id="owner-1",
         contractor_user_id="contractor-1",
-        offer_status="submitted",
-        request_status="closed",
+        offer_status=offer_status,
+        request_status=request_status,
         can_manage_in_scope=True,
     )
 

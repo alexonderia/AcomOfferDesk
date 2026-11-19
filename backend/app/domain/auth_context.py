@@ -12,6 +12,7 @@ class CurrentUser:
     status: str
     permissions: frozenset[str]
     required_actions: frozenset[str] = frozenset()
+    access_expires_at: int | None = None
 
     @property
     def onboarding_state(self) -> str | None:

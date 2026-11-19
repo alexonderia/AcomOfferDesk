@@ -15,7 +15,7 @@
 - [Жизненный цикл заявок и КП](development/request-offer-lifecycle.md)
 - [Тестирование: команды, каталог, покрытие и smoke](development/testing-strategy.md)
 - [Повторяемая ручная регрессия](qa/manual-regression.md)
-- [Генерация пользовательских памяток из DOCX](development/role-guides.md)
+- [Пользовательские руководства: содержание, роли и иллюстрации](development/role-guides.md)
 
 ## Доступ и файлы
 

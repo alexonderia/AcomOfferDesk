@@ -52,6 +52,17 @@ Backend поддерживает два независимых RabbitMQ-пото
   - `chat.typing.stopped`
 - Inbound client request types остаются без изменений: `message.send`, `message.read`, `typing.start`, `typing.stop`, `chat.sync`.
 
+Перед каждой командой, кроме отписки, backend заново проверяет активный MAIN
+профиль, IAM-привязку, текущие IAM role/auth status, required actions и permissions.
+При недоступности IAM команда отклоняется. Рассылка сообщений также проверяет
+актуальную identity и область каждого получателя; `users.id_role` не заменяет
+IAM-роль. События `typing.start/stop` требуют права отправки в выбранный чат.
+
+Время жизни соединения ограничено `exp` access token, с которым выпущен билет;
+билет не может пережить этот token. По истечении backend закрывает соединение с
+`4401`, существующий frontend выполняет refresh и reconnect. Это ограничение
+распространяется и на получение уведомлений через единый transport.
+
 ## Контракт Realtime Envelope
 
 Базовый формат для всех realtime-событий:

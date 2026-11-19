@@ -177,7 +177,7 @@ class OfferActionBuilder:
             can_accept_in_scope = can_manage_request_offer
         if can_reject_in_scope is None:
             can_reject_in_scope = can_manage_request_offer
-        can_mutate_offer = request_status not in {"closed", "cancelled"}
+        can_mutate_offer = request_status not in {"closed", "cancelled"} and offer_status != "deleted"
         return OfferActionsSchema(
             can_open_workspace=OfferPolicy.can_access_offer_workspace(
                 current_user,

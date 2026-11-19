@@ -227,6 +227,7 @@ async def test_resolves_only_active_iam_binding(monkeypatch) -> None:
     assert current_user.user_id == "local-user"
     assert current_user.iam_account_id == ACCOUNT_ID
     assert current_user.permissions == claims.permissions
+    assert current_user.access_expires_at == claims.expires_at
 
 
 @pytest.mark.asyncio

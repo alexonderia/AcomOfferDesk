@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import io
-import re
 import unicodedata
 import zipfile
 from pathlib import Path, PurePosixPath
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from .config import settings
 
@@ -72,11 +73,6 @@ _SUSPICIOUS_XML_MARKERS = (
     b"application/vnd.ms-office.vbaProject",
 )
 
-_EXTERNAL_REL_PATTERN = re.compile(
-    rb'<Relationship\b[^>]*\bTargetMode\s*=\s*"External"[^>]*\bTarget\s*=\s*"([^"]+)"',
-    re.IGNORECASE,
-)
-
 _SUSPICIOUS_EXTERNAL_TARGET_MARKERS = (
     b"javascript:",
     b"vbscript:",
@@ -112,7 +108,7 @@ def validate_office_archive(
     rels_to_scan: list[tuple[str, zipfile.ZipInfo]] = []
 
     for info in infos:
-        path_failure = _validate_entry_path(info.filename)
+        path_failure = _validate_entry_path(info.orig_filename)
         if path_failure is not None:
             return path_failure
 
@@ -192,9 +188,16 @@ def _scan_xml_entry(
 
 
 def _scan_relationships(payload: bytes) -> tuple[str, str] | None:
-    for match in _EXTERNAL_REL_PATTERN.finditer(payload):
-        target = match.group(1)
-        lowered_target = target.lower()
-        if any(marker in lowered_target for marker in _SUSPICIOUS_EXTERNAL_TARGET_MARKERS):
+    try:
+        root = ElementTree.fromstring(payload)
+    except (ElementTree.ParseError, DefusedXmlException):
+        return ("invalid_office_document", "Office document is corrupted or invalid")
+    for relationship in root.iter():
+        if relationship.tag.rsplit("}", 1)[-1] != "Relationship":
+            continue
+        if relationship.get("TargetMode", "").casefold() != "external":
+            continue
+        target = relationship.get("Target", "").casefold()
+        if any(marker.decode("ascii") in target for marker in _SUSPICIOUS_EXTERNAL_TARGET_MARKERS):
             return ("invalid_office_document", "Office document contains forbidden content")
     return None

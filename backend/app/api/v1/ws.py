@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import asyncio
 from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -48,6 +49,7 @@ async def create_ws_ticket(
         status=current_user.status,
         permissions=current_user.permissions,
         purpose=purpose,
+        access_expires_at=current_user.access_expires_at,
     )
     now = int(time.time())
     expires_ts = int(expires_at.timestamp())
@@ -76,6 +78,7 @@ async def _get_current_user_from_websocket_with_purpose(
         role_id=access.role_id,
         status=access.status,
         permissions=access.permissions,
+        access_expires_at=access.access_expires_at,
     )
 
 
@@ -201,6 +204,8 @@ async def _run_chat_event_loop(
             continue
 
         try:
+            if event.type != "chat.unsubscribe":
+                current_user = await runtime.service.refresh_current_user(current_user=current_user)
             if event.type == "chat.subscribe":
                 snapshot = await runtime.service.sync_chat(
                     current_user=current_user,
@@ -327,6 +332,7 @@ async def _run_chat_event_loop(
                 continue
 
             if event.type in {"typing.start", "typing.stop"}:
+                await runtime.service.ensure_can_type(current_user=current_user, offer_id=event.data.chat_id)
                 typing_event_type = "chat.typing.started" if event.type == "typing.start" else "chat.typing.stopped"
                 await runtime.publish_chat_event(
                     chat_id=event.data.chat_id,
@@ -366,7 +372,7 @@ async def _run_chat_event_loop(
                         data=_build_chat_sync_payload(snapshot),
                     ),
                 )
-        except (Conflict, Forbidden, NotFound, Unauthorized) as exc:
+        except (Conflict, Forbidden, NotFound, Unauthorized, AuthenticationUnavailable) as exc:
             await runtime.send_to_connection(
                 connection_id=connection_id,
                 event=_error_event(
@@ -404,11 +410,17 @@ async def unified_realtime_websocket(websocket: WebSocket) -> None:
                 },
             ),
         )
-        await _run_chat_event_loop(
-            websocket=websocket,
-            runtime=chat_runtime,
-            connection_id=connection_id,
-            current_user=current_user,
+        remaining_seconds = max(0, (current_user.access_expires_at or 0) - time.time())
+        await asyncio.wait_for(
+            _run_chat_event_loop(
+                websocket=websocket,
+                runtime=chat_runtime,
+                connection_id=connection_id,
+                current_user=current_user,
+            ),
+            timeout=remaining_seconds,
         )
+    except asyncio.TimeoutError:
+        await websocket.close(code=4401)
     finally:
         await runtime.disconnect(connection_id=connection_id)

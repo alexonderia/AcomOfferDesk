@@ -93,7 +93,7 @@ export const RealtimeProvider = ({ children }: { children: React.ReactNode }) =>
       return;
     }
     realtimeSocketClient.connect();
-  }, [session?.businessAccess, status]);
+  }, [session, status]);
 
   const value = useMemo<RealtimeContextValue>(
     () => ({

@@ -21,7 +21,7 @@ const AUTO_SCROLL_THRESHOLD_PX = 64;
 
 const chatSchema = z.object({
   text: z.string().trim().min(1, 'Введите сообщение').max(3000, 'Максимум 3000 символов'),
-  files: z.array(z.instanceof(File)).default([])
+  files: z.array(z.instanceof(File))
 });
 
 type ChatFormValues = z.infer<typeof chatSchema>;

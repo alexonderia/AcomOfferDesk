@@ -77,7 +77,7 @@ const renderPage = () =>
     <ThemeProvider theme={appTheme}>
       <MemoryRouter
         initialEntries={["/requests/17/contractor"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+
       >
         <Routes>
           <Route path="/requests" element={<div>requests-page</div>} />

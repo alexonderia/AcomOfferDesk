@@ -31,9 +31,19 @@ def main() -> None:
         action="store_true",
         help="Read the current IAM matrix without changing it",
     )
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="With --report, return exit code 2 when IAM differs from the application RBAC matrix",
+    )
     args = parser.parse_args()
+    if args.strict and not args.report:
+        parser.error("--strict requires --report; no changes were made")
     matrix = asyncio.run(run(report_only=args.report))
     print(json.dumps(matrix, ensure_ascii=False, indent=2, sort_keys=True))
+    if args.strict:
+        actual = {role: sorted(set(permissions)) for role, permissions in matrix.items()}
+        if actual != build_rbac_matrix():
+            raise SystemExit(2)
 
 
 if __name__ == "__main__":

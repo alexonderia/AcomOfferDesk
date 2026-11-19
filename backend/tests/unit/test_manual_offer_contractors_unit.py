@@ -116,6 +116,60 @@ async def test_selectable_contractor_can_create_offer(manual_offer_context, stat
 
 
 @pytest.mark.asyncio
+async def test_manual_offer_observes_closure_while_waiting_for_lock(manual_offer_context):
+    ctx = manual_offer_context
+
+    async def close_request(**kwargs):
+        ctx.request.status = "closed"
+
+    ctx.requests.lock_offer_lifecycle.side_effect = close_request
+    with pytest.raises(Conflict, match="open request"):
+        await ctx.service.create_manual_offer(
+            current_user=ctx.actor, request_id=ctx.request.id,
+            contractor_user_id=ctx.contractor.id, contractor_data=None,
+        )
+    ctx.offers.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manual_offer_observes_duplicate_created_while_waiting(manual_offer_context):
+    ctx = manual_offer_context
+
+    async def create_competing_offer(**kwargs):
+        ctx.offers.get_contractor_offer_for_request.return_value = SimpleNamespace(status="submitted")
+
+    ctx.offers.lock_contractor_offer_creation.side_effect = create_competing_offer
+    with pytest.raises(Conflict, match="уже существует КП"):
+        await ctx.service.create_manual_offer(
+            current_user=ctx.actor, request_id=ctx.request.id,
+            contractor_user_id=ctx.contractor.id, contractor_data=None,
+        )
+    ctx.offers.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["amount", "add_file", "remove_file", "accept", "reject", "delete"])
+async def test_deleted_offer_cannot_be_changed_or_restored(manual_offer_context, operation):
+    ctx = manual_offer_context
+    offer = SimpleNamespace(id=60, id_request=ctx.request.id, id_user=ctx.contractor.id, status="deleted")
+    ctx.offers.get_by_id.return_value = offer
+    with pytest.raises(Conflict, match="Удалённое КП"):
+        if operation == "amount":
+            await ctx.service.update_amount(current_user=ctx.actor, offer_id=offer.id, offer_amount=10)
+        elif operation == "add_file":
+            await ctx.service.add_file(current_user=ctx.actor, offer_id=offer.id, upload=SimpleNamespace())
+        elif operation == "remove_file":
+            await ctx.service.remove_file(current_user=ctx.actor, offer_id=offer.id, file_id=1)
+        else:
+            status = {"accept": "accepted", "reject": "rejected", "delete": "deleted"}[operation]
+            await ctx.service.update_status(current_user=ctx.actor, offer_id=offer.id, status=status)
+    ctx.offers.update_status.assert_not_awaited()
+    ctx.offers.update_amount.assert_not_awaited()
+    ctx.offers.attach_file.assert_not_awaited()
+    ctx.offers.detach_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_list_requires_manual_offer_permission(manual_offer_context, make_current_user):
     ctx = manual_offer_context
     with pytest.raises(Forbidden):

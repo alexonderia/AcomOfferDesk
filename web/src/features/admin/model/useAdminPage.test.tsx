@@ -66,7 +66,7 @@ const baseSession = {
 const wrapper = ({ children }: PropsWithChildren) => (
   <MemoryRouter
     initialEntries={['/admin?users_tab=contractors']}
-    future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+
   >
     {children}
   </MemoryRouter>

@@ -96,6 +96,29 @@ jobs:
       - name: Run integration tests
         run: python -m pytest backend/tests/integration -q
 
+  security-services:
+    name: IAM and File Guard Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install service test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r iam/requirements-dev.txt -r file_guard/requirements.txt
+
+      - name: Test IAM
+        run: bash scripts/test-iam.sh
+
+      - name: Test file guard
+        run: bash scripts/test-file-guard.sh
+
   frontend-build:
     name: Frontend Lint/Test/Build
     runs-on: ubuntu-latest

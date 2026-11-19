@@ -19,6 +19,44 @@ def _dt() -> datetime:
     return datetime.now(timezone.utc) + timedelta(days=14)
 
 
+@pytest.mark.parametrize("operation", ["create", "eligible", "duplicates"])
+def test_manual_offer_permission_does_not_bypass_request_scope(
+    test_client, set_uow, set_current_user, make_current_user, operation,
+):
+    uow = _OfferLifecycleUow()
+    set_uow(uow)
+    set_current_user(make_current_user(
+        user_id="lead-2", role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.OFFERS_MANUAL_CREATE},
+    ))
+    base = "/api/v1/requests/10/offers/manual"
+    if operation == "create":
+        response = test_client.post(base, data={
+            "contractor_mode": "existing", "contractor_user_id": "contractor-1",
+        })
+    elif operation == "eligible":
+        response = test_client.get(base + "/eligible-contractors")
+    else:
+        response = test_client.get(base + "/contractor-duplicates?company_name=Company")
+    assert response.status_code == 403
+    assert not uow.offers._offers
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "1000000000000"])
+def test_offer_api_rejects_non_finite_or_oversized_amounts(
+    test_client, set_uow, set_current_user, make_current_user, value,
+):
+    uow = _OfferLifecycleUow()
+    set_uow(uow)
+    set_current_user(make_current_user(
+        user_id="contractor-1", role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.OFFERS_CREATE},
+    ))
+    response = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": value})
+    assert response.status_code == 409
+    assert not uow.offers._offers
+
+
 class _OfferRequestsRepo:
     def __init__(
         self,

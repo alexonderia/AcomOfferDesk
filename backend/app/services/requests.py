@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Awaitable, Callable
 
 from app.core.config import settings
+from app.domain.amounts import validate_amount
 from app.core.datetime_utils import normalize_to_utc, utc_now, utc_now_naive
 from app.domain.authorization import has_permission, require_any_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
@@ -510,8 +511,7 @@ class RequestService:
         request_id: str,
         data: RequestEditInput,
     ) -> None:
-        if data.status is not None:
-            await self._requests.lock_offer_lifecycle(request_id=request_id)
+        await self._requests.lock_offer_lifecycle(request_id=request_id)
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
@@ -732,10 +732,8 @@ class RequestService:
         raise Forbidden("Selected plan is outside your management scope")
 
     def _validate_amount(self, *, value: float | None, field_name: str) -> None:
-        if value is None:
-            return
-        if value < 0:
-            raise Conflict("Сумма заявки не может быть отрицательной")
+        if value is not None:
+            validate_amount(value)
 
     def _validate_closed_request_amounts(self, *, request, accepted_offer) -> None:
         if request.final_amount is None:
@@ -743,8 +741,8 @@ class RequestService:
         if request.initial_amount is None:
             raise Conflict("Укажите начальную сумму перед закрытием заявки")
 
-        final_amount = Decimal(str(request.final_amount))
-        initial_amount = Decimal(str(request.initial_amount))
+        final_amount = validate_amount(request.final_amount)
+        initial_amount = validate_amount(request.initial_amount)
         if initial_amount == Decimal("0"):
             if final_amount <= Decimal("0"):
                 raise Conflict("При нулевой начальной сумме итоговая сумма должна быть больше нуля")
@@ -752,7 +750,7 @@ class RequestService:
 
         allowed_amounts = {initial_amount}
         if accepted_offer is not None and accepted_offer.offer_amount is not None:
-            allowed_amounts.add(Decimal(str(accepted_offer.offer_amount)))
+            allowed_amounts.add(validate_amount(accepted_offer.offer_amount))
 
         if final_amount not in allowed_amounts:
             raise Conflict("Итоговая сумма должна совпадать с начальной суммой или суммой принятого КП")

@@ -27,15 +27,23 @@ function Assert-StepSucceeded {
   }
 }
 
-Write-Host "== [1/8] backend unit tests =="
+Write-Host "== [1/10] backend unit tests =="
 & "$RootDir/scripts/test-unit.ps1"
 Assert-StepSucceeded -StepName "backend unit tests"
 
-Write-Host "== [2/8] backend integration/API contract tests =="
+Write-Host "== [2/10] backend integration/API contract tests =="
 & "$RootDir/scripts/test-integration.ps1"
 Assert-StepSucceeded -StepName "backend integration/API contract tests"
 
-Write-Host "== [3/8] infrastructure smoke checks =="
+Write-Host "== [3/10] IAM tests =="
+& "$RootDir/scripts/test-iam.ps1"
+Assert-StepSucceeded -StepName "IAM tests"
+
+Write-Host "== [4/10] file guard tests =="
+& "$RootDir/scripts/test-file-guard.ps1"
+Assert-StepSucceeded -StepName "file guard tests"
+
+Write-Host "== [5/10] infrastructure smoke checks =="
 $smokeParams = @{
   EnvFile = $EnvFile
 }
@@ -54,32 +62,28 @@ if ($RabbitmqUrl) {
 & "$RootDir/scripts/smoke-infra.ps1" @smokeParams
 Assert-StepSucceeded -StepName "infrastructure smoke checks"
 
-Write-Host "== [4/8] IAM RBAC checks =="
+Write-Host "== [6/10] IAM RBAC checks =="
 $iamCheckParams = @{ EnvFile = $EnvFile }
-$useRepairIamRbac = $RepairIamRbac
-if (-not $PSBoundParameters.ContainsKey("RepairIamRbac")) {
-  $useRepairIamRbac = $true
-}
-if ($useRepairIamRbac) {
+if ($RepairIamRbac) {
   $iamCheckParams.Repair = $true
 }
 & "$RootDir/scripts/check-iam.ps1" @iamCheckParams
 Assert-StepSucceeded -StepName "IAM RBAC and account reconciliation checks"
 
-Write-Host "== [5/8] frontend lint =="
+Write-Host "== [7/10] frontend lint =="
 npm --prefix web run lint
 Assert-StepSucceeded -StepName "frontend lint"
 
-Write-Host "== [6/8] frontend unit/component tests =="
+Write-Host "== [8/10] frontend unit/component tests =="
 npm --prefix web run test:unit
 Assert-StepSucceeded -StepName "frontend unit/component tests"
 
-Write-Host "== [7/8] frontend typecheck/build =="
+Write-Host "== [9/10] frontend typecheck/build =="
 npm --prefix web run build
 Assert-StepSucceeded -StepName "frontend typecheck/build"
 
 if ($IncludeE2E) {
-  Write-Host "== [8/8] e2e smoke =="
+  Write-Host "== [10/10] e2e smoke =="
   $e2eParams = @{
     EnvFile = $EnvFile
   }
@@ -92,7 +96,7 @@ if ($IncludeE2E) {
   & "$RootDir/scripts/e2e-smoke.ps1" @e2eParams
   Assert-StepSucceeded -StepName "e2e smoke"
 } else {
-  Write-Host "== [8/8] e2e smoke skipped (use -IncludeE2E to enable) =="
+  Write-Host "== [10/10] e2e smoke skipped (use -IncludeE2E to enable); deployment readiness requires stand verification =="
 }
 
 Write-Host "Release checks completed"

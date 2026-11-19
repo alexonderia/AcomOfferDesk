@@ -35,7 +35,7 @@ const renderDetailsPage = () =>
   render(
     <MemoryRouter
       initialEntries={["/requests/17"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+
     >
       <Routes>
         <Route path="/requests" element={<div>requests-page</div>} />

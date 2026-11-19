@@ -67,10 +67,10 @@ const schema = z.object({
   initialAmount: z.string().trim().min(1, 'Укажите сумму по ТЗ').refine(isValidAmountValue, 'Укажите корректную сумму'),
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
-  normativeFileId: z.number({ required_error: 'Выберите нормативный документ' }).int().positive('Выберите нормативный документ'),
+  normativeFileId: z.number({ error: 'Выберите нормативный документ' }).int().positive('Выберите нормативный документ'),
   files: z.array(z.instanceof(File)).min(1, 'Прикрепите файл заявки'),
-  additionalEmails: z.array(z.string().email('Введите корректный email')).default([]),
-  hiddenContractorIds: z.array(z.string().min(1)).default([]),
+  additionalEmails: z.array(z.string().email('Введите корректный email')),
+  hiddenContractorIds: z.array(z.string().min(1)),
 });
 
 type FormValues = z.infer<typeof schema>;

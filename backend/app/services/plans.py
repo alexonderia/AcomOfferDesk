@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Awaitable, Callable
 
 from app.core.config import settings
+from app.domain.amounts import validate_amount
 from app.domain.authorization import has_permission
 from app.domain.permissions import PermissionCodes
 from app.domain.exceptions import Conflict, Forbidden, NotFound
@@ -47,7 +48,7 @@ def month_bounds_for_date(value: date) -> tuple[date, date]:
 
 
 def normalize_amount(value: Decimal | float | int | str) -> Decimal:
-    decimal_value = Decimal(str(value))
+    decimal_value = validate_amount(value)
     return decimal_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 

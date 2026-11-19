@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Generate web/src/shared/content/roleGuides.ts from Reorganized-user-guide.docx."""
+"""Import an approved DOCX as a reviewable draft; live guides are maintained against current code."""
 from __future__ import annotations
 
 import argparse
@@ -13,7 +13,7 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "web/src/shared/content/roleGuides.ts"
+OUTPUT = ROOT / "artifacts/docx/roleGuides.ts"
 
 NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": NS_W}

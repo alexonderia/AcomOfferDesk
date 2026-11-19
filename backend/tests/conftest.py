@@ -12,6 +12,7 @@ import os
 def _ensure_test_env() -> None:
     defaults = {
         "APP_ENV": "development",
+        "EMAIL_ENABLED": "true",
         "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:5432/test_db",
         "JWT_SECRET": "ci-test-jwt-secret",
         "EMAIL_ADDRESS": "ci@example.com",

@@ -230,4 +230,18 @@ describe('RealtimeProvider', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalledWith('ws_4401'));
     expect(logout).not.toHaveBeenCalled();
   });
+
+  it('reconnects after refresh when authentication and business access flags are unchanged', async () => {
+    const view = render(<div />, { wrapper: Wrapper });
+    expect(connectMock).toHaveBeenCalledTimes(1);
+    emitRealtimeEvent({
+      type: 'error', event_id: 'expired-access', ts: '2026-11-18T10:00:00Z',
+      data: { code: 'auth_failed' },
+    });
+    await waitFor(() => expect(authState.refresh).toHaveBeenCalledWith('ws_4401'));
+    authState = { ...authState, session: { token: 'refreshed', businessAccess: true } };
+    view.rerender(<div />);
+    await waitFor(() => expect(connectMock).toHaveBeenCalledTimes(2));
+    expect(authState.logout).not.toHaveBeenCalled();
+  });
 });

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 
 from app.core.chat_upload_tokens import create_chat_upload_token, decode_chat_upload_token
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import AuthenticationUnavailable, Forbidden, NotFound, Unauthorized
-from app.domain.iam_roles import technical_role_name
+from app.domain.iam_roles import local_role_id
+from app.domain.permissions import get_known_permissions
 from app.domain.policies import CurrentUser
 from app.infrastructure.iam_client import IamClient
 from app.services.files import FileService
@@ -66,6 +67,49 @@ class ChatRealtimeService:
     def __init__(self, *, uow_factory: type[UnitOfWork] = UnitOfWork) -> None:
         self._uow_factory = uow_factory
 
+    async def _load_current_identity(self, *, uow, iam: IamClient, user_id: str) -> CurrentUser:
+        user = await uow.users.get_by_id(user_id)
+        if user is None or user.status != "active":
+            raise Unauthorized("Пользователь не активен")
+        binding = await uow.user_auth_accounts.get_by_user_provider(
+            user_id=user_id, provider="iam", include_inactive=False,
+        )
+        if binding is None:
+            raise Unauthorized("Недействительная привязка IAM")
+        state = await iam.get_credential_state(account_id=binding.external_subject_id)
+        role_id = local_role_id(state.role)
+        if (
+            state.auth_status != "active" or state.role_active is not True or role_id is None
+            or "complete_profile" in state.required_actions
+        ):
+            raise Unauthorized("Доступ к учётной записи ограничен")
+        permissions = await iam.get_account_permissions(account_id=binding.external_subject_id)
+        if not permissions.effective_permissions.issubset(get_known_permissions()):
+            raise Unauthorized("Недействительные права доступа")
+        return CurrentUser(
+            user_id=user_id, role_id=role_id, status=user.status,
+            iam_account_id=binding.external_subject_id, iam_session_id="",
+            system_role=state.role, permissions=permissions.effective_permissions,
+            required_actions=frozenset(state.required_actions),
+        )
+
+    async def refresh_current_user(self, *, current_user: CurrentUser) -> CurrentUser:
+        """Revalidate long-lived WebSocket access before processing a command."""
+        async with self._uow_factory() as uow:
+            refreshed = await self._load_current_identity(uow=uow, iam=IamClient(), user_id=current_user.user_id)
+        if refreshed.iam_account_id != current_user.iam_account_id:
+            raise Unauthorized("Недействительная привязка IAM")
+        return replace(
+            refreshed, iam_session_id=current_user.iam_session_id,
+            access_expires_at=current_user.access_expires_at,
+        )
+
+    async def ensure_can_type(self, *, current_user: CurrentUser, offer_id: int) -> None:
+        async with self._uow_factory() as uow:
+            await build_offer_service(uow)._require_chat_context(
+                current_user=current_user, offer_id=offer_id, require_send=True,
+            )
+
     async def authorized_recipients(self, *, offer_id: int, user_ids: set[str]) -> set[str]:
         """A room subscription does not survive revocation of business access."""
         allowed: set[str] = set()
@@ -73,19 +117,7 @@ class ChatRealtimeService:
         for user_id in user_ids:
             try:
                 async with self._uow_factory() as uow:
-                    user = await uow.users.get_by_id(user_id)
-                    if user is None or user.status != "active":
-                        continue
-                    binding = await uow.user_auth_accounts.get_by_user_provider(user_id=user_id, provider="iam", include_inactive=False)
-                    if binding is None:
-                        continue
-                    permissions = await iam.get_account_permissions(account_id=binding.external_subject_id)
-                    current_user = CurrentUser(
-                        user_id=user_id, role_id=user.id_role, status=user.status,
-                        iam_account_id=binding.external_subject_id, iam_session_id="",
-                        system_role=technical_role_name(user.id_role),
-                        permissions=permissions.effective_permissions,
-                    )
+                    current_user = await self._load_current_identity(uow=uow, iam=iam, user_id=user_id)
                     await build_offer_service(uow).get_chat_state(current_user=current_user, offer_id=offer_id)
                     allowed.add(user_id)
             except (Forbidden, NotFound, Unauthorized):

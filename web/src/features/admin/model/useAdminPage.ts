@@ -25,7 +25,7 @@ const innRegex = /^\d{10}$|^\d{12}$/;
 
 const buildSchema = (emailEnabled: boolean) => z
   .object({
-    role_id: z.number({ required_error: 'Выберите роль' }),
+    role_id: z.number({ error: 'Выберите роль' }),
     login: z.string().optional(),
     password: z.string().optional(),
     password_confirmation: z.string().optional(),

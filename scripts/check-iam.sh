@@ -10,6 +10,6 @@ if [[ "${IAM_RBAC_REPAIR:-false}" == "true" || "${IAM_RBAC_REPAIR:-false}" == "1
     python -m app.scripts.seed_iam_rbac
 fi
 docker compose --env-file "$ENV_FILE" exec -T backend \
-  python -m app.scripts.seed_iam_rbac --report
+  python -m app.scripts.seed_iam_rbac --report --strict
 docker compose --env-file "$ENV_FILE" exec -T backend \
-  python -m app.scripts.reconcile_iam_accounts
+  python -m app.scripts.reconcile_iam_accounts --strict

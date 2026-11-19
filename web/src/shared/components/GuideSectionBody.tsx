@@ -1,5 +1,5 @@
-import { useMemo, type ReactNode } from 'react';
-import { Box, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Alert, Box, Link, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import type { GuideBlock } from '@shared/content/roleGuides';
 
 const listSx = { m: 0, pl: 2.5, '& li': { display: 'list-item' } };
@@ -36,6 +36,9 @@ const GuideList = ({ ordered, items }: { ordered: boolean; items: string[] }) =>
 
 const GuideTable = ({ headers, rows }: { headers: string[]; rows: string[][] }) => (
     <Box
+        role="region"
+        aria-label={`Таблица: ${headers.join(', ')}`}
+        tabIndex={0}
         sx={{
             overflowX: 'auto',
             border: '1px solid',
@@ -43,11 +46,11 @@ const GuideTable = ({ headers, rows }: { headers: string[]; rows: string[][] }) 
             borderRadius: 1
         }}
     >
-        <Table size="small">
+        <Table size="small" sx={{ minWidth: headers.length > 2 ? 640 : 460, '& th:first-of-type, & td:first-of-type': { minWidth: 150 } }}>
             <TableHead>
                 <TableRow>
                     {headers.map((header) => (
-                        <TableCell key={header} sx={{ fontWeight: 600, backgroundColor: 'action.hover' }}>
+                        <TableCell component="th" scope="col" key={header} sx={{ fontWeight: 600, backgroundColor: 'action.hover' }}>
                             {formatGuideText(header)}
                         </TableCell>
                     ))}
@@ -68,6 +71,27 @@ const GuideTable = ({ headers, rows }: { headers: string[]; rows: string[][] }) 
     </Box>
 );
 
+const GuideImage = ({ block }: { block: Extract<GuideBlock, { type: 'image' }> }) => {
+    const [failed, setFailed] = useState(false);
+    return (
+        <Box component="figure" sx={{ m: 0, minWidth: 0 }}>
+            {failed ? <Alert severity="info" role="note">Иллюстрация недоступна. Пользуйтесь текстовой инструкцией этой главы.</Alert> : (
+                <Box component="a" href={block.src} target="_blank" rel="noopener noreferrer" aria-label={`Открыть иллюстрацию: ${block.alt}`}
+                    sx={{
+                        display: 'inline-block', maxWidth: '100%', verticalAlign: 'top', borderRadius: 1,
+                        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+                    }}>
+                    <Box component="img" src={block.src} alt={block.alt} loading="lazy" onError={() => setFailed(true)}
+                        sx={{ display: 'block', maxWidth: '100%', maxHeight: 'min(50dvh, 480px)', width: 'auto', height: 'auto', borderRadius: 'inherit' }} />
+                </Box>
+            )}
+            <Typography component="figcaption" variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                {block.caption}{!failed && ' Нажмите иллюстрацию, чтобы открыть оригинал.'}
+            </Typography>
+        </Box>
+    );
+};
+
 const GuideBlockView = ({ block }: { block: GuideBlock }) => {
     switch (block.type) {
         case 'paragraph':
@@ -78,7 +102,7 @@ const GuideBlockView = ({ block }: { block: GuideBlock }) => {
             );
         case 'subheading':
             return (
-                <Typography variant="body2" component="p" sx={{ m: 0, fontWeight: 600 }}>
+                <Typography variant="subtitle1" component="h3" sx={{ m: 0, mt: 1, fontWeight: 700 }}>
                     {formatGuideText(block.text)}
                 </Typography>
             );
@@ -86,6 +110,12 @@ const GuideBlockView = ({ block }: { block: GuideBlock }) => {
             return <GuideList ordered={block.ordered} items={block.items} />;
         case 'table':
             return <GuideTable headers={block.headers} rows={block.rows} />;
+        case 'notice':
+            return <Alert severity={block.tone} role="note">{formatGuideText(block.text)}</Alert>;
+        case 'link':
+            return <Link href={block.href} target="_blank" rel="noopener noreferrer" variant="body2" sx={{ alignSelf: 'flex-start' }}>{block.text}</Link>;
+        case 'image':
+            return <GuideImage key={block.src} block={block} />;
         default: {
             const _exhaustive: never = block;
             return _exhaustive;

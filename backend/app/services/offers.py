@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Awaitable, Callable
 
 from app.core.config import settings
+from app.domain.amounts import validate_amount
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.authorization import has_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden, NotFound
@@ -396,6 +397,26 @@ class OfferService:
             await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=request.id)
         return offer, request
 
+    async def _load_offer_for_mutation(self, *, current_user: CurrentUser, offer_id: int):
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        await self._requests.lock_offer_lifecycle(request_id=request.id)
+        # Another transaction may close the request or change its scope while we wait.
+        offer, request = await self._load_offer_and_request(offer_id=offer.id, current_user=current_user)
+        self._ensure_offer_is_not_deleted(offer=offer)
+        return offer, request
+
+    @staticmethod
+    def _ensure_offer_is_not_deleted(*, offer) -> None:
+        if offer.status == "deleted":
+            raise Conflict("Удалённое КП нельзя изменять")
+
+    async def _ensure_can_create_manual_offer(self, *, current_user: CurrentUser, request_owner_user_id: str) -> None:
+        RequestPolicy.ensure_can_create_manual_offer(current_user, request_owner_user_id=request_owner_user_id)
+        if not await self._staff_scope.can_manage_request_owner(
+            current_user=current_user, request_owner_user_id=request_owner_user_id,
+        ):
+            raise Forbidden("Заявка находится вне вашей области управления")
+
     async def _is_manual_offer(self, *, offer_owner_user_id: str) -> bool:
         offer_owner = await self._users.get_by_id(user_id=offer_owner_user_id)
         if offer_owner is None:
@@ -679,12 +700,13 @@ class OfferService:
         offer_amount: float | None = None,
         files: list[PreparedUpload] | None = None,
     ) -> ManualOfferCreateResult:
+        await self._requests.lock_offer_lifecycle(request_id=request_id)
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.ensure_can_create_manual_offer(
-            current_user,
+        await self._ensure_can_create_manual_offer(
+            current_user=current_user,
             request_owner_user_id=request.id_user,
         )
 
@@ -718,6 +740,10 @@ class OfferService:
             request=request,
         )
 
+        await self._offers.lock_contractor_offer_creation(
+            request_id=request.id,
+            contractor_user_id=resolved_contractor_user_id,
+        )
         existing_offer = await self._offers.get_contractor_offer_for_request(
             request_id=request.id,
             contractor_user_id=resolved_contractor_user_id,
@@ -775,8 +801,8 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
-        RequestPolicy.ensure_can_create_manual_offer(
-            current_user,
+        await self._ensure_can_create_manual_offer(
+            current_user=current_user,
             request_owner_user_id=request.id_user,
         )
         if request.status != "open":
@@ -953,13 +979,7 @@ class OfferService:
         offer_id: int,
         upload: PreparedUpload,
     ) -> int:
-        offer = await self._offers.get_by_id(offer_id=offer_id)
-        if offer is None:
-            raise NotFound("Offer not found")
-        await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
-        request = await self._requests.get_by_id(request_id=offer.id_request)
-        if request is None:
-            raise NotFound("Request not found")
+        offer, request = await self._load_offer_for_mutation(current_user=current_user, offer_id=offer_id)
         self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,
@@ -1031,13 +1051,7 @@ class OfferService:
         return db_file.id
 
     async def remove_file(self, *, current_user: CurrentUser, offer_id: int, file_id: int) -> None:
-        offer = await self._offers.get_by_id(offer_id=offer_id)
-        if offer is None:
-            raise NotFound("Offer not found")
-        await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
-        request = await self._requests.get_by_id(request_id=offer.id_request)
-        if request is None:
-            raise NotFound("Request not found")
+        offer, request = await self._load_offer_for_mutation(current_user=current_user, offer_id=offer_id)
         self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
             current_user=current_user,
@@ -1105,6 +1119,7 @@ class OfferService:
             await self._users.lock_status_change(user_id=offer.id_user)
         await self._requests.lock_offer_lifecycle(request_id=request.id)
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        self._ensure_offer_is_not_deleted(offer=offer)
 
         if status not in EDITABLE_OFFER_STATUSES:
             raise Conflict("Unsupported offer status")
@@ -1162,9 +1177,7 @@ class OfferService:
         return offer.status
 
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
-        await self._requests.lock_offer_lifecycle(request_id=request.id)
-        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        offer, request = await self._load_offer_for_mutation(current_user=current_user, offer_id=offer_id)
         self._ensure_request_is_open_for_offer_mutation(request_status=request.status)
         self._validate_offer_amount(offer_amount)
         has_department_offer_update_scope = await self._has_department_offer_update_scope(
@@ -1797,10 +1810,8 @@ class OfferService:
         return "text"
 
     def _validate_offer_amount(self, value: float | None) -> None:
-        if value is None:
-            return
-        if value < 0:
-            raise Conflict("Offer amount cannot be negative")
+        if value is not None:
+            validate_amount(value)
 
     def _resolve_message_status(
         self,

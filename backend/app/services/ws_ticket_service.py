@@ -24,6 +24,7 @@ class WsTicketAccessContext:
     permissions: frozenset[str]
     purpose: WsTicketPurpose
     expires_at: datetime
+    access_expires_at: int
 
 
 @dataclass(slots=True)
@@ -53,10 +54,14 @@ class WsTicketService:
         status: str,
         permissions: frozenset[str],
         purpose: WsTicketPurpose,
+        access_expires_at: int | None = None,
     ) -> tuple[str, datetime]:
         await self.cleanup_expired()
         raw_ticket = secrets.token_urlsafe(48)
         expires_at = datetime.now(UTC) + timedelta(seconds=self._ttl_seconds)
+        # Non-HTTP callers also get a finite authorization lifetime.
+        authorization_expires_at = access_expires_at if access_expires_at is not None else int(expires_at.timestamp())
+        expires_at = min(expires_at, datetime.fromtimestamp(authorization_expires_at, UTC))
         access = WsTicketAccessContext(
             user_id=user_id,
             iam_account_id=iam_account_id,
@@ -67,6 +72,7 @@ class WsTicketService:
             permissions=permissions,
             purpose=purpose,
             expires_at=expires_at,
+            access_expires_at=authorization_expires_at,
         )
         record = _StoredTicket(access=access)
         ticket_hash = self._hash_ticket(raw_ticket)

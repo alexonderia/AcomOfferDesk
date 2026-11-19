@@ -51,8 +51,22 @@ async def test_consume_valid_ticket_returns_user_once() -> None:
     assert access.status == "active"
     assert access.permissions == frozenset({"chat.read"})
     assert access.iam_account_id == IAM_CONTEXT["iam_account_id"]
+    assert access.access_expires_at > int(datetime.now(UTC).timestamp())
     with pytest.raises(Unauthorized):
         await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="notifications_ws")
+
+
+@pytest.mark.asyncio
+async def test_ticket_cannot_outlive_issuing_access_token() -> None:
+    service = WsTicketService(ttl_seconds=30)
+    expires_at = int(datetime.now(UTC).timestamp()) - 1
+    raw_ticket, ticket_expires = await service.issue_ticket(
+        user_id="user-1", **IAM_CONTEXT, role_id=3, status="active",
+        purpose="realtime_ws", access_expires_at=expires_at,
+    )
+    assert int(ticket_expires.timestamp()) == expires_at
+    with pytest.raises(Unauthorized):
+        await service.consume_ticket(raw_ticket=raw_ticket, expected_purpose="realtime_ws")
 
 
 @pytest.mark.asyncio

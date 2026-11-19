@@ -31,7 +31,7 @@ const renderRoleRoute = (path: string, element: JSX.Element) =>
   render(
     <MemoryRouter
       initialEntries={[path]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+
     >
       <Routes>
         <Route path="/login" element={<div>login-page</div>} />

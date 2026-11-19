@@ -61,7 +61,12 @@ def _office_bytes(*entries: tuple[str, bytes | str]) -> bytes:
     with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", "<Types></Types>")
         for name, value in entries:
-            archive.writestr(name, value)
+            info = zipfile.ZipInfo(name)
+            # ZipInfo normalizes OS separators on Windows. Preserve malicious
+            # archive names so these fixtures exercise the same bytes on Linux.
+            info.filename = info.orig_filename = name
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, value)
     return payload.getvalue()
 
 
@@ -383,6 +388,26 @@ def test_scan_blocks_office_entry_with_control_character(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
+    assert response.json()["reason_code"] == "invalid_office_document"
+
+
+@pytest.mark.parametrize("relationship", [
+    '<Relationship Target="file:///secret" TargetMode="External"/>',
+    "<Relationship TargetMode='External' Target='file:///secret'/>",
+    '<Relationship TargetMode="External" Target="f&#105;le:///secret"/>',
+    '<r:Relationship xmlns:r="http://schemas.openxmlformats.org/package/2006/relationships" '
+    'Target="file:///secret" TargetMode="External"/>',
+])
+def test_office_relationship_validation_uses_xml_semantics(monkeypatch, relationship):
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    response = client.post("/scan", files={"file": (
+        "external.docx", _office_bytes(
+            ("word/document.xml", "<xml />"),
+            ("word/_rels/document.xml.rels", f"<Relationships>{relationship}</Relationships>"),
+        ), "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )})
+    assert response.status_code == 200
+    assert response.json()["allowed"] is False
     assert response.json()["reason_code"] == "invalid_office_document"
 
 

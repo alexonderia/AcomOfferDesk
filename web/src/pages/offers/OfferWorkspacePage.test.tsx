@@ -35,7 +35,7 @@ const renderWorkspacePage = () =>
   render(
     <MemoryRouter
       initialEntries={["/offers/11/workspace"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+
     >
       <Routes>
         <Route path="/requests" element={<div>requests-page</div>} />

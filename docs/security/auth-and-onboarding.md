@@ -159,9 +159,9 @@ consume them.
   tokens do not rest in RabbitMQ. Setup delivery happens before the local binding commit,
   so a sanitized SMTP failure rolls back that binding and an idempotent retry can issue a
   replacement action token for the same IAM account.
-- Acom and IAM use separate databases. The IAM schema has exactly these nine tables:
+- Acom and IAM use separate databases. The IAM schema has these ten tables:
   `accounts`, `account_credentials`, `roles`, `permissions`, `role_permissions`,
-  `auth_sessions`, `authorization_codes`, `auth_action_tokens`, `auth_audit_log`.
+  `account_permission_grants`, `auth_sessions`, `authorization_codes`, `auth_action_tokens`, `auth_audit_log`.
 - Required Acom runtime env includes `IAM_INTERNAL_BASE_URL`, `IAM_PUBLIC_BASE_URL`,
   `IAM_ISSUER`, `IAM_AUDIENCE`, `IAM_PUBLIC_KEYS`, `IAM_SERVICE_TOKEN`, and BFF signing
   secrets. IAM runtime and IAM Flyway DB credentials live in separate env files.

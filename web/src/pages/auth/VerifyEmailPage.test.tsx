@@ -42,7 +42,7 @@ const baseSession = {
 };
 
 const renderPage = (initialEntry = '/verify-email?token=test-token') => render(
-  <MemoryRouter initialEntries={[initialEntry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+  <MemoryRouter initialEntries={[initialEntry]} >
     <VerifyEmailPage />
   </MemoryRouter>
 );

@@ -59,7 +59,7 @@ const Workspace = () => {
     <button type="button" disabled={!canDeleteOffer} onClick={() => void handleDeleteOffer()}>Удалить КП</button></>;
 };
 const renderWorkspace = (path = '/offers/61/workspace') => render(
-  <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+  <MemoryRouter initialEntries={[path]} >
     <PageBreadcrumbActionsProvider>
       <Routes>
         <Route path="/offers/:id/workspace" element={<Workspace />} />

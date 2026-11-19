@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, Link, Stack, TextField, Typography } from '@mui/material';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { requestPasswordReset } from '@shared/api/auth';
 import { getAppCapabilities } from '@shared/api/auth/changePassword';
 import { AuthPageShell } from '@shared/components/AuthPageShell';
+import { MAX_CONTACT_LINK } from '@shared/constants/supportContacts';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { TechnicalUnavailablePage } from '@pages/technical';
 
@@ -72,30 +73,45 @@ export const AuthPage = () => {
   return (
     <AuthPageShell
       title="Восстановление доступа"
-      subtitle={emailEnabled ? 'Введите логин или email. Мы отправим письмо для восстановления, если аккаунт найден.' : 'Почтовый сервис отключён. Сменить известный пароль можно в профиле после входа.'}
+      subtitle={emailEnabled
+        ? 'Введите логин или email. Мы отправим письмо для восстановления, если аккаунт найден.'
+        : (
+          <>
+            Почтовый сервис отключён. Для восстановления доступа обратитесь к администратору вашей организации или к{' '}
+            <Link href={MAX_CONTACT_LINK} target="_blank" rel="noopener noreferrer">контактному лицу системы в MAX</Link>.
+          </>
+        )}
     >
       <Stack spacing={2.25} sx={{ width: '100%' }}>
-        <Stack spacing={1}>
-          <Typography
-            component="label"
-            htmlFor="reset-login"
-            variant="inherit"
-            sx={{ fontSize: '14px', fontWeight: 600, lineHeight: 1.25, color: '#1f2a44' }}
-          >
-            Логин или email
+        {emailEnabled ? (
+          <>
+            <Stack spacing={1}>
+              <Typography
+                component="label"
+                htmlFor="reset-login"
+                variant="inherit"
+                sx={{ fontSize: '14px', fontWeight: 600, lineHeight: 1.25, color: '#1f2a44' }}
+              >
+                Логин или email
+              </Typography>
+              <TextField
+                id="reset-login"
+                hiddenLabel
+                value={resetLogin}
+                onChange={(event) => setResetLogin(event.target.value)}
+                autoComplete="username"
+                fullWidth
+              />
+            </Stack>
+            <Button variant="contained" fullWidth disabled={isResetting} onClick={() => void submitReset()}>
+              Отправить инструкцию
+            </Button>
+          </>
+        ) : (
+          <Typography variant="body2" textAlign="center" color="text.secondary">
+            Сменить известный пароль можно в профиле после входа.
           </Typography>
-          <TextField
-            id="reset-login"
-            hiddenLabel
-            value={resetLogin}
-            onChange={(event) => setResetLogin(event.target.value)}
-            autoComplete="username"
-            fullWidth
-          />
-        </Stack>
-        <Button variant="contained" fullWidth disabled={isResetting || !emailEnabled} onClick={() => void submitReset()}>
-          Отправить инструкцию
-        </Button>
+        )}
         <Button variant="text" onClick={() => beginLogin(nextPath)}>
           Вернуться ко входу
         </Button>

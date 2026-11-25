@@ -65,6 +65,7 @@ describe('api client silent session refresh', () => {
       refresh,
       forceLogout,
       canAttemptSilentRefresh: () => true,
+      getSessionRevision: () => 0,
     });
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(401))
@@ -93,6 +94,7 @@ describe('api client silent session refresh', () => {
       refresh,
       forceLogout: vi.fn(),
       canAttemptSilentRefresh: () => true,
+      getSessionRevision: () => 0,
     });
     let requestCount = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
@@ -119,6 +121,7 @@ describe('api client silent session refresh', () => {
       refresh,
       forceLogout,
       canAttemptSilentRefresh: () => true,
+      getSessionRevision: () => 0,
     });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(401));
 
@@ -137,6 +140,7 @@ describe('api client silent session refresh', () => {
       refresh,
       forceLogout,
       canAttemptSilentRefresh: () => true,
+      getSessionRevision: () => 0,
     });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(401));
 
@@ -154,6 +158,7 @@ describe('api client silent session refresh', () => {
       refresh,
       forceLogout: vi.fn(),
       canAttemptSilentRefresh: () => true,
+      getSessionRevision: () => 0,
     });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(401));
 
@@ -161,5 +166,57 @@ describe('api client silent session refresh', () => {
 
     expect(response.status).toBe(401);
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('reuses the refreshed session for a late 401 from the same request burst', async () => {
+    let revision = 0;
+    const refresh = vi.fn(async (): Promise<AuthRefreshResult> => {
+      revision += 1;
+      return { kind: 'success' };
+    });
+    setAuthRuntime({
+      refresh,
+      forceLogout: vi.fn(),
+      canAttemptSilentRefresh: () => true,
+      getSessionRevision: () => revision,
+    });
+    let finishLateRequest!: (response: Response) => void;
+    const lateResponse = new Promise<Response>((resolve) => { finishLateRequest = resolve; });
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(401))
+      .mockReturnValueOnce(lateResponse)
+      .mockResolvedValue(jsonResponse(200));
+
+    const first = apiFetch('/api/v1/requests/1');
+    const late = apiFetch('/api/v1/requests/2');
+    expect((await first).status).toBe(200);
+    finishLateRequest(jsonResponse(401));
+    expect((await late).status).toBe(200);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('ends the session when the single retry is also unauthorized', async () => {
+    const refresh = vi.fn<() => Promise<AuthRefreshResult>>().mockResolvedValue({ kind: 'success' });
+    const forceLogout = vi.fn();
+    setAuthRuntime({ refresh, forceLogout, canAttemptSilentRefresh: () => true, getSessionRevision: () => 0 });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(401));
+
+    expect((await apiFetch('/api/v1/requests/1')).status).toBe(401);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(forceLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not end a refreshed session when the retried action is forbidden', async () => {
+    const refresh = vi.fn<() => Promise<AuthRefreshResult>>().mockResolvedValue({ kind: 'success' });
+    const forceLogout = vi.fn();
+    setAuthRuntime({ refresh, forceLogout, canAttemptSilentRefresh: () => true, getSessionRevision: () => 0 });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(401))
+      .mockResolvedValueOnce(jsonResponse(403));
+
+    expect((await apiFetch('/api/v1/requests/1')).status).toBe(403);
+    expect(forceLogout).not.toHaveBeenCalled();
   });
 });

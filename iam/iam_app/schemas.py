@@ -184,6 +184,10 @@ class ActionTokenConsumeResponse(BaseModel):
     context: dict | None = None
 
 
+class EmailConfirmationInspectRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+
+
 class RbacRoleInput(BaseModel):
     name: str = Field(min_length=2, max_length=128)
     permissions: list[str]

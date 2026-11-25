@@ -158,12 +158,13 @@ export const RequestDetailsMainCard = ({
         px: { xs: 2, md: 3 },
         py: { xs: 2, md: 2.5 },
         display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr)',
         gap: 2.5
       })}
     >
       <Stack
-        direction="row"
-        alignItems="center"
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'stretch', sm: 'center' }}
         justifyContent="space-between"
         spacing={1.5}
         sx={{ flexWrap: 'nowrap' }}
@@ -389,9 +390,9 @@ export const RequestDetailsMainCard = ({
       />
 
       <Stack
-        direction="row"
+        direction={{ xs: 'column', sm: 'row' }}
         justifyContent="space-between"
-        alignItems="center"
+        alignItems={{ xs: 'stretch', sm: 'center' }}
         spacing={1}
         sx={{ flexWrap: 'nowrap' }}
       >

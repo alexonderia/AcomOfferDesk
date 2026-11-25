@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run",
+    "test:browser:local": "playwright test --config playwright.local.config.ts",
     "e2e:smoke": "playwright test --config playwright.config.ts --grep @smoke",
     "e2e:roles": "playwright test --config playwright.config.ts --grep @roles",
     "e2e:request-offer": "playwright test --config playwright.config.ts --grep @request-offer",

@@ -29,10 +29,10 @@ export const AuthPage = () => {
   }, [isResetFlow]);
 
   useEffect(() => {
-    if (!isResetFlow) {
+    if (!isResetFlow && status !== 'signing_out' && status !== 'unavailable') {
       beginLogin(nextPath);
     }
-  }, [beginLogin, isResetFlow, nextPath]);
+  }, [beginLogin, isResetFlow, nextPath, status]);
 
   const submitReset = async () => {
     if (!emailEnabled) return;

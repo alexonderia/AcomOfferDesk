@@ -16,6 +16,7 @@ import { getErrorMessage, formatSettledTaskErrors, joinUserFacingErrors } from '
 import { mergeUniqueFiles } from '@shared/lib/files';
 import { useOfferMessages } from './useOfferMessages';
 import { useContractorLoginAccess } from '@features/contractors/hooks/useContractorLoginAccess';
+import type { ConfirmationDialogProps } from '@shared/components/ConfirmationDialog';
 
 const workspacePollIntervalMs = 7000;
 
@@ -107,6 +108,8 @@ export const useOfferWorkspace = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isUpdatingOfferStatus, setIsUpdatingOfferStatus] = useState(false);
+  const [confirmation, setConfirmation] = useState<Pick<ConfirmationDialogProps,
+    'title' | 'description' | 'confirmLabel' | 'color' | 'onConfirm'> | null>(null);
   const [offerDecisionStatus, setOfferDecisionStatus] = useState<'accepted' | 'rejected' | ''>('');
   const [isUpdatingOfferAmount, setIsUpdatingOfferAmount] = useState(false);
   const [lastOfferSaveSuccessAt, setLastOfferSaveSuccessAt] = useState<number | null>(null);
@@ -348,35 +351,52 @@ export const useOfferWorkspace = () => {
     setErrorMessage(null);
   };
 
-  const handleStatusChange = async (nextStatus: 'accepted' | 'rejected' | '') => {
-    if (!selectedOffer || !nextStatus) return;
+  const handleStatusChange = async (nextStatus: 'accepted' | 'rejected' | '', requireConfirmation = true) => {
+    if (!selectedOffer || !nextStatus || isUpdatingOfferStatus
+      || (nextStatus === 'accepted' ? !selectedOffer.actions.accept : !selectedOffer.actions.reject)) return;
     if (nextStatus === 'accepted' && acceptedOfferId && acceptedOfferId !== selectedOffer.offer_id) {
       setErrorMessage('Нельзя одобрить более одного КП в рамках одной заявки');
       return;
     }
-    const confirmed = window.confirm(nextStatus === 'accepted' ? 'Если принять это КП, остальные КП по заявке автоматически получат статус «Отказано». Продолжить?' : 'Вы уверены, что хотите изменить статус КП на «Отказано»?');
-    if (!confirmed) return;
+    if (requireConfirmation) {
+      setConfirmation({
+        title: 'Изменение статуса КП', confirmLabel: 'Подтвердить',
+        description: nextStatus === 'accepted'
+          ? `Принять КП №${selectedOffer.offer_id}? Остальные КП по заявке автоматически получат статус «Отказано».`
+          : `Установить статус «Отказано» для КП №${selectedOffer.offer_id}?`,
+        onConfirm: () => handleStatusChange(nextStatus, false),
+      });
+      return;
+    }
     setOfferDecisionStatus(nextStatus);
     setIsUpdatingOfferStatus(true);
     try {
       await updateOfferStatus({ offer_id: selectedOffer.offer_id, status: nextStatus });
       await refreshWorkspace(selectedOffer.offer_id);
+      setConfirmation(null);
     } catch (error) {
+      setOfferDecisionStatus(selectedOffer.status === 'accepted' || selectedOffer.status === 'rejected' ? selectedOffer.status : '');
       setErrorMessage(getErrorMessage(error, 'Не удалось обновить статус КП'));
     } finally {
       setIsUpdatingOfferStatus(false);
     }
   };
 
-  const handleDeleteOffer = async () => {
+  const handleDeleteOffer = async (requireConfirmation = true) => {
     if (!selectedOffer || !canDeleteOffer || isUpdatingOfferStatus) return;
-    if (!window.confirm(isContractor
-      ? 'Вы уверены, что хотите удалить отклик? После удаления отменить действие нельзя.'
-      : 'Вы уверены, что хотите удалить КП? После удаления отменить действие нельзя.')) return;
+    if (requireConfirmation) {
+      setConfirmation({
+        title: isContractor ? 'Удаление отклика' : 'Удаление КП',
+        description: `Удалить ${isContractor ? 'отклик' : 'КП'} №${selectedOffer.offer_id}? После удаления отменить действие нельзя.`,
+        confirmLabel: 'Удалить', color: 'error', onConfirm: () => handleDeleteOffer(false),
+      });
+      return;
+    }
     setIsUpdatingOfferStatus(true);
     try {
       await updateOfferStatus({ offer_id: selectedOffer.offer_id, status: 'deleted' });
       await refreshWorkspace(selectedOffer.offer_id);
+      setConfirmation(null);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, 'Не удалось удалить КП'));
     } finally {
@@ -457,9 +477,16 @@ export const useOfferWorkspace = () => {
     }
   };
 
-  const handleCreateNewOffer = async () => {
-    if (!workspace || !workspace.request.actions.create_offer) return;
-    if (!window.confirm('Создать новый отклик для этой заявки? Предыдущие удалённые отклики останутся в истории.')) return;
+  const handleCreateNewOffer = async (requireConfirmation = true) => {
+    if (!workspace || !workspace.request.actions.create_offer || isUpdatingOfferStatus) return;
+    if (requireConfirmation) {
+      setConfirmation({
+        title: 'Новый отклик', confirmLabel: 'Создать',
+        description: `Создать новый отклик для заявки №${workspace.request.request_id}? Предыдущие удалённые отклики останутся в истории.`,
+        onConfirm: () => handleCreateNewOffer(false),
+      });
+      return;
+    }
     setIsUpdatingOfferStatus(true);
     try {
       const createdOffer = await createOfferForRequest(workspace.request.request_id);
@@ -467,6 +494,7 @@ export const useOfferWorkspace = () => {
       setWorkspace(refreshedWorkspace);
       setSelectedOfferId(createdOffer.offerId);
       await loadMessages(createdOffer.offerId, refreshedWorkspace.offers, false);
+      setConfirmation(null);
       navigate(createdOffer.workspacePath, { replace: true });
     } catch (error) {
       setErrorMessage(getErrorMessage(error, 'Не удалось создать новый отклик'));
@@ -476,6 +504,8 @@ export const useOfferWorkspace = () => {
   };
 
   return {
+    confirmation,
+    closeConfirmation: () => { if (!isUpdatingOfferStatus) setConfirmation(null); },
     session,
     logout,
     navigate,

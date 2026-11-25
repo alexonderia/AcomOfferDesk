@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
@@ -76,6 +78,7 @@ def test_refresh_returns_session_and_rotated_http_only_cookies(monkeypatch) -> N
 
     with TestClient(_build_app()) as client:
         _set_refresh_cookie(client)
+        client.cookies.set(settings.iam_csrf_cookie_name, "existing-csrf", path="/")
         response = client.post("/api/v1/auth/refresh")
 
     assert response.status_code == 200
@@ -84,6 +87,7 @@ def test_refresh_returns_session_and_rotated_http_only_cookies(monkeypatch) -> N
     assert any(f"{settings.iam_access_cookie_name}=new-access-token" in value for value in set_cookies)
     assert any(f"{settings.iam_refresh_cookie_name}=new-refresh-token" in value for value in set_cookies)
     assert all("HttpOnly" in value for value in set_cookies if settings.iam_csrf_cookie_name not in value)
+    assert any(f"{settings.iam_csrf_cookie_name}=existing-csrf" in value for value in set_cookies)
 
 
 def test_refresh_without_cookie_is_terminal_and_does_not_create_session() -> None:
@@ -232,3 +236,46 @@ def test_iam_bff_logout_route_clears_path_scoped_iam_ui_cookie() -> None:
         settings.iam_browser_session_cookie_name in value and "Path=/iam" in value and "Max-Age=0" in value
         for value in response.headers.get_list("set-cookie")
     )
+
+
+@pytest.mark.parametrize("action", ["setup", "reset"])
+def test_password_form_with_existing_session_passes_csrf_without_exempting_it(monkeypatch, action):
+    from app.core.csrf import csrf_protection
+
+    observed = []
+
+    class _IamClient:
+        async def render_password_action_page(self, *, action, token=None, form=None):
+            observed.append(form)
+            return IamBrowserPage(status_code=200, html=f'<form method="post" action="/iam/password/{action}">')
+
+    monkeypatch.setattr(auth_api, "IamClient", _IamClient)
+    monkeypatch.setattr(settings, "web_base_url", "https://testserver")
+    app = _build_app()
+    app.middleware("http")(csrf_protection)
+    with TestClient(app, base_url="https://testserver") as client:
+        client.cookies.set(settings.iam_access_cookie_name, "existing-access", path="/")
+        page = client.get(f"/api/v1/auth/password/{action}", params={"token": "valid-action-token-123456"})
+        match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+        assert match is not None
+        renewed_csrf = client.get("/api/v1/auth/csrf")
+        assert renewed_csrf.json()["csrf_token"] == match.group(1)
+        form = {"token": "valid-action-token-123456", "new_password": "new-password-123456", "password_confirmation": "new-password-123456"}
+        assert client.post(f"/api/v1/auth/password/{action}", data=form, headers={"Origin": "https://testserver"}).status_code == 403
+        form["csrf_token"] = match.group(1)
+        assert client.post(f"/api/v1/auth/password/{action}", data=form, headers={"Origin": "https://foreign.example"}).status_code == 403
+        response = client.post(f"/api/v1/auth/password/{action}", data=form, headers={"Origin": "https://testserver"})
+        assert response.status_code == 200
+        assert observed[-1] == {key: value for key, value in form.items() if key != "csrf_token"}
+
+
+def test_form_csrf_token_is_not_accepted_by_business_json_endpoints(monkeypatch):
+    from app.core.csrf import csrf_protection
+    monkeypatch.setattr(settings, "web_base_url", "https://testserver")
+    app = _build_app()
+    app.middleware("http")(csrf_protection)
+    with TestClient(app, base_url="https://testserver") as client:
+        client.cookies.set(settings.iam_access_cookie_name, "existing-access", path="/")
+        client.cookies.set(settings.iam_csrf_cookie_name, "csrf-token", path="/")
+        response = client.post("/api/v1/auth/logout", data={"csrf_token": "csrf-token"}, headers={"Origin": "https://testserver"})
+    assert response.status_code == 403

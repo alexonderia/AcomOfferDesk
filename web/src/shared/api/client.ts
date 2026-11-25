@@ -16,6 +16,7 @@ export type AuthRefreshResult =
 
 type AuthRuntime = {
   refresh: (reason: RefreshReason) => Promise<AuthRefreshResult>;
+  getSessionRevision: () => number;
   canAttemptSilentRefresh: (reason: Exclude<RefreshReason, 'bootstrap'>) => boolean;
   forceLogout: () => void;
 };
@@ -232,6 +233,7 @@ export const apiFetch = async (
   withAuth = true,
   allowRetry = true
 ): Promise<Response> => {
+  const sessionRevision = authRuntime?.getSessionRevision();
   const headers = new Headers(init.headers);
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
@@ -262,12 +264,19 @@ export const apiFetch = async (
     && authRuntime
     && authRuntime.canAttemptSilentRefresh('http_401')
   ) {
-    const refreshResult = await authRuntime.refresh('http_401');
+    // A slower response can still belong to the cookies used before a completed refresh.
+    const refreshResult = sessionRevision !== authRuntime.getSessionRevision()
+      ? { kind: 'success' as const }
+      : await authRuntime.refresh('http_401');
     if (refreshResult.kind === 'success') {
-      return await apiFetch(url, init, withAuth, false);
+      const retried = await apiFetch(url, init, withAuth, false);
+      if (retried.status === 401) {
+        authRuntime?.forceLogout();
+      }
+      return retried;
     }
     if (refreshResult.kind === 'terminal') {
-      authRuntime.forceLogout();
+      authRuntime?.forceLogout();
     }
   }
 

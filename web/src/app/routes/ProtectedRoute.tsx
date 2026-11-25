@@ -6,7 +6,7 @@ export const ProtectedRoute = () => {
   const { isAuthenticated, status, session } = useAuth();
   const location = useLocation();
 
-  if (status === 'authenticating') {
+  if (status === 'authenticating' || status === 'signing_out') {
     return null;
   }
 

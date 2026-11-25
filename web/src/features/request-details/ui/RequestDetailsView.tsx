@@ -42,6 +42,7 @@ import { CreateManualOfferDialog } from './CreateManualOfferDialog';
 import { RequestDetailsMainCard } from './RequestDetailsMainCard';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { useOfferContractorLoginAccess } from '@features/requests/model/useOfferContractorLoginAccess';
+import { ConfirmationDialog } from '@shared/components/ConfirmationDialog';
 
 const offerStatusOptions: OfferStatusOption[] = [
     { value: 'accepted', label: 'Принято' },
@@ -94,7 +95,9 @@ export const RequestDetailsView = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [isSendingEmails, setIsSendingEmails] = useState(false);
     const [isClearingDeletedAlert, setIsClearingDeletedAlert] = useState(false);
-    const [isStatusChangeSaveConfirmed, setIsStatusChangeSaveConfirmed] = useState(false);
+    const [isSaveConfirmationOpen, setIsSaveConfirmationOpen] = useState(false);
+    const [offerConfirmation, setOfferConfirmation] = useState<{ offerId: number; value: OfferDecisionStatus } | null>(null);
+    const [isUpdatingOfferStatus, setIsUpdatingOfferStatus] = useState(false);
     const previousHasPendingChangesRef = useRef(false);
     const suppressPendingChangesToastRef = useRef(false);
 
@@ -450,9 +453,9 @@ export const RequestDetailsView = () => {
         [offers]
     );
 
-    const handleSave = async () => {
+    const handleSave = async (requireConfirmation = true) => {
         const currentRequest = requestDetails;
-        if (!currentRequest || !canSaveRequestChanges) {
+        if (!currentRequest || !canSaveRequestChanges || isSaving) {
             return;
         }
 
@@ -464,10 +467,7 @@ export const RequestDetailsView = () => {
         const parsedPlanId = planId ? Number(planId) : null;
         const initialAmountChanged = canViewRequestAmounts && initialAmount !== baselineInitialAmount;
         const finalAmountChanged = canViewRequestAmounts && finalAmount !== baselineFinalAmount;
-        let effectiveDeadline = deadline;
-        if (status === 'review') {
-            effectiveDeadline = todayDate;
-        }
+        const effectiveDeadline = deadline;
         const deadlineChanged = effectiveDeadline !== baselineDeadline;
 
         const validationError = getSaveValidationError(status, effectiveDeadline, initialAmount, finalAmount);
@@ -475,12 +475,8 @@ export const RequestDetailsView = () => {
             showSystemToast({ severity: 'warning', message: validationError });
             return;
         }
-        if (statusChanged && !isStatusChangeSaveConfirmed) {
-            setIsStatusChangeSaveConfirmed(true);
-            showSystemToast({
-                severity: 'warning',
-                message: 'Требуется подтверждение: нажмите «Сохранить» ещё раз, чтобы применить изменение статуса заявки',
-            });
+        if (statusChanged && requireConfirmation) {
+            setIsSaveConfirmationOpen(true);
             return;
         }
         setIsSaving(true);
@@ -515,6 +511,7 @@ export const RequestDetailsView = () => {
 
             const refreshed = await getRequestDetails(currentRequest.id);
             syncRequestState(refreshed, true);
+            setIsSaveConfirmationOpen(false);
 
             if (uploadErrors.length > 0) {
                 setNewFiles(failedUploadFiles);
@@ -540,7 +537,7 @@ export const RequestDetailsView = () => {
         requireConfirmation = true
     ) => {
         const targetOffer = offers.find((offer) => offer.offer_id === offerId);
-        if (!targetOffer || (!targetOffer.actions.accept && !targetOffer.actions.reject)) {
+        if (!targetOffer || isUpdatingOfferStatus || (value === 'accepted' ? !targetOffer.actions.accept : !targetOffer.actions.reject)) {
             return;
         }
 
@@ -568,20 +565,11 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: previousStatus
             }));
-            showSystemToast({
-                severity: 'warning',
-                message: value === 'accepted'
-                    ? 'Подтвердите, что вы хотите установить статус «Принято»'
-                    : 'Подтвердите, что вы хотите установить статус «Отказано»',
-                actionLabel: 'Подтвердить',
-                onAction: () => {
-                    void handleOfferStatusChange(offerId, value, false);
-                },
-                cancelLabel: 'Отмена',
-            });
+            setOfferConfirmation({ offerId, value });
             return;
         }
 
+        setIsUpdatingOfferStatus(true);
         try {
             const response = await updateOfferStatus({
                 offer_id: offerId,
@@ -598,12 +586,15 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: normalizeOfferStatus(response.offer.status)
             }));
+            setOfferConfirmation(null);
         } catch (error) {
             setOffersStatusMap((prev) => ({
                 ...prev,
                 [offerId]: previousStatus
             }));
             setOffersError(error instanceof Error ? error.message : 'Не удалось обновить статус КП');
+        } finally {
+            setIsUpdatingOfferStatus(false);
         }
     };
 
@@ -685,7 +676,7 @@ export const RequestDetailsView = () => {
         setDeletedFileIds([]);
         setNewFiles([]);
         setIsEditMode(false);
-        setIsStatusChangeSaveConfirmed(false);
+        setIsSaveConfirmationOpen(false);
     };
 
     const ownerField = canEditOwner && isEditMode ? (
@@ -730,7 +721,7 @@ export const RequestDetailsView = () => {
     const canExpandDescription = isDescriptionOverflowing;
     const handleStatusSelection = (nextStatus: RequestStatus) => {
         setStatus(nextStatus);
-        setIsStatusChangeSaveConfirmed(false);
+        setIsSaveConfirmationOpen(false);
         if (nextStatus === 'review') {
             setDeadline(todayDate);
         }
@@ -785,6 +776,22 @@ export const RequestDetailsView = () => {
 
     return (
         <Box>
+            <ConfirmationDialog
+                open={isSaveConfirmationOpen}
+                title="Изменение статуса заявки"
+                description={`Сохранить изменения заявки №${requestDetails.id} и установить статус «${statusOptions.find((option) => option.value === status)?.label ?? status}»?`}
+                confirmLabel="Сохранить" pendingLabel="Сохраняем..." isPending={isSaving}
+                onCancel={() => setIsSaveConfirmationOpen(false)} onConfirm={() => handleSave(false)}
+            />
+            <ConfirmationDialog
+                open={Boolean(offerConfirmation)} title="Изменение статуса КП"
+                description={offerConfirmation?.value === 'accepted'
+                    ? `Принять КП №${offerConfirmation.offerId}? Остальные КП по заявке автоматически получат статус «Отказано».`
+                    : `Установить статус «Отказано» для КП №${offerConfirmation?.offerId}?`}
+                confirmLabel="Подтвердить" pendingLabel="Сохраняем..." isPending={isUpdatingOfferStatus}
+                onCancel={() => setOfferConfirmation(null)}
+                onConfirm={async () => { if (offerConfirmation) await handleOfferStatusChange(offerConfirmation.offerId, offerConfirmation.value, false); }}
+            />
 
             <RequestDetailsMainCard
                 requestId={requestDetails.id}

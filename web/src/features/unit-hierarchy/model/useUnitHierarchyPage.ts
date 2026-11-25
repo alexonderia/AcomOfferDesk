@@ -48,6 +48,8 @@ type DeleteDialogState = {
   willReassign: boolean;
 } | null;
 
+type RemoveMemberState = { unit: UnitNode; member: UnitMember } | null;
+
 const flattenUnits = (nodes: UnitNode[]): UnitNode[] =>
   nodes.flatMap((node) => [node, ...flattenUnits(node.children)]);
 
@@ -189,6 +191,8 @@ export const useUnitHierarchyPage = () => {
   const [isSavingMember, setIsSavingMember] = useState(false);
   const [moveMemberState, setMoveMemberState] = useState<MoveMemberState>(null);
   const [isMovingMember, setIsMovingMember] = useState(false);
+  const [removeMemberState, setRemoveMemberState] = useState<RemoveMemberState>(null);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
   const [deleteDialogState, setDeleteDialogState] = useState<DeleteDialogState>(null);
   const [isDeletingUnit, setIsDeletingUnit] = useState(false);
   const [contractorDialogUnit, setContractorDialogUnit] = useState<UnitNode | null>(null);
@@ -198,7 +202,7 @@ export const useUnitHierarchyPage = () => {
   const [unassignedUsersError, setUnassignedUsersError] = useState<string | null>(null);
   const [assignMemberState, setAssignMemberState] = useState<AssignMemberState>(null);
   const [isAssigningMember, setIsAssigningMember] = useState(false);
-  const deferredMemberSearch = useDeferredValue(memberDialogState.search);
+  const deferredMemberSearch = useDeferredValue(memberDialogState.selectedUserId ? '' : memberDialogState.search);
 
   const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
   const canCreateRootUnit = hasPermission(session, 'units.create') && isSuperadmin;
@@ -380,7 +384,7 @@ export const useUnitHierarchyPage = () => {
     };
   }, [deferredMemberSearch, memberDialogState.unit, showErrorToast]);
 
-  const openCreateRootDialog = () => setUnitDialogState({ mode: 'create-root', unit: null });
+  const openCreateRootDialog = useCallback(() => setUnitDialogState({ mode: 'create-root', unit: null }), []);
   const openCreateChildDialog = (unit: UnitNode) => setUnitDialogState({ mode: 'create-child', unit });
   const openEditUnitDialog = (unit: UnitNode) => setUnitDialogState({ mode: 'edit', unit });
   const closeUnitDialog = () => setUnitDialogState({ mode: null, unit: null });
@@ -448,16 +452,30 @@ export const useUnitHierarchyPage = () => {
     }
   };
 
-  const removeMemberFromUnit = async (unit: UnitNode, member: UnitMember) => {
+  const removeMemberFromUnit = (unit: UnitNode, member: UnitMember) => {
+    setRemoveMemberState({ unit, member });
+  };
+
+  const closeRemoveMemberDialog = () => {
+    if (!isRemovingMember) setRemoveMemberState(null);
+  };
+
+  const confirmRemoveMember = async () => {
+    if (!removeMemberState || isRemovingMember) return;
+    const { unit, member } = removeMemberState;
+    setIsRemovingMember(true);
     try {
       await removeUnitMember(unit.unit_id, member.user_id);
       showSuccessToast('Сотрудник откреплен от объединения');
+      setRemoveMemberState(null);
       if (moveMemberState?.member.user_id === member.user_id && moveMemberState.fromUnit.unit_id === unit.unit_id) {
         setMoveMemberState(null);
       }
       await loadTree();
     } catch (removeError) {
       showErrorToast(removeError instanceof Error ? removeError.message : 'Не удалось открепить сотрудника');
+    } finally {
+      setIsRemovingMember(false);
     }
   };
 
@@ -565,10 +583,10 @@ export const useUnitHierarchyPage = () => {
     });
   };
 
-  const closeDeleteDialog = () => setDeleteDialogState(null);
+  const closeDeleteDialog = () => { if (!isDeletingUnit) setDeleteDialogState(null); };
 
   const confirmDeleteUnit = async () => {
-    if (!deleteDialogState) {
+    if (!deleteDialogState || isDeletingUnit) {
       return;
     }
 
@@ -582,7 +600,7 @@ export const useUnitHierarchyPage = () => {
       if (activeUnitDetailsId === deleteDialogState.unit.unit_id) {
         setActiveUnitDetailsId(null);
       }
-      closeDeleteDialog();
+      setDeleteDialogState(null);
       await loadTree();
     } catch (deleteError) {
       showErrorToast(deleteError instanceof Error ? deleteError.message : 'Не удалось удалить подразделение');
@@ -629,6 +647,10 @@ export const useUnitHierarchyPage = () => {
     closeMemberDialog,
     submitMember,
     removeMemberFromUnit,
+    removeMemberState,
+    isRemovingMember,
+    closeRemoveMemberDialog,
+    confirmRemoveMember,
     contractorDialogUnit,
     openContractorDialog,
     closeContractorDialog,

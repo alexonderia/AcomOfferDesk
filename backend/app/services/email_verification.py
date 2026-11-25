@@ -126,16 +126,15 @@ class EmailVerificationService:
     async def confirm_profile_verification(self, *, token: str) -> EmailVerificationConfirmResult:
         consumed = None
         matched_purpose = None
-        last_error: Exception | None = None
         for purpose in EMAIL_ACTION_PURPOSES:
             try:
                 consumed = await self._iam_client.consume_action_token(token=token, purpose=purpose)
                 matched_purpose = purpose
                 break
-            except Unauthorized as exc:
-                last_error = exc
+            except Unauthorized:
+                continue
         if consumed is None or matched_purpose is None:
-            raise Unauthorized("Ссылка подтверждения недействительна") from last_error
+            return await self._read_already_confirmed(token=token)
 
         email = str((consumed.context or {}).get("email") or "").strip().lower()
         if not email:
@@ -165,6 +164,22 @@ class EmailVerificationService:
             email=email,
             purpose=matched_purpose,
             next_action="login",
+        )
+
+    async def _read_already_confirmed(self, *, token: str) -> EmailVerificationConfirmResult:
+        try:
+            confirmed = await self._iam_client.inspect_consumed_email_confirmation(token=token)
+        except Unauthorized:
+            raise Unauthorized("Ссылка подтверждения недействительна") from None
+        email = str((confirmed.context or {}).get("email") or "").strip().lower()
+        if confirmed.purpose not in EMAIL_ACTION_PURPOSES or not email or self._user_contact_channels is None:
+            raise Unauthorized("Ссылка подтверждения недействительна")
+        user_id = await self._user_id_for_account(str(confirmed.account_id))
+        channel = await self._user_contact_channels.get_primary_by_type(user_id=user_id, channel_type="email")
+        if channel is None or not channel.is_verified or (channel.channel_value or "").strip().lower() != email:
+            raise Unauthorized("Ссылка подтверждения недействительна")
+        return EmailVerificationConfirmResult(
+            updated=False, user_id=user_id, email=email, purpose=confirmed.purpose, next_action="login",
         )
 
     async def _account_id_for_user(self, user_id: str) -> str:
@@ -210,6 +225,7 @@ class EmailVerificationService:
                 payload.text_content,
                 payload.html_content,
                 recipient_context=recipient_context,
+                recipient_user_id=(recipient_context or {}).get("user_login"),
             )
         except smtplib.SMTPException as exc:
             raise Conflict(f"Не удалось отправить письмо для подтверждения email: {exc}") from exc

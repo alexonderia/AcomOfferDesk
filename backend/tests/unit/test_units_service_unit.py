@@ -318,6 +318,22 @@ async def test_admin_can_list_available_users_without_target_unit(service_contex
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("user_id,role_id", [("pm-1", settings.project_manager_role_id), ("lead-1", settings.lead_economist_role_id), ("econ-1", settings.economist_role_id)])
+async def test_scoped_manager_can_select_and_assign_available_staff_but_not_foreign_staff(service_context, make_current_user, user_id, role_id):
+    service_context.units.members[(1, user_id)] = UnitMember(id_unit=1, id_user=user_id, id_assigned_by_user="superadmin-1", is_active=True)
+    service_context.units.units[4] = Unit(id=4, name="Другой отдел", id_parent=None, is_active=True, id_created_by_user="superadmin-1")
+    service_context.units.members[(4, "econ-2")] = UnitMember(id_unit=4, id_user="econ-2", id_assigned_by_user="superadmin-1", is_active=True)
+    current = make_current_user(user_id=user_id, role_id=role_id, permissions={"units.read", "units.members.manage"})
+    rows = await service_context.service.list_available_users_for_unit(current_user=current, unit_id=3)
+    assert "econ-1" in {row.user_id for row in rows}
+    assert "econ-2" not in {row.user_id for row in rows}
+    member = await service_context.service.add_member(current_user=current, unit_id=3, user_id="econ-1")
+    assert member.user_id == "econ-1"
+    with pytest.raises(Forbidden):
+        await service_context.service.add_member(current_user=current, unit_id=3, user_id="econ-2")
+
+
+@pytest.mark.asyncio
 async def test_available_users_exclude_contractors(service_context, make_current_user) -> None:
     rows = await service_context.service.list_available_users_for_unit(
         current_user=make_current_user(

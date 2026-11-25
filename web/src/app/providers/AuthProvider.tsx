@@ -9,7 +9,7 @@ import {
   type AuthSessionResponse,
 } from '@shared/api/auth/loginWebUser';
 
-type AuthStatus = 'unauthenticated' | 'authenticating' | 'authenticated' | 'unavailable';
+type AuthStatus = 'unauthenticated' | 'authenticating' | 'authenticated' | 'unavailable' | 'signing_out';
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
 const PERMISSION_REFRESH_INTERVAL_MS = 60_000;
 
@@ -55,8 +55,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<AuthSession | null>(null);
   const refreshPromiseRef = useRef<Promise<AuthRefreshResult> | null>(null);
   const logoutPromiseRef = useRef<Promise<void> | null>(null);
+  const sessionRevisionRef = useRef(0);
 
   const refresh = useCallback((_reason: RefreshReason): Promise<AuthRefreshResult> => {
+    if (logoutPromiseRef.current) {
+      return Promise.resolve({ kind: 'terminal' });
+    }
     if (refreshPromiseRef.current) {
       return refreshPromiseRef.current;
     }
@@ -65,7 +69,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         await issueCsrfToken();
         const result = await refreshWebSession();
+        if (logoutPromiseRef.current) {
+          return { kind: 'terminal' };
+        }
         if (result.kind === 'success') {
+          sessionRevisionRef.current += 1;
           setSession(mapSession(result.session));
           setStatus('authenticated');
           return { kind: 'success' };
@@ -78,6 +86,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setStatus('unavailable');
         return result;
       } catch {
+        if (logoutPromiseRef.current) {
+          return { kind: 'terminal' };
+        }
         setStatus('unavailable');
         return { kind: 'unavailable' };
       }
@@ -93,6 +104,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const beginLogin = useCallback((nextPath = '/', _options?: { forcePrompt?: boolean }) => {
+    if (logoutPromiseRef.current) {
+      return;
+    }
     const safeNext = nextPath.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/';
     window.location.assign(`/api/v1/auth/login?next=${encodeURIComponent(safeNext)}`);
   }, []);
@@ -102,9 +116,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     setSession(null);
-    setStatus('unauthenticated');
+    setStatus('signing_out');
     const task = (async () => {
       try {
+        // Refresh rotates the cookie; revoke its result before leaving the page.
+        await refreshPromiseRef.current;
         await issueCsrfToken();
         await logoutWebSession();
       } finally {
@@ -131,7 +147,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         await issueCsrfToken();
         const restored = mapSession(await getWebSession());
-        if (!cancelled) {
+        if (!cancelled && !logoutPromiseRef.current) {
+          sessionRevisionRef.current += 1;
           setSession(restored);
           setStatus('authenticated');
         }
@@ -160,6 +177,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     setAuthRuntime({
       refresh,
+      getSessionRevision: () => sessionRevisionRef.current,
       canAttemptSilentRefresh: () => status === 'authenticated' && !logoutPromiseRef.current,
       forceLogout: logout,
     });

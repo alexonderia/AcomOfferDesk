@@ -5,12 +5,14 @@ import { PageBreadcrumbActionsProvider, usePageBreadcrumbItemsState } from '@app
 import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
 import { getOfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
+import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest';
 import { normalizeChatActions, normalizeOfferActions, normalizeRequestActions } from '@shared/api/mappers';
 import type { OfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import { ROLE } from '@shared/constants/roles';
 import { getContractorLoginAccess } from '@shared/api/contractors/getContractorLoginAccess';
 import { ContractorLoginAccessBadge } from '@features/contractors/components/ContractorLoginAccessBadge';
 import { useOfferWorkspace } from './useOfferWorkspace';
+import { ConfirmationDialog } from '@shared/components/ConfirmationDialog';
 
 const mocks = vi.hoisted(() => ({
   session: { login: 'staff', roleId: 4, permissions: [] as string[] },
@@ -26,6 +28,7 @@ vi.mock('@app/providers/ChatRealtimeProvider', () => ({
 }));
 vi.mock('@shared/api/offers/getOfferWorkspace', () => ({ getOfferWorkspace: vi.fn() }));
 vi.mock('@shared/api/offers/updateOfferStatus', () => ({ updateOfferStatus: vi.fn() }));
+vi.mock('@shared/api/offers/createOfferForRequest', () => ({ createOfferForRequest: vi.fn() }));
 vi.mock('@shared/api/contractors/getContractorLoginAccess', () => ({ getContractorLoginAccess: vi.fn() }));
 vi.mock('@shared/api/offers/getOfferContractorInfo', () => ({
   getOfferContractorInfo: vi.fn().mockRejectedValue(new Error('Contractor details unavailable in fixture')),
@@ -54,9 +57,15 @@ const workspaceFixture = (canViewDetails = true): OfferWorkspace => {
 
 const Breadcrumbs = () => <BreadcrumbsNav items={usePageBreadcrumbItemsState()} />;
 const Workspace = () => {
-  const { contractorLoginAccess, isContractorAccessLoading, canDeleteOffer, handleDeleteOffer } = useOfferWorkspace();
+  const { contractorLoginAccess, isContractorAccessLoading, canDeleteOffer, handleDeleteOffer,
+    confirmation, closeConfirmation, isUpdatingOfferStatus, handleStatusChange, handleCreateNewOffer } = useOfferWorkspace();
   return <><Breadcrumbs /><ContractorLoginAccessBadge access={contractorLoginAccess} loading={isContractorAccessLoading} />
-    <button type="button" disabled={!canDeleteOffer} onClick={() => void handleDeleteOffer()}>Удалить КП</button></>;
+    <button type="button" disabled={!canDeleteOffer} onClick={() => void handleDeleteOffer()}>Удалить КП</button>
+    <button type="button" onClick={() => void handleStatusChange('accepted')}>Принять КП</button>
+    <button type="button" onClick={() => void handleStatusChange('rejected')}>Отклонить КП</button>
+    <button type="button" onClick={() => void handleCreateNewOffer()}>Новый отклик</button>
+    {confirmation ? <ConfirmationDialog {...confirmation} open isPending={isUpdatingOfferStatus} onCancel={closeConfirmation} /> : null}
+  </>;
 };
 const renderWorkspace = (path = '/offers/61/workspace') => render(
   <MemoryRouter initialEntries={[path]} >
@@ -70,6 +79,62 @@ const renderWorkspace = (path = '/offers/61/workspace') => render(
 );
 
 describe('offer workspace breadcrumbs', () => {
+  it.each(['Принять КП', 'Отклонить КП'])('confirms %s through a dialog before calling the API', async (label) => {
+    const workspace = workspaceFixture();
+    workspace.offer.actions.accept = true;
+    workspace.offer.actions.reject = true;
+    vi.mocked(getOfferWorkspace).mockResolvedValue(workspace);
+    const status = label === 'Принять КП' ? 'accepted' : 'rejected';
+    vi.mocked(updateOfferStatus).mockResolvedValue({ offer: { id: 61, status } });
+    renderWorkspace();
+    await screen.findByText('КП №61');
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    const dialog = await screen.findByRole('dialog', { name: 'Изменение статуса КП' });
+    expect(updateOfferStatus).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Подтвердить' }));
+    await waitFor(() => expect(updateOfferStatus).toHaveBeenCalledExactlyOnceWith({ offer_id: 61, status }));
+  });
+
+  it('confirms creation of a new offer and sends no request when cancelled', async () => {
+    const workspace = workspaceFixture();
+    workspace.request.actions.create_offer = true;
+    vi.mocked(getOfferWorkspace).mockResolvedValue(workspace);
+    vi.mocked(createOfferForRequest).mockResolvedValue({ offerId: 61, requestId: '17', workspacePath: '/offers/61/workspace' });
+    renderWorkspace();
+    await screen.findByText('КП №61');
+    fireEvent.click(screen.getByRole('button', { name: 'Новый отклик' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Новый отклик' });
+    expect(dialog).toHaveTextContent('останутся в истории');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(createOfferForRequest).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Новый отклик' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Создать' }));
+    await waitFor(() => expect(createOfferForRequest).toHaveBeenCalledExactlyOnceWith('17'));
+  });
+
+  it('keeps deletion open on failure and allows retrying', async () => {
+    const workspace = workspaceFixture();
+    workspace.offer.actions.delete = true;
+    vi.mocked(getOfferWorkspace).mockResolvedValue(workspace);
+    vi.mocked(updateOfferStatus).mockRejectedValueOnce(new Error('Не удалось удалить КП'))
+      .mockResolvedValueOnce({ offer: { id: 61, status: 'deleted' } });
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить КП' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }));
+    await waitFor(() => expect(updateOfferStatus).toHaveBeenCalledOnce());
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Удалить' })).toBeEnabled());
+    expect(dialog).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }));
+    await waitFor(() => expect(updateOfferStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,12 +153,14 @@ describe('offer workspace breadcrumbs', () => {
       deletedWorkspace.offer.status = 'deleted';
       vi.mocked(getOfferWorkspace).mockResolvedValueOnce(workspace).mockResolvedValue(deletedWorkspace);
       vi.mocked(updateOfferStatus).mockResolvedValue({ offer: { id: 61, status: 'deleted' } });
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
       renderWorkspace();
       await waitFor(() => expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeEnabled());
       fireEvent.click(screen.getByRole('button', { name: 'Удалить КП' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Удаление КП' });
+      expect(updateOfferStatus).not.toHaveBeenCalled();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }));
       await waitFor(() => expect(updateOfferStatus).toHaveBeenCalledWith({ offer_id: 61, status: 'deleted' }));
-      expect(confirm).toHaveBeenCalledOnce();
+      expect(updateOfferStatus).toHaveBeenCalledOnce();
       await waitFor(() => expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeDisabled());
     },
   );
@@ -102,10 +169,11 @@ describe('offer workspace breadcrumbs', () => {
     const workspace = workspaceFixture();
     workspace.offer.actions.delete = true;
     vi.mocked(getOfferWorkspace).mockResolvedValue(workspace);
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderWorkspace();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Удалить КП' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Удалить КП' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(updateOfferStatus).not.toHaveBeenCalled();
   });
 

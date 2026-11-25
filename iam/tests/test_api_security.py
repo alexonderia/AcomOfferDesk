@@ -13,6 +13,8 @@ def test_internal_api_requires_service_authentication() -> None:
         response = client.get("/internal/rbac")
         assert response.status_code == 403
         assert response.json() == {"detail": "Доступ запрещён"}
+        response = client.post("/internal/action-tokens/email-confirmation", json={"token": "confirmation-token-123456"})
+        assert response.status_code == 403
 
 
 def test_internal_rbac_seed_is_idempotent() -> None:

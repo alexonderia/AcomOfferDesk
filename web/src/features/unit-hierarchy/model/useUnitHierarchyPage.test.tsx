@@ -240,6 +240,67 @@ describe('useUnitHierarchyPage', () => {
     expect(result.current.canCreateRootUnit).toBe(true);
   });
 
+  it('does not detach an employee before confirmation and permits cancellation', async () => {
+    const { result } = renderHook(() => useUnitHierarchyPage());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const unit = treeResponse[0]!.children[0]!;
+    act(() => result.current.removeMemberFromUnit(unit, unit.members[0]!));
+    expect(result.current.removeMemberState?.member.user_id).toBe('econ-1');
+    expect(removeUnitMemberMock).not.toHaveBeenCalled();
+    act(() => result.current.closeRemoveMemberDialog());
+    expect(result.current.removeMemberState).toBeNull();
+    await act(async () => { await result.current.confirmRemoveMember(); });
+    expect(removeUnitMemberMock).not.toHaveBeenCalled();
+  });
+
+  it('detaches the confirmed employee once and blocks closing while the request is pending', async () => {
+    let finishRemoval!: () => void;
+    removeUnitMemberMock.mockReturnValue(new Promise<void>(resolve => { finishRemoval = resolve; }));
+    const { result } = renderHook(() => useUnitHierarchyPage());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const unit = treeResponse[0]!.children[0]!;
+    act(() => result.current.removeMemberFromUnit(unit, unit.members[0]!));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.confirmRemoveMember(); });
+    expect(result.current.isRemovingMember).toBe(true);
+    act(() => result.current.closeRemoveMemberDialog());
+    await act(async () => { await result.current.confirmRemoveMember(); });
+    expect(result.current.removeMemberState).not.toBeNull();
+    expect(removeUnitMemberMock).toHaveBeenCalledTimes(1);
+    expect(removeUnitMemberMock).toHaveBeenCalledWith(2, 'econ-1');
+    await act(async () => { finishRemoval(); await pending; });
+    expect(result.current.removeMemberState).toBeNull();
+    expect(result.current.isRemovingMember).toBe(false);
+  });
+
+  it('keeps the confirmation open for retry after a failed detach', async () => {
+    removeUnitMemberMock.mockRejectedValueOnce(new Error('Не удалось открепить сотрудника'));
+    const { result } = renderHook(() => useUnitHierarchyPage());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const unit = treeResponse[0]!.children[0]!;
+    act(() => result.current.removeMemberFromUnit(unit, unit.members[0]!));
+    await act(async () => { await result.current.confirmRemoveMember(); });
+    expect(result.current.removeMemberState?.member.user_id).toBe('econ-1');
+    expect(result.current.isRemovingMember).toBe(false);
+    expect(showErrorToastMock).toHaveBeenCalledWith('Не удалось открепить сотрудника');
+    await act(async () => { await result.current.confirmRemoveMember(); });
+    expect(removeUnitMemberMock).toHaveBeenCalledTimes(2);
+    expect(result.current.removeMemberState).toBeNull();
+  });
+
+  it('searches typed input without submitting the selected employee display label', async () => {
+    const { result } = renderHook(() => useUnitHierarchyPage());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    act(() => result.current.openMemberDialog(treeResponse[0]!.children[0]!));
+    await waitFor(() => expect(getAvailableUsersForUnitMock).toHaveBeenCalledWith(2, ''));
+    act(() => result.current.setMemberDialogState(current => ({ ...current, search: 'econ' })));
+    await waitFor(() => expect(getAvailableUsersForUnitMock).toHaveBeenLastCalledWith(2, 'econ'));
+    act(() => result.current.setMemberDialogState(current => ({ ...current, selectedUserId: 'econ-2', search: 'Экономист 2 (econ-2)' })));
+    await waitFor(() => expect(getAvailableUsersForUnitMock).toHaveBeenLastCalledWith(2, ''));
+    expect(getAvailableUsersForUnitMock.mock.calls.some(([, query]) => query?.includes('('))).toBe(false);
+    expect(result.current.memberDialogState.selectedUserId).toBe('econ-2');
+  });
+
   it.each([
     { editorUnitId: null, parentUnitId: 1 },
     { editorUnitId: 1, parentUnitId: 1 },

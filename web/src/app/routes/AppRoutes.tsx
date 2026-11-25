@@ -60,10 +60,11 @@ const RouteFallback = () => (
 );
 
 export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocation }: AppRoutesProps) => {
+  const modalBackground = location.pathname === '/requests/create' ? backgroundLocation : undefined;
   return (
     <>
       <Suspense fallback={<RouteFallback />}>
-        <Routes location={backgroundLocation ?? location}>
+        <Routes location={modalBackground ?? location}>
           <Route path="/login" element={<AuthPage />} />
           <Route path="/auth/login" element={<AuthPage />} />
           <Route path="/auth/callback" element={<AuthPage />} />
@@ -178,7 +179,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
           <Route path="*" element={<Navigate to={hasSession ? defaultPath : '/login'} replace />} />
         </Routes>
 
-        {backgroundLocation ? (
+        {modalBackground ? (
           <Routes>
             <Route element={<ProtectedRoute />}>
               <Route path="/requests/create" element={<CreateRequestPage />} />

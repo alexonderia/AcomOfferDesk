@@ -91,4 +91,13 @@ describe("ProtectedRoute", () => {
 
     expect(screen.getByRole("button", { name: "Обновить страницу" })).toBeInTheDocument();
   });
+
+  it('waits for logout cleanup before navigating to login', () => {
+    useAuthMock.mockReturnValue({ status: 'signing_out', isAuthenticated: false, session: null });
+
+    renderProtectedRoutes('/protected');
+
+    expect(screen.queryByText('login-page')).not.toBeInTheDocument();
+    expect(screen.queryByText('protected-page')).not.toBeInTheDocument();
+  });
 });

@@ -1,11 +1,12 @@
 ﻿import { forwardRef, type ReactNode } from "react";
 import { ThemeProvider } from "@mui/material/styles";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RequestDetailsView } from "@features/request-details/ui/RequestDetailsView";
 import { getRequestDetails } from "@shared/api/requests/getRequestDetails";
 import { updateRequestDetails } from "@shared/api/requests/updateRequestDetails";
+import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { appTheme } from "@shared/theme/appTheme";
 
 vi.mock("@features/request-details/model/useRequestDetails", () => ({
@@ -18,6 +19,7 @@ vi.mock("@features/request-details/model/useRequestDetails", () => ({
 vi.mock("@shared/api/requests/getRequestDetails", () => ({
   getRequestDetails: vi.fn(),
 }));
+vi.mock('@shared/api/offers/updateOfferStatus', () => ({ updateOfferStatus: vi.fn() }));
 
 vi.mock("@shared/api/requests/getRequestEconomists", () => ({
   getRequestEconomists: vi.fn().mockResolvedValue([]),
@@ -61,6 +63,8 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
     status: string;
     onStatusChange: (status: string) => void;
     onSave: () => void;
+    deadline: string;
+    onDeadlineChange: (value: string) => void;
     responsibleContact?: {
       fullName?: string | null;
       phone?: string | null;
@@ -80,15 +84,18 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
       <button type="button" onClick={props.onStartEdit}>Start editing</button>
       <button type="button" onClick={() => props.onStatusChange("closed")}>Close request</button>
       <button type="button" onClick={props.onSave}>Save request</button>
+      <input aria-label="Дедлайн" value={props.deadline} onChange={(event) => props.onDeadlineChange(event.target.value)} />
     </div>
   ),
 }));
 
 vi.mock("@features/request-details/ui/OffersTable", () => ({
-  OffersTable: (props: { canChangeStatus?: boolean; onAddClick?: (() => void) | undefined }) => (
+  OffersTable: (props: { canChangeStatus?: boolean; onAddClick?: (() => void) | undefined; onStatusChange: (id: number, value: 'accepted' | 'rejected') => void }) => (
     <div data-testid="offers-table">
       <div data-testid="offers-can-change-status">{String(Boolean(props.canChangeStatus))}</div>
       <div data-testid="offers-has-add-click">{String(Boolean(props.onAddClick))}</div>
+      <button onClick={() => props.onStatusChange(101, 'accepted')}>Принять КП</button>
+      <button onClick={() => props.onStatusChange(101, 'rejected')}>Отклонить КП</button>
     </div>
   ),
 }));
@@ -185,9 +192,61 @@ const renderWithTheme = () =>
   );
 
 describe("RequestDetailsView action-driven CTAs", () => {
+  it('cancels a request status change and requires a fresh confirmation on reopening', async () => {
+    vi.mocked(getRequestDetails).mockResolvedValue({ ...buildRequestDetails(), final_amount: 100, offers: [] } as never);
+    vi.mocked(updateRequestDetails).mockResolvedValue(undefined as never);
+    renderWithTheme();
+    await screen.findByTestId('request-details-main-card');
+    fireEvent.click(screen.getByRole('button', { name: 'Start editing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close request' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save request' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Изменение статуса заявки' });
+    expect(dialog).toHaveTextContent('Закрыта');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(updateRequestDetails).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save request' }));
+    expect(updateRequestDetails).not.toHaveBeenCalled();
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(updateRequestDetails).toHaveBeenCalledOnce());
+  });
+
+  it.each(['Принять КП', 'Отклонить КП'])('uses a cancellable dialog for %s', async (label) => {
+    vi.mocked(getRequestDetails).mockResolvedValue(buildRequestDetails() as never);
+    const status = label === 'Принять КП' ? 'accepted' : 'rejected';
+    vi.mocked(updateOfferStatus).mockResolvedValue({ offer: { id: 101, status } });
+    renderWithTheme();
+    await screen.findByTestId('request-details-main-card');
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    const dialog = await screen.findByRole('dialog', { name: 'Изменение статуса КП' });
+    expect(dialog).toHaveTextContent('101');
+    expect(updateOfferStatus).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(updateOfferStatus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Подтвердить' }));
+    await waitFor(() => expect(updateOfferStatus).toHaveBeenCalledExactlyOnceWith({ offer_id: 101, status }));
+  });
+
   beforeEach(() => {
     vi.mocked(getRequestDetails).mockReset();
     vi.mocked(updateRequestDetails).mockReset();
+    vi.mocked(updateOfferStatus).mockReset();
+  });
+
+  it('saves the selected deadline while the request remains under review', async () => {
+    vi.mocked(getRequestDetails).mockResolvedValue({ ...buildRequestDetails(), status: 'review', deadline_at: '2100-05-20T00:00:00Z' } as never);
+    renderWithTheme();
+    await screen.findByTestId('request-details-main-card');
+    fireEvent.click(screen.getByRole('button', { name: 'Start editing' }));
+    fireEvent.change(screen.getByLabelText('Дедлайн'), { target: { value: '2100-06-15' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save request' }));
+
+    await waitFor(() => expect(updateRequestDetails).toHaveBeenCalledWith(expect.objectContaining({
+      deadline_at: expect.stringContaining('2100-06-15'),
+      status: undefined,
+    })));
   });
 
   it('passes the server owner warning to the request card', async () => {
@@ -320,7 +379,8 @@ describe("RequestDetailsView action-driven CTAs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start editing" }));
     fireEvent.click(screen.getByRole("button", { name: "Close request" }));
     fireEvent.click(screen.getByRole("button", { name: "Save request" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save request" }));
+    expect(updateRequestDetails).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
 
     await waitFor(() => {
       expect(updateRequestDetails).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));
@@ -368,7 +428,7 @@ describe("RequestDetailsView action-driven CTAs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start editing" }));
     fireEvent.click(screen.getByRole("button", { name: "Close request" }));
     fireEvent.click(screen.getByRole("button", { name: "Save request" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save request" }));
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
 
     await waitFor(() => {
       expect(updateRequestDetails).toHaveBeenCalledWith(expect.objectContaining({ status: "closed" }));

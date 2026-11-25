@@ -394,6 +394,16 @@ class IamClient:
             context=body.get("context"),
         )
 
+    async def inspect_consumed_email_confirmation(self, *, token: str) -> IamActionConsumeResult:
+        response = await self._request(
+            "POST", "/internal/action-tokens/email-confirmation", json={"token": token},
+        )
+        body = response.json()
+        return IamActionConsumeResult(
+            account_id=str(body["account_id"]), purpose=body["purpose"],
+            auth_status=body["auth_status"], context=body.get("context"),
+        )
+
     async def complete_required_action(
         self,
         *,

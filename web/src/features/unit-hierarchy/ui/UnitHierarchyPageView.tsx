@@ -23,6 +23,7 @@ import {
   FormControl,
   IconButton,
   InputBase,
+  Link,
   MenuItem,
   Select,
   Stack,
@@ -35,6 +36,8 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions, useSetPageBreadcrumbItems } from '@app/layouts/PageBreadcrumbActions';
 import type { UnitMember, UnitNode } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
+import { MAX_CONTACT_LINK } from '@shared/constants/supportContacts';
+import { ConfirmationDialog } from '@shared/components/ConfirmationDialog';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { useToastMessageEffect } from '@shared/ui/toasts';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
@@ -51,6 +54,10 @@ import {
   outlinedIconButtonSx,
   sectionCardSx,
 } from './unitHierarchyStyles';
+
+const memberOptionLabel = (option: Pick<UnitMember, 'full_name' | 'user_id'>) => (
+  option.full_name ? `${option.full_name} (${option.user_id})` : option.user_id
+);
 
 type UnitFormDialogProps = {
   isSaving: boolean;
@@ -805,6 +812,10 @@ export const UnitHierarchyPageView = () => {
     closeMemberDialog,
     submitMember,
     removeMemberFromUnit,
+    removeMemberState,
+    isRemovingMember,
+    closeRemoveMemberDialog,
+    confirmRemoveMember,
     contractorDialogUnit,
     openContractorDialog,
     closeContractorDialog,
@@ -1802,13 +1813,15 @@ export const UnitHierarchyPageView = () => {
             loading={isLoadingUsers}
             value={selectedUser}
             onChange={(_event, value) => {
-              setMemberDialogState((current) => ({ ...current, selectedUserId: value?.user_id ?? '' }));
+              setMemberDialogState((current) => ({ ...current, selectedUserId: value?.user_id ?? '', search: value ? memberOptionLabel(value) : '' }));
             }}
             inputValue={memberDialogState.search}
-            onInputChange={(_event, value) => {
-              setMemberDialogState((current) => ({ ...current, search: value }));
+            onInputChange={(_event, value, reason) => {
+              if (reason === 'input' || reason === 'clear') {
+                setMemberDialogState((current) => ({ ...current, search: value, selectedUserId: '' }));
+              }
             }}
-            getOptionLabel={(option) => option.full_name ? `${option.full_name} (${option.user_id})` : option.user_id}
+            getOptionLabel={memberOptionLabel}
             isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
             renderInput={(params) => (
               <TextField
@@ -1887,9 +1900,25 @@ export const UnitHierarchyPageView = () => {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(deleteDialogState)} onClose={closeDeleteDialog} maxWidth="lg" fullWidth>
-        <DialogTitle>Удаление объединения</DialogTitle>
-        <DialogContent dividers>
+      <ConfirmationDialog
+        open={Boolean(removeMemberState)}
+        title="Открепление сотрудника"
+        onCancel={closeRemoveMemberDialog}
+        onConfirm={confirmRemoveMember}
+        isPending={isRemovingMember}
+        confirmLabel="Открепить" pendingLabel="Открепляем..." color="error"
+        description={<>Открепить сотрудника «{removeMemberState?.member.full_name || removeMemberState?.member.user_id}»
+          {' '}от объединения «{removeMemberState?.unit.name}»? Учётная запись и назначения в других объединениях сохранятся.</>}
+      >
+          <Alert id="remove-unit-member-warning" severity="warning" sx={{ mt: 2 }}>
+            После открепления вы не сможете прикрепить сотрудника снова. Для повторного прикрепления обратитесь к{' '}
+            <Link href={MAX_CONTACT_LINK} target="_blank" rel="noopener noreferrer">ответственному в MAX</Link>.
+          </Alert>
+      </ConfirmationDialog>
+
+      <ConfirmationDialog open={Boolean(deleteDialogState)} title="Удаление объединения" maxWidth="lg"
+        onCancel={closeDeleteDialog} onConfirm={confirmDeleteUnit} isPending={isDeletingUnit}
+        confirmLabel="Удалить" pendingLabel="Удаляем..." color="error">
           {deleteDialogState ? (
             <Stack spacing={1.4}>
               <Alert severity={deleteDialogState.willReassign ? 'warning' : 'info'} variant="outlined">
@@ -1911,14 +1940,7 @@ export const UnitHierarchyPageView = () => {
               </Box>
             </Stack>
           ) : null}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDeleteDialog}>Отмена</Button>
-          <Button color="error" variant="contained" disabled={isDeletingUnit} onClick={() => void confirmDeleteUnit()}>
-            {isDeletingUnit ? 'Удаляем...' : 'Удалить'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      </ConfirmationDialog>
     </Box>
     </HierarchyProfileProvider>
   );

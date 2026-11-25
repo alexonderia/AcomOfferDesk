@@ -1189,6 +1189,22 @@ class IamService:
             raise Conflict("email context required")
         return {"email": email}
 
+    async def inspect_consumed_email_confirmation(self, *, raw_token: str) -> ActionTokenConsumeResult:
+        """Read confirmation metadata without repeating a consumed action."""
+        token = await self._actions.get_by_hash(hash_secret(raw_token))
+        if (
+            token is None or token.purpose not in EMAIL_ACTION_PURPOSES
+            or token.consumed_at is None or as_utc(token.expires_at) <= utc_now()
+        ):
+            raise Unauthorized()
+        account = await self._accounts.get(token.account_id)
+        if account is None or account.auth_status in {"blocked", "disabled"}:
+            raise Unauthorized()
+        return ActionTokenConsumeResult(
+            account_id=account.id, purpose=token.purpose,
+            context=token.context, auth_status=account.auth_status,
+        )
+
     async def consume_action_token(
         self,
         *,

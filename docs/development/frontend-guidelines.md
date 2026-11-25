@@ -35,6 +35,24 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Treat `role_id` as UX-only.
 - Default missing action flags to disabled/hidden.
 - Keep API calls in `web/src/shared/api/*` and feature hooks/models, not scattered through presentational components.
+- Все подтверждения действий используют общий `ConfirmationDialog`: изменение статуса
+  заявки или КП, удаление КП, открепление сотрудника, удаление объединения или плана,
+  закрытие плана и создание нового отклика. Повторное нажатие исходной кнопки,
+  action в toast и `window.confirm` не используются как подтверждение.
+  Диалог описывает объект и последствия действия; начальный фокус стоит на «Отмена».
+  «Отмена», Escape и фон закрывают его без запроса. Во время выполнения обе кнопки
+  и закрытие заблокированы; повторное подтверждение не отправляет второй запрос.
+  После ошибки подтверждение остаётся доступным для повтора.
+- `backgroundLocation` используется только для модального маршрута `/requests/create`.
+  При открытии другого раздела Routes берёт текущий location, даже если в состоянии
+  остался старый фон: URL и содержимое должны соответствовать друг другу.
+- Обработчики из feature hooks, включённые в memo панелей `PageBreadcrumbActions`,
+  должны иметь стабильную ссылку. В иерархии `openCreateRootDialog` создаётся через
+  `useCallback`: иначе обновление панели вызывает следующий render и замыкает цикл,
+  задерживающий переходы Router и `useDeferredValue` поиска.
+- В диалоге назначения сотрудника поисковый запрос отделяется от подписи выбранного
+  сотрудника. Автоматический `reset` Autocomplete не запускает поиск по строке
+  «ФИО (логин)»; после выбора подпись сохраняется при обновлении списка.
 - Поиск пользователей без видимой подписи и выбор категории размещаются в шапке страницы рядом с заголовком; поле сохраняет доступное имя «Поиск пользователей». Выбор категории также доступен в панели таблицы вне общего поиска; оба списка синхронизированы. На узком экране элементы переносятся внутри шапки.
 - На странице пользователей единое поле ищет по всем доступным сотрудникам и контрагентам независимо от выбранной категории: по логину, ФИО, контактам, роли и реквизитам компании. При непустом запросе сотрудники загружаются через `/users` без `role_id`, контрагенты — через существующий доступный API списка; серверные permissions и scope сохраняются. Результаты используют существующие таблицы и карточки сотрудников/контрагентов. Очистка поиска возвращает выбранную категорию. Смена текста внутри непустого запроса фильтрует загруженные данные без повторных запросов.
 - Employee links in hierarchy views open the shared `EmployeeCardDialog` used by the employee table, including contacts, status, and the unit hierarchy. Switching employees replaces the current card; closing or switching aborts its pending requests. Contact loading requires `users.read`, and each backend endpoint enforces the target user's scope.
@@ -131,6 +149,11 @@ Frontend work must preserve the thin-client architecture. The React app is respo
 - Each graph node should expose a local create-child affordance so users can extend the structure from the place they are editing, not through a separate global wizard.
 - Keep employee assignment in the same-page details panel for the selected unit, and make unit creation the first step before assigning staff.
 - Deleting a unit that affects structure should use a confirmation dialog with a preview of the post-delete hierarchy rather than a blind destructive confirm.
+- Открепление сотрудника из любой части редактора иерархии требует подтверждения
+  с именем сотрудника и объединения. «Отмена» и Escape закрывают подтверждение без
+  запроса; во время удаления кнопки и закрытие блокируются. При ошибке можно повторить.
+  В подтверждении отдельно выделено предупреждение о невозможности повторного прикрепления
+  со ссылкой на ответственного в MAX из общего `MAX_CONTACT_LINK`.
 - Keep helper copy terse and operational: short labels, short warnings, and focused empty states instead of long explanatory text blocks.
 
 ---
@@ -539,7 +562,7 @@ This file documents the current notification surfaces in the frontend.
 ### Rules
 
 - Display backend-generated notifications as the source of truth for in-app message state.
-- Use toast-style feedback for ephemeral UI confirmations and failures.
+- Use toast-style feedback for completed actions and failures. Action approval belongs in `ConfirmationDialog`.
 - Результат создания пользователя показывается одним системным тостом без дублирующего Alert на странице. Если backend вернул `visible_to_creator=false`, единственный тост имеет уровень warning и объясняет ограничение области видимости.
 - Keep page-level warnings local to the feature that owns them.
 - Do not create a separate notification system in the UI when the backend already provides a notification model.

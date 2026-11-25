@@ -449,6 +449,7 @@ def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_
         attachments=None,
         reply_token=None,
         recipient_context=None,
+        recipient_user_id=None,
     ):
         _ = (self, html_content, attachments, reply_token)
         outbox.append(
@@ -457,6 +458,7 @@ def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_
                 "subject": subject,
                 "text": text_content,
                 "recipient_context": recipient_context,
+                "recipient_user_id": recipient_user_id,
             }
         )
 
@@ -479,6 +481,7 @@ def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_
     assert second_response.status_code == 200
     assert [item["to_email"] for item in outbox] == ["new@example.com"]
     assert outbox[0]["recipient_context"] == {"user_login": "contractor-1"}
+    assert outbox[0]["recipient_user_id"] == "contractor-1"
     assert "https://acom.example/verify-email?token=" in outbox[0]["text"]
 
 
@@ -530,6 +533,10 @@ def _fake_iam_consume(monkeypatch, *, email: str, fail_after: int = 1):
     calls = {"count": 0}
 
     class _Client:
+        async def inspect_consumed_email_confirmation(self, *, token):
+            # This fixture has no verified contact channel to prove a prior confirmation.
+            raise Unauthorized("Ссылка подтверждения недействительна")
+
         async def consume_action_token(self, *, token: str, purpose: str, new_password=None):
             _ = (token, new_password)
             if purpose != "verify_email":
@@ -547,7 +554,7 @@ def _fake_iam_consume(monkeypatch, *, email: str, fail_after: int = 1):
     monkeypatch.setattr(email_verification_service, "IamClient", _Client)
 
 
-def test_verify_email_accepts_valid_token_and_rejects_replay(
+def test_verify_email_accepts_valid_token_and_rejects_replay_without_verified_channel(
     test_client,
     set_uow,
     monkeypatch,

@@ -60,7 +60,7 @@ const DetailRow = ({ label, value, divider = true }: { label: string; value: Rea
   <Box
     sx={(theme) => ({
       display: 'grid',
-      gridTemplateColumns: '1fr auto',
+      gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) auto' },
       alignItems: 'center',
       gap: 1,
       px: 1.25,
@@ -71,7 +71,7 @@ const DetailRow = ({ label, value, divider = true }: { label: string; value: Rea
     <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.2 }}>
       {label}
     </Typography>
-    <Box sx={{ justifySelf: { xs: 'stretch', sm: 'end' }, display: 'flex' }}>{value}</Box>
+    <Box sx={{ justifySelf: { xs: 'stretch', sm: 'end' }, display: 'flex', minWidth: 0 }}>{value}</Box>
   </Box>
 );
 
@@ -175,7 +175,7 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
         display: 'grid',
         gap: 1.5,
         gridTemplateColumns: {
-          xs: '1fr',
+          xs: 'minmax(0, 1fr)',
           lg: canViewRequestAmounts ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'
         }
       }}

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.csrf import csrf_failure_reason
+from app.core.csrf import csrf_protection
 from app.core.request_id import RequestIdMiddleware
 from app.api.v1 import router as v1_router
 from app.api.v1.auth import iam_bff_router
@@ -239,21 +239,7 @@ app = FastAPI(
 )
 
 
-@app.middleware("http")
-async def csrf_protection(request: Request, call_next):
-    failure_reason = csrf_failure_reason(request)
-    if failure_reason is not None:
-        logger.warning(
-            "csrf_request_rejected path=%s method=%s reason=%s",
-            request.url.path,
-            request.method,
-            failure_reason,
-        )
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Запрос отклонён проверкой безопасности."},
-        )
-    return await call_next(request)
+app.middleware("http")(csrf_protection)
 
 app.add_middleware(RequestIdMiddleware)
 

@@ -53,6 +53,7 @@ from iam_app.schemas import (
     ActionTokenConsumeResponse,
     ActionTokenRequest,
     ActionTokenResponse,
+    EmailConfirmationInspectRequest,
     LogoutRequest,
     RbacReportResponse,
     RbacSeedRequest,
@@ -724,6 +725,22 @@ async def create_action_token(
         context=payload.context,
     )
     return ActionTokenResponse(token=token, expires_at=expires_at, purpose=payload.purpose)
+
+
+@router.post(
+    "/internal/action-tokens/email-confirmation",
+    response_model=ActionTokenConsumeResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+async def inspect_email_confirmation(
+    payload: EmailConfirmationInspectRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ActionTokenConsumeResponse:
+    result = await IamService(session).inspect_consumed_email_confirmation(raw_token=payload.token)
+    return ActionTokenConsumeResponse(
+        account_id=result.account_id, purpose=result.purpose,
+        auth_status=result.auth_status, context=result.context,
+    )
 
 
 @router.post(

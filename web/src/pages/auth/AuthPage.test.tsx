@@ -7,7 +7,7 @@ import { AuthPage } from './AuthPage';
 
 const auth = vi.hoisted(() => ({
   beginLogin: vi.fn(),
-  status: 'unauthenticated' as 'unauthenticated' | 'unavailable',
+  status: 'unauthenticated' as 'unauthenticated' | 'unavailable' | 'signing_out',
 }));
 const passwordReset = vi.hoisted(() => vi.fn());
 const capabilities = vi.hoisted(() => vi.fn());
@@ -72,5 +72,12 @@ describe('AuthPage password reset', () => {
     );
 
     expect(auth.beginLogin).toHaveBeenCalledWith('/');
+  });
+
+  it.each(['signing_out', 'unavailable'] as const)('does not begin IAM login while %s', (status) => {
+    auth.status = status;
+    render(<MemoryRouter initialEntries={['/login']}><AuthPage /></MemoryRouter>);
+
+    expect(auth.beginLogin).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,11 @@ Backend поддерживает два независимых RabbitMQ-пото
 - `email.delivery.succeeded`
 - `email.delivery.failed`
 
+Письма подтверждения email передают `recipient_user_id` вместе с
+`recipient_context.user_login`. Одного контекста недостаточно для событий доставки:
+worker переносит ID в результат, а backend использует его для `email.sent` или
+`email.failed`. Постановка письма в очередь сама по себе не означает доставку.
+
 2. Поток процессных уведомлений (централизованный путь):
 - `offer.created`
 - `message.created`

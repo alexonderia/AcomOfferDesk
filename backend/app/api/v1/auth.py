@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+from html import escape
 import secrets
 import time
 from urllib.parse import urlencode
@@ -171,7 +172,7 @@ def _session_response(current_user: CurrentUser) -> AuthSessionResponse:
     )
 
 
-def _set_session_cookies(response: Response, bundle) -> None:
+def _set_session_cookies(response: Response, bundle, *, csrf_token: str | None = None) -> None:
     now = int(time.time())
     set_iam_access_cookie(
         response,
@@ -183,7 +184,7 @@ def _set_session_cookies(response: Response, bundle) -> None:
         bundle.refresh_token,
         max_age=max(1, bundle.refresh_token_expires_at - now),
     )
-    set_csrf_cookie(response, secrets.token_urlsafe(32), max_age=max(1, bundle.refresh_token_expires_at - now))
+    set_csrf_cookie(response, csrf_token or secrets.token_urlsafe(32), max_age=max(1, bundle.refresh_token_expires_at - now))
 
 
 def _clear_session_cookies(response: Response) -> None:
@@ -201,6 +202,7 @@ def _password_action_name(action: str) -> str:
 async def _proxy_password_action_page(
     *,
     action: str,
+    csrf_token: str,
     token: str | None = None,
     form: dict[str, str] | None = None,
 ) -> HTMLResponse:
@@ -213,7 +215,10 @@ async def _proxy_password_action_page(
         f'action="/iam/password/{action}"',
         f'action="/api/v1/auth/password/{action}"',
     )
+    form_action = f'action="/api/v1/auth/password/{action}">'
+    body = body.replace(form_action, form_action + f'<input type="hidden" name="csrf_token" value="{escape(csrf_token, quote=True)}">')
     response = HTMLResponse(content=body, status_code=page.status_code)
+    set_csrf_cookie(response, csrf_token, max_age=43200)
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -284,8 +289,8 @@ async def get_session(current_user: CurrentUser = Depends(get_current_user)) -> 
 
 
 @router.get("/auth/csrf", response_model=CsrfResponse)
-async def issue_csrf(response: Response) -> CsrfResponse:
-    token = secrets.token_urlsafe(32)
+async def issue_csrf(request: Request, response: Response) -> CsrfResponse:
+    token = request.cookies.get(settings.iam_csrf_cookie_name) or secrets.token_urlsafe(32)
     set_csrf_cookie(response, token, max_age=43200)
     return CsrfResponse(csrf_token=token)
 
@@ -302,7 +307,7 @@ async def refresh_session(request: Request, response: Response) -> AuthSessionRe
         error_response = JSONResponse(status_code=401, content={"detail": "Сессия истекла. Войдите снова."})
         _clear_session_cookies(error_response)
         return error_response
-    _set_session_cookies(response, bundle)
+    _set_session_cookies(response, bundle, csrf_token=request.cookies.get(settings.iam_csrf_cookie_name))
     return _session_response(current_user)
 
 
@@ -338,10 +343,12 @@ async def clear_iam_browser_session() -> Response:
 
 @router.get("/auth/password/{action}", response_class=HTMLResponse)
 async def password_action_page(
+    request: Request,
     action: str,
     token: str = Query(min_length=20, max_length=512),
 ) -> HTMLResponse:
-    return await _proxy_password_action_page(action=action, token=token)
+    csrf_token = request.cookies.get(settings.iam_csrf_cookie_name) or secrets.token_urlsafe(32)
+    return await _proxy_password_action_page(action=action, token=token, csrf_token=csrf_token)
 
 
 @router.post("/auth/password/{action}", response_class=HTMLResponse)
@@ -351,7 +358,8 @@ async def submit_password_action(request: Request, action: str) -> HTMLResponse:
         field: str(submitted.get(field) or "")
         for field in ("token", "new_password", "password_confirmation")
     }
-    return await _proxy_password_action_page(action=action, form=form)
+    csrf_token = request.cookies.get(settings.iam_csrf_cookie_name) or secrets.token_urlsafe(32)
+    return await _proxy_password_action_page(action=action, form=form, csrf_token=csrf_token)
 
 
 @router.post(
@@ -420,7 +428,7 @@ async def verify_email(
         result = await service.confirm_profile_verification(token=token)
         next_action = result.next_action
         redirect_url = result.redirect_url
-        if result.purpose == FIRST_ACCESS_PURPOSE:
+        if result.purpose == FIRST_ACCESS_PURPOSE and result.updated:
             from app.services.account_recovery import AccountRecoveryService
 
             redirect_url = await AccountRecoveryService(uow).issue_setup_after_verified_access(

@@ -684,6 +684,10 @@ def _fake_iam_consume(monkeypatch, *, email: str, fail_after: int = 1):
     calls = {"count": 0}
 
     class _Client:
+        async def inspect_consumed_email_confirmation(self, *, token):
+            from app.domain.exceptions import Unauthorized
+            raise Unauthorized("Ссылка подтверждения недействительна")
+
         async def consume_action_token(self, *, token: str, purpose: str, new_password=None):
             _ = (token, new_password)
             if purpose != "verify_email":

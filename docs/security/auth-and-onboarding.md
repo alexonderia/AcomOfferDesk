@@ -31,6 +31,13 @@ Backend принимает только RS256 token с ожидаемыми `kid
 - refresh token отправляется только cookie на auth path;
 - state и PKCE защищают callback;
 - изменяющие запросы требуют корректную пару CSRF header/cookie;
+- HTML-формы BFF установки и сброса пароля передают ту же пару через скрытое поле
+  `csrf_token` и cookie; проверка точного Origin/Referer сохраняется. Поле формы
+  принимается только на `/api/v1/auth/password/setup` и `/api/v1/auth/password/reset`,
+  остальные cookie-auth API по-прежнему требуют `X-CSRF-Token`;
+- получение CSRF и refresh сохраняют текущее значение CSRF-cookie, продлевая её
+  срок: открытая форма не становится недействительной из-за фонового refresh.
+  Новый login создаёт новое значение, logout удаляет cookie;
 - revoked/expired refresh token завершает сессию;
 - при недоступности IAM выдача нового auth context запрещена.
 
@@ -61,6 +68,15 @@ MAIN хранит только бизнес-факты. Технические a
 4. До успешной регистрации тот же valid token технически можно открыть повторно. После создания пользователя повтор блокируется uniqueness (email/login/IAM binding).
 5. Submit берёт role/unit из claims; email можно исправить на форме. MAIN `review`, IAM `pending`, unverified primary email. Повторный submit той же ссылки обновляет незавершённую заявку, а не создаёт второго пользователя. UI открывает `/verify-email?next=check_email&invite=...` со статусом «подтвердите почту» и кнопкой вернуться к форме.
 6. Подтверждение email идёт через IAM `verify_email` и меняет только `user_contact_channels.is_verified`. После клика по письму страница показывает, что email подтверждён и заявка на проверке.
+   Ссылка одноразовая. Повторное открытие до истечения срока может показать
+   «Email уже подтверждён»: IAM через внутренний
+   `POST /internal/action-tokens/email-confirmation` читает метаданные использованной
+   ссылки, а Acom проверяет активную привязку и совпадение текущего подтверждённого
+   адреса. Повтор не меняет профиль, не активирует аккаунт и не выдаёт новый
+   password setup. Истёкшая ссылка, неподтверждённый или изменённый адрес отклоняются;
+   password setup/reset по-прежнему нельзя использовать повторно.
+   При обновлении сначала применить IAM с внутренним API чтения подтверждения,
+   затем backend и web. Изменение не требует миграции БД.
 7. Approval (`users.registration.approve`) требует verified email и переводит MAIN+IAM в `active`.
 8. Password setup/reset и email verification никогда не активируют MAIN или IAM.
 
@@ -459,13 +475,23 @@ await fetchJson('/api/v1/auth/password-reset/request', {
 
 - `AuthProvider` owns one in-flight refresh promise. REST, bootstrap, and realtime
   consumers await that promise instead of creating independent refresh requests.
-- The coordinator first obtains/rotates the readable CSRF cookie, then calls
+- The provider increments an in-memory session revision after session restoration or
+  refresh. A delayed REST `401` from an earlier revision retries with the current
+  cookies without starting another refresh. This revision contains no credentials.
+- The coordinator first obtains/renews the readable CSRF cookie, then calls
   `POST /auth/refresh` through the shared authenticated API client so the request
   includes `X-CSRF-Token`; do not disable CSRF or mark this cookie-authenticated POST
   as unauthenticated merely to avoid the header.
 - Success returns the new session DTO and BFF rotates the HttpOnly access and refresh
   cookies. The provider maps the new DTO, including current role and permissions,
   before permitting UI access. A REST request retries exactly once.
+- If that retry also returns `401`, the client ends the session without another
+  refresh. A `403` remains an action denial and does not trigger logout.
+- Logout waits for any in-flight refresh before revoking the rotated cookie. Once
+  logout starts, refresh/bootstrap cannot restore frontend authentication and new
+  refresh calls are blocked. The `signing_out` state blocks protected UI and automatic
+  login redirects until BFF and IAM browser-cookie cleanup has finished. The login
+  page also suppresses automatic IAM login while auth is unavailable.
 - `401` means terminal: BFF clears auth cookies, frontend reaches `unauthenticated`,
   and idempotent cleanup redirects to login at most once. A refresh endpoint response
   never triggers another refresh.
@@ -480,6 +506,10 @@ await fetchJson('/api/v1/auth/password-reset/request', {
   retry of the original request.
 - Three concurrent REST `401`s or REST `401` plus WS auth failure -> one IAM refresh
   operation; every REST caller retries once after success and WS reconnects normally.
+- A late REST `401` arriving after the shared refresh has completed -> retry once
+  using the newer session revision, without a second refresh.
+- Logout during refresh -> finish rotation, revoke the resulting session, keep the
+  frontend unauthenticated throughout cleanup.
 - Missing, expired, revoked, malformed, or identity-rejected refresh -> `401`, clear
   BFF auth cookies, no retry of the original protected request.
 - IAM timeout/network/`502|503|504` -> unavailable result, no `Set-Cookie` deletion

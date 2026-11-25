@@ -31,6 +31,7 @@ import { ContractorLoginAccessBadge } from '@features/contractors/components/Con
 import { ContractorStatusPill } from '@features/contractors/components/contractorUi';
 import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
 import { themeTokens } from '@shared/theme/tokens';
+import { ConfirmationDialog } from '@shared/components/ConfirmationDialog';
 
 const offerDecisionOptions = [
   { value: 'accepted', label: 'Принято' },
@@ -79,6 +80,8 @@ export const OfferWorkspaceView = () => {
   const lastShownSaveSuccessRef = useRef<number | null>(null);
   const [isOfferEditMode, setIsOfferEditMode] = useState(false);
   const {
+    confirmation,
+    closeConfirmation,
     session,
     workspace,
     contractorInfo,
@@ -715,6 +718,10 @@ export const OfferWorkspaceView = () => {
           );
         })}
       </Box>
+
+      {confirmation ? (
+        <ConfirmationDialog {...confirmation} open isPending={isUpdatingOfferStatus} onCancel={closeConfirmation} />
+      ) : null}
 
       {canViewMessages ? (
         <OfferWorkspaceChatDock isOpen={isChatOpen} onOpen={() => setIsChatOpen(true)}>

@@ -64,10 +64,12 @@ export const usePlanDashboard = () => {
     try {
       await action();
       await loadDashboard();
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Операция с планом не выполнена';
       setErrorMessage(message);
       showErrorToast(message);
+      return false;
     } finally {
       setIsMutating(false);
     }
@@ -156,14 +158,14 @@ export const usePlanDashboard = () => {
   }, [withMutation]);
 
   const removeChildPlan = useCallback(async (planId: number) => {
-    await withMutation(async () => {
+    return await withMutation(async () => {
       await deletePlan(planId);
       showSuccessToast('План удален');
     });
   }, [withMutation]);
 
   const closePlanNode = useCallback(async (planId: number) => {
-    await withMutation(async () => {
+    return await withMutation(async () => {
       await closePlan(planId);
       showSuccessToast('План закрыт');
     });

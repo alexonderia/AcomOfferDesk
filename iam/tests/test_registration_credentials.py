@@ -362,6 +362,37 @@ async def test_verify_email_action_is_one_time_and_does_not_change_status(sessio
     with pytest.raises(Unauthorized):
         await service.consume_action_token(raw_token=raw_token, purpose="verify_email")
 
+    inspected = await service.inspect_consumed_email_confirmation(raw_token=raw_token)
+    assert inspected.context == result.context
+    assert inspected.account_id == result.account_id
+    assert account.auth_status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_inspection_rejects_unused_expired_and_password_tokens(session):
+    from datetime import timedelta
+    from iam_app.core.security import hash_secret, utc_now
+    from iam_app.repositories import ActionTokenRepository
+
+    service = IamService(session)
+    await service.seed_rbac({ROLE: ["requests.view"]})
+    result = await service.provision_registration_credentials(
+        account_id=uuid.uuid4(), login="inspect.pending", role_name=ROLE,
+        auth_status="pending", initial_password=PASSWORD,
+    )
+    raw, _ = await service.create_action_token(account_id=result.account.id, purpose="verify_email", context={"email": "pending@example.com"})
+    with pytest.raises(Unauthorized):
+        await service.inspect_consumed_email_confirmation(raw_token=raw)
+    await service.consume_action_token(raw_token=raw, purpose="verify_email")
+    token = await ActionTokenRepository(session).get_by_hash(hash_secret(raw))
+    token.expires_at = utc_now() - timedelta(seconds=1)
+    with pytest.raises(Unauthorized):
+        await service.inspect_consumed_email_confirmation(raw_token=raw)
+    raw, _ = await service.create_action_token(account_id=result.account.id, purpose="password_setup")
+    await service.consume_action_token(raw_token=raw, purpose="password_setup", new_password=PASSWORD)
+    with pytest.raises(Unauthorized):
+        await service.inspect_consumed_email_confirmation(raw_token=raw)
+
 
 @pytest.mark.asyncio
 async def test_complete_profile_required_action_can_be_completed_without_raw_token(

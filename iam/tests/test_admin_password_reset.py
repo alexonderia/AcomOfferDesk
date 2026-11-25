@@ -38,6 +38,28 @@ async def prepare(session, actor_role='superadmin'):
 
 
 @pytest.mark.asyncio
+async def test_password_equal_to_login_survives_time_and_temporary_lock(session, monkeypatch):
+    import iam_app.services as services
+    service, actor, actor_session, _, _ = await prepare(session)
+    target, _ = await account(service, session, 'employee.long.login', 'economist')
+    await service.reset_user_password(
+        account_id=target.id, new_password=target.login,
+        actor_account_id=actor.id, actor_session_id=actor_session.id,
+    )
+    now = utc_now()
+    monkeypatch.setattr(services, 'utc_now', lambda: now + timedelta(days=90))
+    kwargs = dict(login=target.login, state='state', pkce_challenge=pkce_s256(VERIFIER), redirect_uri=REDIRECT)
+    await service.authenticate_and_create_code(password=target.login, **kwargs)
+    for _ in range(services.settings.login_max_failures):
+        with pytest.raises(InvalidCredentials):
+            await service.authenticate_and_create_code(password='wrong password', **kwargs)
+    with pytest.raises(InvalidCredentials):
+        await service.authenticate_and_create_code(password=target.login, **kwargs)
+    monkeypatch.setattr(services, 'utc_now', lambda: now + timedelta(days=90, seconds=services.settings.login_lock_seconds + 1))
+    await service.authenticate_and_create_code(password=target.login, **kwargs)
+
+
+@pytest.mark.asyncio
 async def test_reset_replaces_password_revokes_target_sessions_tokens_codes_and_browser_cookie(session):
     service, actor, actor_session, target, target_session = await prepare(session)
     authorization = await service.authenticate_and_create_code(

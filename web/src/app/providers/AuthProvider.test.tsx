@@ -9,6 +9,7 @@ const authApi = vi.hoisted(() => ({
   issueCsrfToken: vi.fn(),
   logoutWebSession: vi.fn(),
   refreshWebSession: vi.fn(),
+  clearIamBrowserSession: vi.fn(),
 }));
 
 vi.mock('@shared/api/auth/loginWebUser', () => authApi);
@@ -40,9 +41,11 @@ const AuthSnapshot = () => {
 };
 
 let refreshFromContext: ReturnType<typeof useAuth>['refresh'] | null = null;
+let logoutFromContext: ReturnType<typeof useAuth>['logout'] | null = null;
 
 const RefreshCapture = () => {
   refreshFromContext = useAuth().refresh;
+  logoutFromContext = useAuth().logout;
   return null;
 };
 
@@ -51,6 +54,7 @@ describe('AuthProvider IAM BFF session', () => {
     vi.clearAllMocks();
     authApi.issueCsrfToken.mockResolvedValue(undefined);
     refreshFromContext = null;
+    logoutFromContext = null;
   });
 
   it('restores an authenticated session from HttpOnly cookies', async () => {
@@ -143,5 +147,44 @@ describe('AuthProvider IAM BFF session', () => {
 
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated'));
     expect(screen.getByTestId('session')).toHaveTextContent('none');
+  });
+
+  it('exposes a new session revision after refresh for delayed REST responses', async () => {
+    authApi.getWebSession.mockResolvedValue(sessionResponse);
+    authApi.refreshWebSession.mockResolvedValue({ kind: 'success', session: sessionResponse });
+    render(<AuthProvider><RefreshCapture /><AuthSnapshot /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'));
+    const runtime = vi.mocked(setAuthRuntime).mock.calls.at(-1)![0]!;
+    const previousRevision = runtime.getSessionRevision();
+
+    await act(async () => { await refreshFromContext!('http_401'); });
+
+    expect(runtime.getSessionRevision()).toBeGreaterThan(previousRevision);
+  });
+
+  it('waits for cookie rotation before logout and never restores the session during logout', async () => {
+    authApi.getWebSession.mockResolvedValue(sessionResponse);
+    let finishRefresh!: (value: unknown) => void;
+    authApi.refreshWebSession.mockImplementation(() => new Promise((resolve) => { finishRefresh = resolve; }));
+    // Keep navigation pending; only the ordering of refresh, state clearing and revocation matters here.
+    authApi.logoutWebSession.mockImplementation(() => new Promise(() => undefined));
+    render(<AuthProvider><RefreshCapture /><AuthSnapshot /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'));
+    const refreshing = refreshFromContext!('http_401');
+    await waitFor(() => expect(authApi.refreshWebSession).toHaveBeenCalledTimes(1));
+
+    act(() => { logoutFromContext!(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(authApi.logoutWebSession).not.toHaveBeenCalled();
+    expect(screen.getByTestId('status')).toHaveTextContent('signing_out');
+    await act(async () => {
+      finishRefresh({ kind: 'success', session: sessionResponse });
+      await expect(refreshing).resolves.toEqual({ kind: 'terminal' });
+    });
+
+    await waitFor(() => expect(authApi.logoutWebSession).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('session')).toHaveTextContent('none');
+    await expect(refreshFromContext!('http_401')).resolves.toEqual({ kind: 'terminal' });
+    expect(authApi.refreshWebSession).toHaveBeenCalledTimes(1);
   });
 });

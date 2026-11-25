@@ -23,6 +23,7 @@ import type {
 } from './planDashboardForms';
 import { textFieldAutocompleteProps } from '@shared/lib/forms';
 import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
+import { ConfirmationDialog } from '@shared/components/ConfirmationDialog';
 import { rootPlanSchema, subplanSchema, delegateSchema } from './planDashboardForms';
 import type { ZodSafeParseResult } from 'zod';
 
@@ -356,35 +357,15 @@ export const PlanDialogs = ({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(deleteNode)} onClose={onCloseDeleteDialog} fullWidth maxWidth="xs">
-        <DialogTitle>Удаление плана</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            Удалить план {deleteNode?.plan_name}? Это действие необратимо.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onCloseDeleteDialog}>Отмена</Button>
-          <Button color="error" variant="contained" disabled={isMutating} onClick={onConfirmDelete}>
-            Удалить
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmationDialog open={Boolean(deleteNode)} title="Удаление плана"
+        description={`Удалить план ${deleteNode?.plan_name}? Это действие необратимо.`}
+        confirmLabel="Удалить" pendingLabel="Удаляем..." color="error" isPending={isMutating}
+        onCancel={onCloseDeleteDialog} onConfirm={onConfirmDelete} />
 
-      <Dialog open={Boolean(closeNode)} onClose={onCloseCloseDialog} fullWidth maxWidth="xs">
-        <DialogTitle>Закрытие плана</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            Закрыть план {closeNode?.plan_name}? После закрытия редактирование и делегирование будут недоступны.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onCloseCloseDialog}>Отмена</Button>
-          <Button color="warning" variant="contained" disabled={isMutating} onClick={onConfirmClose}>
-            Закрыть
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmationDialog open={Boolean(closeNode)} title="Закрытие плана"
+        description={`Закрыть план ${closeNode?.plan_name}? После закрытия редактирование и делегирование будут недоступны.`}
+        confirmLabel="Закрыть" pendingLabel="Закрываем..." color="warning" isPending={isMutating}
+        onCancel={onCloseCloseDialog} onConfirm={onConfirmClose} />
     </>
   );
 };

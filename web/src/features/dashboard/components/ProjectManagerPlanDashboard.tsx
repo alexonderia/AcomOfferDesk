@@ -903,14 +903,14 @@ export const ProjectManagerPlanDashboard = () => {
           if (!deleteNode) {
             return;
           }
-          await removeChildPlan(deleteNode.plan_id);
+          if (await removeChildPlan(deleteNode.plan_id) === false) return;
           setDeleteNode(null);
         }}
         onConfirmClose={async () => {
           if (!closeNode) {
             return;
           }
-          await closePlanNode(closeNode.plan_id);
+          if (await closePlanNode(closeNode.plan_id) === false) return;
           setCloseNode(null);
         }}
       />

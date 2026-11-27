@@ -58,3 +58,7 @@ class NormativeEmailAttachmentService:
             return await self.load_required_attachment(normative_file_id=normative_file_id)
         except Conflict:
             return None
+
+    async def presentation_download_url(self, *, normative_file_id: int) -> str | None:
+        db_file = await self._files.get_normative_file(normative_id=normative_file_id)
+        return f"/api/v1/files/{db_file.id}/download" if db_file is not None else None

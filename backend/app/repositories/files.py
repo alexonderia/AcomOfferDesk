@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.orm_models import File, MessageFile, NormativeFile, OfferFile, RequestFile, StorageObject
+from app.models.orm_models import File, MessageFile, NormativeFile, OfferFile, RequestFile, RequestHiddenFile, StorageObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,10 +338,15 @@ class FileRepository:
 
     async def count_links(self, *, file_id: int) -> int:
         request_count = await self._scalar_count(select(func.count(RequestFile.id)).where(RequestFile.id == file_id))
+        hidden_count = await self._scalar_count(select(func.count(RequestHiddenFile.id)).where(RequestHiddenFile.id == file_id))
         offer_count = await self._scalar_count(select(func.count(OfferFile.id)).where(OfferFile.id == file_id))
         message_count = await self._scalar_count(select(func.count(MessageFile.id)).where(MessageFile.id == file_id))
         normative_count = await self._scalar_count(select(func.count(NormativeFile.id)).where(NormativeFile.id_file == file_id))
-        return request_count + offer_count + message_count + normative_count
+        return request_count + hidden_count + offer_count + message_count + normative_count
+
+    async def get_hidden_request_id(self, *, file_id: int) -> str | None:
+        result = await self._session.execute(select(RequestHiddenFile.id_request).where(RequestHiddenFile.id == file_id))
+        return result.scalar_one_or_none()
 
     async def delete_by_id(self, *, file_id: int) -> bool:
         stmt = delete(File).where(File.id == file_id)

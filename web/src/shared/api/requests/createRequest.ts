@@ -7,6 +7,8 @@ export type CreateRequestPayload = {
   deadline_at: string;
   initial_amount?: string | number | null;
   files: File[];
+  source_files: File[];
+  specification_confirmation: string;
   additional_emails?: string[];
   hidden_contractor_ids?: string[];
 };
@@ -34,6 +36,8 @@ export const createRequest = async (payload: CreateRequestPayload): Promise<Crea
   payload.files.forEach((file) => {
     formData.append('files', file, file.name);
   });
+  payload.source_files.forEach((file) => formData.append('source_files', file, file.name));
+  formData.append('specification_confirmation', payload.specification_confirmation);
 
   payload.additional_emails?.forEach((email) => {
     formData.append('additional_emails', email);

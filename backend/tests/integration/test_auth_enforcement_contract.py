@@ -91,6 +91,9 @@ class _EmailVerificationProfilesRepo:
 
 
 class _FilesRepo:
+    async def get_hidden_request_id(self, *, file_id: int):
+        return None
+
     async def get_by_id(self, file_id: int):
         return SimpleNamespace(
             id=file_id,

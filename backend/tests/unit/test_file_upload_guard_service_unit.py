@@ -159,6 +159,20 @@ async def test_scan_bytes_maps_reason_codes_to_approved_russian_messages(
     assert exc_info.value.detail != "technical message from file_guard"
 
 
+@pytest.mark.parametrize(("message", "expected"), [
+    ("Office document contains forbidden content", "запрещённое активное содержимое"),
+    ("Office document exceeds safety limits", "превышает ограничения"),
+    ("Office document is corrupted or invalid", "не удалось прочитать"),
+    ("Traceback: arbitrary scanner exception", "Office-файл поврежден или имеет неверную структуру."),
+])
+def test_office_failure_uses_only_approved_categories(message, expected):
+    verdict = FileGuardVerdict(False, "invalid_office_document", message, "application/octet-stream", 4, "hash")
+    with pytest.raises(UploadRejected) as error:
+        FileUploadGuardService._raise_if_blocked(verdict)
+    assert expected in error.value.detail
+    assert "Traceback" not in error.value.detail
+
+
 @pytest.mark.asyncio
 async def test_scan_bytes_fails_closed_when_feature_is_disabled(monkeypatch) -> None:
     monkeypatch.setattr(settings, "file_guard_enabled", False)

@@ -13,6 +13,7 @@
 - [Backend: слои, данные, ошибки и логирование](development/backend-guidelines.md)
 - [Frontend: компоненты, состояние, типы и UI](development/frontend-guidelines.md)
 - [Жизненный цикл заявок и КП](development/request-offer-lifecycle.md)
+- [Выделение спецификации из договора и закрытые исходники](development/request-specification.md)
 - [Тестирование: команды, каталог, покрытие и smoke](development/testing-strategy.md)
 - [Повторяемая ручная регрессия](qa/manual-regression.md)
 - [Пользовательские руководства: содержание, роли и иллюстрации](development/role-guides.md)

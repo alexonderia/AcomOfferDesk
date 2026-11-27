@@ -97,7 +97,7 @@ export const buildDocumentPreview = async (blob: Blob): Promise<string> => {
     FORBID_TAGS: ['a', 'form', 'input', 'button', 'video', 'audio', 'iframe', 'style'],
     FORBID_ATTR: ['style', 'srcset', 'href', 'target'],
   });
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${documentFontStyles}body{font:16px/1.5 "Alabuga Sans",sans-serif;margin:24px;color:#17202a;overflow-wrap:anywhere}table{border-collapse:collapse;max-width:100%;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:6px}img{max-width:100%;height:auto}pre{white-space:pre-wrap}pre,code,kbd,samp{font-family:inherit}</style></head><body>${html}</body></html>`;
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${documentFontStyles}body{font:16px/1.5 "Alabuga Sans",sans-serif;margin:24px;color:#17202a;overflow-wrap:anywhere}table{border-collapse:collapse;max-width:100%;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:6px;vertical-align:top}td p,th p{margin:0;line-height:1.35}img{max-width:100%;height:auto}pre{white-space:pre-wrap}pre,code,kbd,samp{font-family:inherit}</style></head><body>${html}</body></html>`;
 };
 
 export type SpreadsheetPreview = Array<{ name: string; rows: string[][]; truncated: boolean }>;

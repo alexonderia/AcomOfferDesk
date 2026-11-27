@@ -21,6 +21,7 @@ from app.models.orm_models import (
     Profile,
     Request,
     RequestFile,
+    RequestHiddenFile,
     RequestHiddenContractor,
     RequestOfferStats,
     User,
@@ -102,6 +103,30 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def attach_hidden_file(self, *, request_id: str, file_id: int, is_specification_source: bool) -> None:
+        self._session.add(RequestHiddenFile(id=file_id, id_request=request_id, is_specification_source=is_specification_source))
+
+    async def list_hidden_files(self, *, request_id: str) -> list[tuple[File, bool | None]]:
+        result = await self._session.execute(
+            select(File, RequestHiddenFile.is_specification_source).options(joinedload(File.storage_object))
+            .join(RequestHiddenFile, RequestHiddenFile.id == File.id)
+            .where(RequestHiddenFile.id_request == request_id).order_by(File.id)
+        )
+        return [(file, is_source) for file, is_source in result.all()]
+
+    async def get_hidden_file_for_update(self, *, request_id: str, file_id: int) -> RequestHiddenFile | None:
+        result = await self._session.execute(select(RequestHiddenFile).where(
+            RequestHiddenFile.id_request == request_id, RequestHiddenFile.id == file_id,
+        ).with_for_update())
+        return result.scalar_one_or_none()
+
+    async def detach_hidden_file(self, *, request_id: str, file_id: int) -> bool:
+        result = await self._session.execute(delete(RequestHiddenFile).where(
+            RequestHiddenFile.id_request == request_id, RequestHiddenFile.id == file_id,
+            RequestHiddenFile.is_specification_source.is_(False),
+        ).returning(RequestHiddenFile.id))
+        return result.scalar_one_or_none() is not None
     
     async def get_latest_accepted_offer_id(self, *, request_id: str) -> int | None:
         stmt = (

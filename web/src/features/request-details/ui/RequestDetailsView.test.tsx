@@ -33,6 +33,8 @@ vi.mock("@shared/api/requests/updateRequestDetails", () => ({
   updateRequestDetails: vi.fn(),
   uploadRequestFile: vi.fn(),
   deleteRequestFile: vi.fn(),
+  uploadRequestSourceFile: vi.fn(),
+  deleteRequestHiddenFile: vi.fn(),
 }));
 
 vi.mock("@shared/api/requests/sendRequestEmailNotifications", () => ({
@@ -70,6 +72,8 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
       phone?: string | null;
       mail?: string | null;
     } | null;
+    hiddenFilesSection?: ReactNode;
+    planField?: ReactNode;
   }) => (
     <div data-testid="request-details-main-card">
       {props.ownerWarning ? <div role="alert">{props.ownerWarning}</div> : null}
@@ -85,6 +89,8 @@ vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
       <button type="button" onClick={() => props.onStatusChange("closed")}>Close request</button>
       <button type="button" onClick={props.onSave}>Save request</button>
       <input aria-label="Дедлайн" value={props.deadline} onChange={(event) => props.onDeadlineChange(event.target.value)} />
+      {props.hiddenFilesSection}
+      {props.planField}
     </div>
   ),
 }));
@@ -276,7 +282,7 @@ describe("RequestDetailsView action-driven CTAs", () => {
     expect(screen.getByTestId("offers-can-change-status")).toHaveTextContent("true");
     expect(screen.getByTestId("offers-has-add-click")).toHaveTextContent("true");
 
-    const sendEmailButton = screen.getByRole("button", { name: "Отправить" });
+    const sendEmailButton = screen.getByRole("button", { name: "Проверить и отправить" });
     expect(sendEmailButton).toBeEnabled();
   });
 
@@ -315,7 +321,7 @@ describe("RequestDetailsView action-driven CTAs", () => {
     expect(screen.getByTestId("offers-can-change-status")).toHaveTextContent("false");
     expect(screen.getByTestId("offers-has-add-click")).toHaveTextContent("false");
 
-    const sendEmailButton = screen.getByRole("button", { name: "Отправить" });
+    const sendEmailButton = screen.getByRole("button", { name: "Проверить и отправить" });
     expect(sendEmailButton).toBeDisabled();
   });
 

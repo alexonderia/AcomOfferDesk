@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import posixpath
 import unicodedata
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -60,7 +61,6 @@ _SUSPICIOUS_XML_MARKERS = (
     b"activeX",
     b"oleObject",
     b"Object",
-    b"embed",
     b"ms-its:",
     b"javascript:",
     b"vbscript:",
@@ -184,7 +184,48 @@ def _scan_xml_entry(
 
     if entry_name.endswith(".rels"):
         return _scan_relationships(payload)
+    try:
+        root = ElementTree.fromstring(payload)
+    except (ElementTree.ParseError, DefusedXmlException):
+        return ("invalid_office_document", "Office document is corrupted or invalid")
+    for element in root.iter():
+        if "embed" in element.tag.rsplit("}", 1)[-1].casefold():
+            return ("invalid_office_document", "Office document contains forbidden content")
+        for attribute, reference in element.attrib.items():
+            if "embed" not in attribute.rsplit("}", 1)[-1].casefold():
+                continue
+            if (element.tag != "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+                    or attribute != "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+                    or not _is_internal_image(archive, entry_name, reference)):
+                return ("invalid_office_document", "Office document contains forbidden content")
     return None
+
+
+def _is_internal_image(archive: zipfile.ZipFile, entry_name: str, reference: str) -> bool:
+    part = PurePosixPath(entry_name)
+    relationships_name = str(part.parent / "_rels" / (part.name + ".rels"))
+    try:
+        info = archive.getinfo(relationships_name)
+        if info.file_size > settings.office_max_xml_scan_bytes:
+            return False
+        root = ElementTree.fromstring(archive.read(info))
+    except (KeyError, OSError, zipfile.BadZipFile, RuntimeError, ElementTree.ParseError, DefusedXmlException):
+        return False
+    relationships = [item for item in root if item.get("Id") == reference]
+    if len(relationships) != 1:
+        return False
+    relationship = relationships[0]
+    if (relationship.tag.rsplit("}", 1)[-1] != "Relationship"
+            or relationship.get("Type") != "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+            or relationship.get("TargetMode", "Internal").casefold() != "internal"):
+        return False
+    target = relationship.get("Target", "")
+    if not target or target.startswith(("/", "\\")) or "\\" in target:
+        return False
+    resolved = posixpath.normpath(posixpath.join(str(part.parent), target))
+    if resolved.startswith("../") or Path(resolved).suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+        return False
+    return resolved in archive.namelist()
 
 
 def _scan_relationships(payload: bytes) -> tuple[str, str] | None:

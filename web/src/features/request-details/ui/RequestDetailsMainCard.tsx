@@ -60,6 +60,8 @@ type RequestDetailsMainCardProps = {
   ownerWarning?: string | null;
   responsibleContact?: ResponsibleContact | null;
   existingFiles: RequestDetailsFile[];
+  hiddenFilesSection?: ReactNode;
+  planField?: ReactNode;
   canDeleteRequestFiles: boolean;
   onDownloadFile: (downloadUrl: string, fileName: string) => void;
   onRemoveExistingFile: (fileId: number) => void;
@@ -110,6 +112,8 @@ export const RequestDetailsMainCard = ({
   ownerWarning,
   responsibleContact,
   existingFiles,
+  hiddenFilesSection,
+  planField,
   canDeleteRequestFiles,
   onDownloadFile,
   onRemoveExistingFile,
@@ -151,6 +155,8 @@ export const RequestDetailsMainCard = ({
 
   return (
     <Box
+      component="section"
+      aria-label={`Карточка заявки №${requestId}`}
       sx={(theme) => ({
         borderRadius: `${theme.acomShape.panelRadius}px`,
         border: `1px solid ${theme.palette.divider}`,
@@ -366,6 +372,8 @@ export const RequestDetailsMainCard = ({
         </Stack>
       </Stack>
 
+      {hiddenFilesSection}
+
       <RequestDetailsInfoPanel
         value={{
           createdAt: requestCreatedAt,
@@ -388,6 +396,8 @@ export const RequestDetailsMainCard = ({
           responsibleContactHighlighted: isResponsibleContactHighlighted
         }}
       />
+
+      {planField}
 
       <Stack
         direction={{ xs: 'column', sm: 'row' }}

@@ -488,6 +488,14 @@ class RequestFile(Base):
     id_request: Mapped[str] = mapped_column(Text, ForeignKey("requests.id", ondelete="CASCADE"))
 
 
+class RequestHiddenFile(Base):
+    __tablename__ = "request_hidden_files"
+
+    id: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="RESTRICT"), primary_key=True)
+    id_request: Mapped[str] = mapped_column(Text, ForeignKey("requests.id", ondelete="CASCADE"), nullable=False)
+    is_specification_source: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, server_default="false")
+
+
 class OfferFile(Base):
     __tablename__ = "offer_files"
 

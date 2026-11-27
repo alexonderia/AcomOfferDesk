@@ -231,6 +231,31 @@ def test_scan_blocks_office_with_macro_payload(monkeypatch) -> None:
     assert response.json()["reason_code"] == "invalid_office_document"
 
 
+@pytest.mark.parametrize("embedding", ["image", "wrong_element", "wrong_namespace", "missing_target", "external", "ole", "embed_element"])
+def test_office_embedding_allows_only_existing_internal_images(monkeypatch, embedding):
+    _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
+    element = "a:blip" if embedding != "wrong_element" else "a:other"
+    attribute = "r:embed" if embedding != "wrong_namespace" else "embed"
+    body = f'<{element} {attribute}="rId1"/>' if embedding != "embed_element" else '<embed/>'
+    xml = ('<document xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' + body + '</document>')
+    target = "https://example.com/image.png" if embedding == "external" else "media/image1.png"
+    relation_type = "oleObject" if embedding == "ole" else "image"
+    mode = ' TargetMode="External"' if embedding == "external" else ''
+    rels = ('<Relationships><Relationship Id="rId1" '
+            f'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{relation_type}" '
+            f'Target="{target}"{mode}/></Relationships>')
+    entries = [("word/document.xml", xml), ("word/_rels/document.xml.rels", rels)]
+    if embedding != "missing_target":
+        entries.append(("word/media/image1.png", _png_bytes()))
+    response = client.post("/scan", files={"file": ("images.docx", _office_bytes(*entries),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")})
+    assert response.status_code == 200
+    assert response.json()["allowed"] == (embedding == "image")
+    if embedding != "image":
+        assert response.json()["reason_code"] == "invalid_office_document"
+
+
 def test_scan_blocks_office_with_zip_slip_path(monkeypatch) -> None:
     _patch_scanner(monkeypatch, antivirus=_ReadyAntivirus())
     response = client.post(

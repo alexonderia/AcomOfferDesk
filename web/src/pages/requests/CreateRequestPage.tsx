@@ -3,7 +3,6 @@ import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
-  Alert,
   Autocomplete,
   Box,
   Button,
@@ -28,6 +27,11 @@ import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { checkRequestIdAvailability } from '@shared/api/requests/checkRequestIdAvailability';
 import { createRequest } from '@shared/api/requests/createRequest';
+import { previewRequestEmails } from '@shared/api/requests/previewRequestEmails';
+import { prepareRequestSpecification, type PreparedRequestSpecification } from '@shared/api/requests/prepareRequestSpecification';
+import { useRequestEmailReview } from '@features/request-email/model/useRequestEmailReview';
+import { RequestEmailReviewDialog } from '@features/request-email/ui/RequestEmailReviewDialog';
+import { RequestUploadList } from '@features/request-details/ui/RequestUploadList';
 import { getNormativeFiles } from '@shared/api/normative/getNormativeFiles';
 import type { NormativeFileItem } from '@shared/api/normative/types';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
@@ -68,12 +72,17 @@ const schema = z.object({
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
   normativeFileId: z.number({ error: 'Выберите нормативный документ' }).int().positive('Выберите нормативный документ'),
-  files: z.array(z.instanceof(File)).min(1, 'Прикрепите файл заявки'),
+  files: z.array(z.instanceof(File)).min(1, 'Прикрепите исходный договор').max(5, 'Можно прикрепить до 5 исходных файлов')
+    .refine((files) => files.reduce((size, file) => size + file.size, 0) <= 15 * 1024 * 1024, 'Общий размер исходников — до 15 МБ'),
+  extractionKeys: z.array(z.string()).min(1, 'Выберите хотя бы один файл для формирования заявки'),
+  hiddenFileKeys: z.array(z.string()),
   additionalEmails: z.array(z.string().email('Введите корректный email')),
   hiddenContractorIds: z.array(z.string().min(1)),
 });
 
 type FormValues = z.infer<typeof schema>;
+type ReviewSnapshot = FormValues & { specification?: PreparedRequestSpecification };
+const getPublicSourceFiles = (values: FormValues) => values.files.filter((file) => !values.hiddenFileKeys.includes(getFileKey(file)));
 
 const getContractorOptionLabel = (contractor: RequestContractorItem) => {
   const primaryLabel = contractor.company_name?.trim() || contractor.full_name?.trim() || contractor.user_id;
@@ -104,6 +113,7 @@ export const CreateRequestPage = () => {
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [hideFromContractorsEnabled, setHideFromContractorsEnabled] = useState(false);
   const [additionalEmailsEnabled, setAdditionalEmailsEnabled] = useState(false);
+  const { review, isLoadingReview, prepareReview, closeReview } = useRequestEmailReview<ReviewSnapshot>();
   const { showErrorToast, showSuccessToast, showSystemToast } = useSystemToasts();
 
   const {
@@ -124,6 +134,8 @@ export const CreateRequestPage = () => {
       deadlineAt: todayDate,
       normativeFileId: undefined,
       files: [],
+      extractionKeys: [],
+      hiddenFileKeys: [],
       additionalEmails: [],
       hiddenContractorIds: [],
     },
@@ -133,6 +145,8 @@ export const CreateRequestPage = () => {
   const normativeFileId = watch('normativeFileId');
   const selectedNormativeFile = actualNormativeFiles.find((item) => item.id === normativeFileId);
   const files = watch('files');
+  const extractionKeys = watch('extractionKeys');
+  const hiddenFileKeys = watch('hiddenFileKeys');
   const additionalEmails = watch('additionalEmails');
   const hiddenContractorIds = watch('hiddenContractorIds');
   const hiddenContractors = useMemo(
@@ -268,6 +282,12 @@ export const CreateRequestPage = () => {
   }, [showErrorToast]);
 
   const updateFiles = (nextFiles: File[]) => {
+    setValue('hiddenFileKeys', hiddenFileKeys.filter((key) => nextFiles.some((file) => getFileKey(file) === key)), {
+      shouldDirty: true, shouldValidate: true,
+    });
+    setValue('extractionKeys', extractionKeys.filter((key) => nextFiles.some((file) => getFileKey(file) === key)), {
+      shouldDirty: true, shouldValidate: true,
+    });
     setValue('files', nextFiles, {
       shouldDirty: true,
       shouldTouch: true,
@@ -276,7 +296,15 @@ export const CreateRequestPage = () => {
   };
 
   const handleFilesAdded = (addedFiles: File[]) => {
-    updateFiles(mergeUniqueFiles(files, addedFiles));
+    const merged = mergeUniqueFiles(files, addedFiles);
+    updateFiles(merged);
+    setValue('hiddenFileKeys', [
+      ...hiddenFileKeys,
+      ...merged.filter((file) => !files.some((existing) => getFileKey(existing) === getFileKey(file))).map(getFileKey),
+    ], { shouldDirty: true, shouldValidate: true });
+    if (!files.length && merged.length) {
+      setValue('extractionKeys', [getFileKey(merged[0])], { shouldDirty: true, shouldValidate: true });
+    }
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -319,6 +347,7 @@ export const CreateRequestPage = () => {
   }, [isSubmittingRequest]);
 
   const handleSubmitForm = async (values: FormValues) => {
+    if (isLoadingReview || isSubmittingRequest || isSubmitBlocked) return;
     if (!values.normativeFileId) {
       setError('normativeFileId', { type: 'manual', message: 'Выберите нормативный документ' });
       return;
@@ -348,18 +377,53 @@ export const CreateRequestPage = () => {
       return;
     }
 
+    const snapshot: FormValues = {
+      ...values,
+      files: [...values.files],
+      extractionKeys: [...values.extractionKeys],
+      hiddenFileKeys: [...values.hiddenFileKeys],
+      additionalEmails: [...(nextAdditionalEmails ?? values.additionalEmails)],
+      hiddenContractorIds: hideFromContractorsEnabled ? [...values.hiddenContractorIds] : [],
+    };
+    try {
+      await prepareReview(snapshot, async (signal) => {
+        const extractionIndices = snapshot.files.flatMap((file, index) => snapshot.extractionKeys.includes(getFileKey(file)) ? [index] : []);
+        const publicSourceIndices = snapshot.files.flatMap((file, index) => snapshot.hiddenFileKeys.includes(getFileKey(file)) ? [] : [index]);
+        const specification = await prepareRequestSpecification(normalizedRequestNumber, snapshot.files, extractionIndices, publicSourceIndices, signal);
+        const preview = session?.emailEnabled === false ? { messages: [], warnings: ['Почтовый сервис отключён. Письма не будут отправлены.'] } : await previewRequestEmails({
+        request_id: normalizedRequestNumber,
+        description: snapshot.description?.trim() || null,
+        deadline_at: `${snapshot.deadlineAt}T23:59:59`,
+        normative_file_id: snapshot.normativeFileId,
+        files: [...getPublicSourceFiles(snapshot), specification.file].map((file) => ({ name: file.name, size_bytes: file.size })),
+        additional_emails: snapshot.additionalEmails,
+        hidden_contractor_ids: snapshot.hiddenContractorIds,
+        }, signal);
+        return { preview, snapshot: { ...snapshot, specification } };
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      showErrorToast(error instanceof Error ? error.message : 'Не удалось подготовить проверку писем');
+    }
+  };
+
+  const handleConfirmCreation = async () => {
+    if (!review?.snapshot.specification || isSubmittingRequest) return;
+    const values = review.snapshot;
     setIsSubmittingRequest(true);
 
     try {
       await createRequest({
-        id: normalizedRequestNumber,
+        id: values.requestNumber.trim(),
         normative_file_id: values.normativeFileId,
         description: values.description?.trim() || null,
         deadline_at: `${values.deadlineAt}T23:59:59`,
         initial_amount: normalizeAmountValue(values.initialAmount),
-        files: values.files,
-        additional_emails: additionalEmailsEnabled ? nextAdditionalEmails ?? values.additionalEmails : [],
-        hidden_contractor_ids: hideFromContractorsEnabled ? values.hiddenContractorIds : [],
+        files: [review.snapshot.specification.file],
+        source_files: values.files,
+        specification_confirmation: review.snapshot.specification.confirmation,
+        additional_emails: values.additionalEmails,
+        hidden_contractor_ids: values.hiddenContractorIds,
       });
       showSuccessToast('Заявка создана');
       navigate('/requests');
@@ -380,9 +444,10 @@ export const CreateRequestPage = () => {
   }
 
   return (
+    <>
     <Dialog
       open
-      onClose={() => navigate('/requests')}
+      onClose={() => { if (!isSubmittingRequest && !isLoadingReview) navigate('/requests'); }}
       fullWidth
       maxWidth="sm"
       PaperProps={{
@@ -557,7 +622,7 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                <RequiredFieldLabel label="Файл заявки" isValid={files.length > 0} />
+                <RequiredFieldLabel label="Исходный договор и приложения" isValid={files.length > 0} />
               </Typography>
 
                 <Stack direction="row" spacing={1} alignItems="center">
@@ -565,7 +630,7 @@ export const CreateRequestPage = () => {
                   <InfoOutlinedIcon fontSize="small" />
                 </Box>
                 <Typography variant="body1" lineHeight={1.3}>
-                  Прикрепите дополнительный файл заявки от экономиста.
+                  Для каждого файла выберите видимость и необходимость выделения спецификации. Файлы с отметкой «Скрыть от контрагентов» доступны только сотрудникам с доступом к заявке.
                 </Typography>
               </Stack>
 
@@ -616,7 +681,7 @@ export const CreateRequestPage = () => {
                   </Typography>
 
                   <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 410, lineHeight: 1.35 }}>
-                    Поддерживаются {ALLOWED_UPLOAD_FILE_TYPES_LABEL}. Размер одного файла до {MAX_UPLOAD_FILE_SIZE_MB} МБ.
+                    Поддерживаются {ALLOWED_UPLOAD_FILE_TYPES_LABEL}, включая сканы. До 5 файлов, каждый до {MAX_UPLOAD_FILE_SIZE_MB} МБ, вместе до 15 МБ.
                   </Typography>
 
                   <Button
@@ -630,29 +695,13 @@ export const CreateRequestPage = () => {
               </Box>
 
               {files.length > 0 ? (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {files.map((file) => (
-                    <FilePreviewTrigger key={getFileKey(file)} source={{ name: file.name, file }}>
-                      {(openPreview) => (
-                        <Chip
-                          label={file.name}
-                          onClick={openPreview}
-                          onDelete={() => updateFiles(files.filter((item) => getFileKey(item) !== getFileKey(file)))}
-                          variant="outlined"
-                          sx={{
-                            maxWidth: '100%',
-                            borderRadius: 1,
-                            backgroundColor: 'background.paper',
-                            '& .MuiChip-label': {
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                            },
-                          }}
-                        />
-                      )}
-                    </FilePreviewTrigger>
-                  ))}
-                </Box>
+                <RequestUploadList files={files} hiddenKeys={hiddenFileKeys} extractionKeys={extractionKeys}
+                  disabled={isLoadingReview || isSubmittingRequest}
+                  onHiddenChange={(file, checked) => setValue('hiddenFileKeys', checked
+                    ? [...hiddenFileKeys, getFileKey(file)] : hiddenFileKeys.filter((key) => key !== getFileKey(file)), { shouldDirty: true, shouldValidate: true })}
+                  onExtractionChange={(file, checked) => setValue('extractionKeys', checked
+                    ? [...extractionKeys, getFileKey(file)] : extractionKeys.filter((key) => key !== getFileKey(file)), { shouldDirty: true, shouldValidate: true })}
+                  onRemove={(file) => updateFiles(files.filter((item) => getFileKey(item) !== getFileKey(file)))} />
               ) : null}
 
               {errors.files ? (
@@ -660,6 +709,7 @@ export const CreateRequestPage = () => {
                   {errors.files.message}
                 </Typography>
               ) : null}
+              {errors.extractionKeys ? <Typography role="alert" variant="caption" color="error">{errors.extractionKeys.message}</Typography> : null}
             </Stack>
 
             <ToggleSection
@@ -768,21 +818,37 @@ export const CreateRequestPage = () => {
               variant="contained"
               fullWidth
               type="submit"
-              disabled={isSubmittingRequest || isSubmitBlocked}
+              disabled={isSubmittingRequest || isLoadingReview || isSubmitBlocked}
               sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 18, fontWeight: 700, boxShadow: 'none' }}
             >
-              {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}
+              {isLoadingReview ? 'Подготовка проверки...' : 'Проверить и создать заявку'}
             </Button>
 
-            {isSubmittingRequest && showSlowFileCheckHint ? (
-              <Alert severity="info">
-                Проверка тяжёлых файлов может занять пару минут. Пожалуйста, не закрывайте страницу.
-              </Alert>
-            ) : null}
           </Stack>
         </Box>
       </DialogContent>
     </Dialog>
+    {review ? <RequestEmailReviewDialog
+      creating preview={review.preview} fontStyles={review.fontStyles} isPending={isSubmittingRequest} onCancel={closeReview} onConfirm={handleConfirmCreation}
+      pendingHint={showSlowFileCheckHint ? 'Проверка тяжёлых файлов может занять пару минут. Пожалуйста, не закрывайте страницу.' : undefined}
+      localFiles={[...getPublicSourceFiles(review.snapshot), ...(review.snapshot.specification ? [review.snapshot.specification.file] : [])]}
+      summary={{
+        id: review.snapshot.requestNumber.trim(), description: review.snapshot.description?.trim() || null,
+        deadline: `${review.snapshot.deadlineAt}T23:59:59`, amount: normalizeAmountValue(review.snapshot.initialAmount),
+        files: [
+          ...actualNormativeFiles.filter((item) => item.id === review.snapshot.normativeFileId)
+            .map((item) => ({ name: item.original_name, downloadUrl: item.download_url })),
+          ...getPublicSourceFiles(review.snapshot).map((file) => ({ name: file.name, file })),
+          ...(review.snapshot.specification ? [{ name: review.snapshot.specification.file.name, file: review.snapshot.specification.file }] : []),
+        ],
+        sourceFiles: review.snapshot.files.filter((file) => review.snapshot.hiddenFileKeys.includes(getFileKey(file))).map((file) => ({ name: file.name, file })),
+        extractionFiles: review.snapshot.files.filter((file) => review.snapshot.extractionKeys.includes(getFileKey(file))).map((file) => file.name),
+        specification: review.snapshot.specification,
+        hiddenContractors: contractorOptions.filter((item) => review.snapshot.hiddenContractorIds.includes(item.user_id))
+          .map((item) => item.company_name || item.full_name || item.user_id),
+      }}
+    /> : null}
+    </>
   );
 };
 

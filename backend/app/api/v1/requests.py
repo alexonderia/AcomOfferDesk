@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import base64
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -36,6 +38,8 @@ from app.schemas.requests import (
     RequestEditPayload,
     RequestEmailNotificationPayload,
     RequestEmailNotificationResponse,
+    RequestDraftEmailPreviewPayload,
+    RequestEmailPreviewResponse,
     RequestFileMutationResponse,
     RequestFileSchema,
     RequestItemSchema,
@@ -44,6 +48,9 @@ from app.schemas.requests import (
     RequestMutationResponse,
     RequestOfferStatsSchema,
     RequestStatsSchema,
+    RequestHiddenFilesResponse,
+    RequestHiddenFileSchema,
+    RequestSpecificationPreviewResponse,
 )
 from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService, PreparedUpload
@@ -51,6 +58,7 @@ from app.services.contractor_units import ContractorUnitService
 from app.services.notifications import NotificationService
 from app.services.department_scope import DepartmentScopeService
 from app.services.requests import RequestEditInput, RequestService
+from app.services.request_specification import RequestSpecificationService, MAX_SOURCE_FILES
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.unit_hierarchy import UnitHierarchyService
 
@@ -733,6 +741,77 @@ async def get_request_details(
     )
 
 
+@router.get("/requests/{request_id}/source-files", response_model=RequestHiddenFilesResponse)
+async def list_request_source_files(
+    request_id: str = PathParam(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestHiddenFilesResponse:
+    async with uow:
+        items = await _build_request_service(uow).list_hidden_files(current_user=current_user, request_id=request_id)
+    return RequestHiddenFilesResponse(files=[RequestHiddenFileSchema(
+        **_request_file_schema(item).model_dump(), is_specification_source=item.is_specification_source, can_delete=item.can_delete,
+    ) for item in items])
+
+
+@router.post("/requests/{request_id}/source-files", response_model=RequestFileMutationResponse)
+async def add_request_source_file(
+    request_id: str = PathParam(..., min_length=1),
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestFileMutationResponse:
+    prepared = await FileService().prepare_upload(file)
+    request_file_service: FileService | None = None
+    try:
+        async with uow:
+            request_file_service = FileService(uow.files)
+            file_id = await _build_request_service(uow, file_service=request_file_service).attach_hidden_file(
+                current_user=current_user, request_id=request_id, file_data=prepared,
+            )
+    except Exception:
+        if request_file_service is not None:
+            await request_file_service.cleanup_tracked_objects()
+        raise
+    return RequestFileMutationResponse(data={"request_id": _request_id_as_str(request_id), "file_id": file_id})
+
+
+@router.delete("/requests/{request_id}/source-files/{file_id}", response_model=RequestFileMutationResponse)
+async def delete_request_hidden_file(
+    request_id: str = PathParam(..., min_length=1),
+    file_id: int = PathParam(..., ge=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestFileMutationResponse:
+    async with uow:
+        await _build_request_service(uow).remove_hidden_file(
+            current_user=current_user, request_id=request_id, file_id=file_id,
+        )
+    return RequestFileMutationResponse(data={"request_id": _request_id_as_str(request_id), "file_id": file_id})
+
+
+@router.post("/requests/specification-preview", response_model=RequestSpecificationPreviewResponse)
+async def preview_request_specification(
+    request_id: str = Form(..., min_length=1),
+    files: list[UploadFile] = File(..., max_length=MAX_SOURCE_FILES),
+    extraction_indices: list[int] | None = Form(default=None),
+    public_source_indices: list[int] | None = Form(default=None),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> RequestSpecificationPreviewResponse:
+    UserPolicy.ensure_can_create_request(current_user)
+    validator = FileService()
+    sources = [await validator.prepare_upload(file) for file in files]
+    result = await RequestSpecificationService(validator).prepare(
+        current_user=current_user, request_id=request_id, sources=sources, extraction_indices=extraction_indices,
+        public_source_indices=public_source_indices,
+    )
+    return RequestSpecificationPreviewResponse(
+        name=result.file.original_name, mime_type=result.file.mime_type,
+        content_base64=base64.b64encode(result.file.content_bytes).decode("ascii"),
+        confirmation=result.confirmation, item_count=result.item_count, used_ocr=result.used_ocr,
+    )
+
+
 @router.post("/requests", response_model=RequestCreateResponse)
 async def create_request(
     id: str = Form(...),
@@ -743,15 +822,19 @@ async def create_request(
     id_plan: int | None = Form(default=None),
     additional_emails: list[str] | None = Form(default=None),
     hidden_contractor_ids: list[str] | None = Form(default=None),
-    files: list[UploadFile] = File(...),
+    files: list[UploadFile] = File(..., max_length=1),
+    source_files: list[UploadFile] = File(..., max_length=MAX_SOURCE_FILES),
+    specification_confirmation: str = Form(..., max_length=8192),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestCreateResponse:
+    UserPolicy.ensure_can_create_request(current_user)
     validator = FileService()
     file_inputs: list[PreparedUpload] = []
     for file in files:
         prepared = await validator.prepare_upload(file)
         file_inputs.append(prepared)
+    source_inputs = [await validator.prepare_upload(file) for file in source_files]
 
     request_file_service: FileService | None = None
     try:
@@ -777,6 +860,8 @@ async def create_request(
                 id_plan=id_plan,
                 normative_file_id=normative_file_id,
                 files=file_inputs,
+                source_files=source_inputs,
+                specification_confirmation=specification_confirmation,
                 additional_emails=additional_emails,
                 hidden_contractor_ids=hidden_contractor_ids,
             )
@@ -816,6 +901,41 @@ async def update_request(
     return RequestMutationResponse(
         data={"request_id": _request_id_as_str(request_id)},
     )
+
+
+@router.post("/requests/email-preview", response_model=RequestEmailPreviewResponse)
+async def preview_draft_request_email(
+    payload: RequestDraftEmailPreviewPayload,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestEmailPreviewResponse:
+    async with uow:
+        service = _build_request_service(uow, email_notifications=EmailNotificationService(
+            uow.profiles, uow.requests, uow.users, uow.files))
+        result = await service.preview_request_email(
+            current_user=current_user, request_id=payload.request_id,
+            additional_emails=payload.additional_emails, description=payload.description,
+            deadline_at=payload.deadline_at, normative_file_id=payload.normative_file_id,
+            uploads=[(item.name, item.size_bytes) for item in payload.files],
+            hidden_contractor_ids=payload.hidden_contractor_ids,
+        )
+    return RequestEmailPreviewResponse(data=asdict(result))
+
+
+@router.post("/requests/{request_id}/email-notifications/preview", response_model=RequestEmailPreviewResponse)
+async def preview_request_email_notifications(
+    payload: RequestEmailNotificationPayload,
+    request_id: str = PathParam(..., min_length=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestEmailPreviewResponse:
+    ensure_email_enabled()
+    async with uow:
+        service = _build_request_service(uow, email_notifications=EmailNotificationService(
+            uow.profiles, uow.requests, uow.users, uow.files))
+        result = await service.preview_request_email(
+            current_user=current_user, request_id=request_id, additional_emails=payload.additional_emails)
+    return RequestEmailPreviewResponse(data=asdict(result))
 
 
 @router.post("/requests/{request_id}/email-notifications", response_model=RequestEmailNotificationResponse)
@@ -939,7 +1059,9 @@ async def download_file(
     uow: UnitOfWork = Depends(get_uow),
 ) -> StreamingResponse:
     can_download_business_files = has_permission(current_user, PermissionCodes.FILES_DOWNLOAD)
-    if not can_download_business_files and not has_permission(current_user, PermissionCodes.NORMATIVE_FILES_READ):
+    if not can_download_business_files and not any(has_permission(current_user, permission) for permission in (
+        PermissionCodes.NORMATIVE_FILES_READ, PermissionCodes.REQUESTS_READ, PermissionCodes.DEPARTMENT_REQUESTS_READ,
+    )):
         raise Forbidden("Insufficient permissions for file download")
 
     async with uow:
@@ -947,10 +1069,15 @@ async def download_file(
         if db_file is None:
             raise NotFound("File not found")
 
+        source_request_id = await uow.files.get_hidden_request_id(file_id=file_id)
         is_normative_file = await uow.files.is_normative_file(file_id=file_id)
-        if not is_normative_file and not can_download_business_files:
+        if source_request_id is not None:
+            await _build_request_service(uow).ensure_can_view_hidden_files(
+                current_user=current_user, request_id=source_request_id,
+            )
+        elif not is_normative_file and not can_download_business_files:
             raise Forbidden("Insufficient permissions for file download")
-        if is_normative_file:
+        elif is_normative_file:
             UserPolicy.ensure_can_view_normative_files(current_user)
         elif current_user.role_id == settings.contractor_role_id:
             linked_to_open_request = False
@@ -1048,6 +1175,7 @@ async def download_file(
     content = await file_service.read_bytes(db_file=db_file)
     media_type = db_file.mime_type or "application/octet-stream"
     headers = {
+        "Cache-Control": "private, no-store",
         "Content-Disposition": _build_content_disposition(db_file.original_name),
         "Content-Length": str(len(content)),
     }

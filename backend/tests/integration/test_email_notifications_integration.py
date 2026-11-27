@@ -5,13 +5,14 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import settings
-from app.domain.exceptions import Conflict
+from app.domain.exceptions import Conflict, Forbidden
 from app.domain.permissions import PermissionCodes, get_role_permissions_map
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.repositories.profiles import ActiveContractorEmailRecipient
 from app.services.files import PreparedUpload
 from app.services.requests import RequestService
-from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
+from app.services.request_specification import RequestSpecificationService
+from app.services.send_request_notification_email import EmailPreviewAttachment, SendRequestNotificationEmailUseCase
 from app.services import send_request_notification_email as send_request_notification_email_module
 from app.services.email_delivery_events import BATCH_OPERATION_KIND_REQUEST_ADDITIONAL
 
@@ -239,6 +240,7 @@ class _FakeUsersRepoForSendUseCase(_FakeUsersRepo):
 
 @pytest.mark.asyncio
 async def test_create_request_triggers_email_notification_event(make_current_user, monkeypatch):
+    monkeypatch.setattr(RequestSpecificationService, "verify", lambda self, **kwargs: SimpleNamespace(public_source_indices=(), extraction_indices=()))
     requests_repo = _FakeRequestRepoForCreate()
     email_notifications = _FakeEmailNotificationService()
     service = RequestService(
@@ -522,12 +524,200 @@ async def test_send_use_case_adds_attachment_warning_when_total_size_exceeds_lim
 
 
 class _FakePresentationAttachmentService:
+    async def resolve_presentation_normative_file_id(self):
+        return 1
+
+    async def presentation_download_url(self, *, normative_file_id):
+        return "/api/v1/files/99/download"
+
     async def load_presentation_attachment(self) -> EmailAttachment:
         return EmailAttachment(
             filename="onboarding.pptx",
             content_bytes=b"presentation-bytes",
             mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_verified", [True, False])
+async def test_preview_matches_dispatch_without_sending_or_creating_reply_tokens(monkeypatch, include_verified):
+    monkeypatch.setattr(settings, "email_enabled", True)
+    monkeypatch.setattr(settings, "reply_email_token_secret", "test-only-secret")
+    row = SimpleNamespace(id="33", id_user="owner-33", description="Поставка <оборудования>", deadline_at=_future_dt())
+    files = [SimpleNamespace(id=7, name="spec.pdf", mime_type="application/pdf")]
+    profiles = _FakeProfileRepoForSendUseCase([
+        ActiveContractorEmailRecipient(user_id="contractor-1", email="registered@example.com", tg_id=None),
+        ActiveContractorEmailRecipient(user_id="contractor-2", email="hidden@example.com", tg_id=None),
+        ActiveContractorEmailRecipient(user_id="contractor-3", email="disabled@example.com", tg_id=None),
+    ])
+
+    class Preferences:
+        async def is_channel_enabled(self, *, user_id, **kwargs):
+            return user_id != "contractor-3"
+
+    outbox = _FakeOutboxEmailService()
+    use_case = SendRequestNotificationEmailUseCase(
+        request_repository=_FakeRequestRepoForSendUseCase(request_row=row, files=files),
+        profile_repository=profiles, users=_FakeUsersRepoForSendUseCase(), email_service=outbox,
+        app_url="https://portal.example", file_service=_FakeFileServiceForSendUseCase({"spec.pdf": b"spec"}),
+        presentation_attachment_service=_FakePresentationAttachmentService(), notification_preferences=Preferences(),
+    )
+    kwargs = dict(additional_emails=["REGISTERED@example.com", "invite@example.com", "invite@example.com", "hidden@example.com", "disabled@example.com"],
+                  hidden_contractor_ids=["contractor-2"], include_verified_contractors=include_verified)
+    # A preview must not mint a usable response token or touch the outbound adapter.
+    from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
+    original_create_token = ReplyTokenCodec.create_token
+
+    async def forbidden_token(*args, **kwargs):
+        raise AssertionError("Preview issued a token")
+
+    monkeypatch.setattr(ReplyTokenCodec, "create_token", forbidden_token)
+    preview = await use_case.preview(
+        request_id=row.id, request_owner_user_id=row.id_user, description=row.description, deadline_at=row.deadline_at,
+        attachments=[EmailPreviewAttachment("spec.pdf", 4, "/api/v1/files/7/download")], **kwargs,
+    )
+    assert outbox.outbox == []
+    assert [item.to_email for item in preview.messages] == ["registered@example.com", "invite@example.com"]
+    monkeypatch.setattr(ReplyTokenCodec, "create_token", original_create_token)
+    await use_case.execute(request_id=row.id, contractor_role_id=settings.contractor_role_id, **kwargs)
+    assert len(outbox.outbox) == len(preview.messages)
+    for reviewed, sent in zip(preview.messages, outbox.outbox):
+        assert reviewed.to_email == sent["to_email"]
+        assert reviewed.subject == sent["subject"]
+        assert [item.name for item in reviewed.attachments] == [item.filename for item in sent["attachments"]]
+        if sent["reply_token"]:
+            assert reviewed.html_content == sent["html_content"].replace(sent["reply_token"], "[Персональный код ответа будет добавлен при отправке]")
+        else:
+            assert reviewed.html_content == sent["html_content"]
+
+
+@pytest.mark.asyncio
+async def test_preview_honors_no_mail_without_loading_recipients(monkeypatch):
+    monkeypatch.setattr(settings, "email_enabled", False)
+    use_case = SendRequestNotificationEmailUseCase(
+        request_repository=None, profile_repository=None, users=None, email_service=None, app_url="https://portal.example")
+    preview = await use_case.preview(
+        request_id="draft", request_owner_user_id="owner", description=None, deadline_at=_future_dt(),
+        attachments=[], additional_emails=[], hidden_contractor_ids=[], include_verified_contractors=True)
+    assert preview.messages == []
+    assert "отключён" in preview.warnings[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [100, 1024 * 1024, 2 * 1024 * 1024])
+async def test_preview_attachment_limits_match_sent_invitation(monkeypatch, size):
+    monkeypatch.setattr(settings, "email_enabled", True)
+    monkeypatch.setattr(send_request_notification_email_module, "MAX_EMAIL_ATTACHMENT_SIZE_MB", 1)
+    row = SimpleNamespace(id="33", id_user="owner-33", description="Заявка", deadline_at=_future_dt())
+    outbox = _FakeOutboxEmailService()
+    use_case = SendRequestNotificationEmailUseCase(
+        request_repository=_FakeRequestRepoForSendUseCase(request_row=row, files=[SimpleNamespace(name="spec.pdf", mime_type="application/pdf")]),
+        profile_repository=_FakeProfileRepoForSendUseCase([]), users=_FakeUsersRepoForSendUseCase(), email_service=outbox,
+        app_url="https://portal.example", file_service=_FakeFileServiceForSendUseCase({"spec.pdf": b"x" * size}),
+        presentation_attachment_service=_FakePresentationAttachmentService(),
+    )
+    kwargs = dict(additional_emails=["invite@example.com"], hidden_contractor_ids=[], include_verified_contractors=False)
+    preview = await use_case.preview(
+        request_id=row.id, request_owner_user_id=row.id_user, description=row.description, deadline_at=row.deadline_at,
+        attachments=[EmailPreviewAttachment("spec.pdf", size, upload_index=0)], **kwargs)
+    await use_case.execute(request_id=row.id, contractor_role_id=settings.contractor_role_id, **kwargs)
+    assert [item.name for item in preview.messages[0].attachments] == [item.filename for item in outbox.outbox[0]["attachments"]]
+    assert preview.messages[0].html_content == outbox.outbox[0]["html_content"]
+    assert bool(preview.warnings) == (size >= 1024 * 1024)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("draft", [True, False])
+async def test_preview_requires_the_same_permission_as_its_mutation(make_current_user, draft):
+    service = RequestService(
+        requests=None, files=None, users=None, offers=None, user_status_periods=None,
+        email_notifications=_FakeEmailNotificationService(),
+    )
+    user = make_current_user(permissions=set())
+    with pytest.raises(Forbidden):
+        await service.preview_request_email(
+            current_user=user, request_id="33", additional_emails=["invite@example.com"],
+            uploads=[("file.pdf", 1)] if draft else None, deadline_at=_future_dt(), normative_file_id=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner,status,error", [("foreign-owner", "open", Forbidden), ("owner-33", "closed", Conflict)])
+async def test_saved_request_preview_rejects_foreign_scope_and_closed_request(make_current_user, owner, status, error):
+    row = SimpleNamespace(id="33", id_user=owner, status=status)
+    service = RequestService(
+        requests=_FakeRequestRepoForSendUseCase(request_row=row), files=None,
+        users=_FakeUsersRepoForSendUseCase(), offers=None, user_status_periods=_FakeUserStatusPeriodsRepo(),
+        email_notifications=_FakeEmailNotificationService(),
+    )
+    user = make_current_user(user_id="owner-33", role_id=settings.economist_role_id,
+                             permissions={PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND})
+    with pytest.raises(error):
+        await service.preview_request_email(current_user=user, request_id="33", additional_emails=["invite@example.com"])
+
+
+@pytest.mark.parametrize("draft", [True, False])
+@pytest.mark.parametrize("allowed", [True, False])
+def test_preview_http_contract_checks_access_and_has_no_delivery_side_effects(
+    test_client, set_current_user, set_uow, make_current_user, monkeypatch, draft, allowed,
+):
+    from app.services.files import FileService
+    from app.infrastructure.email.smtp_email_service import SMTPEmailService
+
+    monkeypatch.setattr(settings, "email_enabled", True)
+    monkeypatch.setattr(settings, "web_base_url", "https://portal.example")
+    monkeypatch.setattr(settings, "reply_email_token_secret", "test-only-secret")
+    permissions = {PermissionCodes.REQUESTS_CREATE, PermissionCodes.NORMATIVE_FILES_READ,
+                   PermissionCodes.REQUESTS_UPDATE, PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND}
+    set_current_user(make_current_user(user_id="owner-33", permissions=permissions if allowed else set()))
+
+    class Files(_FakeFilesRepo):
+        async def get_normative_file_row(self, *, normative_id):
+            return SimpleNamespace(id=1, file_id=8, original_name="normative.pdf", status="actual")
+
+        async def get_normative_file(self, *, normative_id):
+            return SimpleNamespace(id=8, name="normative.pdf", mime_type="application/pdf")
+
+        async def list_normative_files(self, *, status):
+            return []
+
+    class Uow:
+        requests = _FakeRequestRepoForSendUseCase(
+            request_row=SimpleNamespace(id="33", id_user="owner-33", status="open", description="Сохранённая заявка", deadline_at=_future_dt()),
+            files=[SimpleNamespace(id=7, name="spec.pdf", mime_type="application/pdf")])
+        files = Files()
+        users = _FakeUsersRepoForSendUseCase()
+        profiles = _FakeProfileRepoForSendUseCase([])
+        offers = _FakeOffersRepo()
+        user_status_periods = _FakeUserStatusPeriodsRepo()
+        economy_plans = None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    async def read_bytes(*args, **kwargs):
+        return b"pdf"
+
+    async def no_delivery(*args, **kwargs):
+        raise AssertionError("Preview must not send mail")
+
+    monkeypatch.setattr(FileService, "read_bytes", read_bytes)
+    monkeypatch.setattr(SMTPEmailService, "send_email", no_delivery)
+    set_uow(Uow())
+    payload = {"additional_emails": [" INVITE@example.com ", "invite@example.com"]}
+    if draft:
+        payload.update(request_id="33", description="Новая заявка", deadline_at=_future_dt().isoformat(),
+                       normative_file_id=1, files=[{"name": "upload.pdf", "size_bytes": 5}])
+    response = test_client.post("/api/v1/requests/email-preview" if draft else "/api/v1/requests/33/email-notifications/preview", json=payload)
+    assert response.status_code == (200 if allowed else 403)
+    if allowed:
+        message, = response.json()["data"]["messages"]
+        assert message["to_email"] == "invite@example.com"
+        assert message["kind"] == "invitation"
+        assert [item["name"] for item in message["attachments"]] == (["normative.pdf", "upload.pdf"] if draft else ["spec.pdf"])
+        assert ("Новая заявка" if draft else "Сохранённая заявка") in message["html_content"]
 
 
 @pytest.mark.asyncio

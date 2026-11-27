@@ -253,6 +253,9 @@ class _RequestFilesUow:
 
 
 class _DownloadFilesRepo:
+    async def get_hidden_request_id(self, *, file_id: int):
+        return None
+
     def __init__(self, *, exists: bool = True, normative: bool = False) -> None:
         self.exists = exists
         self.normative = normative

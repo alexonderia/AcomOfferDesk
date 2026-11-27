@@ -219,6 +219,31 @@ async def test_email_sender_sends_valid_payload(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mailing_sends_separate_messages_without_exposing_other_recipients(monkeypatch):
+    deliveries = []
+
+    class SMTP(_FakeSMTP):
+        def send_message(self, message, from_addr, to_addrs):
+            deliveries.append((message, to_addrs))
+
+    monkeypatch.setattr(worker_email_sender.smtplib, "SMTP_SSL", lambda *args, **kwargs: SMTP([]))
+    for address in ["first@example.com", "second@example.com"]:
+        result = await worker_email_sender.send_email({
+            "to_email": address, "subject": "Заявка", "text_content": "Содержание заявки",
+        })
+        assert result.success
+
+    assert len(deliveries) == 2
+    for (message, envelope), address in zip(deliveries, ["first@example.com", "second@example.com"]):
+        assert envelope == [address]
+        assert str(message["To"]) == address
+        assert message["Cc"] is None
+        assert message["Bcc"] is None
+        other = "second@example.com" if address.startswith("first") else "first@example.com"
+        assert other not in message.as_string()
+
+
+@pytest.mark.asyncio
 async def test_email_sender_transient_error_allows_retry(monkeypatch):
     attempts: list[EmailMessage] = []
     error = smtplib.SMTPServerDisconnected("Connection lost")

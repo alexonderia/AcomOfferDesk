@@ -16,12 +16,15 @@ import { getRequestDetails } from '@shared/api/requests/getRequestDetails';
 import type { RequestDetails, RequestDetailsFile, RequestDetailsOffer } from '@shared/api/requests/getRequestDetails';
 import { getRequestEconomists } from '@shared/api/requests/getRequestEconomists';
 import { sendRequestEmailNotifications } from '@shared/api/requests/sendRequestEmailNotifications';
+import { previewRequestEmails } from '@shared/api/requests/previewRequestEmails';
+import { useRequestEmailReview } from '@features/request-email/model/useRequestEmailReview';
+import { RequestEmailReviewDialog } from '@features/request-email/ui/RequestEmailReviewDialog';
 import { markDeletedAlertViewed } from '@shared/api/offers/markDeletedAlertViewed';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
-import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
+import { deleteRequestFile, deleteRequestHiddenFile, updateRequestDetails, uploadRequestFile, uploadRequestSourceFile } from '@shared/api/requests/updateRequestDetails';
 import { getPlanOptions, type PlanOption } from '@shared/api/plans';
 import { downloadFile } from '@shared/api/fileDownload';
-import { getFileKey, mergeUniqueFiles } from '@shared/lib/files';
+import { getFileKey, getUploadFileSizeError, mergeUniqueFiles } from '@shared/lib/files';
 import { formatSettledTaskErrors, joinUserFacingErrors } from '@shared/lib/errors';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
@@ -40,6 +43,7 @@ import {
 } from '../model/requestDetailsUtils';
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
 import { RequestDetailsMainCard } from './RequestDetailsMainCard';
+import { RequestSourceFiles } from './RequestSourceFiles';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { useOfferContractorLoginAccess } from '@features/requests/model/useOfferContractorLoginAccess';
 import { ConfirmationDialog } from '@shared/components/ConfirmationDialog';
@@ -82,6 +86,14 @@ export const RequestDetailsView = () => {
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
     const [newFiles, setNewFiles] = useState<File[]>([]);
+    const [newHiddenFiles, setNewHiddenFiles] = useState<File[]>([]);
+    const [deletedHiddenFileIds, setDeletedHiddenFileIds] = useState<number[]>([]);
+    const [hiddenFilesRevision, setHiddenFilesRevision] = useState(0);
+    useEffect(() => {
+        setNewHiddenFiles([]);
+        setDeletedHiddenFileIds([]);
+        setHiddenFilesRevision(0);
+    }, [requestId]);
     const [isEditMode, setIsEditMode] = useState(false);
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
     const [isDescriptionOverflowing, setIsDescriptionOverflowing] = useState(false);
@@ -94,6 +106,9 @@ export const RequestDetailsView = () => {
 
     const [isSaving, setIsSaving] = useState(false);
     const [isSendingEmails, setIsSendingEmails] = useState(false);
+    const { review: emailReview, isLoadingReview, prepareReview, closeReview } = useRequestEmailReview<{
+        request: RequestDetails; emails: string[];
+    }>(requestId);
     const [isClearingDeletedAlert, setIsClearingDeletedAlert] = useState(false);
     const [isSaveConfirmationOpen, setIsSaveConfirmationOpen] = useState(false);
     const [offerConfirmation, setOfferConfirmation] = useState<{ offerId: number; value: OfferDecisionStatus } | null>(null);
@@ -111,7 +126,7 @@ export const RequestDetailsView = () => {
     const pollIntervalMs = 10000;
 
     const hasDeletedAlert = (requestDetails?.count_deleted_alert ?? 0) > 0;
-    const hasFileChanges = deletedFileIds.length > 0 || newFiles.length > 0;
+    const hasFileChanges = deletedFileIds.length > 0 || newFiles.length > 0 || deletedHiddenFileIds.length > 0 || newHiddenFiles.length > 0;
     const todayDate = useMemo(() => {
         const now = new Date();
         const offsetMs = now.getTimezoneOffset() * 60000;
@@ -182,7 +197,7 @@ export const RequestDetailsView = () => {
         () => status === 'open' && Boolean(requestDetails?.actions.send_email_notifications),
         [requestDetails?.actions.send_email_notifications, status]
     );
-    const isAdditionalEmailsFieldUnavailable = !canSendAdditionalEmails || isSendingEmails;
+    const isAdditionalEmailsFieldUnavailable = !canSendAdditionalEmails || isSendingEmails || isLoadingReview || isEditMode;
     const canUploadRequestFiles = useMemo(() => Boolean(requestDetails?.actions.upload_file), [requestDetails?.actions.upload_file]);
     const canDeleteRequestFiles = useMemo(() => Boolean(requestDetails?.actions.delete_file), [requestDetails?.actions.delete_file]);
     const canMarkDeletedAlertViewed = useMemo(
@@ -204,7 +219,9 @@ export const RequestDetailsView = () => {
         || (hasNonStatusRequestFieldChanges && canEditRequest)
         || (hasOwnerChange && canEditOwner)
         || (deletedFileIds.length > 0 && canDeleteRequestFiles)
-        || (newFiles.length > 0 && canUploadRequestFiles);
+        || (newFiles.length > 0 && canUploadRequestFiles)
+        || (newHiddenFiles.length > 0 && canUploadRequestFiles)
+        || (deletedHiddenFileIds.length > 0 && canDeleteRequestFiles);
     const canEnterEditMode =
         canEditRequest
         || canUpdateRequestStatus
@@ -483,7 +500,7 @@ export const RequestDetailsView = () => {
 
         try {
             suppressPendingChangesToastRef.current = true;
-            await updateRequestDetails({
+            if (statusChanged || deadlineChanged || ownerChanged || initialAmountChanged || finalAmountChanged || planChanged) await updateRequestDetails({
                 requestId: currentRequest.id,
                 status: statusChanged ? status : undefined,
                 deadline_at: deadlineChanged ? toDeadlineIso(effectiveDeadline) : undefined,
@@ -508,6 +525,20 @@ export const RequestDetailsView = () => {
                 );
                 failedUploadFiles = newFiles.filter((_, index) => uploadResults[index]?.status === 'rejected');
             }
+
+            const hiddenDeleteResults = await Promise.allSettled(
+                deletedHiddenFileIds.map((id) => deleteRequestHiddenFile(currentRequest.id, id)),
+            );
+            const hiddenUploadResults = await Promise.allSettled(
+                newHiddenFiles.map((file) => uploadRequestSourceFile(currentRequest.id, file)),
+            );
+            setDeletedHiddenFileIds(deletedHiddenFileIds.filter((_, index) => hiddenDeleteResults[index]?.status === 'rejected'));
+            setNewHiddenFiles(newHiddenFiles.filter((_, index) => hiddenUploadResults[index]?.status === 'rejected'));
+            if (deletedHiddenFileIds.length || newHiddenFiles.length) setHiddenFilesRevision((value) => value + 1);
+            uploadErrors.push(
+                ...formatSettledTaskErrors(hiddenDeleteResults, deletedHiddenFileIds.map((id) => `Файл №${id}`), 'Не удалось удалить скрытый файл'),
+                ...formatSettledTaskErrors(hiddenUploadResults, newHiddenFiles.map((file) => file.name), 'Не удалось прикрепить скрытый файл'),
+            );
 
             const refreshed = await getRequestDetails(currentRequest.id);
             syncRequestState(refreshed, true);
@@ -652,14 +683,28 @@ export const RequestDetailsView = () => {
             return;
         }
 
+        try {
+            await prepareReview({ request: requestDetails, emails: [...nextAdditionalEmails] },
+                (signal) => previewRequestEmails({ requestId: requestDetails.id, additional_emails: nextAdditionalEmails }, signal));
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') return;
+            showErrorToast(error instanceof Error ? error.message : 'Не удалось подготовить проверку писем');
+        }
+    };
+
+    const handleConfirmEmails = async () => {
+        if (!emailReview || isSendingEmails || !canSendAdditionalEmails) return;
         setIsSendingEmails(true);
 
         try {
             const response = await sendRequestEmailNotifications({
-                requestId: requestDetails.id,
-                additional_emails: nextAdditionalEmails
+                requestId: emailReview.snapshot.request.id,
+                additional_emails: emailReview.snapshot.emails
             });
             setAdditionalEmails(response.data.sent_to);
+            closeReview();
+        } catch (error) {
+            showErrorToast(error instanceof Error ? error.message : 'Не удалось отправить письма');
         } finally {
             setIsSendingEmails(false);
         }
@@ -675,6 +720,8 @@ export const RequestDetailsView = () => {
         setExistingFiles(requestDetails?.files ?? []);
         setDeletedFileIds([]);
         setNewFiles([]);
+        setNewHiddenFiles([]);
+        setDeletedHiddenFileIds([]);
         setIsEditMode(false);
         setIsSaveConfirmationOpen(false);
     };
@@ -776,6 +823,13 @@ export const RequestDetailsView = () => {
 
     return (
         <Box>
+            {emailReview && emailReview.snapshot.request.id === requestDetails.id ? <RequestEmailReviewDialog
+                preview={emailReview.preview} fontStyles={emailReview.fontStyles} isPending={isSendingEmails} onCancel={closeReview} onConfirm={handleConfirmEmails}
+                summary={{ id: emailReview.snapshot.request.id, description: emailReview.snapshot.request.description,
+                    deadline: emailReview.snapshot.request.deadline_at, amount: emailReview.snapshot.request.initial_amount,
+                    files: emailReview.snapshot.request.files.map((item) => ({ name: item.name, downloadUrl: item.download_url })),
+                }}
+            /> : null}
             <ConfirmationDialog
                 open={isSaveConfirmationOpen}
                 title="Изменение статуса заявки"
@@ -844,54 +898,58 @@ export const RequestDetailsView = () => {
                 onCancelEditing={handleCancelEditing}
                 onSave={() => void handleSave()}
                 onStartEdit={() => setIsEditMode(true)}
+                hiddenFilesSection={requestDetails.actions.view_details ? (
+                    <RequestSourceFiles key={requestDetails.id} requestId={requestDetails.id} canUpload={canUploadRequestFiles}
+                        canDelete={canDeleteRequestFiles} isEditMode={isEditMode} isSaving={isSaving}
+                        newFiles={newHiddenFiles} deletedFileIds={deletedHiddenFileIds} refreshRevision={hiddenFilesRevision}
+                        onRemoveFile={(id) => setDeletedHiddenFileIds((previous) => [...new Set([...previous, id])])}
+                        onRemoveNewFile={(file) => setNewHiddenFiles((previous) => previous.filter((item) => getFileKey(item) !== getFileKey(file)))}
+                        onFilesAdded={(added) => {
+                            const errors = added.flatMap((file) => { const error = getUploadFileSizeError(file); return error ? [`${file.name}: ${error}`] : []; });
+                            if (errors.length) showErrorToast(joinUserFacingErrors(errors));
+                            setNewHiddenFiles((previous) => mergeUniqueFiles(previous, added.filter((file) => !getUploadFileSizeError(file))));
+                        }} />
+                ) : null}
+                planField={
+                    <Stack spacing={0.75}>
+                        <Typography id="request-plan-label" variant="body2" color="text.secondary">
+                            План заявки
+                        </Typography>
+                        {canEditRequest && isEditMode ? (
+                            <Select
+                                labelId="request-plan-label"
+                                size="small"
+                                value={planId}
+                                displayEmpty
+                                onChange={(event) => setPlanId(String(event.target.value))}
+                                disabled={isPlanOptionsLoading || isSaving}
+                            >
+                                <MenuItem value="">Без плана</MenuItem>
+                                {planId && !planOptions.some((option) => String(option.plan_id) === planId) ? (
+                                    <MenuItem value={planId}>{resolvedPlanDisplayLabel}</MenuItem>
+                                ) : null}
+                                {planOptions.map((option) => (
+                                    <MenuItem
+                                        key={option.plan_id}
+                                        value={String(option.plan_id)}
+                                        disabled={option.is_closed}
+                                    >
+                                        {option.plan_name} ({option.user_name})
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        ) : (
+                            <TextField
+                                size="small"
+                                value={resolvedPlanDisplayLabel}
+                                fullWidth
+                                InputProps={{ readOnly: true }}
+                                inputProps={{ 'aria-label': 'План заявки' }}
+                            />
+                        )}
+                    </Stack>
+                }
             />
-
-            <Box
-                sx={(themeValue) => ({
-                    mt: 2,
-                    borderRadius: `${themeValue.acomShape.panelRadius}px`,
-                    border: `1px solid ${themeValue.palette.divider}`,
-                    backgroundColor: themeValue.palette.background.paper,
-                    px: { xs: 2, md: 3 },
-                    py: { xs: 1.5, md: 2 },
-                })}
-            >
-                <Stack spacing={0.75}>
-                    <Typography variant="body2" color="text.secondary">
-                        План заявки
-                    </Typography>
-                    {canEditRequest && isEditMode ? (
-                        <Select
-                            size="small"
-                            value={planId}
-                            displayEmpty
-                            onChange={(event) => setPlanId(String(event.target.value))}
-                            disabled={isPlanOptionsLoading}
-                        >
-                            <MenuItem value="">Без плана</MenuItem>
-                            {planId && !planOptions.some((option) => String(option.plan_id) === planId) ? (
-                                <MenuItem value={planId}>{resolvedPlanDisplayLabel}</MenuItem>
-                            ) : null}
-                            {planOptions.map((option) => (
-                                <MenuItem
-                                    key={option.plan_id}
-                                    value={String(option.plan_id)}
-                                    disabled={option.is_closed}
-                                >
-                                    {option.plan_name} ({option.user_name})
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    ) : (
-                        <TextField
-                            size="small"
-                            value={resolvedPlanDisplayLabel}
-                            fullWidth
-                            InputProps={{ readOnly: true }}
-                        />
-                    )}
-                </Stack>
-            </Box>
 
             {status === 'open' && (
                 <Box sx={{ mt: 2.5 }}>
@@ -928,7 +986,7 @@ export const RequestDetailsView = () => {
                                 onClick={() => void handleSendAdditionalEmails()}
                                 disabled={isAdditionalEmailsFieldUnavailable}
                             >
-                                {isSendingEmails ? 'Отправка...' : 'Отправить'}
+                                {isLoadingReview ? 'Подготовка проверки...' : 'Проверить и отправить'}
                             </Button>
                         </Stack>
                     </ToggleSection>

@@ -2,12 +2,13 @@
 
 from dataclasses import dataclass
 import logging
+import unicodedata
 from pathlib import Path
 
 from fastapi import UploadFile
 
 from app.core.config import settings
-from app.domain.exceptions import Conflict, NotFound, UploadRejected
+from app.domain.exceptions import Conflict, NotFound, ServiceUnavailable, UploadRejected
 from app.infrastructure.minio_client import MinioStorage, S3Error
 from app.models.orm_models import File, StorageObject
 from app.repositories.files import FileRepository
@@ -51,7 +52,10 @@ class FileService:
             upload.filename or "",
             upload.content_type or "application/octet-stream",
         )
-        content_bytes = await self._read_upload_bytes(upload)
+        try:
+            content_bytes = await self._read_upload_bytes(upload)
+        except (UploadRejected, ServiceUnavailable) as exc:
+            raise self._file_error(exc, upload.filename or "") from exc
         return await self.prepare_bytes(
             original_name=upload.filename or "",
             content_bytes=content_bytes,
@@ -64,6 +68,21 @@ class FileService:
         original_name: str,
         content_bytes: bytes,
         mime_type: str | None = None,
+    ) -> PreparedUpload:
+        try:
+            return await self._prepare_bytes(original_name=original_name, content_bytes=content_bytes, mime_type=mime_type)
+        except (UploadRejected, ServiceUnavailable) as exc:
+            raise self._file_error(exc, original_name) from exc
+
+    @staticmethod
+    def _file_error(error: UploadRejected | ServiceUnavailable, original_name: str) -> UploadRejected | ServiceUnavailable:
+        name = original_name.replace("\\", "/").rsplit("/", 1)[-1]
+        safe_name = "".join(character for character in name if not unicodedata.category(character).startswith("C"))[:255] or "без имени"
+        error_type = UploadRejected if isinstance(error, UploadRejected) else ServiceUnavailable
+        return error_type(reason_code=error.reason_code, detail=f"Файл «{safe_name}»: {error.detail}", status_code=error.status_code)
+
+    async def _prepare_bytes(
+        self, *, original_name: str, content_bytes: bytes, mime_type: str | None = None,
     ) -> PreparedUpload:
         logger.info(
             "Preparing upload bytes for validation: filename=%s size_bytes=%s claimed_mime=%s",

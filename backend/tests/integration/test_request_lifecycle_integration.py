@@ -395,6 +395,8 @@ def test_allowed_roles_can_create_request(test_client, monkeypatch, set_current_
         id_plan,
         normative_file_id,
         files,
+        source_files,
+        specification_confirmation,
         additional_emails,
         hidden_contractor_ids,
     ):
@@ -413,8 +415,10 @@ def test_allowed_roles_can_create_request(test_client, monkeypatch, set_current_
             "description": "Created in test",
             "initial_amount": "0",
             "normative_file_id": "1",
+            "specification_confirmation": "fixture-confirmation",
         },
-        files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
+        files=[("files", ("evidence.txt", b"request payload", "text/plain")),
+               ("source_files", ("contract.docx", b"source payload", "application/octet-stream"))],
     )
 
     assert response.status_code == 200
@@ -460,6 +464,8 @@ def test_forbidden_roles_cannot_create_request(test_client, monkeypatch, set_cur
         id_plan,
         normative_file_id,
         files,
+        source_files,
+        specification_confirmation,
         additional_emails,
         hidden_contractor_ids,
     ):
@@ -478,8 +484,10 @@ def test_forbidden_roles_cannot_create_request(test_client, monkeypatch, set_cur
             "description": "Created in test",
             "initial_amount": "0",
             "normative_file_id": "1",
+            "specification_confirmation": "fixture-confirmation",
         },
-        files=[("files", ("evidence.txt", b"request payload", "text/plain"))],
+        files=[("files", ("evidence.txt", b"request payload", "text/plain")),
+               ("source_files", ("contract.docx", b"source payload", "application/octet-stream"))],
     )
 
     assert response.status_code == 403

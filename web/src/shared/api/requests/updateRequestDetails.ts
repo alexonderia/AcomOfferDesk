@@ -86,3 +86,15 @@ export const uploadRequestFile = async (requestId: string, file: File) => {
   );
 
 };
+
+export const uploadRequestSourceFile = async (requestId: string, file: File, signal?: AbortSignal) => {
+  const body = new FormData();
+  body.append('file', file, file.name);
+  await fetchJson(`/api/v1/requests/${encodeURIComponent(requestId)}/source-files`,
+    { method: 'POST', body, signal }, 'Не удалось прикрепить закрытый исходник');
+};
+
+export const deleteRequestHiddenFile = async (requestId: string, fileId: number) => {
+  await fetchEmpty(`/api/v1/requests/${encodeURIComponent(requestId)}/source-files/${fileId}`,
+    { method: 'DELETE' }, 'Не удалось удалить скрытый файл');
+};

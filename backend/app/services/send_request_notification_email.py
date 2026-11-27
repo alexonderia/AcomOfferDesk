@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Protocol, TypeVar
 from urllib.parse import quote
 
 from app.core.config import settings
@@ -31,6 +33,54 @@ from shared.email_delivery import generate_correlation_id
 
 MAX_EMAIL_ATTACHMENT_SIZE_MB = 20
 _GENERIC_QUEUE_ERROR_MESSAGE = "Не удалось поставить письмо в очередь на отправку."
+
+
+class _SizedAttachment(Protocol):
+    @property
+    def size_bytes(self) -> int: ...
+
+
+_Attachment = TypeVar("_Attachment", bound=_SizedAttachment)
+
+
+def _attachment_warning(total_size: int) -> str | None:
+    if total_size > MAX_EMAIL_ATTACHMENT_SIZE_MB * 1024 * 1024:
+        return f"Вложения не добавлены: суммарный размер превышает {MAX_EMAIL_ATTACHMENT_SIZE_MB} МБ."
+    return None
+
+
+def _with_presentation(attachments: list[_Attachment], presentation: _Attachment | None) -> list[_Attachment]:
+    if presentation is None:
+        return attachments
+    combined = [presentation, *attachments]
+    limit = MAX_EMAIL_ATTACHMENT_SIZE_MB * 1024 * 1024
+    if sum(item.size_bytes for item in combined) <= limit:
+        return combined
+    return [presentation] if presentation.size_bytes <= limit else attachments
+
+
+@dataclass(frozen=True, slots=True)
+class EmailPreviewAttachment:
+    name: str
+    size_bytes: int
+    download_url: str | None = None
+    upload_index: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RequestEmailPreviewMessage:
+    to_email: str
+    kind: str
+    subject: str
+    html_content: str
+    text_content: str
+    attachments: list[EmailPreviewAttachment]
+
+
+@dataclass(frozen=True, slots=True)
+class RequestEmailPreview:
+    messages: list[RequestEmailPreviewMessage]
+    warnings: list[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +123,82 @@ class SendRequestNotificationEmailUseCase:
         self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._invitation_service = invitation_service or RegistrationInvitationService()
+
+    def _build_payload(self, *, recipient: NotificationRecipient, request_id: str,
+                       description: str | None, deadline_at: datetime,
+                       reply_token: str | None, attachment_warning: str | None,
+                       inviter_id: str):
+        if recipient.is_verified_user:
+            return build_request_notification_email_payload(
+                to_email=recipient.email, request_id=request_id, description=description,
+                deadline_at=deadline_at,
+                request_url=f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}",
+                reply_token=reply_token, attachment_warning=attachment_warning,
+            )
+        return build_request_invited_contractor_email_payload(
+            to_email=recipient.email, request_id=request_id, description=description,
+            deadline_at=deadline_at,
+            portal_url=self._portal_url_for_invitee(recipient=recipient, inviter_id=inviter_id),
+            contact=contact_info_from_invitation_settings(
+                contact_name=settings.invitation_contact_name,
+                contact_email=settings.invitation_contact_email,
+                contact_phone=settings.invitation_contact_phone,
+            ),
+            attachment_warning=attachment_warning,
+        )
+
+    async def preview(self, *, request_id: str, request_owner_user_id: str,
+                      description: str | None, deadline_at: datetime,
+                      attachments: list[EmailPreviewAttachment], additional_emails: list[str],
+                      hidden_contractor_ids: list[str], include_verified_contractors: bool) -> RequestEmailPreview:
+        if not settings.email_enabled:
+            return RequestEmailPreview([], ["Почтовый сервис отключён. Письма не будут отправлены."])
+        if not self._app_url:
+            return RequestEmailPreview([], ["Почтовая рассылка не настроена. Письма не будут отправлены."])
+        recipients = await self._build_recipients(
+            request_owner_user_id=request_owner_user_id,
+            active_contractors=await self._profile_repository.list_active_contractor_email_recipients(
+                contractor_role_id=settings.contractor_role_id),
+            additional_emails=additional_emails, hidden_contractor_ids=hidden_contractor_ids,
+            include_verified_contractors=include_verified_contractors,
+            contractor_role_id=settings.contractor_role_id,
+        )
+        if not settings.reply_email_token_secret and any(item.is_verified_user for item in recipients):
+            return RequestEmailPreview([], ["Почтовая рассылка не настроена. Письма не будут отправлены."])
+        warning = _attachment_warning(sum(item.size_bytes for item in attachments))
+        selected = [] if warning else attachments
+        presentation = None
+        if self._presentation_attachment_service is not None and any(not item.is_verified_user for item in recipients):
+            presentation_id = await self._presentation_attachment_service.resolve_presentation_normative_file_id()
+            if presentation_id is not None:
+                item = await self._presentation_attachment_service.load_presentation_attachment()
+                if item is not None:
+                    presentation = EmailPreviewAttachment(
+                        name=item.filename, size_bytes=item.size_bytes,
+                        download_url=await self._presentation_attachment_service.presentation_download_url(normative_file_id=presentation_id),
+                    )
+        invited_attachments = _with_presentation(selected, presentation)
+        messages = []
+        for recipient in recipients:
+            payload = self._build_payload(
+                recipient=recipient, request_id=request_id, description=description, deadline_at=deadline_at,
+                reply_token="[Персональный код ответа будет добавлен при отправке]" if recipient.is_verified_user else None,
+                attachment_warning=warning, inviter_id=request_owner_user_id,
+            )
+            messages.append(RequestEmailPreviewMessage(
+                to_email=recipient.email, kind="registered" if recipient.is_verified_user else "invitation",
+                subject=payload.subject, html_content=payload.html_content, text_content=payload.text_content,
+                attachments=selected if recipient.is_verified_user else invited_attachments,
+            ))
+        warnings = [warning] if warning else []
+        excluded = sorted(set(email.strip().lower() for email in additional_emails) - {item.email for item in recipients})
+        if excluded:
+            warnings.append("Не включены в рассылку с учётом доступа и почтовых настроек: " + ", ".join(excluded))
+        if presentation is not None and invited_attachments != [presentation, *selected]:
+            warnings.append("Из-за ограничения размера часть вложений не войдёт в письмо с приглашением. Проверьте список вложений каждого письма.")
+        if not messages:
+            warnings.append("Нет получателей для отправки с учётом области доступа, скрытых контрагентов и почтовых настроек.")
+        return RequestEmailPreview(messages, warnings)
 
     async def execute(
         self,
@@ -125,12 +251,6 @@ class SendRequestNotificationEmailUseCase:
 
         token_codec = ReplyTokenCodec(secret=reply_secret) if reply_secret else None
         request_attachments, attachment_warning = await self._build_request_attachments(request_id=request_id)
-        request_url = f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}"
-        invitation_contact = contact_info_from_invitation_settings(
-            contact_name=settings.invitation_contact_name,
-            contact_email=settings.invitation_contact_email,
-            contact_phone=settings.invitation_contact_phone,
-        )
         operation_id = generate_correlation_id() if initiator_user_id else None
         inviter_id = (initiator_user_id or request.id_user or "").strip()
         immediate_failure_count = 0
@@ -145,30 +265,14 @@ class SendRequestNotificationEmailUseCase:
                     ttl_seconds=settings.reply_email_ttl_seconds,
                 )
 
+            payload = self._build_payload(
+                recipient=recipient, request_id=request_id, description=request.description,
+                deadline_at=request.deadline_at, reply_token=reply_token,
+                attachment_warning=attachment_warning, inviter_id=inviter_id,
+            )
             if recipient.is_verified_user:
-                payload = build_request_notification_email_payload(
-                    to_email=recipient.email,
-                    request_id=request_id,
-                    description=request.description,
-                    deadline_at=request.deadline_at,
-                    request_url=request_url,
-                    reply_token=reply_token,
-                    attachment_warning=attachment_warning,
-                )
                 attachments = request_attachments
             else:
-                payload = build_request_invited_contractor_email_payload(
-                    to_email=recipient.email,
-                    request_id=request_id,
-                    description=request.description,
-                    deadline_at=request.deadline_at,
-                    portal_url=self._portal_url_for_invitee(
-                        recipient=recipient,
-                        inviter_id=inviter_id,
-                    ),
-                    contact=invitation_contact,
-                    attachment_warning=attachment_warning,
-                )
                 attachments = await self._build_attachments_with_presentation(
                     request_attachments=request_attachments,
                     attachment_warning=attachment_warning,
@@ -342,7 +446,6 @@ class SendRequestNotificationEmailUseCase:
 
         attachment_items: list[EmailAttachment] = []
         total_size_bytes = 0
-        max_total_size_bytes = MAX_EMAIL_ATTACHMENT_SIZE_MB * 1024 * 1024
 
         for file in files:
             try:
@@ -360,10 +463,9 @@ class SendRequestNotificationEmailUseCase:
                 )
             )
 
-        if total_size_bytes > max_total_size_bytes:
-            return [], (
-                f"Вложения не добавлены: суммарный размер превышает {MAX_EMAIL_ATTACHMENT_SIZE_MB} МБ."
-            )
+        warning = _attachment_warning(total_size_bytes)
+        if warning:
+            return [], warning
 
         return attachment_items, None
 
@@ -380,14 +482,4 @@ class SendRequestNotificationEmailUseCase:
         if presentation_attachment is None:
             return request_attachments
 
-        combined = [presentation_attachment, *request_attachments]
-        total_size_bytes = sum(len(item.content_bytes) for item in combined)
-        max_total_size_bytes = MAX_EMAIL_ATTACHMENT_SIZE_MB * 1024 * 1024
-        if total_size_bytes <= max_total_size_bytes:
-            return combined
-
-        presentation_only_size = len(presentation_attachment.content_bytes)
-        if presentation_only_size <= max_total_size_bytes:
-            return [presentation_attachment]
-
-        return request_attachments
+        return _with_presentation(request_attachments, presentation_attachment)

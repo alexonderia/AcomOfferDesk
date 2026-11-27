@@ -11,13 +11,14 @@ export type ConfirmationDialogProps = {
   color?: 'primary' | 'error' | 'warning';
   maxWidth?: DialogProps['maxWidth'];
   isPending?: boolean;
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void | Promise<void>;
 };
 
 export const ConfirmationDialog = ({
   open, title, description, children, confirmLabel, pendingLabel = 'Выполняем...',
-  color = 'primary', maxWidth = 'sm', isPending = false, onCancel, onConfirm,
+  color = 'primary', maxWidth = 'sm', isPending = false, confirmDisabled = false, onCancel, onConfirm,
 }: ConfirmationDialogProps) => {
   const id = useId();
   const isConfirmingRef = useRef(false);
@@ -25,7 +26,7 @@ export const ConfirmationDialog = ({
     if (!isPending && !isConfirmingRef.current) onCancel();
   };
   const handleConfirm = async () => {
-    if (isPending || isConfirmingRef.current) return;
+    if (isPending || confirmDisabled || isConfirmingRef.current) return;
     isConfirmingRef.current = true;
     try {
       await onConfirm();
@@ -44,7 +45,7 @@ export const ConfirmationDialog = ({
       </DialogContent>
       <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
         <Button autoFocus disabled={isPending} onClick={handleCancel}>Отмена</Button>
-        <Button variant="contained" color={color} disabled={isPending} onClick={() => void handleConfirm()}>
+        <Button variant="contained" color={color} disabled={isPending || confirmDisabled} onClick={() => void handleConfirm()}>
           {isPending ? pendingLabel : confirmLabel}
         </Button>
       </DialogActions>

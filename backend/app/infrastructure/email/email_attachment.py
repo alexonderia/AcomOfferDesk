@@ -8,3 +8,7 @@ class EmailAttachment:
     filename: str
     content_bytes: bytes
     mime_type: str
+
+    @property
+    def size_bytes(self) -> int:
+        return len(self.content_bytes)

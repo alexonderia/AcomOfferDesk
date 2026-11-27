@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from datetime import datetime
+
 from app.core.config import settings
 from app.infrastructure.email_service import SMTPEmailService
 from app.repositories.files import FileRepository
@@ -7,7 +9,7 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
-from app.services.send_request_notification_email import SendRequestNotificationEmailUseCase
+from app.services.send_request_notification_email import EmailPreviewAttachment, RequestEmailPreview, SendRequestNotificationEmailUseCase
 from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 
@@ -97,3 +99,20 @@ class EmailNotificationService:
         if self._files is None:
             return None
         return NormativeEmailAttachmentService(self._files)
+
+    async def preview_request(self, *, request_id: str, request_owner_user_id: str,
+                              description: str | None, deadline_at: datetime,
+                              attachments: list[EmailPreviewAttachment], additional_emails: list[str],
+                              hidden_contractor_ids: list[str], include_verified_contractors: bool) -> RequestEmailPreview:
+        use_case = SendRequestNotificationEmailUseCase(
+            request_repository=self._requests, profile_repository=self._profiles, users=self._users,
+            email_service=self._email_service, app_url=settings.web_base_url or "",
+            presentation_attachment_service=self._presentation_attachment_service(),
+            notification_preferences=self._notification_preferences,
+        )
+        return await use_case.preview(
+            request_id=request_id, request_owner_user_id=request_owner_user_id,
+            description=description, deadline_at=deadline_at, attachments=attachments,
+            additional_emails=additional_emails, hidden_contractor_ids=hidden_contractor_ids,
+            include_verified_contractors=include_verified_contractors,
+        )

@@ -21,11 +21,14 @@ from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.email_notifications import EmailNotificationService
+from app.services.send_request_notification_email import EmailPreviewAttachment, RequestEmailPreview
+from app.services.normative_email_attachment import NormativeEmailAttachmentService
 from app.services.contractor_units import ContractorUnitService
 from app.services.department_scope import DepartmentScopeService
 from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.unit_hierarchy import UnitHierarchyService
 from app.services.files import FileService, PreparedUpload
+from app.services.request_specification import RequestSpecificationService
 from app.services.notifications import NotificationService
 from app.services.contractor_outbound_notifications import (
     RequestEventKind,
@@ -107,6 +110,12 @@ class RequestFileItem:
     id: int
     path: str
     name: str
+
+
+@dataclass(frozen=True)
+class RequestHiddenFileItem(RequestFileItem):
+    is_specification_source: bool | None
+    can_delete: bool = False
 
 
 @dataclass(frozen=True)
@@ -347,6 +356,8 @@ class RequestService:
         id_plan: int | None = None,
         normative_file_id: int | None = None,
         files: list[PreparedUpload],
+        source_files: list[PreparedUpload] | None = None,
+        specification_confirmation: str | None = None,
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
     ) -> tuple[str, list[int]]:
@@ -358,6 +369,12 @@ class RequestService:
             raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
         if not files:
             raise Conflict("Прикрепите файл заявки")
+        if len(files) != 1:
+            raise Conflict("Подготовьте единый файл спецификации перед созданием заявки.")
+        verified_specification = RequestSpecificationService(self._file_service).verify(
+            current_user=current_user, request_id=request_id, sources=source_files or [], specification=files[0],
+            confirmation=specification_confirmation,
+        )
         if _normalize_to_utc(deadline_at) < _utcnow():
             raise Conflict("Дедлайн заявки не может быть в прошлом")
         self._validate_amount(value=initial_amount, field_name="Initial amount")
@@ -391,6 +408,14 @@ class RequestService:
             normative_file_id=normative_file_id,
         )
         file_ids.append(normative_file_id_value)
+        for index, source in enumerate(source_files or []):
+            db_source = await self._file_service.create_request_file(request_id=request.id, upload=source)
+            if index in verified_specification.public_source_indices:
+                await self._requests.attach_file(request_id=request.id, file_id=db_source.id)
+                file_ids.append(db_source.id)
+            else:
+                await self._requests.attach_hidden_file(request_id=request.id, file_id=db_source.id,
+                    is_specification_source=index in verified_specification.extraction_indices)
         for file_item in files:
             db_file = await self._file_service.create_request_file(
                 request_id=request.id,
@@ -426,6 +451,122 @@ class RequestService:
 
         return request.id, file_ids
 
+    async def ensure_can_view_hidden_files(self, *, current_user: CurrentUser, request_id: str) -> None:
+        if current_user.role_id == settings.contractor_role_id:
+            raise Forbidden("Скрытые файлы заявки недоступны контрагентам.")
+        if not (UserPolicy.can_view_requests(current_user)
+                or has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ)):
+            UserPolicy.ensure_can_view_requests(current_user)
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Заявка не найдена.")
+        await self._ensure_can_view_request_in_staff_scope(
+            current_user=current_user, request_owner_user_id=request.id_user,
+        )
+
+    async def list_hidden_files(self, *, current_user: CurrentUser, request_id: str) -> list[RequestHiddenFileItem]:
+        await self.ensure_can_view_hidden_files(current_user=current_user, request_id=request_id)
+        request = await self._requests.get_by_id(request_id=request_id)
+        try:
+            await self._ensure_can_manage_request_files(current_user=current_user, request_owner_user_id=request.id_user, upload=False)
+            can_delete = True
+        except Forbidden:
+            can_delete = False
+        files = await self._requests.list_hidden_files(request_id=request_id)
+        return [RequestHiddenFileItem(id=file.id, path=file.path, name=file.name, is_specification_source=is_source,
+                    can_delete=can_delete and is_source is False)
+                for file, is_source in files]
+
+    async def attach_hidden_file(self, *, current_user: CurrentUser, request_id: str, file_data: PreparedUpload) -> int:
+        await self.ensure_can_view_hidden_files(current_user=current_user, request_id=request_id)
+        request = await self._requests.get_by_id(request_id=request_id)
+        await self._ensure_can_manage_request_files(
+            current_user=current_user, request_owner_user_id=request.id_user, upload=True,
+        )
+        db_file = await self._file_service.create_request_file(request_id=request_id, upload=file_data)
+        await self._requests.attach_hidden_file(request_id=request_id, file_id=db_file.id, is_specification_source=False)
+        return db_file.id
+
+    async def remove_hidden_file(self, *, current_user: CurrentUser, request_id: str, file_id: int) -> None:
+        await self.ensure_can_view_hidden_files(current_user=current_user, request_id=request_id)
+        request = await self._requests.get_by_id(request_id=request_id)
+        await self._ensure_can_manage_request_files(
+            current_user=current_user, request_owner_user_id=request.id_user, upload=False,
+        )
+        link = await self._requests.get_hidden_file_for_update(request_id=request_id, file_id=file_id)
+        if link is None:
+            raise NotFound("Скрытый файл не прикреплён к этой заявке.")
+        if link.is_specification_source is not False:
+            raise Conflict("Нельзя удалить исходник спецификации или файл с неизвестным назначением.")
+        if not await self._requests.detach_hidden_file(request_id=request_id, file_id=file_id):
+            raise Conflict("Файл изменился. Обновите заявку и повторите действие.")
+        if await self._files.count_links(file_id=file_id) == 0:
+            await self._file_service.delete_file(file_id=file_id)
+
+    async def _ensure_can_email_request(self, *, current_user: CurrentUser, request_id: str):
+        require_permission(current_user, PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
+                           message="Insufficient permissions to send request email notifications")
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
+        await self._ensure_can_edit_owned_unassigned_request(
+            current_user=current_user, request_owner_user_id=request.id_user)
+        if request.status != "open":
+            raise Conflict("Only open request can be emailed manually")
+        return request
+
+    async def preview_request_email(self, *, current_user: CurrentUser, request_id: str,
+                                    additional_emails: list[str], description: str | None = None,
+                                    deadline_at: datetime | None = None, normative_file_id: int | None = None,
+                                    uploads: list[tuple[str, int]] | None = None,
+                                    hidden_contractor_ids: list[str] | None = None) -> RequestEmailPreview:
+        if self._email_notifications is None:
+            raise Conflict("Почтовая рассылка не настроена")
+        emails = self._normalize_additional_emails(additional_emails)
+        attachments = []
+        unavailable_files = []
+        is_draft = uploads is not None
+        if is_draft:
+            UserPolicy.ensure_can_create_request(current_user)
+            UserPolicy.ensure_can_view_normative_files(current_user)
+            if not request_id.strip() or deadline_at is None or normative_file_id is None:
+                raise Conflict("Заполните заявку перед проверкой")
+            hidden_ids = await self._normalize_hidden_contractor_ids(hidden_contractor_ids)
+            normative = await NormativeEmailAttachmentService(self._files).load_required_attachment(
+                normative_file_id=normative_file_id)
+            db_file = await self._files.get_normative_file(normative_id=normative_file_id)
+            attachments.append(EmailPreviewAttachment(
+                name=normative.filename, size_bytes=normative.size_bytes,
+                download_url=f"/api/v1/files/{db_file.id}/download"))
+            attachments.extend(EmailPreviewAttachment(name=name, size_bytes=size, upload_index=index)
+                               for index, (name, size) in enumerate(uploads))
+            owner_id = current_user.user_id
+        else:
+            request = await self._ensure_can_email_request(current_user=current_user, request_id=request_id)
+            if not emails:
+                raise Conflict("Укажите хотя бы один адрес получателя")
+            owner_id, description, deadline_at = request.id_user, request.description, request.deadline_at
+            hidden_ids = []
+            for item in await self._requests.list_files_by_request_id(request_id=request_id):
+                try:
+                    content = await self._file_service.read_bytes(db_file=item)
+                except Exception:
+                    unavailable_files.append(item.name)
+                    continue
+                attachments.append(EmailPreviewAttachment(
+                    name=item.name, size_bytes=len(content), download_url=f"/api/v1/files/{item.id}/download"))
+        result = await self._email_notifications.preview_request(
+            request_id=request_id.strip(), request_owner_user_id=owner_id,
+            description=description, deadline_at=deadline_at, attachments=attachments,
+            additional_emails=emails, hidden_contractor_ids=hidden_ids,
+            include_verified_contractors=is_draft,
+        )
+        if unavailable_files:
+            return RequestEmailPreview(messages=result.messages, warnings=[
+                *result.warnings, "Недоступные файлы не войдут в письма: " + ", ".join(unavailable_files),
+            ])
+        return result
+
     async def send_request_email_notification(
         self,
         *,
@@ -433,22 +574,7 @@ class RequestService:
         request_id: str,
         additional_emails: list[str] | None,
     ) -> RequestEmailNotificationResult:
-        require_permission(
-            current_user,
-            PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
-            message="Insufficient permissions to send request email notifications",
-        )
-        request = await self._requests.get_by_id(request_id=request_id)
-        if request is None:
-            raise NotFound("Request not found")
-
-        await self._ensure_can_edit_owned_unassigned_request(
-            current_user=current_user,
-            request_owner_user_id=request.id_user,
-        )
-
-        if request.status != "open":
-            raise Conflict("Only open request can be emailed manually")
+        request = await self._ensure_can_email_request(current_user=current_user, request_id=request_id)
 
         normalized_additional_emails = self._normalize_additional_emails(additional_emails)
         if not normalized_additional_emails:

@@ -14,6 +14,24 @@ class RequestFileSchema(BaseModel):
     download_url: str
 
 
+class RequestHiddenFileSchema(RequestFileSchema):
+    is_specification_source: bool | None
+    can_delete: bool = False
+
+
+class RequestHiddenFilesResponse(BaseModel):
+    files: list[RequestHiddenFileSchema]
+
+
+class RequestSpecificationPreviewResponse(BaseModel):
+    name: str
+    mime_type: str
+    content_base64: str
+    confirmation: str
+    item_count: int
+    used_ocr: bool
+
+
 class RequestStatsSchema(BaseModel):
     count_submitted: int
     count_deleted_alert: int
@@ -186,6 +204,45 @@ class RequestEditPayload(BaseModel):
 
 class RequestEmailNotificationPayload(BaseModel):
     additional_emails: list[str]
+
+
+class RequestEmailPreviewUpload(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(ge=0)
+
+
+class RequestDraftEmailPreviewPayload(RequestEmailNotificationPayload):
+    request_id: str = Field(min_length=1)
+    description: str | None = Field(default=None, max_length=3000)
+    deadline_at: datetime
+    normative_file_id: int = Field(gt=0)
+    files: list[RequestEmailPreviewUpload] = Field(min_length=1)
+    hidden_contractor_ids: list[str] = Field(default_factory=list)
+
+
+class RequestEmailPreviewAttachment(BaseModel):
+    name: str
+    size_bytes: int
+    download_url: str | None = None
+    upload_index: int | None = None
+
+
+class RequestEmailPreviewMessage(BaseModel):
+    to_email: str
+    kind: str
+    subject: str
+    html_content: str
+    text_content: str
+    attachments: list[RequestEmailPreviewAttachment]
+
+
+class RequestEmailPreviewData(BaseModel):
+    messages: list[RequestEmailPreviewMessage]
+    warnings: list[str]
+
+
+class RequestEmailPreviewResponse(BaseModel):
+    data: RequestEmailPreviewData
 
 
 class RequestFileMutationResponseData(BaseModel):

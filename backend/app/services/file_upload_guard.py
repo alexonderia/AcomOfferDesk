@@ -27,6 +27,11 @@ _PUBLIC_ERROR_BY_REASON: dict[str, str] = {
 }
 _DEFAULT_BLOCKED_MESSAGE = "Файл не прошел проверку безопасности."
 _FILE_SCAN_UNAVAILABLE_MESSAGE = _PUBLIC_ERROR_BY_REASON["file_scan_unavailable"]
+_PUBLIC_OFFICE_ERROR_BY_MESSAGE = {
+    "Office document is corrupted or invalid": "Office-файл повреждён: не удалось прочитать его внутреннюю структуру.",
+    "Office document contains forbidden content": "Office-файл содержит запрещённое активное содержимое или вложение.",
+    "Office document exceeds safety limits": "Office-файл превышает ограничения проверки внутренней структуры или размера распакованных данных.",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +126,8 @@ class FileUploadGuardService:
             return
         reason_code = (verdict.reason_code or "file_type_not_allowed").strip() or "file_type_not_allowed"
         detail = _PUBLIC_ERROR_BY_REASON.get(reason_code, _DEFAULT_BLOCKED_MESSAGE)
+        if reason_code == "invalid_office_document":
+            detail = _PUBLIC_OFFICE_ERROR_BY_MESSAGE.get(verdict.message, detail)
         logger.warning(
             "File scan blocked upload: reason_code=%s detail=%s detected_mime=%s size_bytes=%s sha256_prefix=%s",
             reason_code,
